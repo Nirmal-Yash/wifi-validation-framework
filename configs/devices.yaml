@@ -1,0 +1,21 @@
+devices:
+  router1:
+    host: "192.168.122.10"
+    username: "admin"
+    password: "admin"
+    device_type: "linux"
+  router2:
+    host: "192.168.122.11"
+    username: "admin"
+    password: "admin"
+    device_type: "linux"
+  ap_host:
+    host: "192.168.122.20"
+    username: "admin"
+    password: "admin"
+    device_type: "linux"
+  client_vm:
+    host: "192.168.122.30"
+    username: "admin"
+    password: "admin"
+    device_type: "linux"

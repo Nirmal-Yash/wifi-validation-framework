@@ -1,0 +1,15 @@
+wifi:
+  ssid: "TestNet_5G"
+  password: "Test@12345"
+  security: "WPA2"
+
+thresholds:
+  min_throughput_mbps: 20
+  max_latency_ms: 50
+  max_packet_loss_pct: 2
+  dhcp_timeout_sec: 10
+  dns_timeout_sec: 5
+
+firmware:
+  baseline_version: "v1.0"
+  upgrade_version: "v2.0"
