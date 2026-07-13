@@ -1,0 +1,18 @@
+! FRR router configuration — {{ firmware_version }}
+hostname {{ hostname }}
+!
+interface eth0
+ ip address {{ lan_ip }}
+!
+{% if dns_enabled %}
+ip name-server {{ upstream_dns }}
+{% else %}
+! DNS forwarding disabled (simulated regression)
+{% endif %}
+!
+{% if dhcp_enabled %}
+! DHCP pool {{ dhcp_start }} - {{ dhcp_end }}
+{% endif %}
+!
+line vty
+ login

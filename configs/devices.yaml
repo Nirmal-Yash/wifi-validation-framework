@@ -4,18 +4,28 @@ devices:
     username: "admin"
     password: "admin"
     device_type: "linux"
+    port: 22
   router2:
     host: "192.168.122.11"
     username: "admin"
     password: "admin"
     device_type: "linux"
+    port: 22
   ap_host:
     host: "192.168.122.20"
     username: "admin"
     password: "admin"
     device_type: "linux"
+    port: 22
   client_vm:
     host: "192.168.122.30"
     username: "admin"
     password: "admin"
     device_type: "linux"
+    port: 22
+  monitor_vm:
+    host: "192.168.122.40"
+    username: "admin"
+    password: "admin"
+    device_type: "linux"
+    port: 22

@@ -10,6 +10,20 @@ thresholds:
   dhcp_timeout_sec: 10
   dns_timeout_sec: 5
 
+dns:
+  test_hostname: "google.com"
+
+auth:
+  wpa_version: "WPA2"
+  connection_timeout_sec: 15
+
 firmware:
+  current_version: "v1.0"
   baseline_version: "v1.0"
   upgrade_version: "v2.0"
+
+network:
+  router_ip: "192.168.122.10"
+  client_interface: "eth0"
+  monitor_interface: "eth0"
+  dhcp_subnet: "192.168.122.0/24"

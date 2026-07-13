@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiFi Validation Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #333; }
+        header { background: #1a3c6e; color: white; padding: 1.5em 2em; }
+        header h1 { font-size: 1.5em; }
+        header p { opacity: 0.8; margin-top: 0.3em; }
+        nav { background: white; padding: 0.8em 2em; border-bottom: 1px solid #ddd; }
+        nav a { margin-right: 1.5em; color: #1a3c6e; text-decoration: none; font-weight: 600; }
+        nav a:hover { text-decoration: underline; }
+        .container { padding: 2em; max-width: 1200px; margin: 0 auto; }
+        .card { background: white; border-radius: 8px; padding: 1.5em; margin-bottom: 1.5em; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+        .card h2 { color: #1a3c6e; margin-bottom: 1em; font-size: 1.1em; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #1a3c6e; color: white; padding: 10px 12px; text-align: left; }
+        td { padding: 9px 12px; border-bottom: 1px solid #eee; }
+        tr:hover { background: #f9f9f9; }
+        .pass { color: #2e7d32; font-weight: bold; }
+        .fail { color: #c62828; font-weight: bold; }
+        .chart-img { max-width: 100%; border-radius: 4px; }
+        .stats { display: flex; gap: 1em; flex-wrap: wrap; margin-bottom: 1.5em; }
+        .stat-box { background: white; border-radius: 8px; padding: 1.2em 1.5em; flex: 1; min-width: 140px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
+        .stat-box .value { font-size: 2em; font-weight: bold; color: #1a3c6e; }
+        .stat-box .label { color: #666; font-size: 0.85em; margin-top: 0.2em; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>WiFi Validation Framework — Dashboard</h1>
+        <p>Automated regression testing for WiFi and network devices</p>
+    </header>
+    <nav>
+        <a href="/">Results</a>
+        <a href="/regressions">Regressions</a>
+        <a href="/chart">Pass Rate Chart</a>
+        <a href="/export/csv">Export CSV</a>
+    </nav>
+    <div class="container">
+        <div class="stats">
+            <div class="stat-box">
+                <div class="value">{{ results|length }}</div>
+                <div class="label">Latest Tests</div>
+            </div>
+            {% for pr in pass_rates %}
+            <div class="stat-box">
+                <div class="value">{{ ((pr.passed / pr.total) * 100)|round(1) if pr.total else 0 }}%</div>
+                <div class="label">Pass Rate ({{ pr.firmware_version }})</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="card">
+            <h2>Pass Rate by Firmware Version</h2>
+            <img src="/chart" alt="Pass rate chart" class="chart-img">
+        </div>
+
+        <div class="card">
+            <h2>Latest Test Results</h2>
+            {% if results %}
+            <table>
+                <tr>
+                    <th>Test</th>
+                    <th>Status</th>
+                    <th>Firmware</th>
+                    <th>Duration (ms)</th>
+                    <th>Timestamp</th>
+                </tr>
+                {% for r in results %}
+                <tr>
+                    <td>{{ r.test_name }}</td>
+                    <td class="{{ 'pass' if r.status == 'PASS' else 'fail' }}">{{ r.status }}</td>
+                    <td>{{ r.firmware_version }}</td>
+                    <td>{{ r.duration_ms or '—' }}</td>
+                    <td>{{ r.timestamp[:19] }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% else %}
+            <p>No test results yet. Run: <code>pytest tests/ -v</code></p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

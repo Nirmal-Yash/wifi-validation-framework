@@ -1,0 +1,30 @@
+lab_name: "WiFi Regression Lab"
+
+nodes:
+  - name: frr-router
+    type: frr
+    ip: "192.168.122.10"
+    role: "DHCP, DNS forwarding, routing, iperf3 server"
+  - name: hostapd-ap
+    type: access_point
+    ip: "192.168.122.20"
+    role: "Software WiFi access point (hostapd)"
+  - name: wifi-client
+    type: client
+    ip: "192.168.122.30"
+    role: "WiFi client VM (wpa_supplicant)"
+  - name: monitor
+    type: monitor
+    ip: "192.168.122.40"
+    role: "Packet capture (tcpdump)"
+
+links:
+  - from: frr-router
+    to: hostapd-ap
+    type: ethernet
+  - from: hostapd-ap
+    to: wifi-client
+    type: wifi
+  - from: frr-router
+    to: monitor
+    type: ethernet
