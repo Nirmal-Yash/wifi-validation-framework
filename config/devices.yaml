@@ -1,0 +1,17 @@
+# config/devices.yaml
+target_environment:
+  environment_type: "localized_netns"
+  log_directory: "artifacts/pcaps"
+
+nodes:
+  ap:
+    namespace: "ap_ns"
+    interface: "wlan0"
+    config_path: "config/hostapd.conf"
+  client:
+    namespace: "client_ns"
+    interface: "wlan1"
+    config_path: "config/wpa_supplicant.conf"
+  monitor:
+    namespace: "monitor_ns"
+    interface: "wlan2"

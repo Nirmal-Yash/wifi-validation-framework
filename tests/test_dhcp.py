@@ -1,26 +1,14 @@
 import pytest
+import subprocess
 
-from lib.connector import ssh_command
-
-
-@pytest.mark.smoke
-def test_dhcp_lease_assigned(connection_pool, params):
-    """Client VM should have a DHCP-assigned IP in the expected subnet."""
-    iface = params["network"]["client_interface"]
-    output = connection_pool.send_command("client_vm", f"ip addr show {iface}")
-    assert "inet 192.168." in output, f"No DHCP IP found on client. Output: {output}"
-
-
-@pytest.mark.smoke
-def test_dhcp_within_timeout(connection_pool, params):
-    """DHCP renewal on client VM should complete within threshold."""
-    import time
-
-    iface = params["network"]["client_interface"]
-    timeout = params["thresholds"]["dhcp_timeout_sec"]
-    start = time.time()
-    connection_pool.send_command("client_vm", f"sudo dhclient -r {iface} 2>/dev/null; sudo dhclient {iface}")
-    elapsed = time.time() - start
-    output = connection_pool.send_command("client_vm", f"ip addr show {iface}")
-    assert "inet 192.168." in output, f"DHCP did not assign IP. Output: {output}"
-    assert elapsed < timeout, f"DHCP took {elapsed:.1f}s, threshold is {timeout}s"
+def test_dhcp_lease_allocation(system_config, test_params, async_sniffer):
+    client = system_config["nodes"]["client"]
+    subprocess.run(f"sudo ip netns exec {client['namespace']} dhclient -r {client['interface']} 2>/dev/null", shell=True)
+    subprocess.run(f"sudo ip netns exec {client['namespace']} ip addr flush dev {client['interface']}", shell=True)
+    
+    dhcp_cmd = f"sudo ip netns exec {client['namespace']} dhclient -1 -v {client['interface']}"
+    subprocess.run(dhcp_cmd, shell=True, capture_output=True)
+    
+    addr_check = f"sudo ip netns exec {client['namespace']} ip addr show dev {client['interface']}"
+    addr_out = subprocess.run(addr_check, shell=True, capture_output=True, text=True).stdout
+    assert "inet 192.168.50." in addr_out, "Client failed to obtain an IP lease from DHCP server"

@@ -1,68 +1,107 @@
-import time
-from pathlib import Path
-
 import pytest
 import yaml
-
-from lib.connector import ConnectionPool, load_devices
-from lib.db_helper import init_db, insert_result
-
-ROOT = Path(__file__).resolve().parent.parent
-
+import subprocess
+import time
+import os
+import sqlite3
 
 def pytest_addoption(parser):
-    parser.addoption(
-        "--firmware-version",
-        action="store",
-        default="v1.0",
-        help="Firmware version tag for this test run",
-    )
-
+    parser.addoption("--fw-version", action="store", default="1.0.0", help="Target firmware")
 
 @pytest.fixture(scope="session")
-def firmware_version(request):
-    return request.config.getoption("--firmware-version")
-
+def fw_version(request):
+    return request.config.getoption("--fw-version")
 
 @pytest.fixture(scope="session")
-def params():
-    with open(ROOT / "configs" / "test_params.yaml") as f:
+def system_config():
+    with open("config/devices.yaml", "r") as f:
         return yaml.safe_load(f)
 
-
 @pytest.fixture(scope="session")
-def devices():
-    return load_devices()
+def test_params():
+    with open("config/test_params.yaml", "r") as f:
+        return yaml.safe_load(f)
 
+@pytest.fixture(scope="session", autouse=True)
+def ensure_firmware_record(fw_version):
+    conn = sqlite3.connect("db/results.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT OR IGNORE INTO firmware_metadata (firmware_version) VALUES (?)", (fw_version,))
+    conn.commit()
+    conn.close()
 
-@pytest.fixture(scope="session")
-def connection_pool():
-    pool = ConnectionPool()
-    yield pool
-    pool.close_all()
-
-
-@pytest.fixture(autouse=True)
-def record_test_result(request, firmware_version):
-    start = time.time()
+@pytest.fixture(scope="session", autouse=True)
+def lifecycle_management(system_config):
+    ap = system_config["nodes"]["ap"]
+    client = system_config["nodes"]["client"]
+    
+    subprocess.run("sudo killall hostapd dnsmasq wpa_supplicant iperf3 dhclient 2>/dev/null", shell=True)
+    subprocess.run("sudo rfkill unblock all 2>/dev/null", shell=True)
+    
+    subprocess.run(f"sudo ip netns exec {ap['namespace']} ip addr flush dev {ap['interface']}", shell=True)
+    subprocess.run(f"sudo ip netns exec {ap['namespace']} ip addr add 192.168.50.1/24 dev {ap['interface']}", shell=True)
+    
+    dnsmasq_cmd = f"sudo ip netns exec {ap['namespace']} dnsmasq --interface={ap['interface']} --dhcp-range=192.168.50.10,192.168.50.50,255.255.255.0,12h --no-daemon"
+    dns_proc = subprocess.Popen(dnsmasq_cmd.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    abs_ap_config = os.path.abspath(ap['config_path'])
+    ap_cmd = f"sudo ip netns exec {ap['namespace']} hostapd {abs_ap_config}"
+    hostapd_proc = subprocess.Popen(ap_cmd.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(3)
+    
+    abs_client_config = os.path.abspath(client['config_path'])
+    client_cmd = f"sudo ip netns exec {client['namespace']} wpa_supplicant -B -i {client['interface']} -c {abs_client_config}"
+    subprocess.run(client_cmd, shell=True)
+    time.sleep(4)
+    
+    # NEW: Ensure client has an IP address globally before any tests run
+    subprocess.run(f"sudo ip netns exec {client['namespace']} dhclient {client['interface']} 2>/dev/null", shell=True)
+    time.sleep(2)
+    
     yield
-    duration_ms = int((time.time() - start) * 1000)
-    rep = getattr(request.node, "rep_call", None)
-    if rep is None:
-        return
-    status = "PASS" if rep.passed else "FAIL"
-    error_message = str(rep.longrepr) if rep.failed else None
-    insert_result(
-        test_name=request.node.nodeid,
-        status=status,
-        firmware_version=firmware_version,
-        duration_ms=duration_ms,
-        error_message=error_message,
-    )
+    
+    hostapd_proc.terminate()
+    dns_proc.terminate()
+    subprocess.run("sudo killall hostapd dnsmasq wpa_supplicant dhclient 2>/dev/null", shell=True)
 
+@pytest.fixture
+def async_sniffer(request, system_config):
+    test_name = request.node.name
+    monitor = system_config["nodes"]["monitor"]
+    pcap_dir = system_config["target_environment"]["log_directory"]
+    os.makedirs(pcap_dir, exist_ok=True)
+    pcap_path = f"{pcap_dir}/{test_name}.pcap"
+    
+    if os.path.exists(pcap_path):
+        os.remove(pcap_path)
+        
+    cmd = f"sudo ip netns exec {monitor['namespace']} tcpdump -i {monitor['interface']} -w {pcap_path} -U"
+    sniffer_proc = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    time.sleep(0.5)
+    yield pcap_path
+    sniffer_proc.terminate()
+    sniffer_proc.wait()
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     outcome = yield
-    rep = outcome.get_result()
-    setattr(item, f"rep_{rep.when}", rep)
+    report = outcome.get_result()
+    if report.when == "call":
+        fw = item.config.getoption("--fw-version")
+        test_name = item.name
+        status = report.outcome.upper()
+        duration = report.duration
+        err_msg = str(report.longrepr) if report.failed else ""
+        
+        with open("config/devices.yaml", "r") as f:
+            cfg = yaml.safe_load(f)
+        pcap_path = f"{cfg['target_environment']['log_directory']}/{test_name}.pcap"
+        
+        conn = sqlite3.connect("db/results.db")
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO test_logs (firmware_version, test_name, status, execution_time, error_message, pcap_path)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (fw, test_name, status, duration, err_msg, pcap_path))
+        conn.commit()
+        conn.close()

@@ -1,0 +1,8 @@
+# config/test_params.yaml
+timeouts:
+  wpa_association_seconds: 6
+  dhcp_lease_seconds: 5
+
+thresholds:
+  minimum_throughput_mbps: 25.0
+  maximum_latency_ms: 45.0
