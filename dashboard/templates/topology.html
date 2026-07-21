@@ -2,66 +2,110 @@
 {% block header_title %}Infrastructure Topology Map{% endblock %}
 
 {% block content %}
-<div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-[calc(100vh-140px)] flex flex-col">
-    <div class="mb-4 text-sm text-slate-500">
-        <i class="fa-solid fa-circle-info mr-1 text-blue-400"></i> Interactive hierarchical view of the localized virtual execution environment.
+<div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-[calc(100vh-140px)] flex flex-col relative">
+    <div class="mb-4 text-sm text-slate-500 flex justify-between items-center">
+        <span><i class="fa-solid fa-circle-info mr-1 text-blue-400"></i> Dynamic Topology loaded from devices.yaml</span>
+        
+        <div class="space-x-2">
+            <input type="file" id="topologyUpload" accept=".gns3" class="hidden" onchange="handleFileUpload(event)">
+            <button onclick="triggerImport()" class="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded shadow text-xs font-bold transition-colors">
+                <i class="fa-solid fa-file-import mr-1"></i> IMPORT GNS3
+            </button>
+            <button onclick="triggerRuntimeTest()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow text-xs font-bold transition-colors">
+                <i class="fa-solid fa-play mr-1"></i> RUN VALIDATION
+            </button>
+        </div>
     </div>
-    <div id="mynetwork" class="flex-1 bg-slate-50 rounded-lg border border-slate-200"></div>
+    <div id="mynetwork" class="flex-1 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer"></div>
+</div>
+
+<!-- Runtime Terminal Modal -->
+<div id="runtimeModal" class="hidden fixed inset-0 bg-slate-900 bg-opacity-80 flex justify-center items-center z-50 backdrop-blur-sm">
+    <div class="bg-black rounded-xl shadow-2xl w-3/4 max-w-5xl flex flex-col h-5/6 overflow-hidden border border-slate-700">
+        <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900">
+            <h3 class="font-bold text-lg text-white"><i class="fa-solid fa-terminal mr-2 text-green-400"></i> Execution Console</h3>
+            <button onclick="closeModal('runtimeModal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
+        </div>
+        <div class="p-6 flex-1 overflow-auto bg-black text-green-400 font-mono text-sm leading-relaxed whitespace-pre-wrap" id="terminalOutput">
+            Initializing engine...
+        </div>
+    </div>
 </div>
 
 <style>
-    /* Required for FontAwesome Icons in Vis.js */
     @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
 </style>
 
 <script>
-    // Topology Data Array
-    var nodes = new vis.DataSet([
-        { id: 1, label: 'Ubuntu Host (Kernel)', level: 0, icon: { face: '"Font Awesome 6 Free"', code: '\uf233', weight: 900, color: '#334155' } },
-        
-        { id: 2, label: 'Virtual Core Router\n(Docker FRR)', level: 1, icon: { face: '"Font Awesome 6 Free"', code: '\uf0e8', weight: 900, color: '#0284c7' } },
-        
-        { id: 3, label: 'ap_ns Namespace\nhostapd + dnsmasq\n(192.168.50.1)', level: 2, icon: { face: '"Font Awesome 6 Free"', code: '\uf1eb', weight: 900, color: '#16a34a' } },
-        
-        { id: 4, label: 'client_ns Namespace\nWi-Fi Client\n(192.168.50.x)', level: 3, icon: { face: '"Font Awesome 6 Free"', code: '\uf109', weight: 900, color: '#4f46e5' } },
-        
-        { id: 5, label: 'monitor_ns Namespace\ntcpdump Sniffer\n(Monitor Mode)', level: 3, icon: { face: '"Font Awesome 6 Free"', code: '\uf06e', weight: 900, color: '#e11d48' } }
-    ]);
+    let network = null;
 
-    // Cisco-style logical links
-    var edges = new vis.DataSet([
-        { from: 1, to: 2, label: 'veth link', dashes: false, color: '#94a3b8' },
-        { from: 2, to: 3, label: 'Virtual Ethernet', dashes: false, color: '#94a3b8' },
-        { from: 3, to: 4, label: 'wlan0 -> wlan1\n(WPA3-SAE)', dashes: true, color: '#4ade80', width: 2 },
-        { from: 3, to: 5, label: 'Out-of-band Sniffing', dashes: true, color: '#fb7185' },
-        { from: 4, to: 5, label: '802.11 Capture', dashes: true, color: '#fb7185' }
-    ]);
+    function renderTopology() {
+        fetch('/api/topology_data')
+            .then(response => response.json())
+            .then(data => {
+                const container = document.getElementById('mynetwork');
+                const options = {
+                    nodes: { shape: 'icon', font: { size: 14, color: '#334155', face: 'sans-serif' } },
+                    edges: { arrows: 'to', smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 } },
+                    layout: { hierarchical: { direction: 'UD', sortMethod: 'directed', nodeSpacing: 250, levelSeparation: 150 } },
+                    physics: false
+                };
+                network = new vis.Network(container, data, options);
+            });
+    }
 
-    var container = document.getElementById('mynetwork');
-    var data = { nodes: nodes, edges: edges };
-    
-    var options = {
-        nodes: {
-            shape: 'icon',
-            font: { size: 14, color: '#334155', face: 'sans-serif', multi: 'html', align: 'center' }
-        },
-        edges: {
-            font: { size: 11, align: 'middle' },
-            arrows: { to: { enabled: true, scaleFactor: 0.5 } },
-            smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 }
-        },
-        layout: {
-            hierarchical: {
-                direction: 'UD', // Up-Down (Cisco Packet Tracer Style)
-                sortMethod: 'directed',
-                nodeSpacing: 250,
-                levelSeparation: 150
+    // Load dynamic topology on page load
+    document.addEventListener("DOMContentLoaded", renderTopology);
+
+    function triggerImport() {
+        if(confirm("WARNING: Importing a new GNS3 file will overwrite the current configuration in devices.yaml. \n\nThe system will automatically save a backup of your current setup to the artifacts/backups/ folder. \n\nDo you want to proceed?")) {
+            document.getElementById('topologyUpload').click();
+        }
+    }
+
+    function handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        document.getElementById('terminalOutput').innerText = "Uploading and parsing GNS3 topology file...\nCreating configuration backup...\n";
+        document.getElementById('runtimeModal').classList.remove('hidden');
+
+        fetch('/api/import_topology', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                document.getElementById('terminalOutput').innerText += `\n[SUCCESS] ${data.message}\n`;
+                renderTopology(); // Dynamically redraw the UI
+                setTimeout(() => closeModal('runtimeModal'), 3000);
+            } else {
+                document.getElementById('terminalOutput').innerText += `\n[ERROR] ${data.error}`;
             }
-        },
-        physics: false, // Disables bouncy physics for a strict structural look
-        interaction: { hover: true, tooltipDelay: 200 }
-    };
+        });
+    }
 
-    var network = new vis.Network(container, data, options);
+    function triggerRuntimeTest() {
+        document.getElementById('runtimeModal').classList.remove('hidden');
+        document.getElementById('terminalOutput').innerText = "Executing Pytest assertions over current topology...\nNote: Validation requires matching test scripts for custom GNS3 nodes.\n\n";
+        
+        fetch('/api/run_validation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fw_version: "Runtime-AdHoc" })
+        })
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('terminalOutput').innerText += data.stdout;
+        });
+    }
+
+    function closeModal(modalId) {
+        document.getElementById(modalId).classList.add('hidden');
+    }
 </script>
 {% endblock %}

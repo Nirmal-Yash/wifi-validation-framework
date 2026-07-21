@@ -1,17 +1,164 @@
-# config/devices.yaml
-target_environment:
-  environment_type: "localized_netns"
-  log_directory: "artifacts/pcaps"
-
 nodes:
-  ap:
-    namespace: "ap_ns"
-    interface: "wlan0"
-    config_path: "config/hostapd.conf"
-  client:
-    namespace: "client_ns"
-    interface: "wlan1"
-    config_path: "config/wpa_supplicant.conf"
-  monitor:
-    namespace: "monitor_ns"
-    interface: "wlan2"
+  account-sw:
+    interface: eth0
+    namespace: account-sw_ns
+    type: qemu
+  admin:
+    interface: eth0
+    namespace: admin_ns
+    type: qemu
+  at&t:
+    interface: eth0
+    namespace: at&t_ns
+    type: nat
+  customer-sw:
+    interface: eth0
+    namespace: customer-sw_ns
+    type: qemu
+  finance-sw:
+    interface: eth0
+    namespace: finance-sw_ns
+    type: qemu
+  floor1-fw:
+    interface: eth0
+    namespace: floor1-fw_ns
+    type: qemu
+  floor1-l3sw:
+    interface: eth0
+    namespace: floor1-l3sw_ns
+    type: qemu
+  floor1-router:
+    interface: eth0
+    namespace: floor1-router_ns
+    type: qemu
+  floor2-fw:
+    interface: eth0
+    namespace: floor2-fw_ns
+    type: qemu
+  floor2-l3sw:
+    interface: eth0
+    namespace: floor2-l3sw_ns
+    type: qemu
+  floor2-router:
+    interface: eth0
+    namespace: floor2-router_ns
+    type: qemu
+  floor3-fw:
+    interface: eth0
+    namespace: floor3-fw_ns
+    type: qemu
+  floor3-l3sw:
+    interface: eth0
+    namespace: floor3-l3sw_ns
+    type: qemu
+  floor3-router:
+    interface: eth0
+    namespace: floor3-router_ns
+    type: qemu
+  floor4-fw:
+    interface: eth0
+    namespace: floor4-fw_ns
+    type: qemu
+  floor4-l3sw:
+    interface: eth0
+    namespace: floor4-l3sw_ns
+    type: qemu
+  floor4-router:
+    interface: eth0
+    namespace: floor4-router_ns
+    type: qemu
+  guest:
+    interface: eth0
+    namespace: guest_ns
+    type: qemu
+  hr-sw:
+    interface: eth0
+    namespace: hr-sw_ns
+    type: qemu
+  ict-sw:
+    interface: eth0
+    namespace: ict-sw_ns
+    type: qemu
+  level3:
+    interface: eth0
+    namespace: level3_ns
+    type: cloud
+  logistic-sw:
+    interface: eth0
+    namespace: logistic-sw_ns
+    type: qemu
+  management-sw:
+    interface: eth0
+    namespace: management-sw_ns
+    type: qemu
+  market-sw:
+    interface: eth0
+    namespace: market-sw_ns
+    type: qemu
+  pc1:
+    interface: eth0
+    namespace: pc1_ns
+    type: vpcs
+  pc10:
+    interface: eth0
+    namespace: pc10_ns
+    type: vpcs
+  pc11:
+    interface: eth0
+    namespace: pc11_ns
+    type: vpcs
+  pc12:
+    interface: eth0
+    namespace: pc12_ns
+    type: vpcs
+  pc2:
+    interface: eth0
+    namespace: pc2_ns
+    type: vpcs
+  pc3:
+    interface: eth0
+    namespace: pc3_ns
+    type: vpcs
+  pc4:
+    interface: eth0
+    namespace: pc4_ns
+    type: vpcs
+  pc5:
+    interface: eth0
+    namespace: pc5_ns
+    type: vpcs
+  pc6:
+    interface: eth0
+    namespace: pc6_ns
+    type: vpcs
+  pc7:
+    interface: eth0
+    namespace: pc7_ns
+    type: vpcs
+  pc8:
+    interface: eth0
+    namespace: pc8_ns
+    type: vpcs
+  pc9:
+    interface: eth0
+    namespace: pc9_ns
+    type: vpcs
+  research-sw:
+    interface: eth0
+    namespace: research-sw_ns
+    type: qemu
+  router-1:
+    interface: eth0
+    namespace: router-1_ns
+    type: qemu
+  router-2:
+    interface: eth0
+    namespace: router-2_ns
+    type: qemu
+  server-room-sw:
+    interface: eth0
+    namespace: server-room-sw_ns
+    type: qemu
+target_environment:
+  environment_type: dynamic_import
+  log_directory: artifacts/pcaps
