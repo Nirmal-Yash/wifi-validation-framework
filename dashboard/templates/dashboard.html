@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block header_title %}Analytics Dashboard{% endblock %}
+
+{% block content %}
+<!-- Metrics Grid -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
+        <div class="p-4 bg-blue-50 text-blue-600 rounded-lg"><i class="fa-solid fa-vial text-2xl"></i></div>
+        <div class="ml-4">
+            <h3 class="text-sm font-medium text-gray-500">Total Executions</h3>
+            <p class="text-2xl font-bold text-gray-800">{{ total }}</p>
+        </div>
+    </div>
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
+        <div class="p-4 bg-green-50 text-green-600 rounded-lg"><i class="fa-solid fa-check text-2xl"></i></div>
+        <div class="ml-4">
+            <h3 class="text-sm font-medium text-gray-500">Passed Tests</h3>
+            <p class="text-2xl font-bold text-gray-800">{{ passed }}</p>
+        </div>
+    </div>
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
+        <div class="p-4 bg-red-50 text-red-600 rounded-lg"><i class="fa-solid fa-xmark text-2xl"></i></div>
+        <div class="ml-4">
+            <h3 class="text-sm font-medium text-gray-500">Failed Tests</h3>
+            <p class="text-2xl font-bold text-gray-800">{{ failed }}</p>
+        </div>
+    </div>
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center">
+        <div class="p-4 bg-indigo-50 text-indigo-600 rounded-lg"><i class="fa-solid fa-percent text-2xl"></i></div>
+        <div class="ml-4">
+            <h3 class="text-sm font-medium text-gray-500">Pass Rate</h3>
+            <p class="text-2xl font-bold text-gray-800">{{ rate }}%</p>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <!-- Trend Chart -->
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 lg:col-span-2">
+        <h3 class="text-lg font-semibold text-slate-700 mb-4">Firmware Pass Rate Trend</h3>
+        <canvas id="trendChart" height="100"></canvas>
+    </div>
+
+    <!-- Recent Alerts -->
+    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <h3 class="text-lg font-semibold text-slate-700 mb-4">Recent Regressions</h3>
+        <div class="space-y-4">
+            {% for f in failures %}
+            <div class="p-4 border-l-4 border-red-500 bg-red-50 rounded-r-lg">
+                <div class="flex justify-between items-start">
+                    <span class="text-sm font-bold text-red-700">v{{ f.firmware_version }}</span>
+                    <span class="text-xs text-red-500">{{ f.timestamp.split(' ')[1] }}</span>
+                </div>
+                <p class="text-sm font-semibold text-slate-800 mt-1">{{ f.test_name }}</p>
+                <p class="text-xs text-slate-500 truncate mt-1">{{ f.error_message }}</p>
+            </div>
+            {% else %}
+            <div class="text-center text-slate-500 py-8">
+                <i class="fa-regular fa-face-smile text-3xl mb-2 text-green-400"></i>
+                <p>No recent failures detected.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<script>
+    const trends = {{ trends|tojson }};
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: trends.map(t => 'v' + t.firmware_version),
+            datasets: [{
+                label: 'Pass Rate (%)',
+                data: trends.map(t => t.pass_rate),
+                borderColor: '#4f46e5',
+                backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: {
+            scales: { y: { beginAtZero: true, max: 100 } },
+            plugins: { legend: { display: false } }
+        }
+    });
+</script>
+{% endblock %}

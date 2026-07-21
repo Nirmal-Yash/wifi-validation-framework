@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block header_title %}Infrastructure Topology Map{% endblock %}
+
+{% block content %}
+<div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-[calc(100vh-140px)] flex flex-col">
+    <div class="mb-4 text-sm text-slate-500">
+        <i class="fa-solid fa-circle-info mr-1 text-blue-400"></i> Interactive hierarchical view of the localized virtual execution environment.
+    </div>
+    <div id="mynetwork" class="flex-1 bg-slate-50 rounded-lg border border-slate-200"></div>
+</div>
+
+<style>
+    /* Required for FontAwesome Icons in Vis.js */
+    @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css');
+</style>
+
+<script>
+    // Topology Data Array
+    var nodes = new vis.DataSet([
+        { id: 1, label: 'Ubuntu Host (Kernel)', level: 0, icon: { face: '"Font Awesome 6 Free"', code: '\uf233', weight: 900, color: '#334155' } },
+        
+        { id: 2, label: 'Virtual Core Router\n(Docker FRR)', level: 1, icon: { face: '"Font Awesome 6 Free"', code: '\uf0e8', weight: 900, color: '#0284c7' } },
+        
+        { id: 3, label: 'ap_ns Namespace\nhostapd + dnsmasq\n(192.168.50.1)', level: 2, icon: { face: '"Font Awesome 6 Free"', code: '\uf1eb', weight: 900, color: '#16a34a' } },
+        
+        { id: 4, label: 'client_ns Namespace\nWi-Fi Client\n(192.168.50.x)', level: 3, icon: { face: '"Font Awesome 6 Free"', code: '\uf109', weight: 900, color: '#4f46e5' } },
+        
+        { id: 5, label: 'monitor_ns Namespace\ntcpdump Sniffer\n(Monitor Mode)', level: 3, icon: { face: '"Font Awesome 6 Free"', code: '\uf06e', weight: 900, color: '#e11d48' } }
+    ]);
+
+    // Cisco-style logical links
+    var edges = new vis.DataSet([
+        { from: 1, to: 2, label: 'veth link', dashes: false, color: '#94a3b8' },
+        { from: 2, to: 3, label: 'Virtual Ethernet', dashes: false, color: '#94a3b8' },
+        { from: 3, to: 4, label: 'wlan0 -> wlan1\n(WPA3-SAE)', dashes: true, color: '#4ade80', width: 2 },
+        { from: 3, to: 5, label: 'Out-of-band Sniffing', dashes: true, color: '#fb7185' },
+        { from: 4, to: 5, label: '802.11 Capture', dashes: true, color: '#fb7185' }
+    ]);
+
+    var container = document.getElementById('mynetwork');
+    var data = { nodes: nodes, edges: edges };
+    
+    var options = {
+        nodes: {
+            shape: 'icon',
+            font: { size: 14, color: '#334155', face: 'sans-serif', multi: 'html', align: 'center' }
+        },
+        edges: {
+            font: { size: 11, align: 'middle' },
+            arrows: { to: { enabled: true, scaleFactor: 0.5 } },
+            smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 }
+        },
+        layout: {
+            hierarchical: {
+                direction: 'UD', // Up-Down (Cisco Packet Tracer Style)
+                sortMethod: 'directed',
+                nodeSpacing: 250,
+                levelSeparation: 150
+            }
+        },
+        physics: false, // Disables bouncy physics for a strict structural look
+        interaction: { hover: true, tooltipDelay: 200 }
+    };
+
+    var network = new vis.Network(container, data, options);
+</script>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block header_title %}Full Execution Ledger{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm text-left text-gray-500">
+            <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-200">
+                <tr>
+                    <th scope="col" class="px-6 py-4">Timestamp</th>
+                    <th scope="col" class="px-6 py-4">Firmware</th>
+                    <th scope="col" class="px-6 py-4">Test Feature</th>
+                    <th scope="col" class="px-6 py-4">Status</th>
+                    <th scope="col" class="px-6 py-4">Execution Time</th>
+                    <th scope="col" class="px-6 py-4">Artifact</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr class="bg-white border-b hover:bg-gray-50">
+                    <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">{{ log.timestamp }}</td>
+                    <td class="px-6 py-4 text-blue-600 font-bold">v{{ log.firmware_version }}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-slate-600">{{ log.test_name }}</td>
+                    <td class="px-6 py-4">
+                        {% if log.status == 'PASSED' %}
+                        <span class="bg-green-100 text-green-800 text-xs font-bold px-2.5 py-1 rounded">PASS</span>
+                        {% else %}
+                        <span class="bg-red-100 text-red-800 text-xs font-bold px-2.5 py-1 rounded">FAIL</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4">{{ "%.2f"|format(log.execution_time) }}s</td>
+                    <td class="px-6 py-4 font-mono text-[10px] text-gray-400 truncate max-w-xs">{{ log.pcap_path }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
