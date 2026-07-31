@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04  # CRITICAL FIX: Use 20.04 to access the stable 5.x kernel Wi-Fi modules
     
     steps:
     - uses: actions/checkout@v3
@@ -20,7 +20,8 @@ jobs:
 
     - name: Install Kernel Extras for Wi-Fi Simulation
       run: |
-        sudo apt-get install -y linux-modules-extra-$(uname -r)
+        sudo apt-get install -y linux-modules-extra-$(uname -r) linux-modules-extra-azure
+        sudo depmod -a
 
     - name: Initialize Virtual Wi-Fi Hardware (mac80211_hwsim)
       run: |
