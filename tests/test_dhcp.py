@@ -11,4 +11,4 @@ def test_dhcp_lease_allocation(system_config, test_params, async_sniffer):
     
     addr_check = f"sudo ip netns exec {client['namespace']} ip addr show dev {client['interface']}"
     addr_out = subprocess.run(addr_check, shell=True, capture_output=True, text=True).stdout
-    assert "inet 192.168.50." in addr_out, "Client failed to obtain an IP lease from DHCP server"
+    assert "inet 10.0.10." in addr_out, "Client failed to obtain an IP lease from DHCP server"

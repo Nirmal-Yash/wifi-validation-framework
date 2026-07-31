@@ -14,7 +14,7 @@ def test_chaos_network_resilience(system_config, test_params):
     
     # Failsafe: Ensure IP exists
     addr_check = f"sudo ip netns exec {client['namespace']} ip addr show dev {client['interface']}"
-    if "inet 192.168.50." not in subprocess.run(addr_check, shell=True, capture_output=True, text=True).stdout:
+    if "inet 10.0.10." not in subprocess.run(addr_check, shell=True, capture_output=True, text=True).stdout:
         subprocess.run(f"sudo ip netns exec {client['namespace']} dhclient {client['interface']}", shell=True)
         time.sleep(2)
         
@@ -24,10 +24,10 @@ def test_chaos_network_resilience(system_config, test_params):
     
     try:
         subprocess.run("sudo killall iperf3 2>/dev/null", shell=True)
-        subprocess.run(f"sudo ip netns exec {ap['namespace']} iperf3 -s -D", shell=True, check=True)
+        subprocess.run(f"sudo ip netns exec router_ns iperf3 -s -D", shell=True, check=True)
         time.sleep(0.5)
         
-        client_cmd = f"sudo ip netns exec {client['namespace']} iperf3 -c 192.168.50.1 -J -t 4"
+        client_cmd = f"sudo ip netns exec {client['namespace']} iperf3 -c 10.0.10.1 -J -t 4"
         client_run = subprocess.run(client_cmd, shell=True, capture_output=True, text=True)
         
         assert client_run.returncode == 0, "Network completely crashed under chaos conditions."

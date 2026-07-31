@@ -2,75 +2,145 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Network QA Automation Monitoring Portal</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Wi-Fi Validation | Splunk</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 40px; background-color: #f8f9fa; color: #333; }
-        h1, h2 { color: #1e293b; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e2e8f0; }
-        th { background-color: #0f172a; color: white; }
-        tr:hover { background-color: #f1f5f9; }
-        .badge { padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 12px; }
-        .badge-passed { background-color: #dcfce7; color: #166534; }
-        .badge-failed { background-color: #fee2e2; color: #991b1b; }
+        :root {
+            --bg-dark: #000000;
+            --panel-bg: #1c2024;
+            --text-main: #d3d3d3;
+            --text-muted: #889096;
+            --splunk-green: #118832;
+            --splunk-pink: #eb208e;
+            --splunk-blue: #0073e6;
+            --border-color: #2b3036;
+        }
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .header {
+            border-bottom: 2px solid var(--splunk-pink);
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .header-tag {
+            background-color: var(--splunk-blue);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-family: monospace;
+        }
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .panel {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .panel-title {
+            color: var(--text-muted);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+        }
+        .metric-value {
+            font-size: 36px;
+            font-weight: bold;
+            font-family: "Courier New", Courier, monospace;
+        }
+        .metric-pass { color: var(--splunk-green); }
+        .metric-fail { color: var(--splunk-pink); }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 13px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        th {
+            color: var(--text-muted);
+            font-weight: normal;
+        }
+        tr:hover { background-color: #24292e; }
+        .status-badge {
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+        .status-badge.FAILED { background-color: rgba(235, 32, 142, 0.2); color: var(--splunk-pink); border: 1px solid var(--splunk-pink); }
+        .status-badge.PASSED { background-color: rgba(17, 136, 50, 0.2); color: var(--splunk-green); border: 1px solid var(--splunk-green); }
     </style>
 </head>
 <body>
-    <h1>NetRegress Firmware Regression Dashboard</h1>
-    <p>Operational summary of automated test validation runs across current firmware releases.</p>
-    
-    <h2>Firmware Metrics Summary</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Firmware Version</th>
-                <th>Total Executions</th>
-                <th>Passed</th>
-                <th>Failed</th>
-                <th>Success Metric Rate</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in summaries %}
-            <tr>
-                <td><strong>v{{ row.firmware_version }}</strong></td>
-                <td>{{ row.total_tests }}</td>
-                <td><span class="badge badge-passed">{{ row.passed_tests }}</span></td>
-                <td><span class="badge badge-failed">{{ row.failed_tests }}</span></td>
-                <td>
-                    <strong>
-                        {% if row.total_tests > 0 %}
-                            {{ ((row.passed_tests / row.total_tests) * 100)|round(1) }}%
-                        {% else %}
-                            0%
-                        {% endif %}
-                    </strong>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
 
-    <h2>Identified Firmware Failure Log</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Firmware</th>
-                <th>Target Feature Case</th>
-                <th>Error Analysis Trace</th>
-                <th>Capture Artifact Evidence</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for failure in failures %}
-            <tr>
-                <td><span class="badge badge-failed">v{{ failure.firmware_version }}</span></td>
-                <td><code>{{ failure.test_name }}</code></td>
-                <td><font color="red"><small>{{ failure.error_message }}</small></font></td>
-                <td><small><code>{{ failure.pcap_path }}</code></small></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="header">
+        <h1>FW_Validation // Search & Reporting</h1>
+        <div class="header-tag">Live Index: results.db</div>
+    </div>
+
+    <div class="dashboard-grid">
+        {% for summary in summaries %}
+        <div class="panel">
+            <div class="panel-title">Firmware Build: v{{ summary.firmware_version }}</div>
+            <div class="metric-value metric-pass">{{ summary.passed_tests }} <span style="font-size:16px; color:var(--text-muted);">PASSED</span></div>
+            <div class="metric-value metric-fail">{{ summary.failed_tests }} <span style="font-size:16px; color:var(--text-muted);">FAILED</span></div>
+            <div style="margin-top:10px; color:var(--text-muted); font-size: 12px;">Total Events: {{ summary.total_tests }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="panel">
+        <div class="panel-title">Event Log: Critical Failures & Regressions</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>_time</th>
+                    <th>Firmware</th>
+                    <th>Event_Name</th>
+                    <th>Status</th>
+                    <th>Raw_Exception_Log</th>
+                    <th>Artifact</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for failure in failures %}
+                <tr>
+                    <td>{{ failure.timestamp }}</td>
+                    <td>{{ failure.firmware_version }}</td>
+                    <td>{{ failure.test_name }}</td>
+                    <td><span class="status-badge {{ failure.status }}">{{ failure.status }}</span></td>
+                    <td style="color: var(--splunk-pink);">{{ failure.error_message[:100] }}...</td>
+                    <td style="color: var(--splunk-blue);">{{ failure.pcap_path }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
 </body>
 </html>
