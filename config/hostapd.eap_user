@@ -1,0 +1,3 @@
+# User     Protocol     Password
+"qa_user"  PEAP
+"qa_user"  MSCHAPV2   "EnterpriseSecret2026"  [2]

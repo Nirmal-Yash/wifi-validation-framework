@@ -1,3 +1,5 @@
+PRAGMA journal_mode=WAL;
+
 CREATE TABLE IF NOT EXISTS firmware_metadata (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     firmware_version TEXT NOT NULL UNIQUE,

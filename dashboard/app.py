@@ -2,7 +2,7 @@ from flask import Flask, render_template
 import sqlite3
 import os
 
-print("\n[*] Initializing StyleFusion Dashboard...")
+print("\n[*] Initializing NetRegress Dashboard...")
 app = Flask(__name__)
 DB_PATH = os.path.join(os.path.dirname(__file__), '../db/results.db')
 
