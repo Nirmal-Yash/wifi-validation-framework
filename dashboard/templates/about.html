@@ -1,0 +1,21 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>System Engine | NetForge</title><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>:root{--bg-base:#0f172a;--bg-panel:#1e293b;--bg-sidebar:#0b1120;--text-main:#f8fafc;--text-muted:#94a3b8;--accent-green:#10b981;--accent-red:#ef4444;--accent-blue:#3b82f6;--border-color:#334155;}body{background-color:var(--bg-base);color:var(--text-main);font-family:-apple-system,sans-serif;margin:0;display:flex;height:100vh;}.sidebar{width:250px;background-color:var(--bg-sidebar);border-right:1px solid var(--border-color);padding:20px 0;display:flex;flex-direction:column;flex-shrink:0;}.sidebar-brand{padding:0 20px 20px 20px;border-bottom:1px solid var(--border-color);font-size:18px;font-weight:900;letter-spacing:1px;color:var(--accent-blue);}.sidebar-link{padding:12px 20px;color:var(--text-muted);text-decoration:none;font-size:14px;border-left:3px solid transparent;}.sidebar-link:hover,.sidebar-link.active{background:rgba(255,255,255,0.03);border-left-color:var(--accent-blue);color:var(--text-main);}.main-content{flex-grow:1;padding:40px;overflow-y:auto;}.panel{background-color:var(--bg-panel);border:1px solid var(--border-color);border-radius:8px;padding:30px;}ul{padding-left:20px;line-height:1.7;color:var(--text-muted);}</style></head><body>
+    <div class="sidebar">
+        <div class="sidebar-brand"><i class="fa-solid fa-satellite-dish mr-2"></i> NETFORGE</div>
+        <a href="/" class="sidebar-link"><i class="fa-solid fa-chart-pie mr-2"></i> Executive Dashboard</a>
+        <a href="/topology" class="sidebar-link"><i class="fa-solid fa-network-wired mr-2"></i> Topology Workspace</a>
+        <a href="/history" class="sidebar-link"><i class="fa-solid fa-clock-rotate-left mr-2"></i> Test History & Diff</a>
+        <a href="/about" class="sidebar-link active"><i class="fa-solid fa-server mr-2"></i> System Engine</a>
+    </div>
+    <div class="main-content">
+        <div class="panel">
+            <h2 style="margin-top:0;"><i class="fa-solid fa-microchip text-blue-500 mr-2"></i> NetForge Validation Platform</h2>
+            <p style="color: var(--text-muted);">An advanced, production-grade Software Quality Assurance architecture engineered to automate rigorous validation testing across complex wireless and routed environments.</p>
+            <h3 style="margin-top:30px; border-bottom:1px solid var(--border-color); padding-bottom:10px;">Core Mechanics</h3>
+            <ul>
+                <li><strong>Linux Network Namespaces (`netns`):</strong> Isolates daemons and routing logic into independent environments on a single host.</li>
+                <li><strong>mac80211_hwsim Emulation:</strong> Instantiates virtual Wi-Fi hardware radios directly in kernel memory, bypassing physical RF hardware requirements.</li>
+                <li><strong>GNS3 Protocol Interop:</strong> Parses standard `.gns3` topology schemas natively into `netns` bridges and links.</li>
+            </ul>
+        </div>
+    </div>
+</body></html>

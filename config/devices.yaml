@@ -1,16 +1,40 @@
-target_environment:
-  environment_type: "localized_netns"
-  log_directory: "artifacts/pcaps"
-
 nodes:
-  ap:
-    namespace: "ap_ns"
-    interface: "wlan0"
-    config_path: "config/hostapd.conf"
-  client:
-    namespace: "client_ns"
-    interface: "wlan1"
-    config_path: "config/wpa_supplicant.conf"
-  monitor:
-    namespace: "monitor_ns"
-    interface: "wlan2"
+  PC1:
+    config_path: config/pc1.conf
+    interface: wlan4
+    namespace: pc1_ns
+    x: -407
+    y: 195
+  PC2:
+    config_path: config/pc2.conf
+    interface: wlan5
+    namespace: pc2_ns
+    x: 117
+    y: 195
+  Router1:
+    config_path: config/router1.conf
+    interface: wlan0
+    namespace: router1_ns
+    x: -405
+    y: -105
+  Router2:
+    config_path: config/router2.conf
+    interface: wlan1
+    namespace: router2_ns
+    x: 120
+    y: -105
+  Switch1:
+    config_path: config/switch1.conf
+    interface: wlan2
+    namespace: switch1_ns
+    x: -405
+    y: 45
+  Switch2:
+    config_path: config/switch2.conf
+    interface: wlan3
+    namespace: switch2_ns
+    x: 120
+    y: 45
+target_environment:
+  environment_type: localized_netns
+  log_directory: artifacts/pcaps

@@ -1,0 +1,23 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Dashboard | NetForge</title><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>:root{--bg-base:#0f172a;--bg-panel:#1e293b;--bg-sidebar:#0b1120;--text-main:#f8fafc;--text-muted:#94a3b8;--accent-green:#10b981;--accent-red:#ef4444;--accent-blue:#3b82f6;--border-color:#334155;}body{background-color:var(--bg-base);color:var(--text-main);font-family:-apple-system,BlinkMacSystemFont,sans-serif;margin:0;display:flex;height:100vh;}.sidebar{width:250px;background-color:var(--bg-sidebar);border-right:1px solid var(--border-color);padding:20px 0;display:flex;flex-direction:column;}.sidebar-brand{padding:0 20px 20px 20px;border-bottom:1px solid var(--border-color);font-size:18px;font-weight:900;letter-spacing:1px;color:var(--accent-blue);}.sidebar-link{padding:12px 20px;color:var(--text-muted);text-decoration:none;font-size:14px;border-left:3px solid transparent;transition:0.2s;}.sidebar-link:hover,.sidebar-link.active{background:rgba(255,255,255,0.03);border-left-color:var(--accent-blue);color:var(--text-main);}.main-content{flex-grow:1;padding:30px;overflow-y:auto;}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-bottom:25px;}.panel{background-color:var(--bg-panel);border:1px solid var(--border-color);border-radius:8px;padding:20px;box-shadow:0 4px 6px rgba(0,0,0,0.1);}.panel-title{color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;font-weight:700;}.metric-value{font-size:36px;font-weight:900;font-family:monospace;}table{width:100%;border-collapse:collapse;font-family:monospace;font-size:13px;}th,td{padding:12px;text-align:left;border-bottom:1px solid var(--border-color);}th{color:var(--text-muted);font-weight:normal;}</style></head><body>
+    <div class="sidebar">
+        <div class="sidebar-brand"><i class="fa-solid fa-satellite-dish mr-2"></i> NETFORGE</div>
+        <a href="/" class="sidebar-link active"><i class="fa-solid fa-chart-pie mr-2"></i> Executive Dashboard</a>
+        <a href="/topology" class="sidebar-link"><i class="fa-solid fa-network-wired mr-2"></i> Topology Workspace</a>
+        <a href="/history" class="sidebar-link"><i class="fa-solid fa-clock-rotate-left mr-2"></i> Test History & Diff</a>
+        <a href="/about" class="sidebar-link"><i class="fa-solid fa-server mr-2"></i> System Engine</a>
+    </div>
+    <div class="main-content">
+        <div class="grid">
+            <div class="panel"><div class="panel-title">Total Execution Assertions</div><div class="metric-value">{{ total }}</div></div>
+            <div class="panel"><div class="panel-title">Passed Evaluations</div><div class="metric-value" style="color: var(--accent-green);">{{ passed }}</div></div>
+            <div class="panel"><div class="panel-title">Failed Regressions</div><div class="metric-value" style="color: var(--accent-red);">{{ failed }}</div></div>
+            <div class="panel"><div class="panel-title">Stability Integrity</div><div class="metric-value" style="color: var(--accent-blue);">{{ rate }}%</div></div>
+        </div>
+        <div class="panel">
+            <div class="panel-title">Exception Ledger</div>
+            <table><tr><th>Timestamp</th><th>Firmware Build</th><th>Test Module</th><th>Exception Output</th></tr>
+            {% for f in failures %}<tr><td>{{ f.timestamp }}</td><td>v{{ f.firmware_version }}</td><td>{{ f.test_name }}</td><td style="color: var(--accent-red);">{{ f.error_message[:60] }}...</td></tr>{% else %}<tr><td colspan="4" style="color: var(--text-muted); text-align: center;">Pipeline green. No exceptions recorded.</td></tr>{% endfor %}
+            </table>
+        </div>
+    </div>
+</body></html>
