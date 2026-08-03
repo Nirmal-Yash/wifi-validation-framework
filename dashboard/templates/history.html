@@ -1,30 +1,80 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>History & Regressions | NetForge</title><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>:root{--bg-base:#0f172a;--bg-panel:#1e293b;--bg-sidebar:#0b1120;--text-main:#f8fafc;--text-muted:#94a3b8;--accent-green:#10b981;--accent-red:#ef4444;--accent-blue:#3b82f6;--border-color:#334155;}body{background-color:var(--bg-base);color:var(--text-main);font-family:-apple-system,sans-serif;margin:0;display:flex;height:100vh;}.sidebar{width:250px;background-color:var(--bg-sidebar);border-right:1px solid var(--border-color);padding:20px 0;display:flex;flex-direction:column;flex-shrink:0;}.sidebar-brand{padding:0 20px 20px 20px;border-bottom:1px solid var(--border-color);font-size:18px;font-weight:900;letter-spacing:1px;color:var(--accent-blue);}.sidebar-link{padding:12px 20px;color:var(--text-muted);text-decoration:none;font-size:14px;border-left:3px solid transparent;}.sidebar-link:hover,.sidebar-link.active{background:rgba(255,255,255,0.03);border-left-color:var(--accent-blue);color:var(--text-main);}.main-content{flex-grow:1;padding:30px;overflow-y:auto;}.panel{background-color:var(--bg-panel);border:1px solid var(--border-color);border-radius:8px;padding:20px;margin-bottom:25px;}select{background:var(--bg-base);color:white;border:1px solid var(--border-color);padding:8px 12px;border-radius:4px;font-family:monospace;margin-right:15px;}.btn{background:var(--accent-blue);color:white;border:none;padding:9px 16px;border-radius:4px;font-weight:bold;cursor:pointer;font-size:12px;}table{width:100%;border-collapse:collapse;font-family:monospace;font-size:13px;}th,td{padding:12px;text-align:left;border-bottom:1px solid var(--border-color);}th{color:var(--text-muted);font-weight:normal;}.badge{padding:3px 8px;border-radius:3px;font-weight:bold;font-size:11px;}.badge.PASSED{background:rgba(16,185,129,0.2);color:var(--accent-green);border:1px solid var(--accent-green);}.badge.FAILED{background:rgba(239,68,68,0.2);color:var(--accent-red);border:1px solid var(--accent-red);}</style></head><body>
-    <div class="sidebar">
-        <div class="sidebar-brand"><i class="fa-solid fa-satellite-dish mr-2"></i> NETFORGE</div>
-        <a href="/" class="sidebar-link"><i class="fa-solid fa-chart-pie mr-2"></i> Executive Dashboard</a>
-        <a href="/topology" class="sidebar-link"><i class="fa-solid fa-network-wired mr-2"></i> Topology Workspace</a>
-        <a href="/history" class="sidebar-link active"><i class="fa-solid fa-clock-rotate-left mr-2"></i> Test History & Diff</a>
-        <a href="/about" class="sidebar-link"><i class="fa-solid fa-server mr-2"></i> System Engine</a>
-    </div>
-    <div class="main-content">
-        <div class="panel">
-            <h3 style="color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-top:0;"><i class="fa-solid fa-code-compare mr-2"></i> Regression Engine</h3>
-            <form method="GET" action="/history" style="display:flex;align-items:center;">
-                <span style="font-family:monospace;margin-right:10px;">Baseline:</span><select name="fw_a">{% for fw in fw_list %}<option value="{{ fw.firmware_version }}" {% if fw.firmware_version == fw_a %}selected{% endif %}>v{{ fw.firmware_version }}</option>{% endfor %}</select>
-                <span style="font-family:monospace;margin-right:10px;">Candidate:</span><select name="fw_b">{% for fw in fw_list %}<option value="{{ fw.firmware_version }}" {% if fw.firmware_version == fw_b %}selected{% endif %}>v{{ fw.firmware_version }}</option>{% endfor %}</select>
-                <button type="submit" class="btn">Analyze Matrix</button>
-            </form>
-            {% if comparisons %}
-            <div style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px;">
-                <table><tr><th>Module</th><th>v{{ fw_a }}</th><th>v{{ fw_b }}</th><th>Delta Status</th></tr>
-                {% for comp in comparisons %}<tr><td>{{ comp.test_name }}</td><td><span class="badge {{ comp.status_a }}">{{ comp.status_a }}</span></td><td><span class="badge {{ comp.status_b }}">{{ comp.status_b }}</span></td>
-                <td>{% if comp.status_a == 'PASSED' and comp.status_b == 'FAILED' %}<span style="color:var(--accent-red);font-weight:bold;"><i class="fa-solid fa-triangle-exclamation"></i> REGRESSION</span>{% elif comp.status_a == 'FAILED' and comp.status_b == 'PASSED' %}<span style="color:var(--accent-green);font-weight:bold;"><i class="fa-solid fa-check"></i> RESOLVED</span>{% else %}<span style="color:var(--text-muted);">STATIC</span>{% endif %}</td></tr>{% endfor %}</table>
-            </div>{% endif %}
+{% extends "base.html" %}
+{% block title %}History & Regressions | NetForge{% endblock %}
+
+{% block content %}
+<div class="panel">
+    <h3 style="color:var(--on-surface-muted);font-size:12px;text-transform:uppercase;letter-spacing:1px;"><i class="fa-solid fa-code-compare mr-2"></i> Regression Engine</h3>
+    <form method="GET" action="/history" style="display:flex; align-items:center; gap: 16px; margin-top: 16px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-family: 'Courier Prime', monospace; font-weight: bold; font-size: 12px; color: var(--primary);">BASELINE:</span>
+            <select name="fw_a" style="background: var(--background); color: var(--on-surface); border: 1px solid var(--border); padding: 6px 12px; border-radius: 0; font-family: 'JetBrains Mono', monospace;">
+                {% for fw in fw_list %}<option value="{{ fw.firmware_version }}" {% if fw.firmware_version == fw_a %}selected{% endif %}>v{{ fw.firmware_version }}</option>{% endfor %}
+            </select>
         </div>
-        <div class="panel">
-            <h3 style="color:var(--text-muted);font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-top:0;"><i class="fa-solid fa-list mr-2"></i> System Audit Log</h3>
-            <table><tr><th>Timestamp</th><th>Firmware</th><th>Module</th><th>Duration</th><th>Status</th></tr>
-            {% for log in logs %}<tr><td>{{ log.timestamp }}</td><td>v{{ log.firmware_version }}</td><td>{{ log.test_name }}</td><td>{{ "%.2f"|format(log.execution_time) }}s</td><td><span class="badge {{ log.status }}">{{ log.status }}</span></td></tr>{% else %}<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">No records found.</td></tr>{% endfor %}</table>
+        
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-family: 'Courier Prime', monospace; font-weight: bold; font-size: 12px; color: var(--primary);">CANDIDATE:</span>
+            <select name="fw_b" style="background: var(--background); color: var(--on-surface); border: 1px solid var(--border); padding: 6px 12px; border-radius: 0; font-family: 'JetBrains Mono', monospace;">
+                {% for fw in fw_list %}<option value="{{ fw.firmware_version }}" {% if fw.firmware_version == fw_b %}selected{% endif %}>v{{ fw.firmware_version }}</option>{% endfor %}
+            </select>
         </div>
+        
+        <button type="submit" class="btn primary">Analyze Matrix</button>
+    </form>
+    
+    {% if comparisons %}
+    <div style="margin-top: 24px; border-top: 1px solid var(--border); padding-top: 16px;">
+        <table>
+            <tr>
+                <th>Module</th>
+                <th>v{{ fw_a }}</th>
+                <th>v{{ fw_b }}</th>
+                <th>Delta Status</th>
+            </tr>
+            {% for comp in comparisons %}
+            <tr>
+                <td>{{ comp.test_name }}</td>
+                <td><span class="badge {{ comp.status_a }}">{{ comp.status_a }}</span></td>
+                <td><span class="badge {{ comp.status_b }}">{{ comp.status_b }}</span></td>
+                <td>
+                    {% if comp.status_a == 'PASSED' and comp.status_b == 'FAILED' %}
+                        <span style="color:var(--error); font-weight:bold; font-family: 'Courier Prime', monospace;"><i class="fa-solid fa-triangle-exclamation"></i> REGRESSION</span>
+                    {% elif comp.status_a == 'FAILED' and comp.status_b == 'PASSED' %}
+                        <span style="color:var(--primary); font-weight:bold; font-family: 'Courier Prime', monospace;"><i class="fa-solid fa-check"></i> RESOLVED</span>
+                    {% else %}
+                        <span style="color:var(--on-surface-muted); font-family: 'Courier Prime', monospace;">STATIC</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
     </div>
-</body></html>
+    {% endif %}
+</div>
+
+<div class="panel">
+    <h3 style="color:var(--on-surface-muted);font-size:12px;text-transform:uppercase;letter-spacing:1px;"><i class="fa-solid fa-list mr-2"></i> System Audit Log</h3>
+    <table style="margin-top: 16px;">
+        <tr>
+            <th>Timestamp</th>
+            <th>Firmware</th>
+            <th>Module</th>
+            <th>Duration</th>
+            <th>Status</th>
+        </tr>
+        {% for log in logs %}
+        <tr>
+            <td>{{ log.timestamp }}</td>
+            <td style="color: var(--primary);">v{{ log.firmware_version }}</td>
+            <td>{{ log.test_name }}</td>
+            <td>{{ "%.2f"|format(log.execution_time) }}s</td>
+            <td><span class="badge {{ log.status }}">{{ log.status }}</span></td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="5" style="text-align:center; color:var(--on-surface-muted);">No records found.</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% endblock %}

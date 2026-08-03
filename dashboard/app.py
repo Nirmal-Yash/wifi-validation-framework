@@ -72,7 +72,6 @@ def topology_data():
             elif 'monitor' in name_lower or 'sniffer' in name_lower: icon_code, color = '\uf21b', '#ec4899'
             else: icon_code, color = '\uf233', '#94a3b8'
 
-            # Dynamically pull IP addresses from configurations for the tooltip
             config_content = ""
             conf_path = os.path.join(BASE_DIR, 'config', f"{name_lower}.conf")
             if os.path.exists(conf_path):
@@ -82,7 +81,6 @@ def topology_data():
             ip_match = re.search(r'ip address\s+([\d\.]+)', config_content, re.IGNORECASE)
             ip_display = ip_match.group(1) if ip_match else "Unassigned / DHCP"
             
-            # Clean, Vis.js compatible HTML tooltip
             tooltip = f"<b>Device:</b> {name}<br><b>IP Address:</b> {ip_display}<br><b>Namespace:</b> {details.get('namespace', 'N/A')}<br><b>Interface:</b> {details.get('interface', 'N/A')}"
 
             node_obj = {
@@ -98,19 +96,18 @@ def topology_data():
 
             nodes.append(node_obj)
             
-            # Create prominent, solid visibility links
             if prev_id: 
                 edges.append({
                     "from": prev_id, 
                     "to": node_id, 
-                    "color": {'color': '#94a3b8', 'highlight': '#3b82f6', 'hover': '#3b82f6'}, 
-                    "width": 4, 
+                    "color": {'color': '#94a3b8', 'highlight': '#ff8c00', 'hover': '#ff8c00'}, 
+                    "width": 2, 
                     "dashes": False
                 })
             prev_id = node_id
             node_id += 1
             
-    return jsonify({"nodes": nodes or [{"id": 1, "label": "Canvas Empty", "shape": "box", "color": "#1e293b"}], "edges": edges})
+    return jsonify({"nodes": nodes or [{"id": 1, "label": "Canvas Empty", "shape": "box", "color": "#1f1f1f"}], "edges": edges})
 
 @app.route('/api/save_topology', methods=['POST'])
 def save_topology():

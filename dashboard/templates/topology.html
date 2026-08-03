@@ -1,243 +1,217 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Topology Workspace | NetForge</title>
-    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        :root { --bg-base: #0f172a; --bg-panel: #1e293b; --bg-sidebar: #0b1120; --text-main: #f8fafc; --text-muted: #94a3b8; --accent-green: #10b981; --accent-red: #ef4444; --accent-blue: #3b82f6; --border-color: #334155; }
-        body { background-color: var(--bg-base); color: var(--text-main); font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
-        .sidebar { width: 250px; background-color: var(--bg-sidebar); border-right: 1px solid var(--border-color); padding: 20px 0; display: flex; flex-direction: column; flex-shrink: 0; z-index: 10; }
-        .sidebar-brand { padding: 0 20px 20px 20px; border-bottom: 1px solid var(--border-color); font-size: 18px; font-weight: 900; letter-spacing: 1px; color: var(--accent-blue); }
-        .sidebar-link { padding: 12px 20px; color: var(--text-muted); text-decoration: none; font-size: 14px; border-left: 3px solid transparent; transition: 0.2s; }
-        .sidebar-link:hover, .sidebar-link.active { background: rgba(255,255,255,0.03); border-left-color: var(--accent-blue); color: var(--text-main); }
-        .main-content { flex-grow: 1; padding: 25px; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; overflow: hidden; position: relative; }
-        
-        .toolbar { flex-shrink: 0; background: var(--bg-panel); border: 1px solid var(--border-color); padding: 12px 20px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .btn { background: var(--accent-blue); color: white; border: none; padding: 8px 14px; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 13px; transition: 0.2s; }
-        .btn-outline { background: transparent; border: 1px solid var(--border-color); color: var(--text-main); }
-        .btn-danger { background: var(--accent-red); color: white; }
-        .btn:hover { filter: brightness(1.2); }
-        
-        .dropdown { position: relative; display: inline-block; margin-right: 15px; }
-        .dropdown-menu { display: none; position: absolute; top: 100%; left: 0; background: var(--bg-panel); min-width: 240px; border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 8px 16px rgba(0,0,0,0.5); z-index: 50; overflow: hidden; margin-top: 5px; }
-        .dropdown.active .dropdown-menu { display: block; }
-        .dropdown-header { padding: 8px 15px; background: rgba(0,0,0,0.2); color: var(--text-muted); font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border-color); }
-        .dropdown-item { padding: 12px 15px; color: var(--text-main); font-size: 13px; cursor: grab; display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .dropdown-item:hover { background: rgba(255,255,255,0.05); }
-        .dropdown-item i { margin-right: 12px; font-size: 16px; }
-        
-        #mynetwork { flex-grow: 1; min-height: 0; background: var(--bg-base); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.3); }
-        
-        /* Floating Action Bar */
-        #floatingActionBar { position: absolute; bottom: 40px; right: 40px; display: none; gap: 10px; z-index: 100; background: var(--bg-panel); padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        
-        /* Modal Config UI */
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 100; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
-        .modal-content { background: var(--bg-panel); width: 600px; border-radius: 8px; border: 1px solid var(--border-color); display: flex; flex-direction: column; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        .modal-header { padding: 15px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; font-weight: bold; font-family: monospace; color: var(--accent-green); }
-        .modal-body { padding: 20px; }
-        textarea { width: 100%; height: 350px; background: var(--bg-base); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 4px; padding: 15px; font-family: monospace; font-size: 13px; resize: none; box-sizing: border-box; }
-        .modal-footer { padding: 15px 20px; border-top: 1px solid var(--border-color); text-align: right; }
-    </style>
-</head>
-<body>
-    <div class="sidebar">
-        <div class="sidebar-brand"><i class="fa-solid fa-satellite-dish mr-2"></i> NETFORGE</div>
-        <a href="/" class="sidebar-link"><i class="fa-solid fa-chart-pie mr-2"></i> Executive Dashboard</a>
-        <a href="/topology" class="sidebar-link active"><i class="fa-solid fa-network-wired mr-2"></i> Topology Workspace</a>
-        <a href="/history" class="sidebar-link"><i class="fa-solid fa-clock-rotate-left mr-2"></i> Test History & Diff</a>
-        <a href="/about" class="sidebar-link"><i class="fa-solid fa-server mr-2"></i> System Engine</a>
-    </div>
+{% extends "base.html" %}
+{% block title %}Topology Workspace | NetForge{% endblock %}
+
+{% block extra_head %}
+<script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style>
+    /* Void-Amber specific overrides for Topology */
+    .main-content { padding: 24px; overflow: hidden; }
     
-    <div class="main-content">
-        <div class="toolbar">
-            <div style="display: flex; align-items: center;">
-                <div class="dropdown" id="deviceDropdown">
-                    <button class="btn" onclick="toggleDropdown()"><i class="fa-solid fa-plus mr-1"></i> Deploy Device <i class="fa-solid fa-chevron-down ml-1"></i></button>
-                    <div class="dropdown-menu">
-                        <div class="dropdown-header">Cisco Layer 3 / Routing</div>
-                        <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Router')"><i class="fa-solid fa-network-wired" style="color: var(--accent-blue);"></i> Cisco ISR / L3 Router</div>
-                        <div class="dropdown-header">Cisco Layer 2 / Switching</div>
-                        <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Switch')"><i class="fa-solid fa-project-diagram" style="color: #f59e0b;"></i> Cisco Catalyst Switch</div>
-                        <div class="dropdown-header">Wireless & Endpoints</div>
-                        <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'AP')"><i class="fa-solid fa-wifi" style="color: var(--accent-green);"></i> Wireless Access Point</div>
-                        <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Client')"><i class="fa-solid fa-laptop" style="color: var(--text-main);"></i> Generic Client PC</div>
-                        <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Monitor')"><i class="fa-solid fa-user-secret" style="color: #ec4899;"></i> Packet Sniffer / Monitor</div>
-                    </div>
-                </div>
-                <span style="font-size: 11px; color: var(--text-muted);"><i class="fa-solid fa-info-circle mr-1"></i> Drag and drop devices onto the canvas</span>
-            </div>
-            <div>
-                <input type="file" id="importFile" accept=".json,.gns3" class="hidden" onchange="uploadTopology(event)" style="display:none;">
-                <button class="btn btn-outline" onclick="document.getElementById('importFile').click()"><i class="fa-solid fa-file-import mr-1"></i> Import</button>
-                <button class="btn" onclick="saveTopology()" style="margin-left: 5px;"><i class="fa-solid fa-floppy-disk mr-1"></i> Commit Topology</button>
+    .toolbar { background: var(--surface); border: 1px solid var(--border); padding: 12px 16px; border-radius: 0px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    
+    .dropdown { position: relative; display: inline-block; margin-right: 16px; }
+    .dropdown-menu { display: none; position: absolute; top: 100%; left: 0; background: var(--surface); min-width: 240px; border: 1px solid var(--primary-container); border-radius: 0px; box-shadow: 0 4px 12px rgba(0,0,0,0.8); z-index: 50; margin-top: 4px; }
+    .dropdown.active .dropdown-menu { display: block; }
+    .dropdown-header { padding: 8px 16px; background: var(--sidebar-bg); color: var(--primary); font-family: 'Courier Prime', monospace; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); }
+    .dropdown-item { padding: 12px 16px; color: var(--on-surface); font-size: 13px; cursor: grab; display: flex; align-items: center; border-bottom: 1px solid var(--surface-highest); transition: background 0.2s; }
+    .dropdown-item:hover { background: rgba(255,140,0,0.1); color: var(--primary); }
+    .dropdown-item i { margin-right: 12px; font-size: 16px; }
+    
+    #mynetwork { flex-grow: 1; min-height: 0; background: var(--background); border: 1px solid var(--border); border-radius: 0px; }
+    
+    #floatingActionBar { position: absolute; bottom: 40px; right: 40px; display: none; gap: 10px; z-index: 100; background: var(--surface); padding: 12px; border-radius: 0px; border: 1px solid var(--primary-container); box-shadow: 0 4px 12px rgba(255,140,0,0.2); }
+    
+    /* Strict Void-Amber Modal */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 100; justify-content: center; align-items: center; }
+    .modal-content { background: var(--surface); width: 600px; border-radius: 0px; border: 1px solid var(--primary-container); display: flex; flex-direction: column; }
+    .modal-header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; font-weight: 700; font-family: 'Space Mono', monospace; color: var(--primary); }
+    .modal-body { padding: 24px; }
+    textarea { width: 100%; height: 350px; background: var(--background); color: var(--on-surface); border: 1px solid var(--border); border-radius: 0px; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; resize: none; box-sizing: border-box; transition: border-color 0.2s; }
+    textarea:focus { outline: none; border-color: var(--primary); }
+    .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); text-align: right; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+    <div style="display: flex; align-items: center;">
+        <div class="dropdown" id="deviceDropdown">
+            <button class="btn primary" onclick="toggleDropdown()"><i class="fa-solid fa-plus mr-1"></i> Deploy Device <i class="fa-solid fa-chevron-down ml-1"></i></button>
+            <div class="dropdown-menu">
+                <div class="dropdown-header">Cisco Layer 3 / Routing</div>
+                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Router')"><i class="fa-solid fa-network-wired" style="color: #8b5cf6;"></i> Cisco ISR / L3 Router</div>
+                <div class="dropdown-header">Cisco Layer 2 / Switching</div>
+                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Switch')"><i class="fa-solid fa-project-diagram" style="color: #f59e0b;"></i> Cisco Catalyst Switch</div>
+                <div class="dropdown-header">Wireless & Endpoints</div>
+                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'AP')"><i class="fa-solid fa-wifi" style="color: #10b981;"></i> Wireless Access Point</div>
+                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Client')"><i class="fa-solid fa-laptop" style="color: #3b82f6;"></i> Generic Client PC</div>
+                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Monitor')"><i class="fa-solid fa-user-secret" style="color: #ec4899;"></i> Packet Sniffer / Monitor</div>
             </div>
         </div>
-        
-        <div id="mynetwork"></div>
+        <span style="font-family: 'Courier Prime', monospace; font-size: 11px; color: var(--on-surface-muted);"><i class="fa-solid fa-info-circle mr-1"></i> DRAG AND DROP DEVICES ONTO THE CANVAS</span>
+    </div>
+    <div>
+        <input type="file" id="importFile" accept=".json,.gns3" class="hidden" onchange="uploadTopology(event)" style="display:none;">
+        <button class="btn btn-outline" onclick="document.getElementById('importFile').click()"><i class="fa-solid fa-file-import mr-1"></i> Import</button>
+        <button class="btn" onclick="saveTopology()" style="margin-left: 8px;"><i class="fa-solid fa-floppy-disk mr-1"></i> Commit Topology</button>
+    </div>
+</div>
 
-        <!-- Floating Context Action Menu -->
-        <div id="floatingActionBar">
-            <button class="btn" onclick="openSelectedConfig()"><i class="fa-solid fa-terminal mr-2"></i>Configure Node</button>
-            <button class="btn btn-danger" style="border: none;" onclick="deleteSelected()"><i class="fa-solid fa-trash mr-2"></i>Delete</button>
+<div id="mynetwork"></div>
+
+<div id="floatingActionBar">
+    <button class="btn" onclick="openSelectedConfig()"><i class="fa-solid fa-terminal mr-2"></i>Configure Node</button>
+    <button class="btn btn-danger" onclick="deleteSelected()"><i class="fa-solid fa-trash mr-2"></i>Delete</button>
+</div>
+
+<div class="modal" id="configModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <span id="modalTitle">Terminal Console</span>
+            <i class="fa-solid fa-xmark" style="cursor: pointer; color: var(--on-surface-muted);" onclick="closeModal()"></i>
+        </div>
+        <div class="modal-body">
+            <textarea id="configEditor" spellcheck="false"></textarea>
+            <input type="hidden" id="activeNodeName">
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="closeModal()">Discard</button>
+            <button class="btn primary" onclick="saveDeviceConfig()" style="margin-left: 10px;">Save Configuration</button>
         </div>
     </div>
+</div>
 
-    <!-- Configuration Editor Modal -->
-    <div class="modal" id="configModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <span id="modalTitle">Terminal Console</span>
-                <i class="fa-solid fa-xmark" style="cursor: pointer; color: var(--text-muted);" onclick="closeModal()"></i>
-            </div>
-            <div class="modal-body">
-                <textarea id="configEditor" spellcheck="false"></textarea>
-                <input type="hidden" id="activeNodeName">
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-outline" onclick="closeModal()">Discard</button>
-                <button class="btn" onclick="saveDeviceConfig()" style="margin-left: 10px;">Save Configuration</button>
-            </div>
-        </div>
-    </div>
+<script>
+    let network = null;
+    let nodesDataset = new vis.DataSet([]);
+    let edgesDataset = new vis.DataSet([]);
+    let selectedNodeName = null;
 
-    <script>
-        let network = null;
-        let nodesDataset = new vis.DataSet([]);
-        let edgesDataset = new vis.DataSet([]);
-        let selectedNodeName = null;
+    function toggleDropdown() { document.getElementById('deviceDropdown').classList.toggle('active'); }
+    document.onclick = function(e) { if (!e.target.closest('.dropdown')) { document.getElementById('deviceDropdown').classList.remove('active'); } };
 
-        function toggleDropdown() { document.getElementById('deviceDropdown').classList.toggle('active'); }
-        document.onclick = function(e) { if (!e.target.closest('.dropdown')) { document.getElementById('deviceDropdown').classList.remove('active'); } };
+    document.addEventListener("DOMContentLoaded", () => {
+        fetch('/api/topology_data').then(res => res.json()).then(data => {
+            
+            nodesDataset.add(data.nodes);
+            edgesDataset.add(data.edges);
 
-        document.addEventListener("DOMContentLoaded", () => {
-            fetch('/api/topology_data').then(res => res.json()).then(data => {
-                
-                nodesDataset.add(data.nodes);
-                edgesDataset.add(data.edges);
+            let options = { 
+                nodes: { font: { color: '#e2e2e2', face: 'JetBrains Mono', size: 14 } }, 
+                edges: { color: { color: '#353535', hover: '#ff8c00', highlight: '#ff8c00' }, width: 2, smooth: { type: 'continuous' } },
+                interaction: { hover: true, tooltipDelay: 100 },
+                physics: { enabled: false } 
+            };
 
-                let options = { 
-                    nodes: { font: { color: '#f8fafc', face: 'monospace', size: 14 } }, 
-                    edges: { color: { color: '#94a3b8', hover: '#3b82f6', highlight: '#3b82f6' }, width: 4, smooth: { type: 'continuous' } },
-                    interaction: { hover: true, tooltipDelay: 100 },
-                    physics: { enabled: false } 
-                };
+            let container = document.getElementById('mynetwork');
+            network = new vis.Network(container, { nodes: nodesDataset, edges: edgesDataset }, options);
 
-                let container = document.getElementById('mynetwork');
-                network = new vis.Network(container, { nodes: nodesDataset, edges: edgesDataset }, options);
+            network.on("hoverNode", function (params) { container.style.cursor = 'pointer'; });
+            network.on("blurNode", function (params) { container.style.cursor = 'default'; });
 
-                network.on("hoverNode", function (params) { container.style.cursor = 'pointer'; });
-                network.on("blurNode", function (params) { container.style.cursor = 'default'; });
+            network.on("selectNode", function (params) {
+                if (params.nodes.length > 0) {
+                    let nodeData = nodesDataset.get(params.nodes[0]);
+                    selectedNodeName = nodeData.label;
+                    document.getElementById('floatingActionBar').style.display = 'flex';
+                }
+            });
 
-                // Context Menu Triggers
-                network.on("selectNode", function (params) {
-                    if (params.nodes.length > 0) {
-                        let nodeData = nodesDataset.get(params.nodes[0]);
-                        selectedNodeName = nodeData.label;
-                        document.getElementById('floatingActionBar').style.display = 'flex';
+            network.on("deselectNode", function (params) {
+                document.getElementById('floatingActionBar').style.display = 'none';
+                selectedNodeName = null;
+            });
+
+            network.on("dragEnd", function (params) {
+                if (params.nodes.length > 0) {
+                    let currentPositions = network.getPositions();
+                    for (let id of params.nodes) {
+                        nodesDataset.update({id: id, x: currentPositions[id].x, y: currentPositions[id].y});
                     }
-                });
+                }
+            });
 
-                network.on("deselectNode", function (params) {
-                    document.getElementById('floatingActionBar').style.display = 'none';
-                    selectedNodeName = null;
-                });
-
-                network.on("dragEnd", function (params) {
-                    if (params.nodes.length > 0) {
-                        let currentPositions = network.getPositions();
-                        for (let id of params.nodes) {
-                            nodesDataset.update({id: id, x: currentPositions[id].x, y: currentPositions[id].y});
-                        }
-                    }
-                });
-
-                // Drag and Drop Logic
-                container.addEventListener("dragover", function(event) { event.preventDefault(); });
-                container.addEventListener("drop", function(event) {
-                    event.preventDefault();
-                    let type = event.dataTransfer.getData("type");
-                    if (!type) return;
-                    let rect = container.getBoundingClientRect();
-                    let canvasPos = network.DOMtoCanvas({x: event.clientX - rect.left, y: event.clientY - rect.top});
-                    addCustomNodeToCanvas(type, canvasPos.x, canvasPos.y);
-                });
+            container.addEventListener("dragover", function(event) { event.preventDefault(); });
+            container.addEventListener("drop", function(event) {
+                event.preventDefault();
+                let type = event.dataTransfer.getData("type");
+                if (!type) return;
+                let rect = container.getBoundingClientRect();
+                let canvasPos = network.DOMtoCanvas({x: event.clientX - rect.left, y: event.clientY - rect.top});
+                addCustomNodeToCanvas(type, canvasPos.x, canvasPos.y);
             });
         });
+    });
 
-        function dragStart(event, type) {
-            event.dataTransfer.setData("type", type);
-            document.getElementById('deviceDropdown').classList.remove('active');
+    function dragStart(event, type) {
+        event.dataTransfer.setData("type", type);
+        document.getElementById('deviceDropdown').classList.remove('active');
+    }
+
+    function addCustomNodeToCanvas(type, x, y) {
+        let name = prompt(`Enter hostname for new ${type}:`, `${type}_${nodesDataset.length + 1}`);
+        if (!name) return;
+        
+        let iconCode = '\uf233', color = '#94a3b8';
+        if (type === 'AP') { iconCode = '\uf1eb'; color = '#10b981'; }
+        else if (type === 'Client') { iconCode = '\uf109'; color = '#3b82f6'; }
+        else if (type === 'Router') { iconCode = '\uf0e8'; color = '#8b5cf6'; }
+        else if (type === 'Switch') { iconCode = '\uf6ff'; color = '#f59e0b'; }
+        else if (type === 'Monitor') { iconCode = '\uf21b'; color = '#ec4899'; }
+
+        nodesDataset.add({
+            id: nodesDataset.length + 1,
+            label: name, x: x, y: y, shape: "icon",
+            title: `<b>Device:</b> ${name}<br><b>Status:</b> Pending Commit`,
+            icon: { face: '"Font Awesome 6 Free"', code: iconCode, weight: 900, color: color, size: 60 }
+        });
+    }
+
+    function deleteSelected() {
+        let selected = network.getSelection();
+        nodesDataset.remove(selected.nodes);
+        edgesDataset.remove(selected.edges);
+        document.getElementById('floatingActionBar').style.display = 'none';
+    }
+
+    function saveTopology() {
+        fetch('/api/save_topology', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nodes: nodesDataset.get() })
+        }).then(res => res.json()).then(data => alert(data.message));
+    }
+
+    function uploadTopology(event) {
+        let formData = new FormData(); formData.append('file', event.target.files[0]);
+        fetch('/api/import_topology', { method: 'POST', body: formData }).then(res => res.json()).then(data => { 
+            alert(data.message || data.error); window.location.reload(); 
+        });
+    }
+
+    function openSelectedConfig() {
+        if (selectedNodeName) {
+            document.getElementById('modalTitle').innerHTML = `<i class="fa-solid fa-terminal mr-2"></i> Configure -> ${selectedNodeName}`;
+            document.getElementById('activeNodeName').value = selectedNodeName;
+            document.getElementById('configEditor').value = "Loading configuration...";
+            document.getElementById('configModal').style.display = 'flex';
+
+            fetch(`/api/config/${selectedNodeName}`)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('configEditor').value = data.content || `# Auto-generated config shell for ${selectedNodeName}\n\n`;
+                });
         }
+    }
 
-        function addCustomNodeToCanvas(type, x, y) {
-            let name = prompt(`Enter hostname for new ${type}:`, `${type}_${nodesDataset.length + 1}`);
-            if (!name) return;
-            
-            let iconCode = '\uf233', color = '#94a3b8';
-            if (type === 'AP') { iconCode = '\uf1eb'; color = '#10b981'; }
-            else if (type === 'Client') { iconCode = '\uf109'; color = '#3b82f6'; }
-            else if (type === 'Router') { iconCode = '\uf0e8'; color = '#8b5cf6'; }
-            else if (type === 'Switch') { iconCode = '\uf6ff'; color = '#f59e0b'; }
-            else if (type === 'Monitor') { iconCode = '\uf21b'; color = '#ec4899'; }
+    function closeModal() { document.getElementById('configModal').style.display = 'none'; }
 
-            nodesDataset.add({
-                id: nodesDataset.length + 1,
-                label: name, x: x, y: y, shape: "icon",
-                title: `<b>Device:</b> ${name}<br><b>Status:</b> Pending Commit`,
-                icon: { face: '"Font Awesome 6 Free"', code: iconCode, weight: 900, color: color, size: 60 }
-            });
-        }
-
-        function deleteSelected() {
-            let selected = network.getSelection();
-            nodesDataset.remove(selected.nodes);
-            edgesDataset.remove(selected.edges);
-            document.getElementById('floatingActionBar').style.display = 'none';
-        }
-
-        function saveTopology() {
-            fetch('/api/save_topology', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nodes: nodesDataset.get() })
-            }).then(res => res.json()).then(data => alert(data.message));
-        }
-
-        function uploadTopology(event) {
-            let formData = new FormData(); formData.append('file', event.target.files[0]);
-            fetch('/api/import_topology', { method: 'POST', body: formData }).then(res => res.json()).then(data => { 
-                alert(data.message || data.error); window.location.reload(); 
-            });
-        }
-
-        // Configuration Handlers
-        function openSelectedConfig() {
-            if (selectedNodeName) {
-                document.getElementById('modalTitle').innerHTML = `<i class="fa-solid fa-terminal mr-2"></i> Configure -> ${selectedNodeName}`;
-                document.getElementById('activeNodeName').value = selectedNodeName;
-                document.getElementById('configEditor').value = "Loading configuration...";
-                document.getElementById('configModal').style.display = 'flex';
-
-                fetch(`/api/config/${selectedNodeName}`)
-                    .then(res => res.json())
-                    .then(data => {
-                        document.getElementById('configEditor').value = data.content || `# Auto-generated config shell for ${selectedNodeName}\n\n`;
-                    });
-            }
-        }
-
-        function closeModal() { document.getElementById('configModal').style.display = 'none'; }
-
-        function saveDeviceConfig() {
-            let nodeName = document.getElementById('activeNodeName').value;
-            let content = document.getElementById('configEditor').value;
-            fetch(`/api/config/${nodeName}`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: content })
-            }).then(res => res.json()).then(data => { closeModal(); window.location.reload(); });
-        }
-    </script>
-</body>
-</html>
+    function saveDeviceConfig() {
+        let nodeName = document.getElementById('activeNodeName').value;
+        let content = document.getElementById('configEditor').value;
+        fetch(`/api/config/${nodeName}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: content })
+        }).then(res => res.json()).then(data => { closeModal(); window.location.reload(); });
+    }
+</script>
+{% endblock %}
