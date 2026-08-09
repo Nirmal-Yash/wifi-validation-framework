@@ -1,68 +1,78 @@
-name: NetForge Tier 1 Validation Pipeline
+name: NetForge CI/CD Automated QA Pipeline
 
 on:
   push:
-    branches: [ "main", "refactor/netns-hwsim-architecture" ]
+    branches: [ "main", "master", "refactor/*" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
 
 jobs:
-  tier1-virtual-qa:
+  virtual-kernel-qa:
+    name: Tier 1 Virtual Software QA (mac80211_hwsim)
     runs-on: ubuntu-22.04
-    
+
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v3
+      - name: Checkout Source Code
+        uses: actions/checkout@v3
 
-    - name: Install System Networking & PCAP Dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y isc-dhcp-client sqlite3 tcpdump tshark macchanger bridge-utils vlan
+      - name: Install System Network Tooling & Daemons
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            isc-dhcp-client sqlite3 tcpdump tshark macchanger \
+            bridge-utils vlan hostapd wpasupplicant dnsmasq \
+            iw wireless-tools net-tools
 
-    - name: Inject Virtual Wireless Kernel Modules
-      run: |
-        # Fetch the exact linux-modules-extra for the active Azure cloud kernel
-        sudo apt-get install -y linux-modules-extra-$(uname -r)
-        sudo depmod -a
-        sudo modprobe mac80211_hwsim radios=3
-        
-        # Verify the virtual radios initialized successfully
-        iwconfig
+      - name: Inject Virtual Wireless Kernel Modules
+        run: |
+          # Fetch exact kernel extras for the runner's Azure kernel
+          sudo apt-get install -y linux-modules-extra-$(uname -r) || true
+          sudo depmod -a
+          sudo modprobe mac80211_hwsim radios=3
+          
+          # Verify physical wireless interfaces initialized
+          iwconfig
 
-    - name: Provision Linux Network Namespaces
-      run: |
-        sudo chmod +x scripts/setup_topology.sh
-        sudo ./scripts/setup_topology.sh
+      - name: Provision Network Namespaces & Virtual Airwaves
+        run: |
+          chmod +x scripts/setup_topology.sh scripts/teardown_topology.sh
+          sudo ./scripts/setup_topology.sh
 
-    - name: Set up Python 3.10 Execution Environment
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-        cache: 'pip'
+      - name: Set Up Python 3.10 Runtime
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
 
-    - name: Install Framework Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+      - name: Install Framework Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-    - name: Initialize SQLite Tracking Database
-      run: |
-        sqlite3 db/results.db < db/schema.sql
+      - name: Initialize SQLite Tracking Database
+        run: |
+          mkdir -p db artifacts/pcaps
+          sqlite3 db/results.db < db/schema.sql
 
-    - name: Execute Regression Engine (Baseline v1.0.0)
-      run: |
-        # Run pytest and output JUnit XML for GitHub UI rendering
-        sudo -E env "PATH=$PATH" python -m pytest tests/ -v --fw-version=1.0.0 --junitxml=artifacts/test-results.xml
+      - name: Execute Automated Regression Test Suite (v1.0.0)
+        run: |
+          # Execute pytest under root to allow netns execution
+          sudo -E env "PATH=$PATH" python -m pytest tests/ -v --fw-version=1.0.0 --junitxml=artifacts/junit-results.xml
 
-    - name: Archive PCAP Artifacts on Failure
-      if: failure()
-      uses: actions/upload-artifact@v3
-      with:
-        name: network-pcap-evidence
-        path: artifacts/pcaps/*.pcap
+      - name: Publish Test Summary
+        uses: mikepenz/action-junit-report@v3
+        if: always()
+        with:
+          report_paths: 'artifacts/junit-results.xml'
 
-    - name: Teardown Virtual Environment
-      if: always()
-      run: |
-        sudo chmod +x scripts/teardown_topology.sh
-        sudo ./scripts/teardown_topology.sh
+      - name: Archive Network PCAP Evidence on Failure
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: failure-pcap-captures
+          path: artifacts/pcaps/*.pcap
+
+      - name: Teardown Virtual Environment
+        if: always()
+        run: |
+          sudo ./scripts/teardown_topology.sh || true
