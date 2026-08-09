@@ -36,5 +36,13 @@ nodes:
     x: 120
     y: 45
 target_environment:
-  environment_type: localized_netns
-  log_directory: artifacts/pcaps
+  environment_type: "tier2_physical" # Change from localized_netns to trigger SSH mode
+  log_directory: "artifacts/pcaps"
+
+physical_hardware:
+  cisco_core_switch:
+    device_type: "cisco_ios"
+    ip: "10.0.0.10"
+    username: "admin"
+    password: "Password123!"
+    secret: "enable_secret"

@@ -5,3 +5,6 @@ scapy
 Flask
 pandas
 matplotlib
+gns3fy
+requests
+netmiko

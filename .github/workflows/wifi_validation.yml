@@ -1,4 +1,4 @@
-name: Wi-Fi Firmware Validation Pipeline
+name: NetForge Tier 1 Validation Pipeline
 
 on:
   push:
@@ -7,35 +7,40 @@ on:
     branches: [ "main" ]
 
 jobs:
-  test:
-    runs-on: ubuntu-20.04  # CRITICAL FIX: Use 20.04 to access the stable 5.x kernel Wi-Fi modules
+  tier1-virtual-qa:
+    runs-on: ubuntu-22.04
     
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout Repository
+      uses: actions/checkout@v3
 
-    - name: Install System Networking Dependencies
+    - name: Install System Networking & PCAP Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y isc-dhcp-client sqlite3 tcpdump tshark macchanger
+        sudo apt-get install -y isc-dhcp-client sqlite3 tcpdump tshark macchanger bridge-utils vlan
 
-    - name: Install Kernel Extras for Wi-Fi Simulation
+    - name: Inject Virtual Wireless Kernel Modules
       run: |
-        sudo apt-get install -y linux-modules-extra-$(uname -r) linux-modules-extra-azure
+        # Fetch the exact linux-modules-extra for the active Azure cloud kernel
+        sudo apt-get install -y linux-modules-extra-$(uname -r)
         sudo depmod -a
-
-    - name: Initialize Virtual Wi-Fi Hardware (mac80211_hwsim)
-      run: |
         sudo modprobe mac80211_hwsim radios=3
-        sleep 3
+        
+        # Verify the virtual radios initialized successfully
+        iwconfig
+
+    - name: Provision Linux Network Namespaces
+      run: |
         sudo chmod +x scripts/setup_topology.sh
         sudo ./scripts/setup_topology.sh
 
-    - name: Set up Python
+    - name: Set up Python 3.10 Execution Environment
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
+        cache: 'pip'
 
-    - name: Install Python Framework Dependencies
+    - name: Install Framework Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
@@ -44,9 +49,17 @@ jobs:
       run: |
         sqlite3 db/results.db < db/schema.sql
 
-    - name: Execute Regression Test Suite (v1.0.0)
+    - name: Execute Regression Engine (Baseline v1.0.0)
       run: |
-        sudo -E env "PATH=$PATH" python -m pytest tests/ -v --fw-version=1.0.0
+        # Run pytest and output JUnit XML for GitHub UI rendering
+        sudo -E env "PATH=$PATH" python -m pytest tests/ -v --fw-version=1.0.0 --junitxml=artifacts/test-results.xml
+
+    - name: Archive PCAP Artifacts on Failure
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: network-pcap-evidence
+        path: artifacts/pcaps/*.pcap
 
     - name: Teardown Virtual Environment
       if: always()

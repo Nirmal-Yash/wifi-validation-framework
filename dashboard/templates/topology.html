@@ -4,7 +4,6 @@
 {% block extra_head %}
 <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 <style>
-    /* Void-Amber specific overrides for Topology */
     .main-content { padding: 24px; overflow: hidden; }
     
     .toolbar { background: var(--surface); border: 1px solid var(--border); padding: 12px 16px; border-radius: 0px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
@@ -21,7 +20,6 @@
     
     #floatingActionBar { position: absolute; bottom: 40px; right: 40px; display: none; gap: 10px; z-index: 100; background: var(--surface); padding: 12px; border-radius: 0px; border: 1px solid var(--primary-container); box-shadow: 0 4px 12px rgba(255,140,0,0.2); }
     
-    /* Strict Void-Amber Modal */
     .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 100; justify-content: center; align-items: center; }
     .modal-content { background: var(--surface); width: 600px; border-radius: 0px; border: 1px solid var(--primary-container); display: flex; flex-direction: column; }
     .modal-header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; font-weight: 700; font-family: 'Space Mono', monospace; color: var(--primary); }
@@ -29,6 +27,9 @@
     textarea { width: 100%; height: 350px; background: var(--background); color: var(--on-surface); border: 1px solid var(--border); border-radius: 0px; padding: 16px; font-family: 'JetBrains Mono', monospace; font-size: 13px; resize: none; box-sizing: border-box; transition: border-color 0.2s; }
     textarea:focus { outline: none; border-color: var(--primary); }
     .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); text-align: right; }
+    
+    .input-theme { background: var(--background); color: var(--on-surface); border: 1px solid var(--border); padding: 7px 12px; font-family: 'JetBrains Mono', monospace; font-size: 12px; outline: none; border-radius: 0px; }
+    .input-theme:focus { border-color: var(--primary); }
 </style>
 {% endblock %}
 
@@ -38,29 +39,33 @@
         <div class="dropdown" id="deviceDropdown">
             <button class="btn primary" onclick="toggleDropdown()"><i class="fa-solid fa-plus mr-1"></i> Deploy Device <i class="fa-solid fa-chevron-down ml-1"></i></button>
             <div class="dropdown-menu">
-                <div class="dropdown-header">Cisco Layer 3 / Routing</div>
-                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Router')"><i class="fa-solid fa-network-wired" style="color: #8b5cf6;"></i> Cisco ISR / L3 Router</div>
-                <div class="dropdown-header">Cisco Layer 2 / Switching</div>
-                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Switch')"><i class="fa-solid fa-project-diagram" style="color: #f59e0b;"></i> Cisco Catalyst Switch</div>
+                <div class="dropdown-header">Routing & Switching</div>
+                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Router')"><i class="fa-solid fa-network-wired" style="color: #8b5cf6;"></i> Cisco L3 Router</div>
+                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Switch')"><i class="fa-solid fa-project-diagram" style="color: #f59e0b;"></i> Catalyst Switch</div>
                 <div class="dropdown-header">Wireless & Endpoints</div>
-                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'AP')"><i class="fa-solid fa-wifi" style="color: #10b981;"></i> Wireless Access Point</div>
-                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Client')"><i class="fa-solid fa-laptop" style="color: #3b82f6;"></i> Generic Client PC</div>
-                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Monitor')"><i class="fa-solid fa-user-secret" style="color: #ec4899;"></i> Packet Sniffer / Monitor</div>
+                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'AP')"><i class="fa-solid fa-wifi" style="color: #10b981;"></i> Access Point</div>
+                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Client')"><i class="fa-solid fa-laptop" style="color: #3b82f6;"></i> Endpoint Client</div>
+                <div class="dropdown-header">Analysis</div>
+                <div class="dropdown-item" draggable="true" ondragstart="dragStart(event, 'Monitor')"><i class="fa-solid fa-user-secret" style="color: #ec4899;"></i> Packet Sniffer</div>
             </div>
         </div>
-        <span style="font-family: 'Courier Prime', monospace; font-size: 11px; color: var(--on-surface-muted);"><i class="fa-solid fa-info-circle mr-1"></i> DRAG AND DROP DEVICES ONTO THE CANVAS</span>
     </div>
-    <div>
+    
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <input type="text" id="gns3ServerUrl" value="http://localhost:3080" class="input-theme" title="Target GNS3 Server IP/Port">
+        <input type="text" id="gns3ProjectId" placeholder="Enter Project UUID" class="input-theme">
+        <button class="btn" onclick="syncLiveGNS3()"><i class="fa-solid fa-satellite-dish mr-1"></i> Sync GNS3</button>
+        <div style="border-left: 1px solid var(--border); height: 24px; margin: 0 8px;"></div>
         <input type="file" id="importFile" accept=".json,.gns3" class="hidden" onchange="uploadTopology(event)" style="display:none;">
         <button class="btn btn-outline" onclick="document.getElementById('importFile').click()"><i class="fa-solid fa-file-import mr-1"></i> Import</button>
-        <button class="btn" onclick="saveTopology()" style="margin-left: 8px;"><i class="fa-solid fa-floppy-disk mr-1"></i> Commit Topology</button>
+        <button class="btn" onclick="saveTopology()"><i class="fa-solid fa-floppy-disk mr-1"></i> Commit Topology</button>
     </div>
 </div>
 
 <div id="mynetwork"></div>
 
 <div id="floatingActionBar">
-    <button class="btn" onclick="openSelectedConfig()"><i class="fa-solid fa-terminal mr-2"></i>Configure Node</button>
+    <button class="btn" onclick="openSelectedConfig()"><i class="fa-solid fa-code mr-2"></i>JSON Config</button>
     <button class="btn btn-danger" onclick="deleteSelected()"><i class="fa-solid fa-trash mr-2"></i>Delete</button>
 </div>
 
@@ -92,56 +97,72 @@
 
     document.addEventListener("DOMContentLoaded", () => {
         fetch('/api/topology_data').then(res => res.json()).then(data => {
-            
             nodesDataset.add(data.nodes);
             edgesDataset.add(data.edges);
-
-            let options = { 
-                nodes: { font: { color: '#e2e2e2', face: 'JetBrains Mono', size: 14 } }, 
-                edges: { color: { color: '#353535', hover: '#ff8c00', highlight: '#ff8c00' }, width: 2, smooth: { type: 'continuous' } },
-                interaction: { hover: true, tooltipDelay: 100 },
-                physics: { enabled: false } 
-            };
-
-            let container = document.getElementById('mynetwork');
-            network = new vis.Network(container, { nodes: nodesDataset, edges: edgesDataset }, options);
-
-            network.on("hoverNode", function (params) { container.style.cursor = 'pointer'; });
-            network.on("blurNode", function (params) { container.style.cursor = 'default'; });
-
-            network.on("selectNode", function (params) {
-                if (params.nodes.length > 0) {
-                    let nodeData = nodesDataset.get(params.nodes[0]);
-                    selectedNodeName = nodeData.label;
-                    document.getElementById('floatingActionBar').style.display = 'flex';
-                }
-            });
-
-            network.on("deselectNode", function (params) {
-                document.getElementById('floatingActionBar').style.display = 'none';
-                selectedNodeName = null;
-            });
-
-            network.on("dragEnd", function (params) {
-                if (params.nodes.length > 0) {
-                    let currentPositions = network.getPositions();
-                    for (let id of params.nodes) {
-                        nodesDataset.update({id: id, x: currentPositions[id].x, y: currentPositions[id].y});
-                    }
-                }
-            });
-
-            container.addEventListener("dragover", function(event) { event.preventDefault(); });
-            container.addEventListener("drop", function(event) {
-                event.preventDefault();
-                let type = event.dataTransfer.getData("type");
-                if (!type) return;
-                let rect = container.getBoundingClientRect();
-                let canvasPos = network.DOMtoCanvas({x: event.clientX - rect.left, y: event.clientY - rect.top});
-                addCustomNodeToCanvas(type, canvasPos.x, canvasPos.y);
-            });
+            initNetwork();
         });
     });
+
+    function initNetwork() {
+        let options = { 
+            nodes: { font: { color: '#e2e2e2', face: 'JetBrains Mono', size: 14 } }, 
+            edges: { color: { color: '#353535', hover: '#ff8c00', highlight: '#ff8c00' }, width: 2, smooth: { type: 'continuous' } },
+            interaction: { hover: true, tooltipDelay: 100 },
+            physics: { enabled: false } 
+        };
+        let container = document.getElementById('mynetwork');
+        network = new vis.Network(container, { nodes: nodesDataset, edges: edgesDataset }, options);
+
+        network.on("hoverNode", function () { container.style.cursor = 'pointer'; });
+        network.on("blurNode", function () { container.style.cursor = 'default'; });
+        network.on("selectNode", function (params) {
+            if (params.nodes.length > 0) {
+                selectedNodeName = nodesDataset.get(params.nodes[0]).label;
+                document.getElementById('floatingActionBar').style.display = 'flex';
+            }
+        });
+        network.on("deselectNode", function () {
+            document.getElementById('floatingActionBar').style.display = 'none';
+            selectedNodeName = null;
+        });
+        network.on("dragEnd", function (params) {
+            if (params.nodes.length > 0) {
+                let currentPositions = network.getPositions();
+                for (let id of params.nodes) {
+                    nodesDataset.update({id: id, x: currentPositions[id].x, y: currentPositions[id].y});
+                }
+            }
+        });
+        container.addEventListener("dragover", function(e) { e.preventDefault(); });
+        container.addEventListener("drop", function(e) {
+            e.preventDefault();
+            let type = e.dataTransfer.getData("type");
+            if (!type) return;
+            let rect = container.getBoundingClientRect();
+            let canvasPos = network.DOMtoCanvas({x: e.clientX - rect.left, y: e.clientY - rect.top});
+            addCustomNodeToCanvas(type, canvasPos.x, canvasPos.y);
+        });
+    }
+
+    function syncLiveGNS3() {
+        const serverUrl = document.getElementById('gns3ServerUrl').value.trim();
+        const projectId = document.getElementById('gns3ProjectId').value.trim();
+        
+        if (!projectId) { alert("ERROR: Project UUID is required."); return; }
+        
+        fetch('/api/topology/gns3', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ server_url: serverUrl, project_id: projectId })
+        })
+        .then(res => res.json()).then(data => {
+            if (data.error) { alert("GNS3 SYNC FAILURE:\n" + data.error); return; }
+            nodesDataset.clear(); edgesDataset.clear();
+            nodesDataset.add(data.nodes); edgesDataset.add(data.edges);
+            network.fit();
+        }).catch(err => {
+            alert("FATAL ERROR: Could not reach the backend API.");
+        });
+    }
 
     function dragStart(event, type) {
         event.dataTransfer.setData("type", type);
@@ -160,17 +181,15 @@
         else if (type === 'Monitor') { iconCode = '\uf21b'; color = '#ec4899'; }
 
         nodesDataset.add({
-            id: nodesDataset.length + 1,
-            label: name, x: x, y: y, shape: "icon",
-            title: `<b>Device:</b> ${name}<br><b>Status:</b> Pending Commit`,
+            id: nodesDataset.length + 1, label: name, x: x, y: y, shape: "icon",
+            title: `Device: ${name}\nStatus: Pending Commit`,
             icon: { face: '"Font Awesome 6 Free"', code: iconCode, weight: 900, color: color, size: 60 }
         });
     }
 
     function deleteSelected() {
         let selected = network.getSelection();
-        nodesDataset.remove(selected.nodes);
-        edgesDataset.remove(selected.edges);
+        nodesDataset.remove(selected.nodes); edgesDataset.remove(selected.edges);
         document.getElementById('floatingActionBar').style.display = 'none';
     }
 
@@ -190,16 +209,14 @@
 
     function openSelectedConfig() {
         if (selectedNodeName) {
-            document.getElementById('modalTitle').innerHTML = `<i class="fa-solid fa-terminal mr-2"></i> Configure -> ${selectedNodeName}`;
+            document.getElementById('modalTitle').innerHTML = `<i class="fa-solid fa-code mr-2"></i> ${selectedNodeName}.json Editor`;
             document.getElementById('activeNodeName').value = selectedNodeName;
-            document.getElementById('configEditor').value = "Loading configuration...";
+            document.getElementById('configEditor').value = "Loading JSON configuration...";
             document.getElementById('configModal').style.display = 'flex';
 
             fetch(`/api/config/${selectedNodeName}`)
                 .then(res => res.json())
-                .then(data => {
-                    document.getElementById('configEditor').value = data.content || `# Auto-generated config shell for ${selectedNodeName}\n\n`;
-                });
+                .then(data => { document.getElementById('configEditor').value = data.content; });
         }
     }
 
@@ -211,7 +228,10 @@
         fetch(`/api/config/${nodeName}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: content })
-        }).then(res => res.json()).then(data => { closeModal(); window.location.reload(); });
+        }).then(res => res.json()).then(data => { 
+            if (data.status === "error") { alert("JSON ERROR: " + data.message); } 
+            else { closeModal(); window.location.reload(); }
+        });
     }
 </script>
 {% endblock %}
