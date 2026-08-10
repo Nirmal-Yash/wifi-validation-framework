@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [ "main", "master" ]
 
+# CRITICAL FIX 3: Grant permissions for the JUnit Report action
+permissions:
+  contents: read
+  checks: write
+  statuses: write
+
 jobs:
   virtual-kernel-qa:
     name: Tier 1 Virtual Software QA (mac80211_hwsim)
@@ -18,19 +24,26 @@ jobs:
       - name: Install System Network Tooling & Daemons
         run: |
           sudo apt-get update
+          
+          # CRITICAL FIX 1: Use 'dnsmasq-base' instead of 'dnsmasq'.
+          # This installs the binary for our namespaces but prevents Ubuntu from 
+          # auto-starting a host daemon that crashes against Azure's Port 53.
           sudo apt-get install -y --no-install-recommends \
             isc-dhcp-client sqlite3 tcpdump tshark macchanger \
-            bridge-utils vlan hostapd wpasupplicant dnsmasq \
+            bridge-utils vlan hostapd wpasupplicant dnsmasq-base \
             iw wireless-tools net-tools
 
       - name: Inject Virtual Wireless Kernel Modules
         run: |
-          # Fetch exact kernel extras for the runner's Azure kernel
+          # CRITICAL FIX 2: Install exact Azure kernel headers for the runner
           sudo apt-get install -y linux-modules-extra-$(uname -r) || true
           sudo depmod -a
-          sudo modprobe mac80211_hwsim radios=3
           
-          # Verify physical wireless interfaces initialized
+          # Guard statement: explicitly fail gracefully if the module is restricted
+          if ! sudo modprobe mac80211_hwsim radios=3; then
+            echo "::error::mac80211_hwsim unavailable on this GitHub runner kernel. A self-hosted runner is required for this specific Azure node."
+            exit 1
+          fi
           iwconfig
 
       - name: Provision Network Namespaces & Virtual Airwaves
