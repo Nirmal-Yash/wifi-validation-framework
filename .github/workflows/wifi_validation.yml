@@ -37,7 +37,7 @@ jobs:
   virtual-kernel-qa:
     name: Tier 1 Virtual QA (mac80211_hwsim)
     needs: static-analysis
-    runs-on: self-hosted  # CRITICAL FIX: Routes execution to your physical kernel
+    runs-on: self-hosted
 
     steps:
       - name: Checkout Source Code
@@ -53,6 +53,15 @@ jobs:
           chmod +x scripts/setup_topology.sh scripts/teardown_topology.sh
           sudo ./scripts/setup_topology.sh
 
+      - name: Ensure Virtual Environment & Dependencies
+        run: |
+          # Create wifi-venv if missing, then install/update requirements into it
+          if [ ! -d "wifi-venv" ]; then
+            python3 -m venv wifi-venv
+          fi
+          ./wifi-venv/bin/python3 -m pip install --upgrade pip
+          ./wifi-venv/bin/python3 -m pip install -r requirements.txt
+
       - name: Initialize SQLite Tracking Database
         run: |
           mkdir -p db artifacts/pcaps
@@ -60,7 +69,8 @@ jobs:
 
       - name: Execute Automated Regression Test Suite (v1.0.0)
         run: |
-          sudo -E env "PATH=$PATH" python3 -m pytest tests/ -v --fw-version=1.0.0 --junitxml=artifacts/junit-results.xml
+          # Explicitly invoke the virtual environment's python binary via sudo
+          sudo ./wifi-venv/bin/python3 -m pytest tests/ -v --fw-version=1.0.0 --junitxml=artifacts/junit-results.xml
 
       - name: Publish Test Summary
         uses: mikepenz/action-junit-report@v4
