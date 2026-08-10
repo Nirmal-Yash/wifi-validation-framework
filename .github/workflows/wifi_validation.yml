@@ -6,61 +6,52 @@ on:
   pull_request:
     branches: [ "main", "master" ]
 
-# CRITICAL FIX 3: Grant permissions for the JUnit Report action
 permissions:
   contents: read
   checks: write
   statuses: write
 
 jobs:
-  virtual-kernel-qa:
-    name: Tier 1 Virtual Software QA (mac80211_hwsim)
+  static-analysis:
+    name: Code Quality & Syntax Validation
     runs-on: ubuntu-22.04
-
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Install System Network Tooling & Daemons
-        run: |
-          sudo apt-get update
-          
-          # CRITICAL FIX 1: Use 'dnsmasq-base' instead of 'dnsmasq'.
-          # This installs the binary for our namespaces but prevents Ubuntu from 
-          # auto-starting a host daemon that crashes against Azure's Port 53.
-          sudo apt-get install -y --no-install-recommends \
-            isc-dhcp-client sqlite3 tcpdump tshark macchanger \
-            bridge-utils vlan hostapd wpasupplicant dnsmasq-base \
-            iw wireless-tools net-tools
-
-      - name: Inject Virtual Wireless Kernel Modules
-        run: |
-          # CRITICAL FIX 2: Install exact Azure kernel headers for the runner
-          sudo apt-get install -y linux-modules-extra-$(uname -r) || true
-          sudo depmod -a
-          
-          # Guard statement: explicitly fail gracefully if the module is restricted
-          if ! sudo modprobe mac80211_hwsim radios=3; then
-            echo "::error::mac80211_hwsim unavailable on this GitHub runner kernel. A self-hosted runner is required for this specific Azure node."
-            exit 1
-          fi
-          iwconfig
-
-      - name: Provision Network Namespaces & Virtual Airwaves
-        run: |
-          chmod +x scripts/setup_topology.sh scripts/teardown_topology.sh
-          sudo ./scripts/setup_topology.sh
-
-      - name: Set Up Python 3.10 Runtime
+      - name: Set Up Python 3.10
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
 
-      - name: Install Framework Python Dependencies
+      - name: Install Framework Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Validate Python Syntax & Scapy Imports
+        run: |
+          python -m compileall tests/ engine/ dashboard/
+
+  virtual-kernel-qa:
+    name: Tier 1 Virtual QA (mac80211_hwsim)
+    needs: static-analysis
+    runs-on: self-hosted  # CRITICAL FIX: Routes execution to your physical kernel
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Clean Previous Lab State
+        run: |
+          sudo ./scripts/teardown_topology.sh || true
+          rm -rf db/results.db artifacts/pcaps/*
+
+      - name: Provision Network Namespaces & Virtual Airwaves
+        run: |
+          chmod +x scripts/setup_topology.sh scripts/teardown_topology.sh
+          sudo ./scripts/setup_topology.sh
 
       - name: Initialize SQLite Tracking Database
         run: |
@@ -69,8 +60,7 @@ jobs:
 
       - name: Execute Automated Regression Test Suite (v1.0.0)
         run: |
-          # Execute pytest under root to allow netns execution
-          sudo -E env "PATH=$PATH" python -m pytest tests/ -v --fw-version=1.0.0 --junitxml=artifacts/junit-results.xml
+          sudo -E env "PATH=$PATH" python3 -m pytest tests/ -v --fw-version=1.0.0 --junitxml=artifacts/junit-results.xml
 
       - name: Publish Test Summary
         uses: mikepenz/action-junit-report@v4
