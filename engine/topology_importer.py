@@ -1,73 +1,83 @@
 import json
-import yaml
 import os
-import re
-import math
+
 
 class TopologyImporter:
-    def __init__(self, target_yaml='config/devices.yaml'):
+    """Normalize topology input without mutating the active topology."""
+
+    TYPE_MAP = {
+        "router": "router", "switch": "switch", "ethernet_switch": "switch",
+        "access point": "access_point", "access_point": "access_point", "wifi": "access_point",
+        "wireless": "access_point", "vpcs": "client", "pc": "client", "client": "client",
+        "cloud": "generic", "docker": "generic", "qemu": "generic",
+    }
+
+    def __init__(self, target_yaml="config/devices.yaml"):
         self.target_yaml = target_yaml
-        self.config_dir = os.path.dirname(target_yaml)
+        self.config_dir = os.path.dirname(target_yaml) or "."
+
+    def _node_type(self, node):
+        raw = str(node.get("node_type") or node.get("type") or "").lower().strip()
+        name = str(node.get("name") or node.get("label") or "").lower()
+        for key, value in self.TYPE_MAP.items():
+            if key in raw or key in name:
+                return value
+        return "generic"
+
+    def _normalize(self, data, source="import"):
+        topology = data.get("topology", data) if isinstance(data, dict) else {}
+        raw_nodes = topology.get("nodes", []) or []
+        raw_links = topology.get("links", []) or topology.get("connections", []) or []
+        nodes, ids = [], set()
+        for index, node in enumerate(raw_nodes):
+            node_id = str(node.get("node_id") or node.get("id") or node.get("node_key") or f"node_{index + 1}")
+            if node_id in ids:
+                node_id = f"{node_id}_{index + 1}"
+            ids.add(node_id)
+            name = str(node.get("name") or node.get("label") or node_id).strip()
+            nodes.append({
+                "id": node_id, "node_key": node_id, "label": name,
+                "type": self._node_type(node), "x": float(node.get("x") or 0), "y": float(node.get("y") or 0),
+                "metadata": {"source": source, "gns3_node_id": node.get("node_id") or node.get("id"), "node_type": node.get("node_type") or node.get("type"), "compute_id": node.get("compute_id")},
+            })
+        edges = []
+        for index, link in enumerate(raw_links):
+            endpoints = link.get("nodes") or link.get("endpoints") or []
+            if len(endpoints) >= 2:
+                source_id = endpoints[0].get("node_id") if isinstance(endpoints[0], dict) else endpoints[0]
+                target_id = endpoints[1].get("node_id") if isinstance(endpoints[1], dict) else endpoints[1]
+            else:
+                source_id, target_id = link.get("from") or link.get("source"), link.get("to") or link.get("target")
+            source_id, target_id = str(source_id), str(target_id)
+            if source_id not in ids or target_id not in ids or source_id == target_id:
+                continue
+            edges.append({
+                "id": str(link.get("link_id") or link.get("id") or f"link_{index + 1}"),
+                "from": source_id, "to": target_id,
+                "source_interface": link.get("source_interface"), "target_interface": link.get("target_interface"),
+                "metadata": {"source": source, "suspended": bool(link.get("suspend", False))},
+            })
+        return {"source": source, "nodes": nodes, "edges": edges}
+
+    def import_gns3_data(self, data):
+        return self._normalize(data, "gns3")
+
+    def import_json_data(self, data):
+        return self._normalize(data, "import")
 
     def import_gns3(self, filepath):
-        with open(filepath, 'r') as f:
-            data = json.load(f)
-        
-        nodes_config = {"target_environment": {"environment_type": "localized_netns", "log_directory": "artifacts/pcaps"}, "nodes": {}}
-        
-        topology = data.get('topology', {})
-        gns3_nodes = topology.get('nodes', [])
-        if not gns3_nodes:
-            gns3_nodes = data.get('nodes', [])
-            
-        # Parse SVG text overlays (Configurations)
-        drawings = topology.get('drawings', [])
-        parsed_drawings = []
-        for d in drawings:
-            dx, dy = d.get('x', 0), d.get('y', 0)
-            svg = d.get('svg', '')
-            match = re.search(r'<text[^>]*>(.*?)</text>', svg, re.DOTALL)
-            if match:
-                text_content = match.group(1).replace('&#10;', '\n')
-                parsed_drawings.append({'x': dx, 'y': dy, 'text': text_content})
-            
-        for i, node in enumerate(gns3_nodes):
-            name = node.get('name', f'node_{i}')
-            nx = node.get('x', 0)
-            ny = node.get('y', 0)
-            
-            # Map configuration to the geographically closest node
-            closest_config = f"# Auto-generated NetForge config shell for {name}\n"
-            min_dist = float('inf')
-            
-            for d in parsed_drawings:
-                dist = math.hypot(nx - d['x'], ny - d['y'])
-                if dist < 450: # Spatial threshold to prevent grabbing distant unrelated text
-                    if dist < min_dist:
-                        min_dist = dist
-                        closest_config = d['text']
-            
-            nodes_config['nodes'][name] = {
-                "namespace": f"{name.lower()}_ns",
-                "interface": f"wlan{i}",
-                "config_path": f"config/{name.lower()}.conf",
-                "x": nx,
-                "y": ny
-            }
-            
-            # Write mapped config to disk immediately
-            conf_file = os.path.join(self.config_dir, f"{name.lower()}.conf")
-            with open(conf_file, 'w') as cf:
-                cf.write(closest_config)
-            
-        with open(self.target_yaml, 'w') as f:
-            yaml.dump(nodes_config, f)
-            
-        return nodes_config
+        with open(filepath, "r", encoding="utf-8") as handle:
+            return self.import_gns3_data(json.load(handle))
 
     def import_json(self, filepath):
-        with open(filepath, 'r') as f:
-            data = json.load(f)
-        with open(self.target_yaml, 'w') as f:
-            yaml.dump(data, f)
-        return data
+        with open(filepath, "r", encoding="utf-8") as handle:
+            return self.import_json_data(json.load(handle))
+
+    def write_legacy_yaml(self, normalized):
+        import yaml
+        os.makedirs(self.config_dir, exist_ok=True)
+        nodes = {n["node_key"]: {"namespace": f"{n['label'].lower().replace(' ', '_')}_ns", "interface": "wlan0", "x": n["x"], "y": n["y"]} for n in normalized["nodes"]}
+        payload = {"target_environment": {"environment_type": "localized_netns"}, "nodes": nodes}
+        with open(self.target_yaml, "w", encoding="utf-8") as handle:
+            yaml.safe_dump(payload, handle, sort_keys=False)
+        return payload
