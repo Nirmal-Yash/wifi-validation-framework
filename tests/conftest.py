@@ -36,9 +36,14 @@ def test_params():
 
 @pytest.fixture(scope="session")
 def system_config():
-    path = ROOT / "config/devices.yaml"
-    with path.open(encoding="utf-8") as fh:
+    with (ROOT / "config/devices.yaml").open(encoding="utf-8") as fh:
         raw = yaml.safe_load(fh) or {}
+    nodes = raw.setdefault("nodes", {})
+    # Preserve the historical test contract while allowing the topology file to
+    # use human-readable PC1/PC2/etc. names.
+    raw["nodes"].setdefault("ap", {"namespace": "ap_ns", "interface": "wlan0", "config_path": "config/ap.conf"})
+    raw["nodes"].setdefault("client", {"namespace": "client_ns", "interface": "wlan1", "config_path": "config/client.conf"})
+    raw["nodes"].setdefault("monitor", {"namespace": "monitor_ns", "interface": "wlan2"})
     return raw
 
 
@@ -63,12 +68,11 @@ def require_live_environment():
 @pytest.fixture(scope="function", autouse=True)
 def lifecycle_management(system_config):
     require_live_environment()
-    nodes = system_config.get("nodes", {})
-    ap = nodes.get("AP") or nodes.get("ap")
-    client = nodes.get("Client") or nodes.get("client")
-    if not ap or not client:
-        pytest.skip("Live test topology requires AP and Client nodes")
+    nodes = system_config["nodes"]
+    ap = nodes["ap"]
+    client = nodes["client"]
     subprocess.run("sudo killall hostapd dnsmasq wpa_supplicant iperf3 dhclient tcpdump 2>/dev/null", shell=True)
+    dns_proc = hostapd_proc = None
     try:
         subprocess.run(f"sudo ip netns exec {ap['namespace']} ip addr flush dev {ap['interface']}", shell=True, check=False)
         subprocess.run(f"sudo ip netns exec {ap['namespace']} ip addr add 192.168.50.1/24 dev {ap['interface']}", shell=True, check=False)
@@ -80,7 +84,7 @@ def lifecycle_management(system_config):
         subprocess.run(["sudo", "ip", "netns", "exec", client["namespace"], "dhclient", client["interface"]], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         yield
     finally:
-        for proc in locals().get("hostapd_proc"), locals().get("dns_proc"):
+        for proc in (hostapd_proc, dns_proc):
             if proc:
                 proc.terminate()
         subprocess.run("sudo killall hostapd dnsmasq wpa_supplicant dhclient iperf3 tcpdump 2>/dev/null", shell=True)
@@ -89,9 +93,7 @@ def lifecycle_management(system_config):
 @pytest.fixture(scope="function")
 def async_sniffer(request, system_config):
     require_live_environment()
-    monitor = (system_config.get("nodes", {}).get("Monitor") or system_config.get("nodes", {}).get("monitor"))
-    if not monitor:
-        pytest.skip("Live test topology requires a Monitor node")
+    monitor = system_config["nodes"]["monitor"]
     pcap_dir = ROOT / system_config.get("target_environment", {}).get("log_directory", "artifacts/pcaps")
     pcap_dir.mkdir(parents=True, exist_ok=True)
     pcap_path = pcap_dir / f"{request.node.name}.pcap"
@@ -117,11 +119,9 @@ def pytest_runtest_makereport(item, call):
     fw = item.config.getoption("--fw-version")
     status = report.outcome.upper()
     error = str(report.longrepr) if report.failed else ""
-    pcap_path = f"artifacts/pcaps/{item.name}.pcap"
     try:
         with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("INSERT INTO test_logs(firmware_version,test_name,status,execution_time,error_message,pcap_path) VALUES(?,?,?,?,?,?)", (fw, item.name, status, report.duration, error, pcap_path))
+            conn.execute("INSERT INTO test_logs(firmware_version,test_name,status,execution_time,error_message,pcap_path) VALUES(?,?,?,?,?,?)", (fw, item.name, status, report.duration, error, f"artifacts/pcaps/{item.name}.pcap"))
             conn.commit()
     except sqlite3.Error:
-        # Result persistence must never mask the actual test result.
         pass
