@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} | NetForge{% endblock %}
+{% block content %}
+<div class="panel" style="max-width:760px;margin:48px auto;">
+  <div style="font-size:12px;color:var(--primary);letter-spacing:2px;">NETFORGE / REQUEST STATUS</div>
+  <h2 style="font-size:42px;margin:12px 0 4px;">{{ code }}</h2>
+  <h3>{{ name }}</h3>
+  <p style="color:var(--on-surface-muted);">{{ message }}</p>
+  <a class="btn primary" href="/">Return to Dashboard</a>
+</div>
+{% endblock %}
