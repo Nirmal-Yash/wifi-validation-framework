@@ -17,9 +17,7 @@ app=Flask(__name__,template_folder=str(TEMPLATE_DIR)); app.config.update(UPLOAD_
 UPLOAD_DIR.mkdir(parents=True,exist_ok=True); CONFIG_DIR.mkdir(parents=True,exist_ok=True)
 def api_error(code,message,status=400,details=None): return jsonify({"success":False,"error":{"code":code,"message":message,"details":details or {}}}),status
 def api_ok(data=None,status=200):
-    payload={"success":True};
-    if data: payload.update(data)
-    return jsonify(payload),status
+    payload={"success":True}; payload.update(data or {}); return jsonify(payload),status
 def load_yaml_topology():
     path=CONFIG_DIR/"devices.yaml"
     if not path.exists(): return {"nodes":{},"target_environment":{}}
@@ -77,8 +75,14 @@ def health():
 def topology(): return render_template("topology.html")
 @app.route("/history")
 def history():
-    with connection() as conn: rows=conn.execute("SELECT * FROM test_logs ORDER BY timestamp DESC LIMIT 200").fetchall()
-    return render_template("history.html",logs=rows)
+    with connection() as conn:
+        fw_list=conn.execute("SELECT firmware_version,MAX(timestamp) latest FROM test_logs GROUP BY firmware_version ORDER BY latest DESC").fetchall()
+        values=[r["firmware_version"] for r in fw_list]; fw_a=request.args.get("fw_a") or (values[-1] if values else ""); fw_b=request.args.get("fw_b") or (values[0] if values else fw_a)
+        comparisons=[]
+        if fw_a and fw_b:
+            rows=conn.execute("SELECT test_name,MAX(CASE WHEN firmware_version=? THEN status END) status_a,MAX(CASE WHEN firmware_version=? THEN status END) status_b FROM test_logs WHERE firmware_version IN (?,?) GROUP BY test_name ORDER BY test_name",(fw_a,fw_b,fw_a,fw_b)).fetchall(); comparisons=[dict(r) for r in rows]
+        logs=conn.execute("SELECT * FROM test_logs ORDER BY timestamp DESC LIMIT 200").fetchall()
+    return render_template("history.html",logs=logs,fw_list=fw_list,fw_a=fw_a,fw_b=fw_b,comparisons=comparisons)
 @app.route("/about")
 def about(): return render_template("about.html")
 @app.route("/api/topology_data")
@@ -140,5 +144,4 @@ def import_topology():
     try:
         importer=TopologyImporter(target_yaml=str(CONFIG_DIR/"devices.yaml")); importer.import_json(str(path)) if path.suffix.lower()==".json" else importer.import_gns3(str(path)); return api_ok({"message":f"Successfully imported {filename}"})
     except (OSError,ValueError,KeyError,TypeError) as exc: return api_error("IMPORT_FAILED",str(exc),422)
-if __name__=="__main__":
-    ensure_schema(); print("[*] NetForge Control Plane: http://127.0.0.1:5000"); app.run(host="0.0.0.0",port=int(os.getenv("NETFORGE_PORT","5000")),debug=os.getenv("NETFORGE_DEBUG","0")=="1")
+if __name__=="__main__": ensure_schema(); print("[*] NetForge Control Plane: http://127.0.0.1:5000"); app.run(host="0.0.0.0",port=int(os.getenv("NETFORGE_PORT","5000")),debug=os.getenv("NETFORGE_DEBUG","0")=="1")
