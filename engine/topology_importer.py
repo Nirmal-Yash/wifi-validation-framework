@@ -3,7 +3,7 @@ import os
 
 
 class TopologyImporter:
-    """Normalize topology input without mutating the active topology."""
+    """Normalize topology input; filesystem import remains separate from DB commit."""
 
     TYPE_MAP = {
         "router": "router", "switch": "switch", "ethernet_switch": "switch",
@@ -35,11 +35,7 @@ class TopologyImporter:
                 node_id = f"{node_id}_{index + 1}"
             ids.add(node_id)
             name = str(node.get("name") or node.get("label") or node_id).strip()
-            nodes.append({
-                "id": node_id, "node_key": node_id, "label": name,
-                "type": self._node_type(node), "x": float(node.get("x") or 0), "y": float(node.get("y") or 0),
-                "metadata": {"source": source, "gns3_node_id": node.get("node_id") or node.get("id"), "node_type": node.get("node_type") or node.get("type"), "compute_id": node.get("compute_id")},
-            })
+            nodes.append({"id":node_id,"node_key":node_id,"label":name,"type":self._node_type(node),"x":float(node.get("x") or 0),"y":float(node.get("y") or 0),"metadata":{"source":source,"gns3_node_id":node.get("node_id") or node.get("id"),"node_type":node.get("node_type") or node.get("type"),"compute_id":node.get("compute_id")}})
         edges = []
         for index, link in enumerate(raw_links):
             endpoints = link.get("nodes") or link.get("endpoints") or []
@@ -51,13 +47,8 @@ class TopologyImporter:
             source_id, target_id = str(source_id), str(target_id)
             if source_id not in ids or target_id not in ids or source_id == target_id:
                 continue
-            edges.append({
-                "id": str(link.get("link_id") or link.get("id") or f"link_{index + 1}"),
-                "from": source_id, "to": target_id,
-                "source_interface": link.get("source_interface"), "target_interface": link.get("target_interface"),
-                "metadata": {"source": source, "suspended": bool(link.get("suspend", False))},
-            })
-        return {"source": source, "nodes": nodes, "edges": edges}
+            edges.append({"id":str(link.get("link_id") or link.get("id") or f"link_{index+1}"),"from":source_id,"to":target_id,"source_interface":link.get("source_interface"),"target_interface":link.get("target_interface"),"metadata":{"source":source,"suspended":bool(link.get("suspend",False))}})
+        return {"source":source,"nodes":nodes,"edges":edges}
 
     def import_gns3_data(self, data):
         return self._normalize(data, "gns3")
@@ -67,17 +58,21 @@ class TopologyImporter:
 
     def import_gns3(self, filepath):
         with open(filepath, "r", encoding="utf-8") as handle:
-            return self.import_gns3_data(json.load(handle))
+            normalized = self.import_gns3_data(json.load(handle))
+        self.write_legacy_yaml(normalized)
+        return normalized
 
     def import_json(self, filepath):
         with open(filepath, "r", encoding="utf-8") as handle:
-            return self.import_json_data(json.load(handle))
+            normalized = self.import_json_data(json.load(handle))
+        self.write_legacy_yaml(normalized)
+        return normalized
 
     def write_legacy_yaml(self, normalized):
         import yaml
         os.makedirs(self.config_dir, exist_ok=True)
-        nodes = {n["node_key"]: {"namespace": f"{n['label'].lower().replace(' ', '_')}_ns", "interface": "wlan0", "x": n["x"], "y": n["y"]} for n in normalized["nodes"]}
-        payload = {"target_environment": {"environment_type": "localized_netns"}, "nodes": nodes}
-        with open(self.target_yaml, "w", encoding="utf-8") as handle:
-            yaml.safe_dump(payload, handle, sort_keys=False)
+        nodes = {n["node_key"]:{"namespace":f"{n['label'].lower().replace(' ','_')}_ns","interface":"wlan0","x":n["x"],"y":n["y"]} for n in normalized["nodes"]}
+        payload = {"target_environment":{"environment_type":"localized_netns"},"nodes":nodes}
+        with open(self.target_yaml,"w",encoding="utf-8") as handle:
+            yaml.safe_dump(payload,handle,sort_keys=False)
         return payload
