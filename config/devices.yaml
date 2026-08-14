@@ -35,14 +35,17 @@ nodes:
     namespace: switch2_ns
     x: 120
     y: 45
-target_environment:
-  environment_type: "tier2_physical" # Change from localized_netns to trigger SSH mode
-  log_directory: "artifacts/pcaps"
 
+target_environment:
+  environment_type: localized_netns
+  log_directory: artifacts/pcaps
+
+# Physical credentials are intentionally not stored in Git.
+# Configure Tier-2 credentials through environment variables or a local secret store.
 physical_hardware:
   cisco_core_switch:
-    device_type: "cisco_ios"
-    ip: "10.0.0.10"
-    username: "admin"
-    password: "Password123!"
-    secret: "enable_secret"
+    device_type: cisco_ios
+    ip: 10.0.0.10
+    username_env: NETFORGE_CISCO_USERNAME
+    password_env: NETFORGE_CISCO_PASSWORD
+    secret_env: NETFORGE_CISCO_SECRET
