@@ -14,7 +14,7 @@ AP_IF=wlan0
 CLIENT_IF=wlan1
 MON_IF=wlan2
 
-for cmd in ip iw modprobe hostapd wpa_supplicant dnsmasq dhclient tcpdump; do
+for cmd in ip iw modprobe hostapd wpa_supplicant dnsmasq dhclient tcpdump ethtool; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd"; exit 2; }
 done
 
@@ -22,35 +22,55 @@ mkdir -p "$ROOT/config" "$ROOT/artifacts/pcaps"
 for proc in hostapd dnsmasq wpa_supplicant dhclient iperf3; do pkill -x "$proc" 2>/dev/null || true; done
 for ns in "$NS_AP" "$NS_CLIENT" "$NS_MON"; do ip netns del "$ns" 2>/dev/null || true; done
 
-before="$(mktemp)"
-after="$(mktemp)"
-trap 'rm -f "$before" "$after"' EXIT
+# Return only real mac80211_hwsim wlan interfaces. This avoids treating
+# unrelated netdevs (for example an interface literally named "netns") as radios.
+hwsim_interfaces() {
+  local iface driver
+  while read -r iface; do
+    [[ -n "$iface" ]] || continue
+    driver="$(ethtool -i "$iface" 2>/dev/null | awk -F': ' '$1=="driver" {print $2; exit}')"
+    if [[ "$driver" == "mac80211_hwsim" ]]; then
+      printf '%s\n' "$iface"
+    fi
+  done < <(iw dev | awk '$1 == "Interface" {print $2}' | grep -E '^wlan[0-9]+$' | sort -u)
+}
 
-iw dev | awk '$1 == "Interface" {print $2}' | grep -E '^wlan[0-9]+$' | sort -u > "$before" || true
+mapfile -t radios < <(hwsim_interfaces)
 
-modprobe bonding
-modprobe 8021q
-modprobe -r mac80211_hwsim 2>/dev/null || true
-modprobe mac80211_hwsim radios=3
-sleep 2
-
-iw dev | awk '$1 == "Interface" {print $2}' | grep -E '^wlan[0-9]+$' | sort -u > "$after" || true
-mapfile -t radios < <(comm -13 "$before" "$after")
-
-if [[ ${#radios[@]} -ne 3 ]]; then
-  echo "ERROR: Expected exactly 3 new mac80211_hwsim interfaces, found ${#radios[@]}"
-  echo "Detected new wlan interfaces: ${radios[*]:-none}"
+# Reuse an already-loaded, clean set of three hwsim radios. This is important
+# because mac80211_hwsim may remain loaded after a previous failed setup and
+# unloading it can legitimately fail while another kernel/user-space consumer
+# still holds a reference. Reusing confirmed hwsim radios is safe and avoids
+# relying on interface-name deltas.
+if [[ ${#radios[@]} -eq 3 ]]; then
+  echo "Reusing existing mac80211_hwsim radios: ${radios[*]}"
+elif [[ ${#radios[@]} -eq 0 ]]; then
+  modprobe bonding
+  modprobe 8021q
+  modprobe -r mac80211_hwsim 2>/dev/null || true
+  modprobe mac80211_hwsim radios=3
+  sleep 2
+  mapfile -t radios < <(hwsim_interfaces)
+else
+  echo "ERROR: Found ${#radios[@]} existing mac80211_hwsim interfaces; expected 0 or 3."
+  echo "Existing hwsim interfaces: ${radios[*]:-none}"
   echo "Full wireless inventory:"
   iw dev || true
   exit 3
 fi
 
-for radio in "${radios[@]}"; do
-  if ! ip link show "$radio" >/dev/null 2>&1; then
-    echo "ERROR: Detected wireless interface '$radio' is not movable from the root namespace."
-    exit 4
-  fi
-done
+if [[ ${#radios[@]} -ne 3 ]]; then
+  echo "ERROR: Expected exactly 3 mac80211_hwsim interfaces, found ${#radios[@]}"
+  echo "Detected hwsim interfaces: ${radios[*]:-none}"
+  echo "Full wireless inventory:"
+  iw dev || true
+  echo "Driver information:"
+  for iface in $(iw dev | awk '$1 == "Interface" {print $2}' | grep -E '^wlan[0-9]+$' | sort -u); do
+    echo "--- $iface ---"
+    ethtool -i "$iface" 2>&1 || true
+  done
+  exit 3
+fi
 
 ip netns add "$NS_AP"
 ip netns add "$NS_CLIENT"
