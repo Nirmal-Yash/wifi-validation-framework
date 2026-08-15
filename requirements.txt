@@ -1,7 +1,7 @@
 pytest
 pytest-html
 PyYAML
-scapy
+scapy>=2.7.1
 Flask
 pandas
 matplotlib
