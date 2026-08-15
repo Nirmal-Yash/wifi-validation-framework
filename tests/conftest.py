@@ -81,21 +81,38 @@ def run_ns(ns,*args,check=False,capture=False):
     return subprocess.run(['sudo','ip','netns','exec',ns,*args],check=check,capture_output=capture,text=True)
 
 
+def set_monitor_channel(monitor_ns, monitor_if, channel=6):
+    """Set the passive monitor channel after hostapd owns the AP channel.
+
+    Channel assignment is intentionally outside setup_topology.sh. Some cfg80211
+    kernels reject a manual channel change during initial PHY provisioning with
+    EBUSY even when the interface is down. At this point the AP is already
+    authoritative on channel 6, so the monitor follows it.
+    """
+    run_ns(monitor_ns,'ip','link','set',monitor_if,'up',check=True)
+    last=''
+    for _ in range(5):
+        result=run_ns(monitor_ns,'iw','dev',monitor_if,'set','channel',str(channel),capture=True)
+        if result.returncode==0:
+            return
+        last=(result.stderr or result.stdout or '').strip()
+        time.sleep(.5)
+    info=run_ns(monitor_ns,'iw','dev',monitor_if,'info',capture=True)
+    raise RuntimeError(f'Unable to set monitor channel {channel}: {last}\n{info.stdout}\n{info.stderr}')
+
+
 @pytest.fixture(scope='function',autouse=True)
 def lifecycle_management(request):
     if request.node.get_closest_marker('live') is None:
         yield; return
     require_live_environment()
-    nodes=request.getfixturevalue('system_config')['nodes']; ap=nodes['ap']; client=nodes['client']
+    nodes=request.getfixturevalue('system_config')['nodes']; ap=nodes['ap']; client=nodes['client']; monitor=nodes['monitor']
     ap_conf=ROOT/ap['config_path']; client_conf=ROOT/client['config_path']
     # Only terminate processes owned by the NetForge namespaces. Do not use
     # host-wide killall here; a validation suite must not disrupt host services.
-    for ns in (ap['namespace'], client['namespace']):
-        subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x','hostapd'],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x','dnsmasq'],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x','wpa_supplicant'],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x','dhclient'],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x','iperf3'],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    for ns in (ap['namespace'], client['namespace'], monitor['namespace']):
+        for proc in ('hostapd','dnsmasq','wpa_supplicant','dhclient','iperf3','tcpdump'):
+            subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x',proc],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     run_ns(ap['namespace'],'ip','link','set',ap['interface'],'down',check=True)
     run_ns(client['namespace'],'ip','link','set',client['interface'],'down',check=True)
     run_ns(ap['namespace'],'ip','link','set',ap['interface'],'up',check=True)
@@ -109,6 +126,11 @@ def lifecycle_management(request):
         if hostapd_proc.poll() is not None:
             stderr=hostapd_proc.stderr.read() if hostapd_proc.stderr else ''
             raise RuntimeError(f'hostapd failed to start: {stderr[-3000:]}')
+
+        # hostapd is the single source of truth for the AP channel. Only after
+        # it has configured the radio do we tune the passive monitor.
+        set_monitor_channel(monitor['namespace'],monitor['interface'],6)
+
         subprocess.run(['sudo','ip','netns','exec',client['namespace'],'wpa_supplicant','-B','-Dnl80211',f'-i{client["interface"]}',f'-c{client_conf}'],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
         deadline=time.time()+15
         while time.time()<deadline:
@@ -122,8 +144,8 @@ def lifecycle_management(request):
         run_ns(client['namespace'],'dhclient','-1','-v',client['interface'],capture=True)
         yield
     finally:
-        for ns in (ap['namespace'], client['namespace']):
-            for proc in ('hostapd','dnsmasq','wpa_supplicant','dhclient','iperf3'):
+        for ns in (ap['namespace'], client['namespace'], monitor['namespace']):
+            for proc in ('hostapd','dnsmasq','wpa_supplicant','dhclient','iperf3','tcpdump'):
                 subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x',proc],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         for proc in (hostapd_proc,dns_proc):
             if proc and proc.poll() is None:
