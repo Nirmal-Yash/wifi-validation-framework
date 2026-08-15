@@ -20,31 +20,20 @@ done
 
 mkdir -p "$ROOT/config" "$ROOT/artifacts/pcaps" /run/hostapd /run/wpa_supplicant
 
-hard_cleanup() {
-  for proc in hostapd dnsmasq wpa_supplicant dhclient iperf3; do
-    pkill -x "$proc" 2>/dev/null || true
-  done
-  for ns in "$NS_AP" "$NS_CLIENT" "$NS_MON"; do
-    ip netns del "$ns" 2>/dev/null || true
-  done
+cleanup() {
+  for proc in hostapd dnsmasq wpa_supplicant dhclient iperf3; do pkill -x "$proc" 2>/dev/null || true; done
+  for ns in "$NS_AP" "$NS_CLIENT" "$NS_MON"; do ip netns del "$ns" 2>/dev/null || true; done
 }
-
-hard_cleanup
+cleanup
 
 hwsim_inventory() {
   local iface driver phy
   while read -r phy iface; do
     [[ -n "$phy" && -n "$iface" ]] || continue
     driver="$(ethtool -i "$iface" 2>/dev/null | awk -F': ' '$1=="driver" {print $2; exit}')"
-    [[ "$driver" == "mac80211_hwsim" ]] || continue
-    [[ "$iface" =~ ^wlan[0-9]+$ ]] || continue
+    [[ "$driver" == "mac80211_hwsim" && "$iface" =~ ^wlan[0-9]+$ ]] || continue
     printf '%s %s\n' "$phy" "$iface"
-  done < <(
-    iw dev | awk '
-      /^phy#/ {gsub("phy#", "", $1); phy=$1}
-      /^[[:space:]]+Interface / {print phy, $2}
-    '
-  )
+  done < <(iw dev | awk '/^phy#/ {gsub("phy#", "", $1); phy=$1} /^[[:space:]]+Interface / {print phy, $2}')
 }
 
 release_radio_consumers() {
@@ -61,13 +50,13 @@ release_radio_consumers() {
   sleep 1
 }
 
-mapfile -t inventory < <(hwsim_inventory)
+mapfile -t inventory < <(hwsim_inventory | sort -k2,2V)
 if [[ ${#inventory[@]} -eq 0 ]]; then
   modprobe bonding
   modprobe 8021q
   modprobe mac80211_hwsim radios=3
   sleep 2
-  mapfile -t inventory < <(hwsim_inventory)
+  mapfile -t inventory < <(hwsim_inventory | sort -k2,2V)
 else
   echo "Reusing existing mac80211_hwsim radios: $(printf '%s ' "${inventory[@]}")"
 fi
@@ -80,9 +69,14 @@ if [[ ${#inventory[@]} -ne 3 ]]; then
 fi
 
 release_radio_consumers
-mapfile -t phys < <(printf '%s\n' "${inventory[@]}" | awk '{print "phy" $1}' | sort -u)
-mapfile -t radios < <(printf '%s\n' "${inventory[@]}" | awk '{print $2}')
-[[ ${#phys[@]} -eq 3 && ${#radios[@]} -eq 3 ]] || { echo "ERROR: Could not resolve three distinct hwsim PHY/interface pairs."; exit 4; }
+read -r AP_PHY AP_SOURCE <<<"${inventory[0]}"
+read -r CLIENT_PHY CLIENT_SOURCE <<<"${inventory[1]}"
+read -r MON_PHY MON_SOURCE <<<"${inventory[2]}"
+
+[[ "$AP_SOURCE" == wlan0 && "$CLIENT_SOURCE" == wlan1 && "$MON_SOURCE" == wlan2 ]] || {
+  echo "ERROR: Expected wlan0/wlan1/wlan2 hwsim assignment; found $AP_SOURCE/$CLIENT_SOURCE/$MON_SOURCE"
+  exit 4
+}
 
 ip netns add "$NS_AP"
 ip netns add "$NS_CLIENT"
@@ -90,37 +84,35 @@ ip netns add "$NS_MON"
 
 move_phy() {
   local phy="$1" ns="$2"
-  if iw phy "$phy" set netns name "$ns" 2>/tmp/netforge_phy_error; then return 0; fi
-  echo "ERROR: $phy could not be moved into $ns." >&2
+  if iw phy "phy$phy" set netns name "$ns" 2>/tmp/netforge_phy_error; then return 0; fi
+  echo "ERROR: phy$phy could not be moved into $ns." >&2
   cat /tmp/netforge_phy_error >&2 || true
-  echo "Wireless owner check:" >&2
-  fuser -v "/sys/class/ieee80211/$phy" 2>&1 || true
-  iw phy "$phy" info 2>&1 | head -40 || true
+  fuser -v "/sys/class/ieee80211/phy$phy" 2>&1 || true
+  iw phy "phy$phy" info 2>&1 | head -40 || true
+  cleanup
   return 1
 }
 
-move_phy "${phys[0]}" "$NS_AP"
-move_phy "${phys[1]}" "$NS_CLIENT"
-move_phy "${phys[2]}" "$NS_MON"
+move_phy "$AP_PHY" "$NS_AP"
+move_phy "$CLIENT_PHY" "$NS_CLIENT"
+move_phy "$MON_PHY" "$NS_MON"
 
-ip netns exec "$NS_AP" iw dev | grep -q "Interface ${radios[0]}"
-ip netns exec "$NS_CLIENT" iw dev | grep -q "Interface ${radios[1]}"
-ip netns exec "$NS_MON" iw dev | grep -q "Interface ${radios[2]}"
+ip netns exec "$NS_AP" iw dev | grep -q "Interface $AP_SOURCE"
+ip netns exec "$NS_CLIENT" iw dev | grep -q "Interface $CLIENT_SOURCE"
+ip netns exec "$NS_MON" iw dev | grep -q "Interface $MON_SOURCE"
 
-ip netns exec "$NS_AP" ip link set "${radios[0]}" name "$AP_IF"
-ip netns exec "$NS_CLIENT" ip link set "${radios[1]}" name "$CLIENT_IF"
-ip netns exec "$NS_MON" ip link set "${radios[2]}" name "$MON_IF"
+ip netns exec "$NS_AP" ip link set "$AP_SOURCE" name "$AP_IF"
+ip netns exec "$NS_CLIENT" ip link set "$CLIENT_SOURCE" name "$CLIENT_IF"
+ip netns exec "$NS_MON" ip link set "$MON_SOURCE" name "$MON_IF"
 
 ip netns exec "$NS_AP" ip link set lo up
 ip netns exec "$NS_CLIENT" ip link set lo up
 ip netns exec "$NS_MON" ip link set lo up
 
-# Configure radio/channel before bringing managed interfaces UP. This avoids nl80211 EBUSY.
 ip netns exec "$NS_AP" ip link set "$AP_IF" down
 ip netns exec "$NS_AP" iw dev "$AP_IF" set channel 6
 ip netns exec "$NS_CLIENT" ip link set "$CLIENT_IF" down
 ip netns exec "$NS_CLIENT" iw dev "$CLIENT_IF" set channel 6
-
 ip netns exec "$NS_MON" ip link set "$MON_IF" down
 ip netns exec "$NS_MON" iw dev "$MON_IF" set type monitor
 ip netns exec "$NS_MON" iw dev "$MON_IF" set channel 6
