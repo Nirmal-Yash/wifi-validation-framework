@@ -34,7 +34,11 @@ def database_bootstrap(fw_version): ensure_database(fw_version)
 def require_live_environment():
     if not LIVE_TESTS: pytest.skip("Privileged network test disabled; set NETFORGE_LIVE_TESTS=1 to run it")
 @pytest.fixture(scope="function",autouse=True)
-def lifecycle_management(system_config):
+def lifecycle_management(request,system_config):
+    network_test = "async_sniffer" in request.fixturenames or "system_config" in request.fixturenames
+    if not network_test:
+        yield
+        return
     require_live_environment(); nodes=system_config["nodes"]; ap=nodes["ap"]; client=nodes["client"]
     subprocess.run("sudo killall hostapd dnsmasq wpa_supplicant iperf3 dhclient tcpdump 2>/dev/null",shell=True)
     dns_proc=hostapd_proc=None
