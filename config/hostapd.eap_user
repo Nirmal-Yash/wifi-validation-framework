@@ -1,2 +1,2 @@
 * PEAP
-"admin" PEAP "Password123!" [2]
+"admin" MSCHAPV2 "Password123!" [2]
