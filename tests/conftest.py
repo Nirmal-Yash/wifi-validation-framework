@@ -33,6 +33,19 @@ def ensure_database(version):
 def database_bootstrap(fw_version): ensure_database(fw_version)
 def require_live_environment():
     if not LIVE_TESTS: pytest.skip('Privileged network test disabled; set NETFORGE_LIVE_TESTS=1 to run it')
+@pytest.fixture(scope='session',autouse=True)
+def live_lab():
+    if not LIVE_TESTS:
+        yield
+        return
+    subprocess.run(['sudo','-v'],check=True)
+    setup=subprocess.run(['sudo','bash',str(ROOT/'scripts/setup_topology.sh')],capture_output=True,text=True)
+    if setup.returncode!=0:
+        raise RuntimeError(f'NetForge Tier-1 lab provisioning failed:\n{setup.stdout}\n{setup.stderr}')
+    try:
+        yield
+    finally:
+        subprocess.run(['sudo','bash',str(ROOT/'scripts/teardown_topology.sh')],check=False)
 @pytest.fixture(scope='function',autouse=True)
 def lifecycle_management(request):
     if 'system_config' not in request.fixturenames and 'async_sniffer' not in request.fixturenames:
@@ -44,10 +57,16 @@ def lifecycle_management(request):
     try:
         subprocess.run(f"sudo ip netns exec {ap['namespace']} ip addr flush dev {ap['interface']}",shell=True,check=False)
         subprocess.run(f"sudo ip netns exec {ap['namespace']} ip addr add 192.168.50.1/24 dev {ap['interface']}",shell=True,check=False)
-        dns_proc=subprocess.Popen(['sudo','ip','netns','exec',ap['namespace'],'dnsmasq',f"--interface={ap['interface']}",'--dhcp-range=192.168.50.10,192.168.50.50,255.255.255.0,12h','--no-daemon'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        dns_proc=subprocess.Popen(['sudo','ip','netns','exec',ap['namespace'],'dnsmasq',f"--interface={ap['interface']",'--dhcp-range=192.168.50.10,192.168.50.50,255.255.255.0,12h','--no-daemon'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         hostapd_proc=subprocess.Popen(['sudo','ip','netns','exec',ap['namespace'],'hostapd',str(ROOT/ap['config_path'])],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        time.sleep(2); subprocess.run(['sudo','ip','netns','exec',client['namespace'],'wpa_supplicant','-B','-i',client['interface'],'-c',str(ROOT/client['config_path'])],check=False); time.sleep(3)
-        subprocess.run(['sudo','ip','netns','exec',client['namespace'],'dhclient',client['interface']],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); yield
+        time.sleep(2)
+        if hostapd_proc.poll() is not None:
+            raise RuntimeError('hostapd exited during Tier-1 setup; run sudo ip netns exec ap_ns hostapd -dd /home/yash/Desktop/Netforge/config/ap.conf for diagnostics')
+        subprocess.run(['sudo','ip','netns','exec',client['namespace'],'ip','link','set',client['interface'],'up'],check=True)
+        subprocess.run(['sudo','ip','netns','exec',client['namespace'],'wpa_supplicant','-B','-i',client['interface'],'-c',str(ROOT/client['config_path'])],check=False)
+        time.sleep(3)
+        subprocess.run(['sudo','ip','netns','exec',client['namespace'],'dhclient','-1',client['interface']],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        yield
     finally:
         for proc in (hostapd_proc,dns_proc):
             if proc:
