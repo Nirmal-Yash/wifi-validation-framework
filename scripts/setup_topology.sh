@@ -16,18 +16,14 @@ MON_IF=wlan2
 HWSIM_RADIOS=3
 CERT_DIR="$ROOT/config/certs"
 
-for cmd in ip iw modprobe hostapd wpa_supplicant wpa_cli dnsmasq dhclient tcpdump ethtool openssl; do
+for cmd in ip iw modprobe hostapd hostapd_cli wpa_supplicant wpa_cli dnsmasq dhclient tcpdump ethtool openssl; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd"; exit 2; }
 done
 
-mkdir -p "$ROOT/config" "$ROOT/artifacts/pcaps" "$CERT_DIR" /run/hostapd /run/wpa_supplicant
+mkdir -p "$ROOT/config" "$ROOT/artifacts/pcaps" "$ROOT/artifacts/logs" "$CERT_DIR" /run/hostapd /run/wpa_supplicant
 
 log() { printf '[NetForge] %s\n' "$*"; }
-
-run_cmd() {
-  log "RUN: $*"
-  "$@"
-}
+run_cmd() { log "RUN: $*"; "$@"; }
 
 stop_matching_units() {
   local unit
@@ -87,30 +83,17 @@ reset_hwsim() {
   stop_lab_processes
   remove_lab_namespaces
   release_hwsim_consumers
-
   if lsmod | awk '{print $1}' | grep -Fxq mac80211_hwsim; then
     log "Removing stale mac80211_hwsim radios"
     if ! modprobe -r mac80211_hwsim 2>/tmp/netforge_hwsim_remove_error; then
       echo "ERROR: mac80211_hwsim is still busy and cannot be reset." >&2
       cat /tmp/netforge_hwsim_remove_error >&2 || true
-      echo "Current hwsim inventory:" >&2
       hwsim_inventory >&2 || true
-      echo "Potential consumers:" >&2
-      while read -r _ iface; do
-        fuser -v "/sys/class/net/$iface" 2>&1 || true
-        if command -v nmcli >/dev/null 2>&1; then nmcli device status 2>/dev/null | grep -F "$iface" || true; fi
-      done < <(hwsim_inventory)
       exit 5
     fi
     sleep 1
   fi
-
-  if [[ -n "$(hwsim_inventory)" ]]; then
-    echo "ERROR: hwsim interfaces remain after module removal." >&2
-    hwsim_inventory >&2 || true
-    exit 6
-  fi
-
+  [[ -z "$(hwsim_inventory)" ]] || { echo "ERROR: hwsim interfaces remain after module removal." >&2; hwsim_inventory >&2; exit 6; }
   log "Loading a fresh mac80211_hwsim instance with exactly $HWSIM_RADIOS radios (P2P disabled)"
   modprobe mac80211_hwsim radios="$HWSIM_RADIOS" support_p2p_device=0
   for _ in {1..20}; do
@@ -118,23 +101,16 @@ reset_hwsim() {
     sleep 0.25
   done
   echo "ERROR: mac80211_hwsim did not create exactly $HWSIM_RADIOS interfaces." >&2
-  hwsim_inventory >&2 || true
+  hwsim_inventory >&2
   exit 7
 }
 
 provision_enterprise_certs() {
-  rm -f "$CERT_DIR"/ca.key "$CERT_DIR"/ca.pem "$CERT_DIR"/server.key "$CERT_DIR"/server.csr "$CERT_DIR"/server.pem
+  rm -f "$CERT_DIR"/ca.key "$CERT_DIR"/ca.pem "$CERT_DIR"/server.key "$CERT_DIR"/server.csr "$CERT_DIR"/server.pem "$CERT_DIR"/ca.srl
   umask 077
-  openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 2 \
-    -keyout "$CERT_DIR/ca.key" -out "$CERT_DIR/ca.pem" \
-    -subj '/CN=NetForge Test CA' >/dev/null 2>&1
-  openssl req -newkey rsa:2048 -nodes -sha256 \
-    -keyout "$CERT_DIR/server.key" -out "$CERT_DIR/server.csr" \
-    -subj '/CN=NetForge-Enterprise' >/dev/null 2>&1
-  openssl x509 -req -sha256 -days 2 \
-    -in "$CERT_DIR/server.csr" -CA "$CERT_DIR/ca.pem" -CAkey "$CERT_DIR/ca.key" \
-    -CAcreateserial -out "$CERT_DIR/server.pem" \
-    -extfile <(printf 'basicConstraints=CA:FALSE\nsubjectAltName=DNS:NetForge-Enterprise') >/dev/null 2>&1
+  openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 2 -keyout "$CERT_DIR/ca.key" -out "$CERT_DIR/ca.pem" -subj '/CN=NetForge Test CA' >/dev/null 2>&1
+  openssl req -newkey rsa:2048 -nodes -sha256 -keyout "$CERT_DIR/server.key" -out "$CERT_DIR/server.csr" -subj '/CN=NetForge-Enterprise' >/dev/null 2>&1
+  openssl x509 -req -sha256 -days 2 -in "$CERT_DIR/server.csr" -CA "$CERT_DIR/ca.pem" -CAkey "$CERT_DIR/ca.key" -CAcreateserial -out "$CERT_DIR/server.pem" -extfile <(printf 'basicConstraints=CA:FALSE\nsubjectAltName=DNS:NetForge-Enterprise') >/dev/null 2>&1
   rm -f "$CERT_DIR/server.csr" "$CERT_DIR/ca.srl"
 }
 
@@ -150,18 +126,11 @@ cleanup_on_error() {
 trap cleanup_on_error EXIT
 
 reset_hwsim
-
 mapfile -t inventory < <(hwsim_inventory | sort -k2,2V)
-if [[ ${#inventory[@]} -ne 3 ]]; then
-  echo "ERROR: Expected exactly 3 hwsim interface/PHY pairs." >&2
-  printf '%s\n' "${inventory[@]:-none}" >&2
-  exit 8
-fi
-
+[[ ${#inventory[@]} -eq 3 ]] || { echo "ERROR: Expected exactly 3 hwsim interface/PHY pairs." >&2; printf '%s\n' "${inventory[@]:-none}" >&2; exit 8; }
 read -r AP_PHY AP_SOURCE <<<"${inventory[0]}"
 read -r CLIENT_PHY CLIENT_SOURCE <<<"${inventory[1]}"
 read -r MON_PHY MON_SOURCE <<<"${inventory[2]}"
-
 log "Deterministic role map: phy$AP_PHY/$AP_SOURCE -> $NS_AP; phy$CLIENT_PHY/$CLIENT_SOURCE -> $NS_CLIENT; phy$MON_PHY/$MON_SOURCE -> $NS_MON"
 
 run_cmd ip netns add "$NS_AP"
@@ -188,32 +157,21 @@ move_phy() {
 move_phy "$AP_PHY" "$NS_AP"
 move_phy "$CLIENT_PHY" "$NS_CLIENT"
 move_phy "$MON_PHY" "$NS_MON"
-
 run_cmd ip netns exec "$NS_AP" iw dev | grep -q "Interface $AP_SOURCE"
 run_cmd ip netns exec "$NS_CLIENT" iw dev | grep -q "Interface $CLIENT_SOURCE"
 run_cmd ip netns exec "$NS_MON" iw dev | grep -q "Interface $MON_SOURCE"
-
 run_cmd ip netns exec "$NS_AP" ip link set "$AP_SOURCE" name "$AP_IF"
 run_cmd ip netns exec "$NS_CLIENT" ip link set "$CLIENT_SOURCE" name "$CLIENT_IF"
 run_cmd ip netns exec "$NS_MON" ip link set "$MON_SOURCE" name "$MON_IF"
-
 run_cmd ip netns exec "$NS_AP" ip link set lo up
 run_cmd ip netns exec "$NS_CLIENT" ip link set lo up
 run_cmd ip netns exec "$NS_MON" ip link set lo up
-
-# Do not manually assign a channel during lab provisioning. cfg80211 can reject
-# channel changes with EBUSY on the host kernel even while the interface is DOWN.
-# hostapd is authoritative for the AP channel, and wpa_supplicant follows the AP
-# during association. The monitor channel is selected after hostapd starts by
-# the live-test fixture. This avoids a kernel-dependent setup-time failure.
 run_cmd ip netns exec "$NS_AP" ip link set "$AP_IF" down
 run_cmd ip netns exec "$NS_CLIENT" ip link set "$CLIENT_IF" down
 run_cmd ip netns exec "$NS_MON" ip link set "$MON_IF" down
-
 run_cmd ip netns exec "$NS_AP" iw dev "$AP_IF" set type __ap
 run_cmd ip netns exec "$NS_CLIENT" iw dev "$CLIENT_IF" set type managed
 run_cmd ip netns exec "$NS_MON" iw dev "$MON_IF" set type monitor
-
 run_cmd ip netns exec "$NS_AP" ip link set "$AP_IF" up
 run_cmd ip netns exec "$NS_CLIENT" ip link set "$CLIENT_IF" up
 run_cmd ip netns exec "$NS_MON" ip link set "$MON_IF" up
@@ -229,11 +187,9 @@ channel=6
 wmm_enabled=1
 auth_algs=1
 wpa=2
-wpa_key_mgmt=SAE WPA-PSK
+wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 wpa_passphrase=Password123!
-sae_password=Password123!
-sae_pwe=2
 EOF
 
 cat > "$ROOT/config/client.conf" <<EOF
@@ -242,14 +198,13 @@ update_config=0
 country=IN
 network={
     ssid="NetForge_Test"
-    key_mgmt=SAE
+    key_mgmt=WPA-PSK
     psk="Password123!"
-    ieee80211w=2
+    scan_ssid=1
 }
 EOF
 
 provision_enterprise_certs
-
 cat > "$ROOT/config/hostapd_enterprise.conf" <<EOF
 ctrl_interface=/run/hostapd
 interface=$AP_IF
@@ -315,6 +270,5 @@ run_cmd ip netns exec "$NS_AP" ip link show "$AP_IF"
 run_cmd ip netns exec "$NS_CLIENT" ip link show "$CLIENT_IF"
 run_cmd ip netns exec "$NS_MON" ip link show "$MON_IF"
 run_cmd ip netns exec "$NS_AP" ip -4 addr show dev "$AP_IF" | grep -q '192.168.50.1/24'
-
 trap - EXIT
-printf '%s\n' "NetForge Tier-1 topology ready" "  AP: $NS_AP/$AP_IF" "  Client: $NS_CLIENT/$CLIENT_IF" "  Monitor: $NS_MON/$MON_IF" "  AP: 192.168.50.1/24" "  AP channel: hostapd-managed (6)" "  Enterprise TLS: $CERT_DIR"
+printf '%s\n' "NetForge Tier-1 topology ready" "  AP: $NS_AP/$AP_IF" "  Client: $NS_CLIENT/$CLIENT_IF" "  Monitor: $NS_MON/$MON_IF" "  AP: 192.168.50.1/24" "  AP channel: hostapd-managed (6)" "  Baseline security: WPA2-PSK" "  Enterprise TLS: $CERT_DIR"
