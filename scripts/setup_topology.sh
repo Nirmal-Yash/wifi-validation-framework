@@ -19,60 +19,75 @@ for cmd in ip iw modprobe hostapd wpa_supplicant dnsmasq dhclient tcpdump ethtoo
 done
 
 mkdir -p "$ROOT/config" "$ROOT/artifacts/pcaps"
-for proc in hostapd dnsmasq wpa_supplicant dhclient iperf3; do pkill -x "$proc" 2>/dev/null || true; done
-for ns in "$NS_AP" "$NS_CLIENT" "$NS_MON"; do ip netns del "$ns" 2>/dev/null || true; done
 
-hwsim_interfaces() {
-  local iface driver
-  while read -r iface; do
-    [[ -n "$iface" ]] || continue
+hard_cleanup() {
+  for proc in hostapd dnsmasq wpa_supplicant dhclient iperf3; do
+    pkill -x "$proc" 2>/dev/null || true
+  done
+  for ns in "$NS_AP" "$NS_CLIENT" "$NS_MON"; do
+    ip netns del "$ns" 2>/dev/null || true
+  done
+}
+
+hard_cleanup
+
+hwsim_inventory() {
+  local iface driver phy
+  while read -r phy iface; do
+    [[ -n "$phy" && -n "$iface" ]] || continue
     driver="$(ethtool -i "$iface" 2>/dev/null | awk -F': ' '$1=="driver" {print $2; exit}')"
-    if [[ "$driver" == "mac80211_hwsim" ]]; then
-      printf '%s\n' "$iface"
+    [[ "$driver" == "mac80211_hwsim" ]] || continue
+    printf '%s %s\n' "$phy" "$iface"
+  done < <(
+    iw dev | awk '
+      /^phy#/ {gsub("phy#", "", $1); phy=$1}
+      /^[[:space:]]+Interface / {print phy, $2}
+    '
+  )
+}
+
+prepare_existing_radios() {
+  local iface
+  while read -r _ iface; do
+    [[ -n "$iface" ]] || continue
+    if command -v nmcli >/dev/null 2>&1; then
+      nmcli device set "$iface" managed no 2>/dev/null || true
     fi
-  done < <(iw dev | awk '$1 == "Interface" {print $2}' | grep -E '^wlan[0-9]+$' | sort -u)
+    ip link set "$iface" down 2>/dev/null || true
+    iw dev "$iface" set type managed 2>/dev/null || true
+    ip link set "$iface" down 2>/dev/null || true
+  done < <(hwsim_inventory)
+  sleep 1
 }
 
-phy_for_iface() {
-  local iface="$1"
-  iw dev "$iface" info | awk '$1 == "wiphy" {print "phy" $2; exit}'
-}
+mapfile -t inventory < <(hwsim_inventory)
 
-mapfile -t radios < <(hwsim_interfaces)
-
-if [[ ${#radios[@]} -eq 3 ]]; then
-  echo "Reusing existing mac80211_hwsim radios: ${radios[*]}"
-elif [[ ${#radios[@]} -eq 0 ]]; then
+if [[ ${#inventory[@]} -eq 0 ]]; then
   modprobe bonding
   modprobe 8021q
-  modprobe -r mac80211_hwsim 2>/dev/null || true
   modprobe mac80211_hwsim radios=3
   sleep 2
-  mapfile -t radios < <(hwsim_interfaces)
+  mapfile -t inventory < <(hwsim_inventory)
 else
-  echo "ERROR: Found ${#radios[@]} existing mac80211_hwsim interfaces; expected 0 or 3."
-  echo "Existing hwsim interfaces: ${radios[*]:-none}"
+  echo "Reusing existing mac80211_hwsim radios: $(printf '%s ' "${inventory[@]}")"
+fi
+
+if [[ ${#inventory[@]} -ne 3 ]]; then
+  echo "ERROR: Expected exactly 3 mac80211_hwsim interfaces, found ${#inventory[@]}"
+  printf '%s\n' "${inventory[@]:-none}"
   iw dev || true
   exit 3
 fi
 
-if [[ ${#radios[@]} -ne 3 ]]; then
-  echo "ERROR: Expected exactly 3 mac80211_hwsim interfaces, found ${#radios[@]}"
-  echo "Detected hwsim interfaces: ${radios[*]:-none}"
-  iw dev || true
-  exit 3
-fi
+prepare_existing_radios
 
-mapfile -t phys < <(
-  for iface in "${radios[@]}"; do
-    phy_for_iface "$iface"
-  done
-)
+mapfile -t phys < <(printf '%s\n' "${inventory[@]}" | awk '{print "phy" $1}' | sort -u)
+mapfile -t radios < <(printf '%s\n' "${inventory[@]}" | awk '{print $2}')
 
-if [[ ${#phys[@]} -ne 3 ]] || printf '%s\n' "${phys[@]}" | sort -u | wc -l | grep -vq '^3$'; then
-  echo "ERROR: Could not resolve three distinct wireless PHYs."
-  printf 'Interfaces: %s\n' "${radios[*]}"
+if [[ ${#phys[@]} -ne 3 || ${#radios[@]} -ne 3 ]]; then
+  echo "ERROR: Could not resolve three distinct hwsim PHY/interface pairs."
   printf 'PHYs: %s\n' "${phys[*]:-none}"
+  printf 'Radios: %s\n' "${radios[*]:-none}"
   exit 4
 fi
 
@@ -80,12 +95,22 @@ ip netns add "$NS_AP"
 ip netns add "$NS_CLIENT"
 ip netns add "$NS_MON"
 
-# Wireless interfaces are controlled by cfg80211/mac80211 at PHY level.
-# Moving the netdev with `ip link set ... netns` is rejected on modern kernels
-# with "The interface netns is immutable". Move each wireless PHY instead.
-iw phy "${phys[0]}" set netns name "$NS_AP"
-iw phy "${phys[1]}" set netns name "$NS_CLIENT"
-iw phy "${phys[2]}" set netns name "$NS_MON"
+# Wireless netdevs are namespace-immutable on current kernels. Move their PHYs.
+# If a PHY is still busy after processes/interfaces are quiesced, fail cleanly
+# and remove the namespaces instead of leaving a half-configured lab behind.
+if ! iw phy "${phys[0]}" set netns name "$NS_AP"; then
+  echo "ERROR: ${phys[0]} is busy and cannot be moved into $NS_AP."
+  echo "Check host wireless consumers with: sudo fuser -v /sys/class/ieee80211/${phys[0]} 2>/dev/null || true"
+  exit 5
+fi
+if ! iw phy "${phys[1]}" set netns name "$NS_CLIENT"; then
+  echo "ERROR: ${phys[1]} is busy and cannot be moved into $NS_CLIENT."
+  exit 5
+fi
+if ! iw phy "${phys[2]}" set netns name "$NS_MON"; then
+  echo "ERROR: ${phys[2]} is busy and cannot be moved into $NS_MON."
+  exit 5
+fi
 
 ip netns exec "$NS_AP" iw dev | grep -q "Interface ${radios[0]}"
 ip netns exec "$NS_CLIENT" iw dev | grep -q "Interface ${radios[1]}"
