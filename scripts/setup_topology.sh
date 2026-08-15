@@ -19,37 +19,36 @@ for cmd in ip iw modprobe hostapd wpa_supplicant dnsmasq dhclient tcpdump; do
 done
 
 mkdir -p "$ROOT/config" "$ROOT/artifacts/pcaps"
-pkill -x hostapd 2>/dev/null || true
-pkill -x dnsmasq 2>/dev/null || true
-pkill -x wpa_supplicant 2>/dev/null || true
-pkill -x dhclient 2>/dev/null || true
-pkill -x iperf3 2>/dev/null || true
-
+for proc in hostapd dnsmasq wpa_supplicant dhclient iperf3; do pkill -x "$proc" 2>/dev/null || true; done
 for ns in "$NS_AP" "$NS_CLIENT" "$NS_MON"; do ip netns del "$ns" 2>/dev/null || true; done
 
+before="$(mktemp)"
+after="$(mktemp)"
+trap 'rm -f "$before" "$after"' EXIT
+
+# Record host-owned wireless interfaces so real hardware is never moved into the lab.
+iw dev | awk '/^[[:space:]]*Interface / {print $2}' | sort -u > "$before"
 modprobe bonding
 modprobe 8021q
 modprobe -r mac80211_hwsim 2>/dev/null || true
 modprobe mac80211_hwsim radios=3
 sleep 2
+iw dev | awk '/^[[:space:]]*Interface / {print $2}' | sort -u > "$after"
+mapfile -t radios < <(comm -13 "$before" "$after")
 
-ip netns add "$NS_AP"
-ip netns add "$NS_CLIENT"
-ip netns add "$NS_MON"
-
-# Capture the three hwsim interfaces created by this invocation. This avoids
-# relying on whatever wlan numbering a previous kernel module load left behind.
-mapfile -t radios < <(iw dev | awk '/^[[:space:]]*Interface / {print $2}' | tail -n 3)
 if [[ ${#radios[@]} -ne 3 ]]; then
-  echo "Expected 3 hwsim interfaces, found ${#radios[@]}"
+  echo "Expected 3 new hwsim interfaces, found ${#radios[@]}"
+  echo "New interfaces: ${radios[*]:-none}"
   iw dev
   exit 3
 fi
 
+ip netns add "$NS_AP"
+ip netns add "$NS_CLIENT"
+ip netns add "$NS_MON"
 ip link set "${radios[0]}" netns "$NS_AP"
 ip link set "${radios[1]}" netns "$NS_CLIENT"
 ip link set "${radios[2]}" netns "$NS_MON"
-
 ip netns exec "$NS_AP" ip link set "${radios[0]}" name "$AP_IF"
 ip netns exec "$NS_CLIENT" ip link set "${radios[1]}" name "$CLIENT_IF"
 ip netns exec "$NS_MON" ip link set "${radios[2]}" name "$MON_IF"
@@ -63,7 +62,6 @@ ip netns exec "$NS_MON" ip link set "$MON_IF" down
 ip netns exec "$NS_MON" iw dev "$MON_IF" set type monitor
 ip netns exec "$NS_MON" iw dev "$MON_IF" set channel 6
 ip netns exec "$NS_MON" ip link set "$MON_IF" up
-
 ip netns exec "$NS_AP" ip addr add 192.168.50.1/24 dev "$AP_IF"
 
 cat > "$ROOT/config/ap.conf" <<EOF
@@ -152,13 +150,9 @@ target_environment:
   log_directory: artifacts/pcaps
 EOF
 
-for check in \
-  "$NS_AP:$AP_IF" \
-  "$NS_CLIENT:$CLIENT_IF" \
-  "$NS_MON:$MON_IF"; do
-  ns="${check%%:*}"; iface="${check##*:}"
-  ip netns exec "$ns" ip link show "$iface" >/dev/null
- done
+ip netns exec "$NS_AP" ip link show "$AP_IF" >/dev/null
+ip netns exec "$NS_CLIENT" ip link show "$CLIENT_IF" >/dev/null
+ip netns exec "$NS_MON" ip link show "$MON_IF" >/dev/null
 ip netns exec "$NS_AP" ip -4 addr show dev "$AP_IF" | grep -q '192.168.50.1/24'
 
 printf '%s\n' "NetForge Tier-1 topology ready" "  AP: $NS_AP/$AP_IF" "  Client: $NS_CLIENT/$CLIENT_IF" "  Monitor: $NS_MON/$MON_IF" "  AP: 192.168.50.1/24"
