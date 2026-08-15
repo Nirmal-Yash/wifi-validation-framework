@@ -129,7 +129,7 @@ def health():
     with connection() as conn: conn.execute('SELECT 1').fetchone(); metrics={'topologies':conn.execute('SELECT COUNT(*) c FROM topologies').fetchone()['c'],'executions':conn.execute('SELECT COUNT(*) c FROM executions').fetchone()['c'],'test_logs':conn.execute('SELECT COUNT(*) c FROM test_logs').fetchone()['c']}
     return api_ok({'service':'dashboard','database':'ok','metrics':metrics})
 @app.route('/topology')
-def topology():return render_template('topology_enhanced.html')
+def topology():return render_template('topology_workspace.html')
 @app.route('/history')
 def history():
     with connection() as conn:
