@@ -18,7 +18,7 @@ for cmd in ip iw modprobe hostapd wpa_supplicant dnsmasq dhclient tcpdump ethtoo
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd"; exit 2; }
 done
 
-mkdir -p "$ROOT/config" "$ROOT/artifacts/pcaps"
+mkdir -p "$ROOT/config" "$ROOT/artifacts/pcaps" /run/hostapd /run/wpa_supplicant
 
 hard_cleanup() {
   for proc in hostapd dnsmasq wpa_supplicant dhclient iperf3; do
@@ -37,6 +37,7 @@ hwsim_inventory() {
     [[ -n "$phy" && -n "$iface" ]] || continue
     driver="$(ethtool -i "$iface" 2>/dev/null | awk -F': ' '$1=="driver" {print $2; exit}')"
     [[ "$driver" == "mac80211_hwsim" ]] || continue
+    [[ "$iface" =~ ^wlan[0-9]+$ ]] || continue
     printf '%s %s\n' "$phy" "$iface"
   done < <(
     iw dev | awk '
@@ -55,18 +56,12 @@ release_radio_consumers() {
       nmcli device set "$iface" managed no >/dev/null 2>&1 || true
     fi
     ip link set "$iface" down 2>/dev/null || true
-    iw dev "$iface" set type managed 2>/dev/null || true
-    ip link set "$iface" down 2>/dev/null || true
   done < <(hwsim_inventory)
-
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl stop wpa_supplicant.service 2>/dev/null || true
-  fi
-  sleep 2
+  systemctl stop wpa_supplicant.service 2>/dev/null || true
+  sleep 1
 }
 
 mapfile -t inventory < <(hwsim_inventory)
-
 if [[ ${#inventory[@]} -eq 0 ]]; then
   modprobe bonding
   modprobe 8021q
@@ -85,16 +80,9 @@ if [[ ${#inventory[@]} -ne 3 ]]; then
 fi
 
 release_radio_consumers
-
 mapfile -t phys < <(printf '%s\n' "${inventory[@]}" | awk '{print "phy" $1}' | sort -u)
 mapfile -t radios < <(printf '%s\n' "${inventory[@]}" | awk '{print $2}')
-
-if [[ ${#phys[@]} -ne 3 || ${#radios[@]} -ne 3 ]]; then
-  echo "ERROR: Could not resolve three distinct hwsim PHY/interface pairs."
-  printf 'PHYs: %s\n' "${phys[*]:-none}"
-  printf 'Radios: %s\n' "${radios[*]:-none}"
-  exit 4
-fi
+[[ ${#phys[@]} -eq 3 && ${#radios[@]} -eq 3 ]] || { echo "ERROR: Could not resolve three distinct hwsim PHY/interface pairs."; exit 4; }
 
 ip netns add "$NS_AP"
 ip netns add "$NS_CLIENT"
@@ -102,14 +90,11 @@ ip netns add "$NS_MON"
 
 move_phy() {
   local phy="$1" ns="$2"
-  if iw phy "$phy" set netns name "$ns" 2>/tmp/netforge_phy_error; then
-    return 0
-  fi
-  echo "ERROR: $phy could not be moved into $ns."
+  if iw phy "$phy" set netns name "$ns" 2>/tmp/netforge_phy_error; then return 0; fi
+  echo "ERROR: $phy could not be moved into $ns." >&2
   cat /tmp/netforge_phy_error >&2 || true
   echo "Wireless owner check:" >&2
   fuser -v "/sys/class/ieee80211/$phy" 2>&1 || true
-  echo "Current PHY state:" >&2
   iw phy "$phy" info 2>&1 | head -40 || true
   return 1
 }
@@ -129,11 +114,19 @@ ip netns exec "$NS_MON" ip link set "${radios[2]}" name "$MON_IF"
 ip netns exec "$NS_AP" ip link set lo up
 ip netns exec "$NS_CLIENT" ip link set lo up
 ip netns exec "$NS_MON" ip link set lo up
-ip netns exec "$NS_AP" ip link set "$AP_IF" up
-ip netns exec "$NS_CLIENT" ip link set "$CLIENT_IF" up
+
+# Configure radio/channel before bringing managed interfaces UP. This avoids nl80211 EBUSY.
+ip netns exec "$NS_AP" ip link set "$AP_IF" down
+ip netns exec "$NS_AP" iw dev "$AP_IF" set channel 6
+ip netns exec "$NS_CLIENT" ip link set "$CLIENT_IF" down
+ip netns exec "$NS_CLIENT" iw dev "$CLIENT_IF" set channel 6
+
 ip netns exec "$NS_MON" ip link set "$MON_IF" down
 ip netns exec "$NS_MON" iw dev "$MON_IF" set type monitor
 ip netns exec "$NS_MON" iw dev "$MON_IF" set channel 6
+
+ip netns exec "$NS_AP" ip link set "$AP_IF" up
+ip netns exec "$NS_CLIENT" ip link set "$CLIENT_IF" up
 ip netns exec "$NS_MON" ip link set "$MON_IF" up
 ip netns exec "$NS_AP" ip addr replace 192.168.50.1/24 dev "$AP_IF"
 
