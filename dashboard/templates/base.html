@@ -2,211 +2,33 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}NetForge{% endblock %}</title>
     <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     {% block extra_head %}{% endblock %}
     <style>
-        :root {
-            /* Void-Amber Color Palette */
-            --background: #131313;
-            --surface: #1f1f1f;
-            --surface-highest: #353535;
-            --sidebar-bg: #0e0e0e;
-            --on-surface: #e2e2e2;
-            --on-surface-muted: #aba9a9;
-            --primary: #ffb77d;
-            --primary-container: #ff8c00;
-            --on-primary-container: #623200;
-            --error: #ffb4ab;
-            --border: #353535;
-        }
-
-        body {
-            background-color: var(--background);
-            color: var(--on-surface);
-            font-family: 'JetBrains Mono', monospace;
-            margin: 0;
-            display: flex;
-            height: 100vh;
-            overflow: hidden;
-            font-size: 14px;
-            line-height: 1.5;
-        }
-
-        /* Sidebar Styling */
-        .sidebar {
-            width: 250px;
-            background-color: var(--sidebar-bg);
-            border-right: 1px solid var(--border);
-            padding: 24px 0;
-            display: flex;
-            flex-direction: column;
-            flex-shrink: 0;
-            z-index: 10;
-        }
-
-        .sidebar-brand {
-            padding: 0 24px 24px 24px;
-            border-bottom: 1px solid var(--primary-container);
-            font-family: 'Space Mono', monospace;
-            font-size: 18px;
-            font-weight: 700;
-            letter-spacing: -0.02em;
-            color: var(--primary-container);
-            margin-bottom: 16px;
-        }
-
-        .sidebar-link {
-            padding: 12px 24px;
-            color: var(--on-surface-muted);
-            text-decoration: none;
-            font-family: 'Courier Prime', monospace;
-            font-size: 12px;
-            text-transform: uppercase;
-            font-weight: 700;
-            border-left: 2px solid transparent;
-            transition: color 0.2s, border-color 0.2s;
-        }
-
-        .sidebar-link:hover, .sidebar-link.active {
-            background: rgba(255, 140, 0, 0.05);
-            border-left-color: var(--primary-container);
-            color: var(--primary);
-        }
-
-        /* Main Content */
-        .main-content {
-            flex-grow: 1;
-            padding: 32px;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            box-sizing: border-box;
-            overflow-y: auto;
-            position: relative;
-        }
-
-        h2, h3 {
-            font-family: 'Space Mono', monospace;
-            text-transform: uppercase;
-            letter-spacing: -0.01em;
-            color: var(--on-surface);
-            margin-top: 0;
-        }
-
-        /* Technical Brutalism Components */
-        .panel {
-            background-color: var(--surface);
-            border: 1px solid var(--border);
-            border-top: 1px solid var(--primary-container);
-            border-radius: 0px; /* Sharp Edges */
-            padding: 24px;
-            margin-bottom: 24px;
-        }
-
-        .btn {
-            background-color: transparent;
-            color: var(--primary);
-            border: 1px solid var(--primary);
-            border-radius: 0px;
-            padding: 8px 16px;
-            font-family: 'Courier Prime', monospace;
-            text-transform: uppercase;
-            font-weight: 700;
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .btn:hover, .btn.primary {
-            background-color: var(--primary-container);
-            color: var(--on-primary-container);
-            border-color: var(--primary-container);
-            box-shadow: 0px 0px 8px rgba(255, 140, 0, 0.4);
-        }
-
-        .btn-outline {
-            border-color: var(--border);
-            color: var(--on-surface);
-        }
-
-        .btn-outline:hover {
-            border-color: var(--on-surface);
-            background: transparent;
-            color: var(--on-surface);
-            box-shadow: none;
-        }
-
-        .btn-danger {
-            border-color: var(--error);
-            color: var(--error);
-        }
-
-        .btn-danger:hover {
-            background-color: var(--error);
-            color: #000;
-            box-shadow: 0px 0px 8px rgba(255, 180, 171, 0.4);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
-        }
-
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid var(--surface-highest);
-        }
-
-        th {
-            font-family: 'Courier Prime', monospace;
-            color: var(--on-surface-muted);
-            text-transform: uppercase;
-        }
-
-        tr:hover {
-            border-left: 2px solid var(--primary-container);
-            background-color: var(--sidebar-bg);
-        }
-
-        /* Status Badges */
-        .badge {
-            font-family: 'Courier Prime', monospace;
-            padding: 2px 8px;
-            border-radius: 0px;
-            font-weight: 700;
-            font-size: 11px;
-            border: 1px solid var(--border);
-            text-transform: uppercase;
-        }
-
-        .badge.PASSED { color: var(--primary); border-color: var(--primary); background: rgba(255, 183, 125, 0.1); }
-        .badge.FAILED { color: var(--error); border-color: var(--error); background: rgba(255, 180, 171, 0.1); }
+        :root{--background:#131313;--surface:#1f1f1f;--surface-highest:#353535;--sidebar-bg:#0e0e0e;--on-surface:#e2e2e2;--on-surface-muted:#aba9a9;--primary:#ffb77d;--primary-container:#ff8c00;--on-primary-container:#271400;--error:#ffb4ab;--border:#353535;--sidebar-width:250px}
+        *{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--background);color:var(--on-surface);font-family:'JetBrains Mono',monospace}body{display:flex;height:100vh;overflow:hidden;font-size:14px;line-height:1.5}
+        button,input,select,textarea{font:inherit}button{cursor:pointer}.sidebar{width:var(--sidebar-width);background:var(--sidebar-bg);border-right:1px solid var(--border);padding:18px 0;display:flex;flex-direction:column;flex-shrink:0;z-index:100;transition:width .22s ease,transform .22s ease;overflow:hidden}.sidebar.collapsed{width:58px}.sidebar-brand{height:50px;padding:0 18px;border-bottom:1px solid var(--primary-container);font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:var(--primary-container);margin-bottom:12px;display:flex;align-items:center;gap:10px;white-space:nowrap}.sidebar.collapsed .sidebar-brand span,.sidebar.collapsed .sidebar-link span{display:none}.sidebar-toggle{margin:0 10px 10px;width:calc(100% - 20px);height:34px;background:#151515;color:var(--primary);border:1px solid var(--border);text-align:left;padding:0 10px}.sidebar.collapsed .sidebar-toggle{text-align:center}.sidebar-link{padding:12px 18px;color:var(--on-surface-muted);text-decoration:none;font-family:'Courier Prime',monospace;font-size:12px;text-transform:uppercase;font-weight:700;border-left:2px solid transparent;display:flex;align-items:center;gap:10px;white-space:nowrap;transition:color .18s,background .18s,border-color .18s}.sidebar-link:hover,.sidebar-link.active{background:rgba(255,140,0,.06);border-left-color:var(--primary-container);color:var(--primary)}.main-content{flex:1;min-width:0;padding:28px;display:flex;flex-direction:column;height:100vh;overflow-y:auto;position:relative;transition:padding .22s ease}body.nav-collapsed .main-content{padding-left:20px;padding-right:20px}
+        h1,h2,h3{font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:-.01em;color:var(--on-surface);margin-top:0}.panel{background:var(--surface);border:1px solid var(--border);border-top:1px solid var(--primary-container);padding:20px;margin-bottom:18px}.btn{background:transparent;color:var(--primary);border:1px solid var(--primary);padding:8px 15px;font-family:'Courier Prime',monospace;text-transform:uppercase;font-weight:700;font-size:12px;transition:all .16s}.btn:hover,.btn.primary{background:var(--primary-container);color:var(--on-primary-container);border-color:var(--primary-container);box-shadow:0 0 8px rgba(255,140,0,.25)}.btn:focus-visible,.sidebar-link:focus-visible,.sidebar-toggle:focus-visible{outline:2px solid var(--primary);outline-offset:2px}.btn-danger{border-color:var(--error);color:var(--error)}.btn-danger:hover{background:var(--error);color:#000}.muted{color:var(--on-surface-muted)}
+        @media(max-width:800px){body{overflow:auto}.sidebar{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);box-shadow:20px 0 60px #000}.sidebar.mobile-open{transform:translateX(0)}.sidebar.collapsed{width:250px}.sidebar.collapsed .sidebar-brand span,.sidebar.collapsed .sidebar-link span{display:inline}.main-content{min-height:100vh;height:auto;padding:18px}.mobile-nav{display:block!important}}
+        .mobile-nav{display:none;position:fixed;left:12px;top:12px;z-index:110;background:#151515;color:var(--primary);border:1px solid var(--primary);padding:7px 10px}
     </style>
 </head>
 <body>
-    <div class="sidebar">
-        <div class="sidebar-brand"><i class="fa-solid fa-satellite-dish mr-2"></i> NETFORGE</div>
-        <a href="/" class="sidebar-link {% if request.path == '/' %}active{% endif %}">
-            <i class="fa-solid fa-chart-pie mr-2"></i> Exec Dashboard
-        </a>
-        <a href="/topology" class="sidebar-link {% if request.path == '/topology' %}active{% endif %}">
-            <i class="fa-solid fa-network-wired mr-2"></i> Topology Work
-        </a>
-        <a href="/history" class="sidebar-link {% if request.path == '/history' %}active{% endif %}">
-            <i class="fa-solid fa-clock-rotate-left mr-2"></i> Test History
-        </a>
-        <a href="/about" class="sidebar-link {% if request.path == '/about' %}active{% endif %}">
-            <i class="fa-solid fa-server mr-2"></i> System Engine
-        </a>
-    </div>
-    
-    <div class="main-content">
-        {% block content %}{% endblock %}
-    </div>
+    <button class="mobile-nav" id="mobileNav" aria-label="Open navigation"><i class="fa-solid fa-bars"></i></button>
+    <nav class="sidebar" id="sidebar" aria-label="Primary navigation">
+        <div class="sidebar-brand"><i class="fa-solid fa-satellite-dish"></i><span>NETFORGE</span></div>
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse navigation" aria-expanded="true"><i class="fa-solid fa-angles-left"></i><span> Minimize</span></button>
+        <a href="/" class="sidebar-link {% if request.path == '/' %}active{% endif %}"><i class="fa-solid fa-chart-pie"></i><span>Exec Dashboard</span></a>
+        <a href="/topology" class="sidebar-link {% if request.path == '/topology' %}active{% endif %}"><i class="fa-solid fa-network-wired"></i><span>Topology Work</span></a>
+        <a href="/history" class="sidebar-link {% if request.path == '/history' %}active{% endif %}"><i class="fa-solid fa-clock-rotate-left"></i><span>Test History</span></a>
+        <a href="/about" class="sidebar-link {% if request.path == '/about' %}active{% endif %}"><i class="fa-solid fa-server"></i><span>System Engine</span></a>
+    </nav>
+    <div class="main-content">{% block content %}{% endblock %}</div>
+    <script>
+    (()=>{const nav=document.getElementById('sidebar'),toggle=document.getElementById('sidebarToggle'),mobile=document.getElementById('mobileNav');if(!nav||!toggle)return;const sync=()=>{const c=nav.classList.contains('collapsed');document.body.classList.toggle('nav-collapsed',c);toggle.innerHTML=c?'<i class="fa-solid fa-angles-right"></i>':'<i class="fa-solid fa-angles-left"></i><span> Minimize</span>';toggle.setAttribute('aria-expanded',String(!c));toggle.setAttribute('aria-label',c?'Expand navigation':'Collapse navigation');localStorage.setItem('netforge.navCollapsed',c?'1':'0')};if(localStorage.getItem('netforge.navCollapsed')==='1')nav.classList.add('collapsed');sync();toggle.addEventListener('click',()=>{nav.classList.toggle('collapsed');sync()});mobile?.addEventListener('click',()=>nav.classList.toggle('mobile-open'));document.addEventListener('keydown',e=>{if(e.key==='Escape')nav.classList.remove('mobile-open')})})();
+    </script>
 </body>
 </html>
