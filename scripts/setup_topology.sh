@@ -46,18 +46,23 @@ hwsim_inventory() {
   )
 }
 
-prepare_existing_radios() {
+release_radio_consumers() {
   local iface
   while read -r _ iface; do
     [[ -n "$iface" ]] || continue
     if command -v nmcli >/dev/null 2>&1; then
-      nmcli device set "$iface" managed no 2>/dev/null || true
+      nmcli device disconnect "$iface" >/dev/null 2>&1 || true
+      nmcli device set "$iface" managed no >/dev/null 2>&1 || true
     fi
     ip link set "$iface" down 2>/dev/null || true
     iw dev "$iface" set type managed 2>/dev/null || true
     ip link set "$iface" down 2>/dev/null || true
   done < <(hwsim_inventory)
-  sleep 1
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop wpa_supplicant.service 2>/dev/null || true
+  fi
+  sleep 2
 }
 
 mapfile -t inventory < <(hwsim_inventory)
@@ -79,7 +84,7 @@ if [[ ${#inventory[@]} -ne 3 ]]; then
   exit 3
 fi
 
-prepare_existing_radios
+release_radio_consumers
 
 mapfile -t phys < <(printf '%s\n' "${inventory[@]}" | awk '{print "phy" $1}' | sort -u)
 mapfile -t radios < <(printf '%s\n' "${inventory[@]}" | awk '{print $2}')
@@ -95,22 +100,23 @@ ip netns add "$NS_AP"
 ip netns add "$NS_CLIENT"
 ip netns add "$NS_MON"
 
-# Wireless netdevs are namespace-immutable on current kernels. Move their PHYs.
-# If a PHY is still busy after processes/interfaces are quiesced, fail cleanly
-# and remove the namespaces instead of leaving a half-configured lab behind.
-if ! iw phy "${phys[0]}" set netns name "$NS_AP"; then
-  echo "ERROR: ${phys[0]} is busy and cannot be moved into $NS_AP."
-  echo "Check host wireless consumers with: sudo fuser -v /sys/class/ieee80211/${phys[0]} 2>/dev/null || true"
-  exit 5
-fi
-if ! iw phy "${phys[1]}" set netns name "$NS_CLIENT"; then
-  echo "ERROR: ${phys[1]} is busy and cannot be moved into $NS_CLIENT."
-  exit 5
-fi
-if ! iw phy "${phys[2]}" set netns name "$NS_MON"; then
-  echo "ERROR: ${phys[2]} is busy and cannot be moved into $NS_MON."
-  exit 5
-fi
+move_phy() {
+  local phy="$1" ns="$2"
+  if iw phy "$phy" set netns name "$ns" 2>/tmp/netforge_phy_error; then
+    return 0
+  fi
+  echo "ERROR: $phy could not be moved into $ns."
+  cat /tmp/netforge_phy_error >&2 || true
+  echo "Wireless owner check:" >&2
+  fuser -v "/sys/class/ieee80211/$phy" 2>&1 || true
+  echo "Current PHY state:" >&2
+  iw phy "$phy" info 2>&1 | head -40 || true
+  return 1
+}
+
+move_phy "${phys[0]}" "$NS_AP"
+move_phy "${phys[1]}" "$NS_CLIENT"
+move_phy "${phys[2]}" "$NS_MON"
 
 ip netns exec "$NS_AP" iw dev | grep -q "Interface ${radios[0]}"
 ip netns exec "$NS_CLIENT" iw dev | grep -q "Interface ${radios[1]}"
