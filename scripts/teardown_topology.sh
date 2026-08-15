@@ -1,15 +1,21 @@
-#!/bin/bash
-set -e
-echo "[*] Terminating active framework processes..."
-sudo killall hostapd wpa_supplicant dnsmasq dhclient iperf3 tcpdump 2>/dev/null || true
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "[*] Removing Enterprise network namespaces..."
-sudo ip netns del router_ns 2>/dev/null || true
-sudo ip netns del switch_ns 2>/dev/null || true
-sudo ip netns del ap_ns 2>/dev/null || true
-sudo ip netns del client_ns 2>/dev/null || true
-sudo ip netns del monitor_ns 2>/dev/null || true
+if [[ ${EUID} -ne 0 ]]; then
+  echo "Run with sudo: sudo ./scripts/teardown_topology.sh"
+  exit 1
+fi
 
-echo "[*] Unloading Wi-Fi simulator module..."
-sudo rmmod mac80211_hwsim 2>/dev/null || true
-echo "[+] Localized virtual environment successfully cleared."
+for proc in hostapd wpa_supplicant dnsmasq dhclient iperf3 tcpdump; do
+  pkill -x "$proc" 2>/dev/null || true
+done
+
+for ns in ap_ns client_ns monitor_ns router_ns switch_ns; do
+  ip netns del "$ns" 2>/dev/null || true
+done
+
+# Only the isolated NetForge VM should run this teardown because removing the
+# hwsim module removes its virtual radios from the host.
+modprobe -r mac80211_hwsim 2>/dev/null || true
+
+echo "NetForge Tier-1 topology cleared."
