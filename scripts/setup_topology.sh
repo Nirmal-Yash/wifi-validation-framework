@@ -195,12 +195,14 @@ EOF
 cat > "$ROOT/config/client.conf" <<EOF
 ctrl_interface=/run/wpa_supplicant
 update_config=0
+p2p_disabled=1
 country=IN
 network={
     ssid="NetForge_Test"
     key_mgmt=WPA-PSK
     psk="Password123!"
     scan_ssid=1
+    scan_freq=2437
 }
 EOF
 
@@ -231,6 +233,7 @@ EOF
 cat > "$ROOT/config/wpa_supplicant_enterprise.conf" <<EOF
 ctrl_interface=/run/wpa_supplicant
 update_config=0
+p2p_disabled=1
 network={
     ssid="NetForge_Enterprise"
     key_mgmt=WPA-EAP
@@ -239,6 +242,8 @@ network={
     password="Password123!"
     ca_cert="$CERT_DIR/ca.pem"
     phase2="auth=MSCHAPV2"
+    scan_ssid=1
+    scan_freq=2437
 }
 EOF
 
