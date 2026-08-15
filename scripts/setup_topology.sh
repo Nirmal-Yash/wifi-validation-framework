@@ -43,13 +43,9 @@ remove_lab_namespaces() {
   local ns pid
   for ns in "$NS_AP" "$NS_CLIENT" "$NS_MON" router_ns switch_ns; do
     if ip netns list | awk '{print $1}' | grep -Fxq "$ns"; then
-      while read -r pid; do
-        [[ -n "$pid" ]] && kill -TERM "$pid" 2>/dev/null || true
-      done < <(ip netns pids "$ns" 2>/dev/null || true)
+      while read -r pid; do [[ -n "$pid" ]] && kill -TERM "$pid" 2>/dev/null || true; done < <(ip netns pids "$ns" 2>/dev/null || true)
       sleep 0.2
-      while read -r pid; do
-        [[ -n "$pid" ]] && kill -KILL "$pid" 2>/dev/null || true
-      done < <(ip netns pids "$ns" 2>/dev/null || true)
+      while read -r pid; do [[ -n "$pid" ]] && kill -KILL "$pid" 2>/dev/null || true; done < <(ip netns pids "$ns" 2>/dev/null || true)
       ip netns del "$ns" 2>/dev/null || true
     fi
   done
@@ -63,12 +59,7 @@ hwsim_inventory() {
     [[ "$driver" == "mac80211_hwsim" ]] || continue
     [[ "$iface" =~ ^wlan[0-9]+$ ]] || continue
     printf '%s %s\n' "$phy" "$iface"
-  done < <(
-    iw dev | awk '
-      /^phy#/ {gsub("phy#", "", $1); phy=$1}
-      /^[[:space:]]+Interface / {print phy, $2}
-    '
-  )
+  done < <(iw dev | awk '/^phy#/ {gsub("phy#", "", $1); phy=$1} /^[[:space:]]+Interface / {print phy, $2}')
 }
 
 release_hwsim_consumers() {
@@ -99,10 +90,10 @@ reset_hwsim() {
       echo "Current hwsim inventory:" >&2
       hwsim_inventory >&2 || true
       echo "Potential consumers:" >&2
-      for iface in $(hwsim_inventory | awk '{print $2}'); do
+      while read -r _ iface; do
         fuser -v "/sys/class/net/$iface" 2>&1 || true
-        nmcli device status 2>/dev/null | grep -F "$iface" || true
-      done
+        if command -v nmcli >/dev/null 2>&1; then nmcli device status 2>/dev/null | grep -F "$iface" || true; fi
+      done < <(hwsim_inventory)
       echo "Run: sudo ./scripts/teardown_topology.sh and retry." >&2
       exit 5
     fi
@@ -139,25 +130,17 @@ read -r AP_PHY AP_SOURCE <<<"${inventory[0]}"
 read -r CLIENT_PHY CLIENT_SOURCE <<<"${inventory[1]}"
 read -r MON_PHY MON_SOURCE <<<"${inventory[2]}"
 
-[[ "$AP_SOURCE" == "$AP_IF" && "$CLIENT_SOURCE" == "$CLIENT_IF" && "$MON_SOURCE" == "$MON_IF" ]] || {
-  echo "ERROR: Fresh hwsim naming is not wlan0/wlan1/wlan2: $AP_SOURCE/$CLIENT_SOURCE/$MON_SOURCE" >&2
-  exit 9
-}
-
-log "Deterministic radio map: phy$AP_PHY/$AP_SOURCE -> $NS_AP; phy$CLIENT_PHY/$CLIENT_SOURCE -> $NS_CLIENT; phy$MON_PHY/$MON_SOURCE -> $NS_MON"
+log "Deterministic role map: phy$AP_PHY/$AP_SOURCE -> $NS_AP; phy$CLIENT_PHY/$CLIENT_SOURCE -> $NS_CLIENT; phy$MON_PHY/$MON_SOURCE -> $NS_MON"
 
 ip netns add "$NS_AP"
 ip netns add "$NS_CLIENT"
 ip netns add "$NS_MON"
 
 move_phy() {
-  local phy="$1" ns="$2"
-  local error_file=/tmp/netforge_phy_error
+  local phy="$1" ns="$2" error_file=/tmp/netforge_phy_error
   rm -f "$error_file"
-  for attempt in 1 2 3 4 5; do
-    if iw phy "phy$phy" set netns name "$ns" 2>"$error_file"; then
-      return 0
-    fi
+  for _ in 1 2 3 4 5; do
+    if iw phy "phy$phy" set netns name "$ns" 2>"$error_file"; then return 0; fi
     if grep -qi 'busy' "$error_file"; then
       sleep 1
       release_hwsim_consumers
@@ -171,7 +154,7 @@ move_phy() {
   fuser -v "/sys/class/ieee80211/phy$phy" 2>&1 || true
   iw phy "phy$phy" info 2>&1 | head -60 || true
   echo "Interface state:" >&2
-  ip link show "$AP_SOURCE" "$CLIENT_SOURCE" "$MON_SOURCE" 2>&1 || true
+  hwsim_inventory >&2 || true
   remove_lab_namespaces
   modprobe -r mac80211_hwsim 2>/dev/null || true
   exit 10
@@ -193,15 +176,11 @@ ip netns exec "$NS_AP" ip link set lo up
 ip netns exec "$NS_CLIENT" ip link set lo up
 ip netns exec "$NS_MON" ip link set lo up
 
-# Configure all radio state while interfaces are DOWN. iw requires this ordering
-# for reliable nl80211 operation and it avoids EBUSY during channel/type changes.
+# Configure radio state while every interface is DOWN. This ordering avoids nl80211 EBUSY.
 ip netns exec "$NS_AP" ip link set "$AP_IF" down
 ip netns exec "$NS_CLIENT" ip link set "$CLIENT_IF" down
 ip netns exec "$NS_MON" ip link set "$MON_IF" down
-
-ip netns exec "$NS_AP" iw dev "$AP_IF" set type __ap
 ip netns exec "$NS_AP" iw dev "$AP_IF" set channel 6
-ip netns exec "$NS_CLIENT" iw dev "$CLIENT_IF" set type managed
 ip netns exec "$NS_CLIENT" iw dev "$CLIENT_IF" set channel 6
 ip netns exec "$NS_MON" iw dev "$MON_IF" set type monitor
 ip netns exec "$NS_MON" iw dev "$MON_IF" set channel 6
@@ -266,7 +245,7 @@ update_config=0
 network={
     ssid="NetForge_Enterprise"
     key_mgmt=WPA-EAP
-eap=PEAP
+    eap=PEAP
     identity="admin"
     password="Password123!"
     phase2="auth=MSCHAPV2"
