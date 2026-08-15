@@ -111,9 +111,6 @@ reset_hwsim() {
     exit 6
   fi
 
-  # P2P-device interfaces make whole-PHY namespace migration unreliable on
-  # some kernels. NetForge does not require P2P devices, so disable them at
-  # module creation time for deterministic PHY ownership.
   log "Loading a fresh mac80211_hwsim instance with exactly $HWSIM_RADIOS radios (P2P disabled)"
   modprobe mac80211_hwsim radios="$HWSIM_RADIOS" support_p2p_device=0
   for _ in {1..20}; do
@@ -204,8 +201,11 @@ run_cmd ip netns exec "$NS_AP" ip link set lo up
 run_cmd ip netns exec "$NS_CLIENT" ip link set lo up
 run_cmd ip netns exec "$NS_MON" ip link set lo up
 
-# All mode/channel changes happen while interfaces are DOWN. This avoids
-# cfg80211 channel-context EBUSY failures.
+# Do not manually assign a channel during lab provisioning. cfg80211 can reject
+# channel changes with EBUSY on the host kernel even while the interface is DOWN.
+# hostapd is authoritative for the AP channel, and wpa_supplicant follows the AP
+# during association. The monitor channel is selected after hostapd starts by
+# the live-test fixture. This avoids a kernel-dependent setup-time failure.
 run_cmd ip netns exec "$NS_AP" ip link set "$AP_IF" down
 run_cmd ip netns exec "$NS_CLIENT" ip link set "$CLIENT_IF" down
 run_cmd ip netns exec "$NS_MON" ip link set "$MON_IF" down
@@ -213,10 +213,6 @@ run_cmd ip netns exec "$NS_MON" ip link set "$MON_IF" down
 run_cmd ip netns exec "$NS_AP" iw dev "$AP_IF" set type __ap
 run_cmd ip netns exec "$NS_CLIENT" iw dev "$CLIENT_IF" set type managed
 run_cmd ip netns exec "$NS_MON" iw dev "$MON_IF" set type monitor
-
-run_cmd ip netns exec "$NS_AP" iw dev "$AP_IF" set channel 6
-run_cmd ip netns exec "$NS_CLIENT" iw dev "$CLIENT_IF" set channel 6
-run_cmd ip netns exec "$NS_MON" iw dev "$MON_IF" set channel 6
 
 run_cmd ip netns exec "$NS_AP" ip link set "$AP_IF" up
 run_cmd ip netns exec "$NS_CLIENT" ip link set "$CLIENT_IF" up
@@ -321,4 +317,4 @@ run_cmd ip netns exec "$NS_MON" ip link show "$MON_IF"
 run_cmd ip netns exec "$NS_AP" ip -4 addr show dev "$AP_IF" | grep -q '192.168.50.1/24'
 
 trap - EXIT
-printf '%s\n' "NetForge Tier-1 topology ready" "  AP: $NS_AP/$AP_IF" "  Client: $NS_CLIENT/$CLIENT_IF" "  Monitor: $NS_MON/$MON_IF" "  AP: 192.168.50.1/24" "  Enterprise TLS: $CERT_DIR"
+printf '%s\n' "NetForge Tier-1 topology ready" "  AP: $NS_AP/$AP_IF" "  Client: $NS_CLIENT/$CLIENT_IF" "  Monitor: $NS_MON/$MON_IF" "  AP: 192.168.50.1/24" "  AP channel: hostapd-managed (6)" "  Enterprise TLS: $CERT_DIR"
