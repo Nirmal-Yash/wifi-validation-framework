@@ -22,8 +22,6 @@ mkdir -p "$ROOT/config" "$ROOT/artifacts/pcaps"
 for proc in hostapd dnsmasq wpa_supplicant dhclient iperf3; do pkill -x "$proc" 2>/dev/null || true; done
 for ns in "$NS_AP" "$NS_CLIENT" "$NS_MON"; do ip netns del "$ns" 2>/dev/null || true; done
 
-# Return only real mac80211_hwsim wlan interfaces. This avoids treating
-# unrelated netdevs (for example an interface literally named "netns") as radios.
 hwsim_interfaces() {
   local iface driver
   while read -r iface; do
@@ -35,13 +33,13 @@ hwsim_interfaces() {
   done < <(iw dev | awk '$1 == "Interface" {print $2}' | grep -E '^wlan[0-9]+$' | sort -u)
 }
 
+phy_for_iface() {
+  local iface="$1"
+  iw dev "$iface" info | awk '$1 == "wiphy" {print "phy" $2; exit}'
+}
+
 mapfile -t radios < <(hwsim_interfaces)
 
-# Reuse an already-loaded, clean set of three hwsim radios. This is important
-# because mac80211_hwsim may remain loaded after a previous failed setup and
-# unloading it can legitimately fail while another kernel/user-space consumer
-# still holds a reference. Reusing confirmed hwsim radios is safe and avoids
-# relying on interface-name deltas.
 if [[ ${#radios[@]} -eq 3 ]]; then
   echo "Reusing existing mac80211_hwsim radios: ${radios[*]}"
 elif [[ ${#radios[@]} -eq 0 ]]; then
@@ -54,7 +52,6 @@ elif [[ ${#radios[@]} -eq 0 ]]; then
 else
   echo "ERROR: Found ${#radios[@]} existing mac80211_hwsim interfaces; expected 0 or 3."
   echo "Existing hwsim interfaces: ${radios[*]:-none}"
-  echo "Full wireless inventory:"
   iw dev || true
   exit 3
 fi
@@ -62,23 +59,37 @@ fi
 if [[ ${#radios[@]} -ne 3 ]]; then
   echo "ERROR: Expected exactly 3 mac80211_hwsim interfaces, found ${#radios[@]}"
   echo "Detected hwsim interfaces: ${radios[*]:-none}"
-  echo "Full wireless inventory:"
   iw dev || true
-  echo "Driver information:"
-  for iface in $(iw dev | awk '$1 == "Interface" {print $2}' | grep -E '^wlan[0-9]+$' | sort -u); do
-    echo "--- $iface ---"
-    ethtool -i "$iface" 2>&1 || true
-  done
   exit 3
+fi
+
+mapfile -t phys < <(
+  for iface in "${radios[@]}"; do
+    phy_for_iface "$iface"
+  done
+)
+
+if [[ ${#phys[@]} -ne 3 ]] || printf '%s\n' "${phys[@]}" | sort -u | wc -l | grep -vq '^3$'; then
+  echo "ERROR: Could not resolve three distinct wireless PHYs."
+  printf 'Interfaces: %s\n' "${radios[*]}"
+  printf 'PHYs: %s\n' "${phys[*]:-none}"
+  exit 4
 fi
 
 ip netns add "$NS_AP"
 ip netns add "$NS_CLIENT"
 ip netns add "$NS_MON"
 
-ip link set "${radios[0]}" netns "$NS_AP"
-ip link set "${radios[1]}" netns "$NS_CLIENT"
-ip link set "${radios[2]}" netns "$NS_MON"
+# Wireless interfaces are controlled by cfg80211/mac80211 at PHY level.
+# Moving the netdev with `ip link set ... netns` is rejected on modern kernels
+# with "The interface netns is immutable". Move each wireless PHY instead.
+iw phy "${phys[0]}" set netns name "$NS_AP"
+iw phy "${phys[1]}" set netns name "$NS_CLIENT"
+iw phy "${phys[2]}" set netns name "$NS_MON"
+
+ip netns exec "$NS_AP" iw dev | grep -q "Interface ${radios[0]}"
+ip netns exec "$NS_CLIENT" iw dev | grep -q "Interface ${radios[1]}"
+ip netns exec "$NS_MON" iw dev | grep -q "Interface ${radios[2]}"
 
 ip netns exec "$NS_AP" ip link set "${radios[0]}" name "$AP_IF"
 ip netns exec "$NS_CLIENT" ip link set "${radios[1]}" name "$CLIENT_IF"
@@ -93,7 +104,7 @@ ip netns exec "$NS_MON" ip link set "$MON_IF" down
 ip netns exec "$NS_MON" iw dev "$MON_IF" set type monitor
 ip netns exec "$NS_MON" iw dev "$MON_IF" set channel 6
 ip netns exec "$NS_MON" ip link set "$MON_IF" up
-ip netns exec "$NS_AP" ip addr add 192.168.50.1/24 dev "$AP_IF"
+ip netns exec "$NS_AP" ip addr replace 192.168.50.1/24 dev "$AP_IF"
 
 cat > "$ROOT/config/ap.conf" <<EOF
 ctrl_interface=/run/hostapd
