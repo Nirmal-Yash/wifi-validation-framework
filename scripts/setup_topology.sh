@@ -14,12 +14,13 @@ AP_IF=wlan0
 CLIENT_IF=wlan1
 MON_IF=wlan2
 HWSIM_RADIOS=3
+CERT_DIR="$ROOT/config/certs"
 
-for cmd in ip iw modprobe hostapd wpa_supplicant dnsmasq dhclient tcpdump ethtool; do
+for cmd in ip iw modprobe hostapd wpa_supplicant wpa_cli dnsmasq dhclient tcpdump ethtool openssl; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd"; exit 2; }
 done
 
-mkdir -p "$ROOT/config" "$ROOT/artifacts/pcaps" /run/hostapd /run/wpa_supplicant
+mkdir -p "$ROOT/config" "$ROOT/artifacts/pcaps" "$CERT_DIR" /run/hostapd /run/wpa_supplicant
 
 log() { printf '[NetForge] %s\n' "$*"; }
 
@@ -117,6 +118,22 @@ reset_hwsim() {
   exit 7
 }
 
+provision_enterprise_certs() {
+  rm -f "$CERT_DIR"/ca.key "$CERT_DIR"/ca.pem "$CERT_DIR"/server.key "$CERT_DIR"/server.csr "$CERT_DIR"/server.pem
+  umask 077
+  openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 2 \
+    -keyout "$CERT_DIR/ca.key" -out "$CERT_DIR/ca.pem" \
+    -subj '/CN=NetForge Test CA' >/dev/null 2>&1
+  openssl req -newkey rsa:2048 -nodes -sha256 \
+    -keyout "$CERT_DIR/server.key" -out "$CERT_DIR/server.csr" \
+    -subj '/CN=NetForge-Enterprise' >/dev/null 2>&1
+  openssl x509 -req -sha256 -days 2 \
+    -in "$CERT_DIR/server.csr" -CA "$CERT_DIR/ca.pem" -CAkey "$CERT_DIR/ca.key" \
+    -CAcreateserial -out "$CERT_DIR/server.pem" \
+    -extfile <(printf 'basicConstraints=CA:FALSE\nsubjectAltName=DNS:NetForge-Enterprise') >/dev/null 2>&1
+  rm -f "$CERT_DIR/server.csr" "$CERT_DIR/ca.srl"
+}
+
 reset_hwsim
 
 mapfile -t inventory < <(hwsim_inventory | sort -k2,2V)
@@ -141,19 +158,13 @@ move_phy() {
   rm -f "$error_file"
   for _ in 1 2 3 4 5; do
     if iw phy "phy$phy" set netns name "$ns" 2>"$error_file"; then return 0; fi
-    if grep -qi 'busy' "$error_file"; then
-      sleep 1
-      release_hwsim_consumers
-      continue
-    fi
+    if grep -qi 'busy' "$error_file"; then sleep 1; release_hwsim_consumers; continue; fi
     break
   done
   echo "ERROR: phy$phy could not be moved into $ns." >&2
   cat "$error_file" >&2 || true
-  echo "PHY ownership/state:" >&2
   fuser -v "/sys/class/ieee80211/phy$phy" 2>&1 || true
   iw phy "phy$phy" info 2>&1 | head -60 || true
-  echo "Interface state:" >&2
   hwsim_inventory >&2 || true
   remove_lab_namespaces
   modprobe -r mac80211_hwsim 2>/dev/null || true
@@ -176,7 +187,6 @@ ip netns exec "$NS_AP" ip link set lo up
 ip netns exec "$NS_CLIENT" ip link set lo up
 ip netns exec "$NS_MON" ip link set lo up
 
-# Configure radio state while every interface is DOWN. This ordering avoids nl80211 EBUSY.
 ip netns exec "$NS_AP" ip link set "$AP_IF" down
 ip netns exec "$NS_CLIENT" ip link set "$CLIENT_IF" down
 ip netns exec "$NS_MON" ip link set "$MON_IF" down
@@ -219,6 +229,8 @@ network={
 }
 EOF
 
+provision_enterprise_certs
+
 cat > "$ROOT/config/hostapd_enterprise.conf" <<EOF
 ctrl_interface=/run/hostapd
 interface=$AP_IF
@@ -234,6 +246,9 @@ rsn_pairwise=CCMP
 ieee8021x=1
 eap_server=1
 eap_user_file=$ROOT/config/hostapd.eap_user
+ca_cert=$CERT_DIR/ca.pem
+server_cert=$CERT_DIR/server.pem
+private_key=$CERT_DIR/server.key
 EOF
 cat > "$ROOT/config/hostapd.eap_user" <<EOF
 * PEAP
@@ -248,6 +263,7 @@ network={
     eap=PEAP
     identity="admin"
     password="Password123!"
+    ca_cert="$CERT_DIR/ca.pem"
     phase2="auth=MSCHAPV2"
 }
 EOF
@@ -281,4 +297,4 @@ ip netns exec "$NS_CLIENT" ip link show "$CLIENT_IF" >/dev/null
 ip netns exec "$NS_MON" ip link show "$MON_IF" >/dev/null
 ip netns exec "$NS_AP" ip -4 addr show dev "$AP_IF" | grep -q '192.168.50.1/24'
 
-printf '%s\n' "NetForge Tier-1 topology ready" "  AP: $NS_AP/$AP_IF" "  Client: $NS_CLIENT/$CLIENT_IF" "  Monitor: $NS_MON/$MON_IF" "  AP: 192.168.50.1/24"
+printf '%s\n' "NetForge Tier-1 topology ready" "  AP: $NS_AP/$AP_IF" "  Client: $NS_CLIENT/$CLIENT_IF" "  Monitor: $NS_MON/$MON_IF" "  AP: 192.168.50.1/24" "  Enterprise TLS: $CERT_DIR"
