@@ -57,11 +57,11 @@ def lifecycle_management(request):
     try:
         subprocess.run(f"sudo ip netns exec {ap['namespace']} ip addr flush dev {ap['interface']}",shell=True,check=False)
         subprocess.run(f"sudo ip netns exec {ap['namespace']} ip addr add 192.168.50.1/24 dev {ap['interface']}",shell=True,check=False)
-        dns_proc=subprocess.Popen(['sudo','ip','netns','exec',ap['namespace'],'dnsmasq',f"--interface={ap['interface']",'--dhcp-range=192.168.50.10,192.168.50.50,255.255.255.0,12h','--no-daemon'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        dns_proc=subprocess.Popen(['sudo','ip','netns','exec',ap['namespace'],'dnsmasq',f"--interface={ap['interface']}",'--dhcp-range=192.168.50.10,192.168.50.50,255.255.255.0,12h','--no-daemon'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         hostapd_proc=subprocess.Popen(['sudo','ip','netns','exec',ap['namespace'],'hostapd',str(ROOT/ap['config_path'])],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         time.sleep(2)
         if hostapd_proc.poll() is not None:
-            raise RuntimeError('hostapd exited during Tier-1 setup; run sudo ip netns exec ap_ns hostapd -dd /home/yash/Desktop/Netforge/config/ap.conf for diagnostics')
+            raise RuntimeError(f'hostapd exited during Tier-1 setup; inspect {ROOT/ap["config_path"]}')
         subprocess.run(['sudo','ip','netns','exec',client['namespace'],'ip','link','set',client['interface'],'up'],check=True)
         subprocess.run(['sudo','ip','netns','exec',client['namespace'],'wpa_supplicant','-B','-i',client['interface'],'-c',str(ROOT/client['config_path'])],check=False)
         time.sleep(3)
