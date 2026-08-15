@@ -13,8 +13,9 @@ sys.path.insert(0, str(ROOT))
 
 REQUIRED = [
     "README.md", "requirements.txt", "db/schema.sql", "db/init_db.py",
-    "dashboard/app.py", "dashboard/db.py", "dashboard/templates/topology.html",
-    "config/devices.yaml", "tests/conftest.py"
+    "dashboard/app.py", "dashboard/db.py", "dashboard/templates/topology_workspace.html",
+    "dashboard/templates/error.html", "config/devices.yaml", "tests/conftest.py",
+    "scripts/setup_topology.sh", "scripts/teardown_topology.sh"
 ]
 
 
@@ -48,16 +49,13 @@ def main() -> int:
     try:
         from dashboard.app import app
         with app.test_client() as client:
-            response = client.get("/health")
-            if response.status_code != 200:
-                print(f"dashboard health: FAIL ({response.status_code})")
-                return 1
-            print("dashboard health: PASS")
-            response = client.get("/api/topology_data")
-            if response.status_code != 200:
-                print(f"topology API: FAIL ({response.status_code})")
-                return 1
-            payload = response.get_json()
+            for path in ("/health", "/", "/topology", "/history", "/about", "/api/topology_data"):
+                response = client.get(path)
+                if response.status_code != 200:
+                    print(f"route {path}: FAIL ({response.status_code})")
+                    return 1
+                print(f"route {path}: PASS")
+            payload = client.get("/api/topology_data").get_json()
             if not payload or payload.get("success") is not True:
                 print("topology API: FAIL (invalid response envelope)")
                 return 1
