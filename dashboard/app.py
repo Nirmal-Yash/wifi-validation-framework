@@ -46,9 +46,8 @@ def topology_payload(version_id=None):
         version=conn.execute('SELECT tv.id,tv.topology_id,t.name,tv.version,tv.status,tv.created_at FROM topology_versions tv JOIN topologies t ON t.id=tv.topology_id WHERE '+('tv.id=?' if version_id is not None else "tv.status='ACTIVE'")+' ORDER BY tv.id DESC LIMIT 1',((version_id,) if version_id is not None else ())).fetchone()
         if not version:return {'nodes':[],'edges':[],'topology':None}
         rows=conn.execute('SELECT * FROM topology_nodes WHERE topology_version_id=? ORDER BY id',(version['id'],)).fetchall(); links=conn.execute('SELECT * FROM topology_links WHERE topology_version_id=? ORDER BY id',(version['id'],)).fetchall()
-        icons={'access_point':'\\uf1eb','client':'\\uf109','router':'\\uf0e8','switch':'\\uf6ff','monitor':'\\uf21b','generic':'\\uf233'}
-        nodes=[{'id':r['id'],'node_key':r['node_key'],'label':r['name'],'type':r['node_type'],'namespace':r['namespace'],'interface':r['interface_name'],'x':r['x'],'y':r['y'],'shape':'icon','title':f"Device: {r['name']}\\nType: {r['node_type']}\\nNamespace: {r['namespace'] or 'N/A'}\\nInterface: {r['interface_name'] or 'N/A'}",'icon':{'face':'Font Awesome 6 Free','code':icons.get(r['node_type'],icons['generic']),'weight':900,'size':48}} for r in rows]
-        edges=[{'id':r['id'],'from':r['source_node_id'],'to':r['target_node_id'],'width':2,'smooth':{'type':'dynamic'}} for r in links]
+        nodes=[{'id':r['id'],'node_key':r['node_key'],'label':r['name'],'type':r['node_type'],'namespace':r['namespace'],'interface':r['interface_name'],'config_path':r['config_path'],'x':r['x'],'y':r['y'],'metadata':json.loads(r['metadata_json'] or '{}'),'title':f"Device: {r['name']}\\nType: {r['node_type']}\\nNamespace: {r['namespace'] or 'N/A'}\\nInterface: {r['interface_name'] or 'N/A'}"} for r in rows]
+        edges=[{'id':r['id'],'from':r['source_node_id'],'to':r['target_node_id'],'source_interface':r['source_interface'],'target_interface':r['target_interface'],'width':2} for r in links]
         return {'nodes':nodes,'edges':edges,'topology':{'id':version['topology_id'],'name':version['name'],'version_id':version['id'],'version':version['version'],'status':version['status'],'created_at':version['created_at']}}
 def topology_rows(conn,version_id):
     rows=conn.execute('SELECT * FROM topology_nodes WHERE topology_version_id=? ORDER BY id',(version_id,)).fetchall(); links=conn.execute('SELECT * FROM topology_links WHERE topology_version_id=? ORDER BY id',(version_id,)).fetchall(); return rows,links
@@ -66,7 +65,7 @@ def write_topology_version(conn,version_id,nodes,edges):
         conn.execute('INSERT INTO topology_links(topology_version_id,source_node_id,target_node_id,source_interface,target_interface,metadata_json) VALUES(?,?,?,?,?,?)',(version_id,a,b,edge.get('source_interface'),edge.get('target_interface'),json.dumps(edge)))
 def persist_topology(name,nodes,edges,source='local'):
     with connection() as conn:
-        existing=conn.execute('SELECT id FROM topologies WHERE name=?',(str(name or 'default').strip()[:100] or 'default',)).fetchone(); name=str(name or 'default').strip()[:100] or 'default'
+        name=str(name or 'default').strip()[:100] or 'default'; existing=conn.execute('SELECT id FROM topologies WHERE name=?',(name,)).fetchone()
         if existing: tid=existing['id']; version=conn.execute('SELECT COALESCE(MAX(version),0)+1 v FROM topology_versions WHERE topology_id=?',(tid,)).fetchone()['v']
         else: conn.execute('INSERT INTO topologies(name,source) VALUES(?,?)',(name,source)); tid=conn.execute('SELECT last_insert_rowid()').fetchone()[0]; version=1
         conn.execute('INSERT INTO topology_versions(topology_id,version,status) VALUES(?,?,?)',(tid,version,'ACTIVE')); vid=conn.execute('SELECT last_insert_rowid()').fetchone()[0]
@@ -94,7 +93,7 @@ def replace_draft(version_id,nodes,edges):
     with connection() as conn:
         v=conn.execute('SELECT * FROM topology_versions WHERE id=?',(version_id,)).fetchone()
         if not v or v['status']!='DRAFT': raise ValueError('Only a DRAFT topology version can be edited')
-        conn.execute('DELETE FROM topology_links WHERE topology_version_id=?',(version_id,)); conn.execute('DELETE FROM topology_nodes WHERE topology_version_id=?',(version_id,)); write_topology_version(conn,version_id,nodes,edges); conn.execute("UPDATE topology_versions SET status='VALIDATED' WHERE id=?",(version_id,)); conn.commit(); return {'valid':True,'version':dict(v)}
+        conn.execute('DELETE FROM topology_links WHERE topology_version_id=?',(version_id,)); conn.execute('DELETE FROM topology_nodes WHERE topology_version_id=?',(version_id,)); write_topology_version(conn,version_id,nodes,edges); conn.execute("UPDATE topology_versions SET status='DRAFT' WHERE id=?",(version_id,)); conn.commit(); return {'valid':True,'version':dict(v)}
 def commit_draft(version_id):
     with connection() as conn:
         v=conn.execute('SELECT * FROM topology_versions WHERE id=?',(version_id,)).fetchone()
@@ -102,6 +101,13 @@ def commit_draft(version_id):
         count=conn.execute('SELECT COUNT(*) c FROM topology_nodes WHERE topology_version_id=?',(version_id,)).fetchone()['c']
         if not count: raise ValueError('Cannot commit an empty topology')
         conn.execute("UPDATE topology_versions SET status='ARCHIVED' WHERE topology_id=? AND status='ACTIVE'",(v['topology_id'],)); conn.execute("UPDATE topology_versions SET status='ACTIVE' WHERE id=?",(version_id,)); conn.execute('UPDATE topologies SET updated_at=CURRENT_TIMESTAMP WHERE id=?',(v['topology_id'],)); conn.commit(); return {'version':dict(conn.execute('SELECT * FROM topology_versions WHERE id=?',(version_id,)).fetchone())}
+def delete_topology_version(topology_id,version_id):
+    with connection() as conn:
+        v=conn.execute('SELECT * FROM topology_versions WHERE id=? AND topology_id=?',(version_id,topology_id)).fetchone()
+        if not v: raise LookupError('Topology version does not exist')
+        if v['status']=='ACTIVE': raise ValueError('The ACTIVE topology version cannot be deleted')
+        conn.execute('DELETE FROM topology_versions WHERE id=?',(version_id,)); conn.commit()
+    return {'topology_id':topology_id,'version_id':version_id,'deleted':True}
 @app.before_request
 def bootstrap(): ensure_schema()
 @app.errorhandler(HTTPException)
@@ -120,8 +126,7 @@ def index():
     return render_template('dashboard.html',total=total,passed=passed,failed=total-passed,rate=round(passed/total*100,1) if total else 0,failures=failures)
 @app.route('/health')
 def health():
-    with connection() as conn:
-        conn.execute('SELECT 1').fetchone(); metrics={ 'topologies':conn.execute('SELECT COUNT(*) c FROM topologies').fetchone()['c'],'executions':conn.execute('SELECT COUNT(*) c FROM executions').fetchone()['c'],'test_logs':conn.execute('SELECT COUNT(*) c FROM test_logs').fetchone()['c'] }
+    with connection() as conn: conn.execute('SELECT 1').fetchone(); metrics={'topologies':conn.execute('SELECT COUNT(*) c FROM topologies').fetchone()['c'],'executions':conn.execute('SELECT COUNT(*) c FROM executions').fetchone()['c'],'test_logs':conn.execute('SELECT COUNT(*) c FROM test_logs').fetchone()['c']}
     return api_ok({'service':'dashboard','database':'ok','metrics':metrics})
 @app.route('/topology')
 def topology():return render_template('topology_enhanced.html')
@@ -147,8 +152,12 @@ def topology_versions(topology_id):
         if not topology:return api_error('TOPOLOGY_NOT_FOUND','Topology does not exist',404)
         rows=conn.execute('SELECT id,version,status,created_at FROM topology_versions WHERE topology_id=? ORDER BY version DESC',(topology_id,)).fetchall()
     return api_ok({'topology':dict(topology),'versions':[dict(r) for r in rows]})
-@app.route('/api/topologies/<int:topology_id>/versions/<int:version_id>')
-def get_topology_version(topology_id,version_id):
+@app.route('/api/topologies/<int:topology_id>/versions/<int:version_id>',methods=['GET','DELETE'])
+def topology_version_resource(topology_id,version_id):
+    if request.method=='DELETE':
+        try:return api_ok(delete_topology_version(topology_id,version_id))
+        except LookupError as e:return api_error('TOPOLOGY_VERSION_NOT_FOUND',str(e),404)
+        except ValueError as e:return api_error('VERSION_DELETE_REJECTED',str(e),409)
     with connection() as conn:
         if not conn.execute('SELECT id FROM topology_versions WHERE id=? AND topology_id=?',(version_id,topology_id)).fetchone():return api_error('TOPOLOGY_VERSION_NOT_FOUND','Topology version does not exist',404)
     return api_ok(topology_payload(version_id))
@@ -162,7 +171,8 @@ def validate_topology():
     return api_ok({'valid':True,'node_count':len(nodes),'link_count':len(links)})
 @app.route('/api/topologies/<int:topology_id>/draft',methods=['POST'])
 def draft_create(topology_id):
-    try:return api_ok({'version':create_draft(topology_id,(request.get_json(silent=True) or {}).get('nodes'),(request.get_json(silent=True) or {}).get('edges'))},201)
+    try:
+        p=request.get_json(silent=True) or {}; return api_ok({'version':create_draft(topology_id,p.get('nodes'),p.get('edges'))},201)
     except LookupError as e:return api_error('TOPOLOGY_NOT_FOUND',str(e),404)
     except (ValueError,TypeError) as e:return api_error('DRAFT_INVALID',str(e),422)
 @app.route('/api/topologies/<int:topology_id>/drafts/<int:version_id>',methods=['PUT'])
