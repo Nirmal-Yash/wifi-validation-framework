@@ -13,6 +13,7 @@ NS_MON=monitor_ns
 AP_IF=wlan0
 CLIENT_IF=wlan1
 MON_IF=wlan2
+HWSIM_RADIOS=3
 
 for cmd in ip iw modprobe hostapd wpa_supplicant dnsmasq dhclient tcpdump ethtool; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd"; exit 2; }
@@ -20,23 +21,57 @@ done
 
 mkdir -p "$ROOT/config" "$ROOT/artifacts/pcaps" /run/hostapd /run/wpa_supplicant
 
-cleanup() {
-  for proc in hostapd dnsmasq wpa_supplicant dhclient iperf3; do pkill -x "$proc" 2>/dev/null || true; done
-  for ns in "$NS_AP" "$NS_CLIENT" "$NS_MON"; do ip netns del "$ns" 2>/dev/null || true; done
+log() { printf '[NetForge] %s\n' "$*"; }
+
+stop_matching_units() {
+  local unit
+  while read -r unit; do
+    [[ -n "$unit" ]] || continue
+    systemctl stop "$unit" 2>/dev/null || true
+  done < <(systemctl list-units --all --no-legend 'wpa_supplicant*' 2>/dev/null | awk '{print $1}')
 }
-cleanup
+
+stop_lab_processes() {
+  for proc in hostapd dnsmasq wpa_supplicant dhclient iperf3 tcpdump; do
+    pkill -x "$proc" 2>/dev/null || true
+  done
+  stop_matching_units
+  sleep 1
+}
+
+remove_lab_namespaces() {
+  local ns pid
+  for ns in "$NS_AP" "$NS_CLIENT" "$NS_MON" router_ns switch_ns; do
+    if ip netns list | awk '{print $1}' | grep -Fxq "$ns"; then
+      while read -r pid; do
+        [[ -n "$pid" ]] && kill -TERM "$pid" 2>/dev/null || true
+      done < <(ip netns pids "$ns" 2>/dev/null || true)
+      sleep 0.2
+      while read -r pid; do
+        [[ -n "$pid" ]] && kill -KILL "$pid" 2>/dev/null || true
+      done < <(ip netns pids "$ns" 2>/dev/null || true)
+      ip netns del "$ns" 2>/dev/null || true
+    fi
+  done
+}
 
 hwsim_inventory() {
   local iface driver phy
   while read -r phy iface; do
     [[ -n "$phy" && -n "$iface" ]] || continue
     driver="$(ethtool -i "$iface" 2>/dev/null | awk -F': ' '$1=="driver" {print $2; exit}')"
-    [[ "$driver" == "mac80211_hwsim" && "$iface" =~ ^wlan[0-9]+$ ]] || continue
+    [[ "$driver" == "mac80211_hwsim" ]] || continue
+    [[ "$iface" =~ ^wlan[0-9]+$ ]] || continue
     printf '%s %s\n' "$phy" "$iface"
-  done < <(iw dev | awk '/^phy#/ {gsub("phy#", "", $1); phy=$1} /^[[:space:]]+Interface / {print phy, $2}')
+  done < <(
+    iw dev | awk '
+      /^phy#/ {gsub("phy#", "", $1); phy=$1}
+      /^[[:space:]]+Interface / {print phy, $2}
+    '
+  )
 }
 
-release_radio_consumers() {
+release_hwsim_consumers() {
   local iface
   while read -r _ iface; do
     [[ -n "$iface" ]] || continue
@@ -46,37 +81,70 @@ release_radio_consumers() {
     fi
     ip link set "$iface" down 2>/dev/null || true
   done < <(hwsim_inventory)
-  systemctl stop wpa_supplicant.service 2>/dev/null || true
+  stop_matching_units
   sleep 1
 }
 
+reset_hwsim() {
+  log "Stopping NetForge daemons and releasing hwsim consumers"
+  stop_lab_processes
+  remove_lab_namespaces
+  release_hwsim_consumers
+
+  if lsmod | awk '{print $1}' | grep -Fxq mac80211_hwsim; then
+    log "Removing stale mac80211_hwsim radios"
+    if ! modprobe -r mac80211_hwsim 2>/tmp/netforge_hwsim_remove_error; then
+      echo "ERROR: mac80211_hwsim is still busy and cannot be reset." >&2
+      cat /tmp/netforge_hwsim_remove_error >&2 || true
+      echo "Current hwsim inventory:" >&2
+      hwsim_inventory >&2 || true
+      echo "Potential consumers:" >&2
+      for iface in $(hwsim_inventory | awk '{print $2}'); do
+        fuser -v "/sys/class/net/$iface" 2>&1 || true
+        nmcli device status 2>/dev/null | grep -F "$iface" || true
+      done
+      echo "Run: sudo ./scripts/teardown_topology.sh and retry." >&2
+      exit 5
+    fi
+    sleep 1
+  fi
+
+  if [[ -n "$(hwsim_inventory)" ]]; then
+    echo "ERROR: hwsim interfaces remain after module removal." >&2
+    hwsim_inventory >&2 || true
+    exit 6
+  fi
+
+  log "Loading a fresh mac80211_hwsim instance with exactly $HWSIM_RADIOS radios"
+  modprobe mac80211_hwsim radios="$HWSIM_RADIOS"
+  for _ in {1..20}; do
+    [[ $(hwsim_inventory | wc -l) -eq "$HWSIM_RADIOS" ]] && return 0
+    sleep 0.25
+  done
+  echo "ERROR: mac80211_hwsim did not create exactly $HWSIM_RADIOS interfaces." >&2
+  hwsim_inventory >&2 || true
+  exit 7
+}
+
+reset_hwsim
+
 mapfile -t inventory < <(hwsim_inventory | sort -k2,2V)
-if [[ ${#inventory[@]} -eq 0 ]]; then
-  modprobe bonding
-  modprobe 8021q
-  modprobe mac80211_hwsim radios=3
-  sleep 2
-  mapfile -t inventory < <(hwsim_inventory | sort -k2,2V)
-else
-  echo "Reusing existing mac80211_hwsim radios: $(printf '%s ' "${inventory[@]}")"
-fi
-
 if [[ ${#inventory[@]} -ne 3 ]]; then
-  echo "ERROR: Expected exactly 3 mac80211_hwsim interfaces, found ${#inventory[@]}"
-  printf '%s\n' "${inventory[@]:-none}"
-  iw dev || true
-  exit 3
+  echo "ERROR: Expected exactly 3 hwsim interface/PHY pairs." >&2
+  printf '%s\n' "${inventory[@]:-none}" >&2
+  exit 8
 fi
 
-release_radio_consumers
 read -r AP_PHY AP_SOURCE <<<"${inventory[0]}"
 read -r CLIENT_PHY CLIENT_SOURCE <<<"${inventory[1]}"
 read -r MON_PHY MON_SOURCE <<<"${inventory[2]}"
 
-[[ "$AP_SOURCE" == wlan0 && "$CLIENT_SOURCE" == wlan1 && "$MON_SOURCE" == wlan2 ]] || {
-  echo "ERROR: Expected wlan0/wlan1/wlan2 hwsim assignment; found $AP_SOURCE/$CLIENT_SOURCE/$MON_SOURCE"
-  exit 4
+[[ "$AP_SOURCE" == "$AP_IF" && "$CLIENT_SOURCE" == "$CLIENT_IF" && "$MON_SOURCE" == "$MON_IF" ]] || {
+  echo "ERROR: Fresh hwsim naming is not wlan0/wlan1/wlan2: $AP_SOURCE/$CLIENT_SOURCE/$MON_SOURCE" >&2
+  exit 9
 }
+
+log "Deterministic radio map: phy$AP_PHY/$AP_SOURCE -> $NS_AP; phy$CLIENT_PHY/$CLIENT_SOURCE -> $NS_CLIENT; phy$MON_PHY/$MON_SOURCE -> $NS_MON"
 
 ip netns add "$NS_AP"
 ip netns add "$NS_CLIENT"
@@ -84,13 +152,29 @@ ip netns add "$NS_MON"
 
 move_phy() {
   local phy="$1" ns="$2"
-  if iw phy "phy$phy" set netns name "$ns" 2>/tmp/netforge_phy_error; then return 0; fi
+  local error_file=/tmp/netforge_phy_error
+  rm -f "$error_file"
+  for attempt in 1 2 3 4 5; do
+    if iw phy "phy$phy" set netns name "$ns" 2>"$error_file"; then
+      return 0
+    fi
+    if grep -qi 'busy' "$error_file"; then
+      sleep 1
+      release_hwsim_consumers
+      continue
+    fi
+    break
+  done
   echo "ERROR: phy$phy could not be moved into $ns." >&2
-  cat /tmp/netforge_phy_error >&2 || true
+  cat "$error_file" >&2 || true
+  echo "PHY ownership/state:" >&2
   fuser -v "/sys/class/ieee80211/phy$phy" 2>&1 || true
-  iw phy "phy$phy" info 2>&1 | head -40 || true
-  cleanup
-  return 1
+  iw phy "phy$phy" info 2>&1 | head -60 || true
+  echo "Interface state:" >&2
+  ip link show "$AP_SOURCE" "$CLIENT_SOURCE" "$MON_SOURCE" 2>&1 || true
+  remove_lab_namespaces
+  modprobe -r mac80211_hwsim 2>/dev/null || true
+  exit 10
 }
 
 move_phy "$AP_PHY" "$NS_AP"
@@ -109,11 +193,16 @@ ip netns exec "$NS_AP" ip link set lo up
 ip netns exec "$NS_CLIENT" ip link set lo up
 ip netns exec "$NS_MON" ip link set lo up
 
+# Configure all radio state while interfaces are DOWN. iw requires this ordering
+# for reliable nl80211 operation and it avoids EBUSY during channel/type changes.
 ip netns exec "$NS_AP" ip link set "$AP_IF" down
-ip netns exec "$NS_AP" iw dev "$AP_IF" set channel 6
 ip netns exec "$NS_CLIENT" ip link set "$CLIENT_IF" down
-ip netns exec "$NS_CLIENT" iw dev "$CLIENT_IF" set channel 6
 ip netns exec "$NS_MON" ip link set "$MON_IF" down
+
+ip netns exec "$NS_AP" iw dev "$AP_IF" set type __ap
+ip netns exec "$NS_AP" iw dev "$AP_IF" set channel 6
+ip netns exec "$NS_CLIENT" iw dev "$CLIENT_IF" set type managed
+ip netns exec "$NS_CLIENT" iw dev "$CLIENT_IF" set channel 6
 ip netns exec "$NS_MON" iw dev "$MON_IF" set type monitor
 ip netns exec "$NS_MON" iw dev "$MON_IF" set channel 6
 
@@ -177,7 +266,7 @@ update_config=0
 network={
     ssid="NetForge_Enterprise"
     key_mgmt=WPA-EAP
-    eap=PEAP
+eap=PEAP
     identity="admin"
     password="Password123!"
     phase2="auth=MSCHAPV2"
