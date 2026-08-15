@@ -59,16 +59,22 @@ def require_live_environment():
     if not LIVE_TESTS: pytest.skip('Privileged network test disabled; set NETFORGE_LIVE_TESTS=1 to run it')
 
 
-@pytest.fixture(scope='function',autouse=True)
+@pytest.fixture(scope='session',autouse=True)
 def live_lab(request):
-    if request.node.get_closest_marker('live') is None:
-        yield; return
+    """Provision the shared Tier-1 lab once, then tear it down once at session end."""
+    live_items=[item for item in request.session.items if item.get_closest_marker('live') is not None]
+    if not live_items:
+        yield
+        return
     require_live_environment()
     subprocess.run(['sudo','-v'],check=True)
     setup=subprocess.run(['sudo','bash',str(ROOT/'scripts/setup_topology.sh')],capture_output=True,text=True)
-    if setup.returncode!=0: raise RuntimeError(f'NetForge Tier-1 lab provisioning failed:\n{setup.stdout}\n{setup.stderr}')
-    try: yield
-    finally: subprocess.run(['sudo','bash',str(ROOT/'scripts/teardown_topology.sh')],check=False)
+    if setup.returncode!=0:
+        raise RuntimeError(f'NetForge Tier-1 lab provisioning failed:\n{setup.stdout}\n{setup.stderr}')
+    try:
+        yield
+    finally:
+        subprocess.run(['sudo','bash',str(ROOT/'scripts/teardown_topology.sh')],check=False)
 
 
 def run_ns(ns,*args,check=False,capture=False):
@@ -82,13 +88,20 @@ def lifecycle_management(request):
     require_live_environment()
     nodes=request.getfixturevalue('system_config')['nodes']; ap=nodes['ap']; client=nodes['client']
     ap_conf=ROOT/ap['config_path']; client_conf=ROOT/client['config_path']
-    subprocess.run('sudo killall hostapd dnsmasq wpa_supplicant iperf3 dhclient tcpdump 2>/dev/null',shell=True)
-    run_ns(ap['namespace'],'ip','link','set',ap['interface'],'down')
-    run_ns(client['namespace'],'ip','link','set',client['interface'],'down')
+    # Only terminate processes owned by the NetForge namespaces. Do not use
+    # host-wide killall here; a validation suite must not disrupt host services.
+    for ns in (ap['namespace'], client['namespace']):
+        subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x','hostapd'],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x','dnsmasq'],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x','wpa_supplicant'],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x','dhclient'],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x','iperf3'],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    run_ns(ap['namespace'],'ip','link','set',ap['interface'],'down',check=True)
+    run_ns(client['namespace'],'ip','link','set',client['interface'],'down',check=True)
     run_ns(ap['namespace'],'ip','link','set',ap['interface'],'up',check=True)
     run_ns(client['namespace'],'ip','link','set',client['interface'],'up',check=True)
     run_ns(ap['namespace'],'ip','addr','replace','192.168.50.1/24','dev',ap['interface'],check=True)
-    dns_proc=hostapd_proc=wpa_proc=None
+    dns_proc=hostapd_proc=None
     try:
         dns_proc=subprocess.Popen(['sudo','ip','netns','exec',ap['namespace'],'dnsmasq',f'--interface={ap["interface"]}','--bind-interfaces','--dhcp-range=192.168.50.10,192.168.50.50,255.255.255.0,12h','--dhcp-option=3,192.168.50.1','--dhcp-option=6,192.168.50.1','--no-daemon'],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
         hostapd_proc=subprocess.Popen(['sudo','ip','netns','exec',ap['namespace'],'hostapd','-dd',str(ap_conf)],stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
@@ -109,8 +122,10 @@ def lifecycle_management(request):
         run_ns(client['namespace'],'dhclient','-1','-v',client['interface'],capture=True)
         yield
     finally:
-        subprocess.run('sudo killall hostapd dnsmasq wpa_supplicant dhclient iperf3 tcpdump 2>/dev/null',shell=True)
-        for proc in (hostapd_proc,dns_proc,wpa_proc):
+        for ns in (ap['namespace'], client['namespace']):
+            for proc in ('hostapd','dnsmasq','wpa_supplicant','dhclient','iperf3'):
+                subprocess.run(['sudo','ip','netns','exec',ns,'pkill','-x',proc],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        for proc in (hostapd_proc,dns_proc):
             if proc and proc.poll() is None:
                 proc.terminate()
                 try: proc.wait(timeout=3)
