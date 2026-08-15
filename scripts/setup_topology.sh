@@ -26,29 +26,40 @@ before="$(mktemp)"
 after="$(mktemp)"
 trap 'rm -f "$before" "$after"' EXIT
 
-# Record host-owned wireless interfaces so real hardware is never moved into the lab.
-iw dev | awk '/^[[:space:]]*Interface / {print $2}' | sort -u > "$before"
+iw dev | awk '$1 == "Interface" {print $2}' | grep -E '^wlan[0-9]+$' | sort -u > "$before" || true
+
 modprobe bonding
 modprobe 8021q
 modprobe -r mac80211_hwsim 2>/dev/null || true
 modprobe mac80211_hwsim radios=3
 sleep 2
-iw dev | awk '/^[[:space:]]*Interface / {print $2}' | sort -u > "$after"
+
+iw dev | awk '$1 == "Interface" {print $2}' | grep -E '^wlan[0-9]+$' | sort -u > "$after" || true
 mapfile -t radios < <(comm -13 "$before" "$after")
 
 if [[ ${#radios[@]} -ne 3 ]]; then
-  echo "Expected 3 new hwsim interfaces, found ${#radios[@]}"
-  echo "New interfaces: ${radios[*]:-none}"
-  iw dev
+  echo "ERROR: Expected exactly 3 new mac80211_hwsim interfaces, found ${#radios[@]}"
+  echo "Detected new wlan interfaces: ${radios[*]:-none}"
+  echo "Full wireless inventory:"
+  iw dev || true
   exit 3
 fi
+
+for radio in "${radios[@]}"; do
+  if ! ip link show "$radio" >/dev/null 2>&1; then
+    echo "ERROR: Detected wireless interface '$radio' is not movable from the root namespace."
+    exit 4
+  fi
+done
 
 ip netns add "$NS_AP"
 ip netns add "$NS_CLIENT"
 ip netns add "$NS_MON"
+
 ip link set "${radios[0]}" netns "$NS_AP"
 ip link set "${radios[1]}" netns "$NS_CLIENT"
 ip link set "${radios[2]}" netns "$NS_MON"
+
 ip netns exec "$NS_AP" ip link set "${radios[0]}" name "$AP_IF"
 ip netns exec "$NS_CLIENT" ip link set "${radios[1]}" name "$CLIENT_IF"
 ip netns exec "$NS_MON" ip link set "${radios[2]}" name "$MON_IF"
