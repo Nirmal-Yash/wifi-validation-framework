@@ -1,51 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Dashboard | NetForge{% endblock %}
-
+{% block title %}NetForge Control Center{% endblock %}
+{% block extra_head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>{% endblock %}
 {% block content %}
-<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
-    <div class="panel" style="margin-bottom: 0;">
-        <div style="font-family: 'Courier Prime', monospace; font-size: 12px; color: var(--primary);">Total Executions</div>
-        <h2 style="margin: 12px 0 0 0;">{{ total }}</h2>
-    </div>
-    <div class="panel" style="margin-bottom: 0;">
-        <div style="font-family: 'Courier Prime', monospace; font-size: 12px; color: var(--primary);">Pass Rate</div>
-        <h2 style="margin: 12px 0 0 0; color: var(--primary);">{{ rate }}%</h2>
-    </div>
-    <div class="panel" style="margin-bottom: 0;">
-        <div style="font-family: 'Courier Prime', monospace; font-size: 12px; color: var(--on-surface-muted);">Passed</div>
-        <h2 style="margin: 12px 0 0 0;">{{ passed }}</h2>
-    </div>
-    <div class="panel" style="margin-bottom: 0; border-top-color: var(--error);">
-        <div style="font-family: 'Courier Prime', monospace; font-size: 12px; color: var(--error);">Failed</div>
-        <h2 style="margin: 12px 0 0 0; color: var(--error);">{{ failed }}</h2>
-    </div>
-</div>
-
-<div class="panel">
-    <h3><i class="fa-solid fa-triangle-exclamation mr-2"></i> Recent Critical Failures</h3>
-    <table>
-        <thead>
-            <tr>
-                <th>Timestamp</th>
-                <th>Firmware</th>
-                <th>Test Module</th>
-                <th>Error Signature</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for failure in failures %}
-            <tr>
-                <td>{{ failure.timestamp }}</td>
-                <td>v{{ failure.firmware_version }}</td>
-                <td style="color: var(--primary);">{{ failure.test_name }}</td>
-                <td style="color: var(--error);">{{ failure.error_message }}</td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="4" style="text-align:center; color:var(--on-surface-muted);">No active failures detected in local netns.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+<header style="display:flex;justify-content:space-between;gap:18px;align-items:flex-end;flex-wrap:wrap"><div><div class="muted">NETFORGE / ENTERPRISE CONTROL PLANE</div><h1>Control Center</h1><p class="muted">Execution health, topology state, regression risk and platform readiness.</p></div><div style="display:flex;gap:8px"><a class="btn primary" href="/operations">Run Validation</a><a class="btn" href="/topology">Manage Topology</a></div></header>
+<div id="cards" style="display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:12px;margin:18px 0"></div>
+<div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:18px"><section class="panel"><h3>Execution Trend</h3><canvas id="trend" height="110"></canvas></section><section class="panel"><h3>Platform Health</h3><div id="health" class="muted">Checking…</div></section></div>
+<section class="panel"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3>Recent Executions</h3><a class="btn" href="/operations">Open Operations</a></div><div style="overflow:auto"><table><thead><tr><th>ID</th><th>Firmware</th><th>Suite</th><th>Environment</th><th>Phase</th><th>Result</th><th>Tests</th></tr></thead><tbody id="runs"></tbody></table></div></section>
+<script>async function api(u){const r=await fetch(u);const p=await r.json();if(!p.success)throw Error(p.error?.message||'Request failed');return p}function esc(x){return String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}async function load(){try{const s=await api('/api/enterprise/summary'),x=s.summary;document.getElementById('cards').innerHTML=[['Executions',x.executions],['Pass Rate',x.pass_rate+'%'],['Passed',x.passed],['Failed',x.failed],['Active',x.active],['Regressions',x.regressions_7d]].map(v=>`<div class="panel" style="margin:0"><div class="muted" style="font-size:10px">${v[0]}</div><strong style="font-size:24px">${v[1]}</strong></div>`).join('');const t=await api('/api/enterprise/analytics/trends?days=30');new Chart(document.getElementById('trend'),{type:'line',data:{labels:t.outcomes.map(v=>v.day),datasets:[{label:'Passed',data:t.outcomes.map(v=>v.passed),tension:.25},{label:'Failed',data:t.outcomes.map(v=>v.failed),tension:.25}]},options:{responsive:true,interaction:{mode:'index',intersect:false}}});const h=await api('/api/enterprise/health/detailed');document.getElementById('health').innerHTML=Object.entries(h.checks).map(([k,v])=>`<p><b>${esc(k)}</b> — ${esc(v)}</p>`).join('');const e=await api('/api/enterprise/executions?limit=12');document.getElementById('runs').innerHTML=e.executions.map(v=>`<tr><td>#${v.id}</td><td>${esc(v.firmware_version)}</td><td>${esc(v.suite_name)}</td><td>${esc(v.environment)}</td><td>${esc(v.phase||v.status)}</td><td>${esc(v.status)}</td><td>${v.passed||0}/${v.total_tests||0}</td></tr>`).join('')||'<tr><td colspan="7" class="muted">No executions recorded.</td></tr>'}catch(e){document.getElementById('health').textContent=e.message}}load();setInterval(load,15000);</script>
 {% endblock %}
