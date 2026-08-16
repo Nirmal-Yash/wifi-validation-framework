@@ -14,13 +14,12 @@ def _add_column(conn: sqlite3.Connection, table: str, definition: str) -> None:
 
 
 def migrate(conn: sqlite3.Connection) -> None:
-    """Apply additive, idempotent migrations to an existing NetForge DB."""
-    # Execution lifecycle and reproducibility metadata.
     for definition in (
         "suite_name TEXT NOT NULL DEFAULT 'live'",
         "triggered_by TEXT NOT NULL DEFAULT 'system'",
         "environment TEXT NOT NULL DEFAULT 'tier1'",
         "notes TEXT NOT NULL DEFAULT ''",
+        "phase TEXT NOT NULL DEFAULT 'QUEUED'",
         "total_tests INTEGER NOT NULL DEFAULT 0",
         "passed INTEGER NOT NULL DEFAULT 0",
         "failed INTEGER NOT NULL DEFAULT 0",
@@ -57,7 +56,6 @@ def migrate(conn: sqlite3.Connection) -> None:
             FOREIGN KEY(execution_id) REFERENCES executions(id) ON DELETE CASCADE,
             FOREIGN KEY(test_result_id) REFERENCES test_results(id) ON DELETE CASCADE
         );
-
         CREATE TABLE IF NOT EXISTS execution_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             execution_id INTEGER NOT NULL,
@@ -67,7 +65,6 @@ def migrate(conn: sqlite3.Connection) -> None:
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(execution_id) REFERENCES executions(id) ON DELETE CASCADE
         );
-
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
@@ -77,7 +74,6 @@ def migrate(conn: sqlite3.Connection) -> None:
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             last_login_at DATETIME
         );
-
         CREATE TABLE IF NOT EXISTS baseline_metrics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             baseline_id INTEGER NOT NULL,
@@ -92,7 +88,6 @@ def migrate(conn: sqlite3.Connection) -> None:
             UNIQUE(baseline_id, metric_name),
             FOREIGN KEY(baseline_id) REFERENCES baselines(id) ON DELETE CASCADE
         );
-
         CREATE TABLE IF NOT EXISTS regression_metrics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             regression_id INTEGER NOT NULL,
@@ -104,7 +99,6 @@ def migrate(conn: sqlite3.Connection) -> None:
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(regression_id) REFERENCES regressions(id) ON DELETE CASCADE
         );
-
         CREATE INDEX IF NOT EXISTS idx_execution_metrics_execution ON execution_metrics(execution_id);
         CREATE INDEX IF NOT EXISTS idx_execution_metrics_name ON execution_metrics(metric_name);
         CREATE INDEX IF NOT EXISTS idx_execution_events_execution ON execution_events(execution_id, created_at);
