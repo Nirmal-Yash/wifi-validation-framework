@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Sign Up | NetForge{% endblock %}
+{% block content %}
+<div style="min-height:80vh;display:grid;place-items:center">
+  <section class="panel" style="width:min(480px,100%);padding:32px">
+    <div class="muted" style="font-size:11px;letter-spacing:.14em">NETWORK VALIDATION CONTROL PLANE</div>
+    <h1 style="margin-top:10px">Create Account</h1>
+    <p class="muted">New accounts are created as read-only viewers and require administrator activation.</p>
+    {% if error %}<div style="border:1px solid var(--error);padding:12px;color:var(--error);margin:14px 0">{{ error }}</div>{% endif %}
+    {% if success %}<div style="border:1px solid var(--primary);padding:12px;color:var(--primary);margin:14px 0">{{ success }}</div>{% endif %}
+    {% if csrf %}
+    <form method="post" autocomplete="off">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>Username</label>
+      <input name="username" required minlength="3" maxlength="32" autocomplete="username" style="width:100%;padding:11px;margin:6px 0 14px;background:var(--background);border:1px solid var(--border);color:var(--on-surface)">
+      <label>Password</label>
+      <input name="password" type="password" required minlength="12" autocomplete="new-password" style="width:100%;padding:11px;margin:6px 0 14px;background:var(--background);border:1px solid var(--border);color:var(--on-surface)">
+      <label>Confirm Password</label>
+      <input name="password_confirmation" type="password" required minlength="12" autocomplete="new-password" style="width:100%;padding:11px;margin:6px 0 18px;background:var(--background);border:1px solid var(--border);color:var(--on-surface)">
+      <button class="btn primary" style="width:100%">Create Account</button>
+    </form>
+    {% endif %}
+    <div style="margin-top:18px;text-align:center"><a href="/login">Already have an account? Sign In</a></div>
+  </section>
+</div>
+{% endblock %}
