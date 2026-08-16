@@ -40,8 +40,13 @@ from engine.regression_engine import analyze_execution, compute_baseline
 
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT_ROOT = ROOT / "artifacts" / "executions"
-app.secret_key = os.getenv("NETFORGE_SECRET_KEY", "netforge-development-secret")
-app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE=os.getenv("NETFORGE_COOKIE_SECURE", "0") == "1")
+# Session/security configuration is owned by dashboard.app. Do not override
+# the production secret or secure-cookie policy from the enterprise module.
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE=app.config.get("SESSION_COOKIE_SAMESITE", "Lax"),
+    SESSION_COOKIE_SECURE=app.config.get("SESSION_COOKIE_SECURE", False),
+)
 
 
 def error(code, message, status=400, details=None):
