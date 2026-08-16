@@ -1,9 +1,9 @@
 from __future__ import annotations
-import hashlib, json, sqlite3
-from datetime import datetime, timezone
+import hashlib,json,sqlite3
+from datetime import datetime,timezone
 from pathlib import Path
 from typing import Any
-from db.init_db import DB_PATH, initialize
+from db.init_db import DB_PATH,initialize
 from db.migrations import migrate
 ROOT=Path(__file__).resolve().parents[1]; ARTIFACT_ROOT=ROOT/'artifacts'/'executions'
 def _now(): return datetime.now(timezone.utc).isoformat()
@@ -56,8 +56,8 @@ def record_artifact(eid,source,kind,test_result_id=None):
     target_dir=ARTIFACT_ROOT/str(eid); target_dir.mkdir(parents=True,exist_ok=True); target=target_dir/(source.name.replace('..','_').replace('/','_').replace('\\','_')); target.write_bytes(source.read_bytes()); digest=hashlib.sha256(target.read_bytes()).hexdigest(); rel=target.relative_to(ROOT).as_posix()
     with connect() as conn: cur=conn.execute('INSERT INTO evidence(execution_id,test_result_id,kind,path,sha256) VALUES(?,?,?,?,?)',(eid,test_result_id,kind,rel,digest)); conn.commit(); return {'id':cur.lastrowid,'execution_id':eid,'kind':kind,'path':rel,'sha256':digest}
 def record_metric(eid,metric_name,metric_value,metric_unit='',test_result_id=None):
-    with connect() as conn: cur=conn.execute('INSERT INTO execution_metrics(execution_id,test_result_id,metric_name,metric_value,metric_unit) VALUES(?,?,?,?,?)',(eid,float(metric_value),metric_unit,test_result_id))
-    return int(cur.lastrowid)
+    with connect() as conn:
+        cur=conn.execute('INSERT INTO execution_metrics(execution_id,test_result_id,metric_name,metric_value,metric_unit) VALUES(?,?,?,?,?)',(eid,metric_name,float(metric_value),metric_unit,test_result_id)); conn.commit(); return int(cur.lastrowid)
 def record_test_results(eid,junit_path):
     import xml.etree.ElementTree as ET
     if not Path(junit_path).exists(): return {'total':0,'passed':0,'failed':0,'blocked':0,'skipped':0,'errors':0}
@@ -73,4 +73,3 @@ def record_test_results(eid,junit_path):
             counts[bucket]+=1; duration=float(case.get('time') or 0); conn.execute('INSERT INTO test_results(execution_id,test_name,test_file,status,duration,duration_ms,error_message,failure_phase) VALUES(?,?,?,?,?,?,?,?)',(eid,case.get('name') or 'unknown',case.get('classname') or '',status,duration,duration*1000,message,''))
         conn.execute('UPDATE executions SET total_tests=?,passed=?,failed=?,blocked=?,skipped=?,errors=? WHERE id=?',(counts['total'],counts['passed'],counts['failed'],counts['blocked'],counts['skipped'],counts['errors'],eid)); conn.commit()
     return counts
-def record_metric_safe(eid,name,value,unit='',test_result_id=None): return record_metric(eid,name,value,unit,test_result_id)
