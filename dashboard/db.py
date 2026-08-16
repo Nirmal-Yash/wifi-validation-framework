@@ -10,10 +10,11 @@ SCHEMA_PATH = ROOT / "db" / "schema.sql"
 
 def connection() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA busy_timeout=10000")
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
@@ -21,4 +22,6 @@ def ensure_schema() -> None:
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
     with connection() as conn:
         conn.executescript(schema)
+        from db.migrations import migrate
+        migrate(conn)
         conn.commit()
