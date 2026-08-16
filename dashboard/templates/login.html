@@ -9,11 +9,12 @@
     {% if error %}<div style="border:1px solid var(--error);padding:12px;color:var(--error);margin:14px 0">{{ error }}</div>{% endif %}
     {% if not bootstrap_ready %}<div style="border:1px solid var(--primary);padding:12px;margin:14px 0;font-size:12px">Set <code>NETFORGE_ADMIN_PASSWORD</code> before first login. Never use a default production password.</div>{% endif %}
     <form method="post" autocomplete="off">
+      <input type="hidden" name="csrf" value="{{ csrf|e }}">
       <label>Username</label>
       <input name="username" required autocomplete="username" style="width:100%;padding:11px;margin:6px 0 14px;background:var(--background);border:1px solid var(--border);color:var(--on-surface)">
       <label>Password</label>
       <input name="password" type="password" required autocomplete="current-password" style="width:100%;padding:11px;margin:6px 0 18px;background:var(--background);border:1px solid var(--border);color:var(--on-surface)">
-      <button class="btn primary" style="width:100%">Sign In</button>
+      <button class="btn primary" style="width:100%" type="submit">Sign In</button>
     </form>
     <div style="margin-top:18px;text-align:center"><a href="/signup">New to NetForge? Create an account</a></div>
     <div class="muted" style="font-size:11px;margin-top:12px;text-align:center">Self-registered accounts require administrator activation.</div>
