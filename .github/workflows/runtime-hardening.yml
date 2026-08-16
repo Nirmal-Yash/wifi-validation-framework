@@ -20,8 +20,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install runtime-test dependencies
+        run: pip install Flask PyYAML pytest
 
       - name: Apply deterministic runtime repair
         run: python scripts/repair_runtime_entrypoint.py
@@ -45,10 +45,7 @@ jobs:
           }
           missing = sorted(required - routes)
           assert not missing, f'missing module-mode routes: {missing}'
-          client = app.test_client()
-          manifest = client.get('/api/runtime/manifest')
-          assert manifest.status_code == 200, manifest.data
-          body = manifest.get_json()
+          body = app.test_client().get('/api/runtime/manifest').get_json()
           assert body['status'] == 'ready', body
           print('MODULE MODE: PASS')
           print('ROUTES:', len(routes))
@@ -81,10 +78,7 @@ jobs:
         env:
           FLASK_TESTING: '1'
           NETFORGE_AUTH_DISABLED: '1'
-        run: |
-          if [ -f tests/test_runtime_entrypoint_integration.py ]; then
-            pytest -q tests/test_runtime_entrypoint_integration.py
-          fi
+        run: pytest -q tests/test_runtime_entrypoint_integration.py
 
       - name: Commit hardening changes
         run: |
