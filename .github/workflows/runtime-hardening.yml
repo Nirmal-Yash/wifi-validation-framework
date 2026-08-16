@@ -39,14 +39,19 @@ jobs:
           routes = {rule.rule for rule in app.url_map.iter_rules()}
           required = {
               '/', '/health', '/topology', '/history', '/operations', '/analytics',
-              '/admin', '/login', '/signup', '/signin', '/api/enterprise/summary',
+              '/admin', '/login', '/api/enterprise/summary',
               '/api/enterprise/health/detailed', '/api/enterprise/executions',
               '/api/runtime/manifest',
           }
           missing = sorted(required - routes)
           assert not missing, f'missing module-mode routes: {missing}'
-          body = app.test_client().get('/api/runtime/manifest').get_json()
+          client = app.test_client()
+          body = client.get('/api/runtime/manifest').get_json()
           assert body['status'] == 'ready', body
+          signin = client.get('/signin')
+          assert signin.status_code in {301, 302, 303, 307, 308}, signin.status_code
+          signup = client.get('/signup')
+          assert signup.status_code == 200, signup.status_code
           print('MODULE MODE: PASS')
           print('ROUTES:', len(routes))
           PY
@@ -64,13 +69,16 @@ jobs:
           app = namespace['app']
           routes = {rule.rule for rule in app.url_map.iter_rules()}
           required = {
-              '/operations', '/analytics', '/admin', '/login', '/signup', '/signin',
+              '/operations', '/analytics', '/admin', '/login',
               '/api/enterprise/summary', '/api/enterprise/health/detailed',
               '/api/runtime/manifest',
           }
           missing = sorted(required - routes)
           assert not missing, f'missing script-mode routes: {missing}'
-          assert app.test_client().get('/api/runtime/manifest').status_code == 200
+          client = app.test_client()
+          assert client.get('/api/runtime/manifest').status_code == 200
+          assert client.get('/signin').status_code in {301, 302, 303, 307, 308}
+          assert client.get('/signup').status_code == 200
           print('DIRECT SCRIPT MODE: PASS')
           PY
 
