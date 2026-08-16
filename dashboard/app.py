@@ -292,4 +292,11 @@ def regressions_resource():
             rows = conn.execute('SELECT r.*, rm.metric_name, rm.baseline_value, rm.current_value, rm.delta_percent, rm.threshold_percent FROM regressions r LEFT JOIN regression_metrics rm ON rm.regression_id=r.id ORDER BY r.id DESC LIMIT 200').fetchall()
     return api_ok({'regressions': [dict(row) for row in rows]})
 
+# Enterprise control-plane integration: dashboard.app is the canonical local entrypoint.
+# Importing here after app creation/routes prevents the circular import that occurs at module load time.
+try:
+    import dashboard.enterprise_app  # noqa: F401,E402
+except Exception as exc:
+    raise RuntimeError(f"Failed to register NetForge enterprise control plane: {exc}") from exc
+
 if __name__=='__main__': ensure_schema(); print('[*] NetForge Control Plane: http://127.0.0.1:5000'); app.run(host='0.0.0.0',port=int(os.getenv('NETFORGE_PORT','5000')),debug=os.getenv('NETFORGE_DEBUG','0')=='1')
