@@ -6,6 +6,9 @@ from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 from dashboard.db import ROOT, connection, ensure_schema
+from engine.execution_store import get_execution, list_executions, mark_cancel_requested
+from engine.orchestrator import orchestrator
+from engine.regression_engine import analyze_execution
 try:
     from engine.topology_importer import TopologyImporter
 except ImportError: TopologyImporter=None
@@ -126,7 +129,7 @@ def index():
     return render_template('dashboard.html',total=total,passed=passed,failed=total-passed,rate=round(passed/total*100,1) if total else 0,failures=failures)
 @app.route('/health')
 def health():
-    with connection() as conn: conn.execute('SELECT 1').fetchone(); metrics={'topologies':conn.execute('SELECT COUNT(*) c FROM topologies').fetchone()['c'],'executions':conn.execute('SELECT COUNT(*) c FROM executions').fetchone()['c'],'test_logs':conn.execute('SELECT COUNT(*) c FROM test_logs').fetchone()['c']}
+    with connection() as conn: conn.execute('SELECT 1').fetchone(); metrics={'topologies':conn.execute('SELECT COUNT(*) c FROM topologies').fetchone()['c'],'executions':conn.execute('SELECT COUNT(*) c FROM executions').fetchone()['c'],'test_logs':conn.execute('SELECT COUNT(*) c FROM test_logs').fetchone()['c'],'active_executions':conn.execute("SELECT COUNT(*) c FROM executions WHERE status IN ('QUEUED','PROVISIONING','RUNNING','COLLECTING','ANALYZING')").fetchone()['c']}
     return api_ok({'service':'dashboard','database':'ok','metrics':metrics})
 @app.route('/topology')
 def topology():return render_template('topology_workspace.html')
@@ -228,4 +231,65 @@ def import_topology():
     try:
         importer=TopologyImporter(target_yaml=str(CONFIG_DIR/'devices.yaml')); importer.import_json(str(path)) if path.suffix.lower()=='.json' else importer.import_gns3(str(path)); return api_ok({'message':f'Successfully imported {filename}'})
     except (OSError,ValueError,KeyError,TypeError) as e:return api_error('IMPORT_FAILED',str(e),422)
+
+@app.route('/api/executions', methods=['GET', 'POST'])
+def executions_resource():
+    if request.method == 'GET':
+        status = request.args.get('status') or None
+        try: limit = int(request.args.get('limit', 50))
+        except ValueError: return api_error('INVALID_LIMIT', 'limit must be an integer', 422)
+        return api_ok({'executions': list_executions(limit, status)})
+    payload = request.get_json(silent=True) or {}
+    firmware = str(payload.get('firmware_version') or '1.0.0').strip()
+    suite = str(payload.get('suite_name') or 'live').strip()
+    triggered_by = str(payload.get('triggered_by') or 'api').strip()
+    environment = str(payload.get('environment') or 'tier1').strip()
+    notes = str(payload.get('notes') or '')
+    pytest_args = payload.get('pytest_args')
+    if pytest_args is not None and (not isinstance(pytest_args, list) or not all(isinstance(x, str) for x in pytest_args)):
+        return api_error('INVALID_PYTEST_ARGS', 'pytest_args must be an array of strings', 422)
+    try:
+        execution_id = orchestrator.submit(firmware, suite, triggered_by, environment, notes, pytest_args)
+        return api_ok({'execution_id': execution_id, 'status': 'QUEUED'}, 202)
+    except Exception as exc:
+        return api_error('EXECUTION_CREATE_FAILED', str(exc), 500)
+
+@app.route('/api/executions/<int:execution_id>', methods=['GET'])
+def execution_resource(execution_id):
+    execution = get_execution(execution_id)
+    if execution is None: return api_error('EXECUTION_NOT_FOUND', 'Execution does not exist', 404)
+    return api_ok({'execution': execution})
+
+@app.route('/api/executions/<int:execution_id>/cancel', methods=['POST'])
+def execution_cancel(execution_id):
+    if not mark_cancel_requested(execution_id):
+        return api_error('CANCEL_REJECTED', 'Execution is not in a cancellable state', 409)
+    orchestrator.cancel(execution_id)
+    return api_ok({'execution_id': execution_id, 'cancel_requested': True}, 202)
+
+@app.route('/api/executions/<int:execution_id>/analyze', methods=['POST'])
+def execution_analyze(execution_id):
+    if get_execution(execution_id) is None: return api_error('EXECUTION_NOT_FOUND', 'Execution does not exist', 404)
+    payload = request.get_json(silent=True) or {}
+    try: threshold = float(payload.get('threshold_percent', 10.0))
+    except (TypeError, ValueError): return api_error('INVALID_THRESHOLD', 'threshold_percent must be numeric', 422)
+    if threshold <= 0 or threshold > 100: return api_error('INVALID_THRESHOLD', 'threshold_percent must be between 0 and 100', 422)
+    try:
+        regressions = analyze_execution(execution_id, threshold)
+        return api_ok({'execution_id': execution_id, 'regressions': regressions})
+    except Exception as exc:
+        return api_error('ANALYSIS_FAILED', str(exc), 500)
+
+@app.route('/api/regressions', methods=['GET'])
+def regressions_resource():
+    execution_id = request.args.get('execution_id')
+    with connection() as conn:
+        if execution_id:
+            try: eid = int(execution_id)
+            except ValueError: return api_error('INVALID_EXECUTION_ID', 'execution_id must be an integer', 422)
+            rows = conn.execute('SELECT r.*, rm.metric_name, rm.baseline_value, rm.current_value, rm.delta_percent, rm.threshold_percent FROM regressions r LEFT JOIN regression_metrics rm ON rm.regression_id=r.id WHERE r.execution_id=? ORDER BY r.id DESC', (eid,)).fetchall()
+        else:
+            rows = conn.execute('SELECT r.*, rm.metric_name, rm.baseline_value, rm.current_value, rm.delta_percent, rm.threshold_percent FROM regressions r LEFT JOIN regression_metrics rm ON rm.regression_id=r.id ORDER BY r.id DESC LIMIT 200').fetchall()
+    return api_ok({'regressions': [dict(row) for row in rows]})
+
 if __name__=='__main__': ensure_schema(); print('[*] NetForge Control Plane: http://127.0.0.1:5000'); app.run(host='0.0.0.0',port=int(os.getenv('NETFORGE_PORT','5000')),debug=os.getenv('NETFORGE_DEBUG','0')=='1')
