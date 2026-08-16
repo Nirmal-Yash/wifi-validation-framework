@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Create and validate the NetForge SQLite database.
-
-This module is intentionally dependency-free so database bootstrap works before
-any optional networking packages are installed.
-"""
+"""Create and validate the NetForge SQLite database."""
 from __future__ import annotations
 
 import argparse
@@ -17,9 +13,10 @@ SCHEMA_PATH = ROOT / "db" / "schema.sql"
 
 def connect(path: Path = DB_PATH) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=10000")
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -28,6 +25,8 @@ def initialize(path: Path = DB_PATH) -> None:
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
     with connect(path) as conn:
         conn.executescript(schema)
+        from db.migrations import migrate
+        migrate(conn)
         conn.commit()
 
 
@@ -35,8 +34,10 @@ def validate(path: Path = DB_PATH) -> list[str]:
     with connect(path) as conn:
         tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
         required = {
-            "firmware_metadata", "test_logs", "topologies", "topology_nodes",
-            "topology_links", "executions", "test_results", "evidence", "audit_events"
+            "firmware_metadata", "test_logs", "topologies", "topology_versions",
+            "topology_nodes", "topology_links", "executions", "test_results",
+            "evidence", "baselines", "regressions", "audit_events", "execution_metrics",
+            "execution_events", "users", "baseline_metrics", "regression_metrics"
         }
         missing = sorted(required - set(tables))
         if missing:
