@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import hmac
 import os
 import re
 import secrets
 from functools import wraps
+from urllib.parse import urlsplit
 
 from flask import abort, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from dashboard.app import app
-from dashboard.db import connection
+from dashboard.db import connection, ensure_schema
 
 ROLES = {
     "admin": {"view", "execute", "cancel", "topology_edit", "topology_commit", "manage_users", "audit", "artifacts", "settings"},
@@ -17,22 +19,77 @@ ROLES = {
     "viewer": {"view", "artifacts"},
 }
 USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{2,31}$")
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
+
+def _testing_bypass() -> bool:
+    return os.getenv("NETFORGE_AUTH_DISABLED", "0") == "1" and os.getenv("FLASK_TESTING", "0") == "1"
+
+
+def _safe_next(value: str | None) -> str:
+    """Accept only local relative redirects; never trust an arbitrary next URL."""
+    value = (value or "/").strip()
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or not value.startswith("/") or value.startswith("//"):
+        return "/"
+    return value
+
+
+def _client_ip() -> str:
+    # Do not trust X-Forwarded-For unless the deployment explicitly normalizes it.
+    return request.remote_addr or "unknown"
+
+
+def _auth_rate_limited(username: str, ip: str) -> bool:
+    with connection() as conn:
+        row = conn.execute(
+            """SELECT COUNT(*) AS failures FROM auth_attempts
+               WHERE success=0 AND created_at >= datetime('now', ?)
+               AND (lower(username)=lower(?) OR ip=?)""",
+            (f"-{LOCKOUT_MINUTES} minutes", username, ip),
+        ).fetchone()
+    return int(row["failures"] or 0) >= MAX_FAILED_ATTEMPTS
+
+
+def _record_auth_attempt(username: str, ip: str, success: bool) -> None:
+    with connection() as conn:
+        conn.execute(
+            "INSERT INTO auth_attempts(username,ip,success) VALUES(?,?,?)",
+            (username[:128], ip[:64], 1 if success else 0),
+        )
+        # Successful authentication clears stale failures for this account/IP.
+        if success:
+            conn.execute(
+                "DELETE FROM auth_attempts WHERE lower(username)=lower(?) AND ip=? AND success=0",
+                (username, ip),
+            )
+        conn.commit()
 
 
 def ensure_admin():
-    username = os.getenv("NETFORGE_ADMIN_USER", "admin").strip()
-    password = os.getenv("NETFORGE_ADMIN_PASSWORD", "").strip()
+    ensure_schema()
+    username = os.getenv("NETFORGE_ADMIN_USER", "admin").strip() or "admin"
+    password = os.getenv("NETFORGE_ADMIN_PASSWORD", "")
     if not password:
         return False
+    if len(password) < 12:
+        raise RuntimeError("NETFORGE_ADMIN_PASSWORD must contain at least 12 characters")
     with connection() as conn:
-        row = conn.execute("SELECT id, role FROM users WHERE username=?", (username,)).fetchone()
+        row = conn.execute("SELECT id, role, active FROM users WHERE lower(username)=lower(?)", (username,)).fetchone()
         if row:
-            if row["role"] != "admin":
+            if row["role"] != "admin" or not row["active"]:
                 conn.execute("UPDATE users SET role='admin', active=1 WHERE id=?", (row["id"],))
                 conn.commit()
             return True
-        conn.execute("INSERT INTO users(username,password_hash,role,active) VALUES(?,?,?,1)", (username, generate_password_hash(password), "admin"))
-        conn.execute("INSERT INTO audit_events(event_type,actor,message,payload_json) VALUES(?,?,?,?)", ("ADMIN_BOOTSTRAP", "system", "Initial administrator account ensured", "{}"))
+        conn.execute(
+            "INSERT INTO users(username,password_hash,role,active) VALUES(?,?,?,1)",
+            (username, generate_password_hash(password)),
+        )
+        conn.execute(
+            "INSERT INTO audit_events(event_type,actor,message,payload_json) VALUES(?,?,?,?)",
+            ("ADMIN_BOOTSTRAP", "system", "Initial administrator account ensured", "{}"),
+        )
         conn.commit()
     return True
 
@@ -43,6 +100,8 @@ def validate_registration(username: str, password: str, confirmation: str):
         return "Username must be 3-32 characters and use only letters, numbers, ., _, or -."
     if len(password) < 12:
         return "Password must contain at least 12 characters."
+    if not re.search(r"[A-Z]", password) or not re.search(r"[a-z]", password) or not re.search(r"\d", password):
+        return "Password must contain at least one uppercase letter, one lowercase letter, and one number."
     if password != confirmation:
         return "Passwords do not match."
     if username.lower() in {"admin", "root", "system", "administrator"}:
@@ -55,25 +114,47 @@ def register_user(username: str, password: str):
     with connection() as conn:
         if conn.execute("SELECT id FROM users WHERE lower(username)=lower(?)", (username,)).fetchone():
             return None, "Username is already registered."
-        cur = conn.execute("INSERT INTO users(username,password_hash,role,active) VALUES(?,?,?,0)", (username, generate_password_hash(password), "viewer"))
-        conn.execute("INSERT INTO audit_events(event_type,actor,message,payload_json) VALUES(?,?,?,?)", ("SIGNUP_REQUEST", username, "New account registration submitted", "{\"status\":\"pending_admin_activation\"}"))
+        cur = conn.execute(
+            "INSERT INTO users(username,password_hash,role,active) VALUES(?,?,?,0)",
+            (username, generate_password_hash(password), "viewer"),
+        )
+        conn.execute(
+            "INSERT INTO audit_events(event_type,actor,message,payload_json) VALUES(?,?,?,?)",
+            ("SIGNUP_REQUEST", username, "New account registration submitted", '{"status":"pending_admin_activation"}'),
+        )
         conn.commit()
         return cur.lastrowid, None
 
 
 def authenticate(username, password):
-    with connection() as conn:
-        row = conn.execute("SELECT * FROM users WHERE username=?", (username.strip(),)).fetchone()
-    if not row or not row["active"] or not check_password_hash(row["password_hash"], password):
+    username = (username or "").strip()
+    ip = _client_ip()
+    if _auth_rate_limited(username, ip):
         return None
+    with connection() as conn:
+        row = conn.execute("SELECT * FROM users WHERE lower(username)=lower(?)", (username,)).fetchone()
+    # Always perform a password-hash check for unknown/inactive accounts when possible
+    # to reduce username-enumeration timing differences.
+    valid_password = check_password_hash(row["password_hash"], password) if row else check_password_hash(
+        generate_password_hash("netforge-invalid-login-placeholder"), password
+    )
+    valid = bool(row and row["active"] and valid_password)
+    _record_auth_attempt(username, ip, valid)
+    if not valid:
+        return None
+
     session.clear()
+    session.permanent = True
     session["user_id"] = row["id"]
     session["username"] = row["username"]
     session["role"] = row["role"]
-    session["csrf"] = secrets.token_urlsafe(24)
+    session["csrf"] = secrets.token_urlsafe(32)
     with connection() as conn:
         conn.execute("UPDATE users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?", (row["id"],))
-        conn.execute("INSERT INTO audit_events(event_type,actor,message,payload_json) VALUES(?,?,?,?)", ("LOGIN", row["username"], "User authenticated", "{}"))
+        conn.execute(
+            "INSERT INTO audit_events(event_type,actor,message,payload_json) VALUES(?,?,?,?)",
+            ("LOGIN", row["username"], "User authenticated", "{}"),
+        )
         conn.commit()
     return dict(row)
 
@@ -87,16 +168,17 @@ def current_user():
 
 
 def can(permission):
-    if os.getenv("NETFORGE_AUTH_DISABLED", "0") == "1" and os.getenv("FLASK_TESTING", "0") == "1":
+    if _testing_bypass():
         return True
-    return session.get("role") in ROLES and permission in ROLES[session["role"]]
+    role = session.get("role")
+    return role in ROLES and permission in ROLES[role]
 
 
 def login_required(permission="view"):
     def decorator(fn):
         @wraps(fn)
         def wrapped(*args, **kwargs):
-            if os.getenv("NETFORGE_AUTH_DISABLED", "0") == "1" and os.getenv("FLASK_TESTING", "0") == "1":
+            if _testing_bypass():
                 return fn(*args, **kwargs)
             if not current_user():
                 abort(401)
@@ -108,7 +190,8 @@ def login_required(permission="view"):
 
 
 def csrf_valid(token):
-    return bool(token) and secrets.compare_digest(token, session.get("csrf", ""))
+    expected = session.get("csrf", "")
+    return bool(token and expected and hmac.compare_digest(str(token), str(expected)))
 
 
 def bootstrap_required():
@@ -120,13 +203,14 @@ def bootstrap_required():
 def public_auth_pages():
     """Provide unauthenticated sign-in/sign-up entry points before the enterprise gate."""
     if request.path == "/signin":
-        return redirect(url_for("netforge_login", next=request.args.get("next", "/")))
+        return redirect(url_for("netforge_login", next=_safe_next(request.args.get("next"))))
     if request.path != "/signup":
         return None
     if request.method == "GET":
-        session.setdefault("signup_csrf", secrets.token_urlsafe(24))
+        session.setdefault("signup_csrf", secrets.token_urlsafe(32))
         return render_template("signup.html", csrf=session["signup_csrf"])
-    if request.form.get("csrf") != session.get("signup_csrf"):
+    token = request.form.get("csrf", "")
+    if not session.get("signup_csrf") or not hmac.compare_digest(token, session.get("signup_csrf", "")):
         return render_template("signup.html", error="Your registration form expired. Please try again.", csrf=session.get("signup_csrf", "")), 403
     username = request.form.get("username", "")
     password = request.form.get("password", "")
