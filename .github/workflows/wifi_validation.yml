@@ -18,7 +18,7 @@ concurrency:
 jobs:
   static-analysis:
     name: Code Quality & Syntax Validation
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
       - name: Checkout Source Code
@@ -86,7 +86,7 @@ jobs:
   virtual-kernel-qa:
     name: Tier 1 Virtual QA (mac80211_hwsim)
     needs: static-analysis
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Checkout Source Code
@@ -101,14 +101,23 @@ jobs:
 
       - name: Install Tier 1 System Dependencies
         run: |
+          set -euxo pipefail
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            linux-modules-extra-$(uname -r) \
             hostapd wpasupplicant dnsmasq isc-dhcp-client \
             iproute2 iw tcpdump ethtool openssl kmod iperf3
+          sudo depmod -a "$(uname -r)"
+          sudo systemctl stop dnsmasq.service 2>/dev/null || true
+          sudo systemctl disable dnsmasq.service 2>/dev/null || true
+          sudo systemctl stop wpa_supplicant.service 2>/dev/null || true
+          sudo systemctl disable wpa_supplicant.service 2>/dev/null || true
 
       - name: Verify mac80211_hwsim Kernel Capability
         run: |
           set -euxo pipefail
+          echo "Kernel: $(uname -r)"
+          modinfo mac80211_hwsim
           sudo modprobe mac80211_hwsim radios=3 support_p2p_device=0
           test "$(iw dev | awk '/^phy#/ {count++} END {print count+0}')" -ge 3
           sudo modprobe -r mac80211_hwsim
