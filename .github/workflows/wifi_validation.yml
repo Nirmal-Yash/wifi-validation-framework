@@ -68,7 +68,9 @@ jobs:
           NETFORGE_AUTH_DISABLED: "1"
           NETFORGE_ADMIN_PASSWORD: "test-password-strong"
           NETFORGE_LIVE_TESTS: "0"
-        run: python -m pytest -q -m "not live" --junitxml=artifacts/static-junit.xml
+        run: |
+          mkdir -p artifacts
+          python -m pytest -q -m "not live" --junitxml=artifacts/static-junit.xml
 
       - name: Upload Static Test Results
         if: always()
@@ -134,14 +136,19 @@ jobs:
 
       - name: Publish Tier 1 Test Summary
         if: always()
+        env:
+          GITHUB_STEP_SUMMARY: ${{ github.step_summary }}
         run: |
           python - <<'PY'
           from pathlib import Path
+          import os
           import xml.etree.ElementTree as ET
 
           path = Path("artifacts/junit-results.xml")
+          summary_path = Path(os.environ["GITHUB_STEP_SUMMARY"])
           if not path.exists():
-              Path("$GITHUB_STEP_SUMMARY").write_text("## Tier 1 Virtual QA\n\nNo JUnit report was produced.\n")
+              with summary_path.open("a", encoding="utf-8") as fh:
+                  fh.write("## Tier 1 Virtual QA\n\nNo JUnit report was produced.\n")
               raise SystemExit(0)
 
           root = ET.parse(path).getroot()
@@ -155,11 +162,11 @@ jobs:
           passed = tests - failures - errors - skipped
           summary = (
               "## Tier 1 Virtual QA\n\n"
-              f"| Metric | Count |\n|---|---:|\n"
+              "| Metric | Count |\n|---|---:|\n"
               f"| Total | {tests} |\n| Passed | {passed} |\n"
               f"| Failed | {failures} |\n| Errors | {errors} |\n| Skipped | {skipped} |\n"
           )
-          with open("$GITHUB_STEP_SUMMARY", "a", encoding="utf-8") as fh:
+          with summary_path.open("a", encoding="utf-8") as fh:
               fh.write(summary)
           PY
 
