@@ -1,0 +1,5 @@
+pytest
+Flask
+PyYAML
+Werkzeug
+gunicorn
