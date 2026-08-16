@@ -98,13 +98,14 @@ def enterprise_auth_gate():
 
 @app.route("/login", methods=["GET", "POST"])
 def netforge_login():
-    from dashboard.auth import _safe_next, csrf_valid
+    from dashboard.auth import _safe_next
     next_url = _safe_next(request.args.get("next"))
     if request.method == "GET":
         session.setdefault("login_csrf", __import__("secrets").token_urlsafe(32))
         return render_template("login.html", bootstrap_ready=bool(os.getenv("NETFORGE_ADMIN_PASSWORD")), csrf=session["login_csrf"])
     token = request.form.get("csrf", "")
-    if not session.get("login_csrf") or not csrf_valid(token) and not (os.getenv("NETFORGE_AUTH_DISABLED", "0") == "1" and os.getenv("FLASK_TESTING", "0") == "1"):
+    bypass = os.getenv("NETFORGE_AUTH_DISABLED", "0") == "1" and os.getenv("FLASK_TESTING", "0") == "1"
+    if not bypass and (not session.get("login_csrf") or not __import__("hmac").compare_digest(token, session.get("login_csrf", ""))):
         return render_template("login.html", error="Your sign-in form expired. Please try again.", bootstrap_ready=bool(os.getenv("NETFORGE_ADMIN_PASSWORD")), csrf=session.get("login_csrf", "")), 403
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
@@ -124,7 +125,8 @@ def netforge_login():
 @app.route("/logout", methods=["POST"])
 def netforge_logout():
     from dashboard.auth import csrf_valid
-    if not csrf_valid(request.form.get("csrf") or request.headers.get("X-CSRF-Token")) and not (os.getenv("NETFORGE_AUTH_DISABLED", "0") == "1" and os.getenv("FLASK_TESTING", "0") == "1"):
+    bypass = os.getenv("NETFORGE_AUTH_DISABLED", "0") == "1" and os.getenv("FLASK_TESTING", "0") == "1"
+    if not bypass and not csrf_valid(request.form.get("csrf") or request.headers.get("X-CSRF-Token")):
         return error("CSRF_INVALID", "Invalid CSRF token", 403)
     actor = session.get("username", "unknown")
     logout()
