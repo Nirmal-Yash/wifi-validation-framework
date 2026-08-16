@@ -1,0 +1,22 @@
+[Unit]
+Description=NetForge Network Validation Control Plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=netforge
+Group=netforge
+WorkingDirectory=/opt/netforge
+EnvironmentFile=/etc/netforge/netforge.env
+ExecStart=/opt/netforge/.venv/bin/gunicorn -w 2 --threads 4 --timeout 120 -b 127.0.0.1:5000 dashboard.enterprise_app:app
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/netforge/db /opt/netforge/artifacts /opt/netforge/config
+
+[Install]
+WantedBy=multi-user.target
