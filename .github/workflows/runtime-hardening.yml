@@ -1,0 +1,99 @@
+name: NetForge Runtime Hardening
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Apply deterministic runtime repair
+        run: python scripts/repair_runtime_entrypoint.py
+
+      - name: Compile source tree
+        run: python -m compileall -q dashboard engine scripts tests run.py
+
+      - name: Verify canonical module entrypoint
+        env:
+          FLASK_TESTING: '1'
+          NETFORGE_AUTH_DISABLED: '1'
+        run: |
+          python - <<'PY'
+          from dashboard.app import app
+          routes = {rule.rule for rule in app.url_map.iter_rules()}
+          required = {
+              '/', '/health', '/topology', '/history', '/operations', '/analytics',
+              '/admin', '/login', '/signup', '/signin', '/api/enterprise/summary',
+              '/api/enterprise/health/detailed', '/api/enterprise/executions',
+              '/api/runtime/manifest',
+          }
+          missing = sorted(required - routes)
+          assert not missing, f'missing module-mode routes: {missing}'
+          client = app.test_client()
+          manifest = client.get('/api/runtime/manifest')
+          assert manifest.status_code == 200, manifest.data
+          body = manifest.get_json()
+          assert body['status'] == 'ready', body
+          print('MODULE MODE: PASS')
+          print('ROUTES:', len(routes))
+          PY
+
+      - name: Verify direct-script entrypoint
+        env:
+          FLASK_TESTING: '1'
+          NETFORGE_AUTH_DISABLED: '1'
+        run: |
+          python - <<'PY'
+          import flask
+          import runpy
+          flask.Flask.run = lambda self, *args, **kwargs: None
+          namespace = runpy.run_path('dashboard/app.py', run_name='__main__')
+          app = namespace['app']
+          routes = {rule.rule for rule in app.url_map.iter_rules()}
+          required = {
+              '/operations', '/analytics', '/admin', '/login', '/signup', '/signin',
+              '/api/enterprise/summary', '/api/enterprise/health/detailed',
+              '/api/runtime/manifest',
+          }
+          missing = sorted(required - routes)
+          assert not missing, f'missing script-mode routes: {missing}'
+          assert app.test_client().get('/api/runtime/manifest').status_code == 200
+          print('DIRECT SCRIPT MODE: PASS')
+          PY
+
+      - name: Run runtime integration tests
+        env:
+          FLASK_TESTING: '1'
+          NETFORGE_AUTH_DISABLED: '1'
+        run: |
+          if [ -f tests/test_runtime_entrypoint_integration.py ]; then
+            pytest -q tests/test_runtime_entrypoint_integration.py
+          fi
+
+      - name: Commit hardening changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dashboard/app.py dashboard/enterprise_app.py dashboard/wsgi.py run.py Dockerfile docker-compose.yml deploy/netforge.service scripts/repair_runtime_entrypoint.py
+          if git diff --cached --quiet; then
+            echo 'No repair changes to commit.'
+            exit 0
+          fi
+          git commit -m 'fix(runtime): unify dashboard and enterprise application entrypoints'
+          git push origin main
