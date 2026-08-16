@@ -22,6 +22,13 @@ def patch_enterprise_import() -> bool:
     return replace_once(path, old, new)
 
 
+def patch_enterprise_session_override() -> bool:
+    path = ROOT / "dashboard" / "enterprise_app.py"
+    old = 'app.secret_key = os.getenv("NETFORGE_SECRET_KEY", "netforge-development-secret")\napp.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE=os.getenv("NETFORGE_COOKIE_SECURE", "0") == "1")'
+    new = '''# Session/security configuration is owned by dashboard.app. Do not override\n# the production secret or secure-cookie policy from the enterprise module.\napp.config.update(\n    SESSION_COOKIE_HTTPONLY=True,\n    SESSION_COOKIE_SAMESITE=app.config.get("SESSION_COOKIE_SAMESITE", "Lax"),\n    SESSION_COOKIE_SECURE=app.config.get("SESSION_COOKIE_SECURE", False),\n)'''
+    return replace_once(path, old, new)
+
+
 def patch_dockerfile() -> bool:
     path = ROOT / "Dockerfile"
     old = 'CMD ["gunicorn","-w","2","--threads","4","--timeout","120","-b","0.0.0.0:5000","dashboard.enterprise_app:app"]'
@@ -111,6 +118,7 @@ def main() -> None:
     changed = []
     for name, fn in [
         ("enterprise import", patch_enterprise_import),
+        ("enterprise session override", patch_enterprise_session_override),
         ("WSGI entrypoint", create_wsgi),
         ("local entrypoint", create_run),
         ("runtime diagnostics", patch_runtime_diagnostics),
