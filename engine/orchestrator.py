@@ -21,8 +21,7 @@ class ExecutionOrchestrator:
         try:
             set_status(eid,'PROVISIONING','Preparing execution worker',worker_id=worker_id,command=' '.join(command))
             if is_cancel_requested(eid): set_status(eid,'CANCELLED','Execution cancelled before start',worker_id=worker_id); return
-            env=os.environ.copy(); env['NETFORGE_EXECUTION_ID']=str(eid); env['NETFORGE_LIVE_TESTS']=env.get('NETFORGE_LIVE_TESTS','1')
-            timeout=float(env.get('NETFORGE_EXECUTION_TIMEOUT','3600'))
+            env=os.environ.copy(); env['NETFORGE_EXECUTION_ID']=str(eid); env['NETFORGE_LIVE_TESTS']=env.get('NETFORGE_LIVE_TESTS','1'); timeout=float(env.get('NETFORGE_EXECUTION_TIMEOUT','3600'))
             with log_path.open('w',encoding='utf-8') as log:
                 process=subprocess.Popen(command,cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT,text=True)
                 with self._lock:self._jobs[eid]=process
@@ -31,11 +30,10 @@ class ExecutionOrchestrator:
                 except subprocess.TimeoutExpired:
                     process.terminate()
                     try:process.wait(timeout=10)
-                    except subprocess.TimeoutExpired:process.kill(); process.wait(timeout=5)
-                    set_status(eid,'ERROR',f'Execution exceeded timeout of {timeout:.0f}s',worker_id=worker_id,notes='Execution timeout')
-                    return
+                    except subprocess.TimeoutExpired:process.kill();process.wait(timeout=5)
+                    set_status(eid,'ERROR',f'Execution exceeded timeout of {timeout:.0f}s',worker_id=worker_id,notes='Execution timeout'); return
             with self._lock:self._jobs.pop(eid,None)
-            for source,kind in ((log_path,'log'),(junit_path,'json')):
+            for source,kind in ((log_path,'log'),(junit_path,'artifact')):
                 if source.exists():
                     try:record_artifact(eid,source,kind)
                     except Exception:pass
