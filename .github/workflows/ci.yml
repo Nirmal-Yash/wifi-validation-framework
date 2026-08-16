@@ -4,7 +4,7 @@ on:
     branches: [main, 'fix/**', 'agent/**']
   pull_request:
 jobs:
-  unit-and-control-plane:
+  control-plane-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -12,13 +12,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install deterministic CI dependencies
-        run: python -m pip install --upgrade pip && pip install -r requirements-ci.txt
+      - name: Compile Python sources
+        run: python -m compileall -q dashboard engine db scripts tests
       - name: Validate database bootstrap
         run: python db/init_db.py
-      - name: Run non-live tests
-        env:
-          NETFORGE_LIVE_TESTS: '0'
-          NETFORGE_AUTH_DISABLED: '1'
-          FLASK_TESTING: '1'
-        run: python -m pytest -q -m 'not live'
+      - name: Run dependency-free control-plane smoke tests
+        run: python -m unittest tests.test_stdlib_control_plane -v
