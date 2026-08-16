@@ -98,24 +98,34 @@ def enterprise_auth_gate():
 
 @app.route("/login", methods=["GET", "POST"])
 def netforge_login():
+    from dashboard.auth import _safe_next, csrf_valid
+    next_url = _safe_next(request.args.get("next"))
     if request.method == "GET":
-        return render_template("login.html", bootstrap_ready=bool(os.getenv("NETFORGE_ADMIN_PASSWORD")))
+        session.setdefault("login_csrf", __import__("secrets").token_urlsafe(32))
+        return render_template("login.html", bootstrap_ready=bool(os.getenv("NETFORGE_ADMIN_PASSWORD")), csrf=session["login_csrf"])
+    token = request.form.get("csrf", "")
+    if not session.get("login_csrf") or not csrf_valid(token) and not (os.getenv("NETFORGE_AUTH_DISABLED", "0") == "1" and os.getenv("FLASK_TESTING", "0") == "1"):
+        return render_template("login.html", error="Your sign-in form expired. Please try again.", bootstrap_ready=bool(os.getenv("NETFORGE_ADMIN_PASSWORD")), csrf=session.get("login_csrf", "")), 403
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "")
     if not username or not password:
-        return render_template("login.html", error="Username and password are required", bootstrap_ready=bool(os.getenv("NETFORGE_ADMIN_PASSWORD"))), 401
+        return render_template("login.html", error="Username and password are required", bootstrap_ready=bool(os.getenv("NETFORGE_ADMIN_PASSWORD")), csrf=session.get("login_csrf", "")), 422
     try:
         ensure_admin()
     except RuntimeError as exc:
-        return render_template("login.html", error=str(exc), bootstrap_ready=False), 503
+        return render_template("login.html", error=str(exc), bootstrap_ready=False, csrf=session.get("login_csrf", "")), 503
     if not authenticate(username, password):
-        return render_template("login.html", error="Invalid credentials", bootstrap_ready=True), 401
+        return render_template("login.html", error="Invalid username or password", bootstrap_ready=True, csrf=session.get("login_csrf", "")), 401
+    session.pop("login_csrf", None)
     audit("LOGIN", username, "User authenticated")
-    return redirect(request.args.get("next") or "/")
+    return redirect(next_url)
 
 
-@app.route("/logout")
+@app.route("/logout", methods=["POST"])
 def netforge_logout():
+    from dashboard.auth import csrf_valid
+    if not csrf_valid(request.form.get("csrf") or request.headers.get("X-CSRF-Token")) and not (os.getenv("NETFORGE_AUTH_DISABLED", "0") == "1" and os.getenv("FLASK_TESTING", "0") == "1"):
+        return error("CSRF_INVALID", "Invalid CSRF token", 403)
     actor = session.get("username", "unknown")
     logout()
     audit("LOGOUT", actor, "User logged out")

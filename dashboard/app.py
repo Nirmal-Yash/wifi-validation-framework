@@ -16,7 +16,20 @@ try:
     from gns3fy import Gns3Connector, Project
 except ImportError: Gns3Connector=Project=None
 TEMPLATE_DIR=ROOT/'dashboard'/'templates'; UPLOAD_DIR=ROOT/'artifacts'/'uploads'; CONFIG_DIR=ROOT/'config'
-app=Flask(__name__,template_folder=str(TEMPLATE_DIR)); app.config.update(UPLOAD_FOLDER=str(UPLOAD_DIR),MAX_CONTENT_LENGTH=16*1024*1024)
+app=Flask(__name__,template_folder=str(TEMPLATE_DIR))
+_secret = os.getenv("NETFORGE_SECRET_KEY")
+_environment = os.getenv("NETFORGE_ENV", "development").lower()
+if not _secret and _environment == "production" and os.getenv("FLASK_TESTING", "0") != "1":
+    raise RuntimeError("NETFORGE_SECRET_KEY is required when NETFORGE_ENV=production")
+app.secret_key = _secret or ("netforge-test-secret" if os.getenv("FLASK_TESTING", "0") == "1" else "netforge-development-secret")
+app.config.update(
+    UPLOAD_FOLDER=str(UPLOAD_DIR),
+    MAX_CONTENT_LENGTH=16*1024*1024,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("NETFORGE_COOKIE_SECURE", "1" if _environment == "production" else "0") == "1",
+    PERMANENT_SESSION_LIFETIME=__import__("datetime").timedelta(hours=8),
+)
 UPLOAD_DIR.mkdir(parents=True,exist_ok=True); CONFIG_DIR.mkdir(parents=True,exist_ok=True)
 def api_error(code,message,status=400,details=None): return jsonify({'success':False,'error':{'code':code,'message':message,'details':details or {}}}),status
 def api_ok(data=None,status=200): payload={'success':True}; payload.update(data or {}); return jsonify(payload),status
@@ -308,6 +321,7 @@ def runtime_manifest():
         'required_routes': sorted(required),
         'missing_routes': missing,
         'public_auth_intercepts': ['/signin', '/signup'],
+        'authentication': {'session_cookie_httponly': bool(app.config.get('SESSION_COOKIE_HTTPONLY')), 'session_cookie_samesite': app.config.get('SESSION_COOKIE_SAMESITE'), 'session_cookie_secure': bool(app.config.get('SESSION_COOKIE_SECURE')), 'auth_bypass_active': os.getenv('NETFORGE_AUTH_DISABLED', '0') == '1' and os.getenv('FLASK_TESTING', '0') == '1'},
         'status': 'ready' if not missing else 'degraded',
     })
 
