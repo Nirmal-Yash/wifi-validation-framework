@@ -10,15 +10,28 @@ from pathlib import Path
 from flask import abort, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.security import generate_password_hash
 
-from dashboard.app import (
-    app,
-    commit_draft,
-    create_draft,
-    delete_topology_version,
-    persist_topology,
-    replace_draft,
-    topology_payload,
-)
+# Resolve the canonical Flask application without creating a second app when
+# dashboard/app.py is executed directly as a script.
+import importlib
+import sys
+
+if "__main__" in sys.modules and hasattr(sys.modules["__main__"], "app"):
+    _dashboard_app = sys.modules["__main__"]
+else:
+    _dashboard_app = importlib.import_module("dashboard.app")
+
+# Critical: modules such as dashboard.auth still import dashboard.app. Alias
+# that module name to the already-running application so decorators and
+# before_request hooks are registered on the same Flask instance.
+sys.modules.setdefault("dashboard.app", _dashboard_app)
+
+app = _dashboard_app.app
+commit_draft = _dashboard_app.commit_draft
+create_draft = _dashboard_app.create_draft
+delete_topology_version = _dashboard_app.delete_topology_version
+persist_topology = _dashboard_app.persist_topology
+replace_draft = _dashboard_app.replace_draft
+topology_payload = _dashboard_app.topology_payload
 from dashboard.auth import ROLES, authenticate, can, csrf_valid, current_user, ensure_admin, logout
 from dashboard.db import connection, ensure_schema
 from engine.execution_store import audit, get_execution, list_executions, mark_cancel_requested, record_metric

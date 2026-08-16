@@ -292,6 +292,26 @@ def regressions_resource():
             rows = conn.execute('SELECT r.*, rm.metric_name, rm.baseline_value, rm.current_value, rm.delta_percent, rm.threshold_percent FROM regressions r LEFT JOIN regression_metrics rm ON rm.regression_id=r.id ORDER BY r.id DESC LIMIT 200').fetchall()
     return api_ok({'regressions': [dict(row) for row in rows]})
 
+@app.route('/api/runtime/manifest')
+def runtime_manifest():
+    required = {
+        '/', '/health', '/topology', '/history', '/operations', '/analytics',
+        '/admin', '/login', '/api/enterprise/summary',
+        '/api/enterprise/health/detailed', '/api/enterprise/executions',
+    }
+    registered = {rule.rule for rule in app.url_map.iter_rules()}
+    missing = sorted(required - registered)
+    return api_ok({
+        'entrypoint': 'dashboard.app',
+        'application_id': id(app),
+        'route_count': len(registered),
+        'required_routes': sorted(required),
+        'missing_routes': missing,
+        'public_auth_intercepts': ['/signin', '/signup'],
+        'status': 'ready' if not missing else 'degraded',
+    })
+
+
 # Enterprise control-plane integration: dashboard.app is the canonical local entrypoint.
 # Importing here after app creation/routes prevents the circular import that occurs at module load time.
 try:
