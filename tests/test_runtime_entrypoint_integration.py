@@ -4,6 +4,7 @@ os.environ.setdefault("FLASK_TESTING", "1")
 os.environ.setdefault("NETFORGE_AUTH_DISABLED", "1")
 from dashboard.app import app
 
+# This test intentionally imports dashboard.app, the same entrypoint used by `python -m dashboard.app`.
 def test_canonical_app_registers_enterprise_routes():
     client = app.test_client()
     assert client.get("/operations").status_code == 200
