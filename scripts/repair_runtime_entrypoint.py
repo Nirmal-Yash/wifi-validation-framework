@@ -69,12 +69,12 @@ def create_run() -> bool:
 def patch_runtime_diagnostics() -> bool:
     path = ROOT / "dashboard" / "app.py"
     text = path.read_text(encoding="utf-8")
-    if "def runtime_manifest():" in text:
-        return False
     marker = "# Enterprise control-plane integration: dashboard.app is the canonical local entrypoint."
     if marker not in text:
         raise RuntimeError("Runtime integration marker not found in dashboard/app.py")
-    block = '''@app.route('/api/runtime/manifest')\ndef runtime_manifest():\n    required = {\n        '/', '/health', '/topology', '/history', '/operations', '/analytics',\n        '/admin', '/login', '/signup', '/signin', '/api/enterprise/summary',\n        '/api/enterprise/health/detailed', '/api/enterprise/executions',\n    }\n    registered = {rule.rule for rule in app.url_map.iter_rules()}\n    missing = sorted(required - registered)\n    return api_ok({\n        'entrypoint': 'dashboard.app',\n        'application_id': id(app),\n        'route_count': len(registered),\n        'required_routes': sorted(required),\n        'missing_routes': missing,\n        'status': 'ready' if not missing else 'degraded',\n    })\n\n\n'''
+    if "def runtime_manifest():" in text:
+        return False
+    block = '''@app.route('/api/runtime/manifest')\ndef runtime_manifest():\n    required = {\n        '/', '/health', '/topology', '/history', '/operations', '/analytics',\n        '/admin', '/login', '/api/enterprise/summary',\n        '/api/enterprise/health/detailed', '/api/enterprise/executions',\n    }\n    registered = {rule.rule for rule in app.url_map.iter_rules()}\n    missing = sorted(required - registered)\n    return api_ok({\n        'entrypoint': 'dashboard.app',\n        'application_id': id(app),\n        'route_count': len(registered),\n        'required_routes': sorted(required),\n        'missing_routes': missing,\n        'public_auth_intercepts': ['/signin', '/signup'],\n        'status': 'ready' if not missing else 'degraded',\n    })\n\n\n'''
     path.write_text(text.replace(marker, block + marker, 1), encoding="utf-8")
     return True
 
