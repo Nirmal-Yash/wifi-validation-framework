@@ -1,0 +1,22 @@
+services:
+  netforge:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      NETFORGE_SECRET_KEY: ${NETFORGE_SECRET_KEY}
+      NETFORGE_ADMIN_USER: ${NETFORGE_ADMIN_USER:-admin}
+      NETFORGE_ADMIN_PASSWORD: ${NETFORGE_ADMIN_PASSWORD}
+      NETFORGE_COOKIE_SECURE: ${NETFORGE_COOKIE_SECURE:-0}
+      NETFORGE_EXECUTION_TIMEOUT: ${NETFORGE_EXECUTION_TIMEOUT:-3600}
+      NETFORGE_LIVE_TESTS: ${NETFORGE_LIVE_TESTS:-0}
+    volumes:
+      - ./db:/app/db
+      - ./artifacts:/app/artifacts
+      - ./config:/app/config
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/enterprise/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
