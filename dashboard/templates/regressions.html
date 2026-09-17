@@ -75,33 +75,42 @@
                 </tr>
             </thead>
             <tbody>
-                {% for d in all_deltas %}
-                <tr>
-                    <td><code>{{ d.test_name }}</code></td>
-                    <td>{{ d.baseline }}</td>
-                    <td>{{ d.current }}</td>
-                    <td>{{ d.baseline_metric ~ ' ' ~ d.metric_unit if d.baseline_metric is not none else '—' }}</td>
-                    <td>{{ d.current_metric ~ ' ' ~ d.metric_unit if d.current_metric is not none else '—' }}</td>
-                    <td style="font-weight: 600; {{ 'color: #c62828;' if d.delta_pct and d.delta_pct > 0 else 'color: #2e7d32;' if d.delta_pct and d.delta_pct < 0 else '' }}">
-                        {{ (('+' if d.delta_pct > 0 else '') ~ d.delta_pct ~ '%') if d.delta_pct is not none else '—' }}
-                    </td>
-                    <td>
-                        {% if d.classification == 'REGRESSION' %}
-                            <span class="badge badge-hard">HARD REGRESSION</span>
-                        {% elif d.classification == 'SOFT_REGRESSION' %}
-                            <span class="badge badge-soft">SOFT REGRESSION</span>
-                        {% elif d.classification == 'FIXED' %}
-                            <span class="badge badge-fixed">FIXED</span>
-                        {% elif d.classification == 'IMPROVED' %}
-                            <span class="badge badge-improved">IMPROVED</span>
-                        {% elif d.classification == 'UNCHANGED' %}
-                            <span class="badge badge-unchanged">UNCHANGED</span>
-                        {% else %}
-                            <span class="badge badge-new">{{ d.classification }}</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
+                {% if all_deltas %}
+                    {% for d in all_deltas %}
+                    <tr>
+                        <td><code>{{ d.test_name }}</code></td>
+                        <td>{{ d.baseline }}</td>
+                        <td>{{ d.current }}</td>
+                        <td>{{ d.baseline_metric ~ ' ' ~ d.metric_unit if d.baseline_metric is not none else '—' }}</td>
+                        <td>{{ d.current_metric ~ ' ' ~ d.metric_unit if d.current_metric is not none else '—' }}</td>
+                        <td style="font-weight: 600; {{ 'color: #c62828;' if d.delta_pct and d.delta_pct > 0 else 'color: #2e7d32;' if d.delta_pct and d.delta_pct < 0 else '' }}">
+                            {{ (('+' if d.delta_pct > 0 else '') ~ d.delta_pct ~ '%') if d.delta_pct is not none else '—' }}
+                        </td>
+                        <td>
+                            {% if d.classification == 'REGRESSION' %}
+                                <span class="badge badge-hard">HARD REGRESSION</span>
+                            {% elif d.classification == 'SOFT_REGRESSION' %}
+                                <span class="badge badge-soft">SOFT REGRESSION</span>
+                            {% elif d.classification == 'FIXED' %}
+                                <span class="badge badge-fixed">FIXED</span>
+                            {% elif d.classification == 'IMPROVED' %}
+                                <span class="badge badge-improved">IMPROVED</span>
+                            {% elif d.classification == 'UNCHANGED' %}
+                                <span class="badge badge-unchanged">UNCHANGED</span>
+                            {% else %}
+                                <span class="badge badge-new">{{ d.classification }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: #64748b; padding: 2.5em;">
+                            No regression comparisons available yet.<br>
+                            <span style="font-size: 0.85em; color: #94a3b8;">Run test suite and snapshot a baseline with <code>python regression/baseline_runner.py --version v1.0</code></span>
+                        </td>
+                    </tr>
+                {% endif %}
             </tbody>
         </table>
     </div>

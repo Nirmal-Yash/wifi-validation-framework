@@ -1,13 +1,17 @@
+import sys
 import time
 from pathlib import Path
+
+# Bootstrap project root into sys.path before any local package imports
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import pytest
 import yaml
 
 from lib.connector import ConnectionPool, load_devices
 from lib.db_helper import init_db, insert_result
-
-ROOT = Path(__file__).resolve().parent.parent
 
 
 def pytest_addoption(parser):
@@ -26,7 +30,10 @@ def firmware_version(request):
 
 @pytest.fixture(scope="session")
 def params():
-    with open(ROOT / "configs" / "test_params.yaml", "r", encoding="utf-8") as f:
+    params_path = ROOT / "configs" / "test_params.yaml"
+    if not params_path.exists():
+        raise FileNotFoundError(f"Configuration file missing: {params_path}")
+    with open(params_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -86,15 +93,19 @@ def record_test_result(request, firmware_version):
     metric_val = props.get("metric_value")
     metric_unit = props.get("metric_unit")
 
-    insert_result(
-        test_name=request.node.nodeid,
-        status=status,
-        firmware_version=firmware_version,
-        duration_ms=duration_ms,
-        error_message=error_message,
-        metric_value=metric_val,
-        metric_unit=metric_unit,
-    )
+    try:
+        insert_result(
+            test_name=request.node.nodeid,
+            status=status,
+            firmware_version=firmware_version,
+            duration_ms=duration_ms,
+            error_message=error_message,
+            metric_value=metric_val,
+            metric_unit=metric_unit,
+        )
+    except Exception as db_err:
+        # Prevent database insertion errors from failing the test suite
+        sys.stderr.write(f"\n[WARN] Failed to insert test result to DB: {db_err}\n")
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)

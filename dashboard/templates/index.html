@@ -67,8 +67,11 @@
 
         <div class="card">
             <h2>Pass Rate Trend by Firmware Version</h2>
-            <div style="height: 260px; max-height: 260px;">
+            <div id="chart-container" style="height: 260px; max-height: 260px; position: relative;">
                 <canvas id="passRateCanvas"></canvas>
+                <div id="no-chart-msg" style="display:none; text-align: center; padding-top: 4em; color: #64748b;">
+                    No firmware pass rate data recorded yet. Run tests with <code>--firmware-version</code> to visualize trends.
+                </div>
             </div>
         </div>
 
@@ -126,7 +129,11 @@
         fetch('/api/pass-rates')
             .then(res => res.json())
             .then(data => {
-                if (!data || data.length === 0) return;
+                if (!data || data.length === 0) {
+                    document.getElementById('passRateCanvas').style.display = 'none';
+                    document.getElementById('no-chart-msg').style.display = 'block';
+                    return;
+                }
                 const labels = data.map(d => d.firmware_version);
                 const rates = data.map(d => d.total ? Math.round((d.passed / d.total) * 1000) / 10 : 0);
                 const bgColors = rates.map(r => r >= 95 ? '#15803d' : (r >= 80 ? '#d97706' : '#b91c1c'));
@@ -155,6 +162,10 @@
                         }
                     }
                 });
+            })
+            .catch(() => {
+                document.getElementById('passRateCanvas').style.display = 'none';
+                document.getElementById('no-chart-msg').style.display = 'block';
             });
 
         // Real-time polling every 10 seconds

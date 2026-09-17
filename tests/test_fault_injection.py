@@ -1,4 +1,11 @@
+import sys
 import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import pytest
 
 from lib.fault_injector import clear_conditions, fault_context, link_down, link_up
