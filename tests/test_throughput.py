@@ -1,17 +1,20 @@
 import pytest
 
-from lib.traffic import run_iperf3, run_iperf3_via_ssh
-
-IPERF_SERVER = "192.168.122.10"
+from lib.traffic import run_iperf3_via_ssh
 
 
 @pytest.mark.perf
-def test_throughput_meets_minimum(params, connection_pool):
+def test_throughput_meets_minimum(params, connection_pool, metric_logger):
+    """Client VM to Router throughput must satisfy minimum Mbps bandwidth requirement."""
     minimum = params["thresholds"]["min_throughput_mbps"]
-    try:
-        result = run_iperf3_via_ssh(connection_pool, "client_vm", IPERF_SERVER, duration=10)
-    except Exception:
-        result = run_iperf3(IPERF_SERVER, duration=10)
-    assert result["throughput_mbps"] >= minimum, (
-        f"Throughput {result['throughput_mbps']} Mbps is below minimum {minimum} Mbps"
+    router_ip = params["network"]["router_ip"]
+
+    # Execute on client_vm over SSH — no silent local fallback
+    result = run_iperf3_via_ssh(connection_pool, "client_vm", router_ip, duration=10)
+
+    throughput = result["throughput_mbps"]
+    metric_logger.log(throughput, "Mbps")
+
+    assert throughput >= minimum, (
+        f"Measured throughput {throughput} Mbps is below minimum threshold of {minimum} Mbps"
     )

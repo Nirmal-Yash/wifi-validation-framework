@@ -26,7 +26,7 @@ def firmware_version(request):
 
 @pytest.fixture(scope="session")
 def params():
-    with open(ROOT / "configs" / "test_params.yaml") as f:
+    with open(ROOT / "configs" / "test_params.yaml", "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -42,22 +42,58 @@ def connection_pool():
     pool.close_all()
 
 
+class MetricLogger:
+    """Fixture helper to record numerical metrics with units for regression intelligence."""
+
+    def __init__(self, node):
+        self._node = node
+
+    def log(self, value, unit):
+        try:
+            val_float = float(value)
+        except (ValueError, TypeError):
+            val_float = None
+        self._node.user_properties.append(("metric_value", val_float))
+        self._node.user_properties.append(("metric_unit", str(unit)))
+
+
+@pytest.fixture
+def metric_logger(request):
+    return MetricLogger(request.node)
+
+
 @pytest.fixture(autouse=True)
 def record_test_result(request, firmware_version):
     start = time.time()
     yield
     duration_ms = int((time.time() - start) * 1000)
-    rep = getattr(request.node, "rep_call", None)
-    if rep is None:
+
+    rep_call = getattr(request.node, "rep_call", None)
+    rep_setup = getattr(request.node, "rep_setup", None)
+
+    if rep_call is not None:
+        status = "PASS" if rep_call.passed else "FAIL"
+        error_message = str(rep_call.longrepr) if rep_call.failed else None
+    elif rep_setup is not None and rep_setup.failed:
+        status = "FAIL"
+        error_message = f"Setup failed: {rep_setup.longrepr}"
+    else:
+        # Test skipped or undetermined
         return
-    status = "PASS" if rep.passed else "FAIL"
-    error_message = str(rep.longrepr) if rep.failed else None
+
+    # Extract metrics logged by test
+    props = dict(request.node.user_properties)
+    metric_val = props.get("metric_value")
+    metric_unit = props.get("metric_unit")
+
     insert_result(
         test_name=request.node.nodeid,
         status=status,
         firmware_version=firmware_version,
         duration_ms=duration_ms,
         error_message=error_message,
+        metric_value=metric_val,
+        metric_unit=metric_unit,
     )
 
 

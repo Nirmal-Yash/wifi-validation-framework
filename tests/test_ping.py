@@ -3,29 +3,36 @@ import pytest
 from lib.traffic import run_ping
 
 
-ROUTER_IP = "192.168.122.10"
+@pytest.mark.perf
+def test_ping_success(params, metric_logger):
+    """Router must be reachable with ICMP echo requests."""
+    router_ip = params["network"]["router_ip"]
+    result = run_ping(router_ip, count=5)
+    metric_logger.log(1.0 if result["success"] else 0.0, "bool")
+    assert result["success"], f"Ping to router {router_ip} failed completely. Output: {result.get('stdout')}"
 
 
 @pytest.mark.perf
-def test_ping_success(params):
-    result = run_ping(ROUTER_IP)
-    assert result["success"], "Ping to router failed"
+def test_packet_loss_within_threshold(params, metric_logger):
+    """Packet loss to router should remain below the configured maximum percentage threshold."""
+    router_ip = params["network"]["router_ip"]
+    result = run_ping(router_ip, count=20)
+    loss = result["packet_loss_pct"]
+    metric_logger.log(loss, "%")
 
-
-@pytest.mark.perf
-def test_packet_loss_within_threshold(params):
-    result = run_ping(ROUTER_IP, count=20)
     threshold = params["thresholds"]["max_packet_loss_pct"]
-    assert result["packet_loss_pct"] <= threshold, (
-        f"Packet loss {result['packet_loss_pct']}% exceeds {threshold}%"
-    )
+    assert loss <= threshold, f"Packet loss of {loss}% exceeds allowable threshold of {threshold}%"
 
 
 @pytest.mark.perf
-def test_latency_within_threshold(params):
-    result = run_ping(ROUTER_IP)
+def test_latency_within_threshold(params, metric_logger):
+    """Average RTT latency to router should remain within acceptable threshold."""
+    router_ip = params["network"]["router_ip"]
+    result = run_ping(router_ip, count=10)
+    rtt = result["avg_rtt_ms"]
+
+    assert rtt is not None, f"Could not parse average RTT from ping output: {result.get('stdout')}"
+    metric_logger.log(rtt, "ms")
+
     threshold = params["thresholds"]["max_latency_ms"]
-    assert result["avg_rtt_ms"] is not None, "Could not parse RTT from ping output"
-    assert result["avg_rtt_ms"] <= threshold, (
-        f"Latency {result['avg_rtt_ms']}ms exceeds {threshold}ms"
-    )
+    assert rtt <= threshold, f"Latency of {rtt}ms exceeds threshold of {threshold}ms"

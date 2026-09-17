@@ -6,14 +6,100 @@ Built with **Pytest**, **Netmiko**, **GNS3**, **SQLite**, and **Flask** — mirr
 
 ## Architecture
 
-```
-Layer 1  Virtual Lab (GNS3 + FRR + hostapd + Linux VMs)
-Layer 2  Config Manager (YAML + Jinja2 templates)
-Layer 3  Device Connectivity (Netmiko SSH pool)
-Layer 4  Traffic & Validation (iperf3, tcpdump, PyShark)
-Layer 5  Test Engine (Pytest — 8 test files)
-Layer 6  Regression Engine (baseline, diff, fw_simulator)
-Layer 7  Dashboard & Reporting (Flask + SQLite + HTML reports)
+```mermaid
+flowchart BT
+    %% Styling Definitions
+    classDef outputLayer fill:#1e1b4b,stroke:#3730a3,stroke-width:2px,color:#e0e7ff
+    classDef intelLayer fill:#064e3b,stroke:#047857,stroke-width:2px,color:#d1fae5
+    classDef execLayer fill:#701a75,stroke:#86198f,stroke-width:2px,color:#fae8ff
+    classDef trafficLayer fill:#075985,stroke:#0369a1,stroke-width:2px,color:#e0f2fe
+    classDef connLayer fill:#9a3412,stroke:#c2410c,stroke-width:2px,color:#ffedd5
+    classDef configLayer fill:#3f3f46,stroke:#52525b,stroke-width:2px,color:#f4f4f5
+    classDef foundLayer fill:#0f172a,stroke:#334155,stroke-width:2px,color:#f8fafc
+    classDef db fill:#000000,stroke:#fbbf24,stroke-width:1px,color:#fbbf24
+
+    %% Layer 7
+    subgraph L7 [Layer 7 — Output & Reporting]
+        direction LR
+        Dashboard[Flask Web Dashboard localhost:5000]:::outputLayer
+        HTML[pytest-html Reports]:::outputLayer
+        Export[CSV / JSON Exports]:::outputLayer
+    end
+
+    %% Layer 6
+    subgraph L6 [Layer 6 — Regression Intelligence]
+        direction LR
+        Diff[diff_engine.py]:::intelLayer
+        Baseline[(SQLite Baseline DB)]:::db
+        Classifier[regression_classifier.py]:::intelLayer
+        
+        Diff <--> Baseline
+        Classifier --> Diff
+    end
+
+    %% Layer 5
+    subgraph L5 [Layer 5 — Execution Engine]
+        direction LR
+        Pytest[Pytest Core Engine]:::execLayer
+        Fixtures[conftest.py Setup/Fixtures]:::execLayer
+        Tests[test_ssid.py, test_auth.py, test_throughput.py]:::execLayer
+        
+        Pytest --> Fixtures
+        Fixtures --> Tests
+    end
+
+    %% Layer 4
+    subgraph L4 [Layer 4 — Traffic Analysis & Validation]
+        direction LR
+        Scapy[Scapy - Packet Parsing]:::trafficLayer
+        Iperf[iperf3 - Throughput]:::trafficLayer
+        Tcpdump[tcpdump - Async Capture]:::trafficLayer
+    end
+
+    %% Layer 3
+    subgraph L3 [Layer 3 — Device Connectivity]
+        direction LR
+        Netmiko[Netmiko - SSH Automation]:::connLayer
+        Subprocess[Subprocess - OS Hooks]:::connLayer
+        Paramiko[Paramiko / Connection Pools]:::connLayer
+    end
+
+    %% Layer 2
+    subgraph L2 [Layer 2 — Configuration Manager]
+        direction LR
+        YAML[devices.yaml / test_params.yaml]:::configLayer
+        Jinja[Jinja2 Templates]:::configLayer
+        DaemonConfigs[hostapd.conf / wpa_supplicant.conf]:::configLayer
+    end
+
+    %% Layer 1
+    subgraph L1 [Layer 1 — Foundation: Localized Virtual Infrastructure]
+        direction LR
+        subgraph Kernel [Ubuntu Host]
+            HW[mac80211_hwsim Kernel Module]:::foundLayer
+        end
+        subgraph Namespaces [Isolated Network Namespaces]
+            AP[ap_ns: hostapd + wlan0]:::foundLayer
+            Client[client_ns: wpa_supplicant + wlan1]:::foundLayer
+            Monitor[monitor_ns: Sniffer + wlan2]:::foundLayer
+        end
+        Router[FRR Router via Docker]:::foundLayer
+        
+        Kernel --- Namespaces
+    end
+
+    %% Inter-layer Dependencies
+    L1 <==> L2
+    L2 <==> L3
+    L3 <==> L4
+    L4 <==> L5
+    L5 ==> L6
+    L6 ==> L7
+    
+    %% Specific Cross-Layer Data Flows
+    Tests -.->|Asserts logic via| Scapy
+    Tests -.->|Logs test metrics to| Baseline
+    Diff -.->|Pushes pass/fail deltas to| Dashboard
 ```
 
 ## Quick Start

@@ -3,48 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WiFi Validation Dashboard</title>
+    <title>WiFi Validation Framework — Real-Time Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #333; }
-        header { background: #1a3c6e; color: white; padding: 1.5em 2em; }
-        header h1 { font-size: 1.5em; }
-        header p { opacity: 0.8; margin-top: 0.3em; }
-        nav { background: white; padding: 0.8em 2em; border-bottom: 1px solid #ddd; }
-        nav a { margin-right: 1.5em; color: #1a3c6e; text-decoration: none; font-weight: 600; }
-        nav a:hover { text-decoration: underline; }
-        .container { padding: 2em; max-width: 1200px; margin: 0 auto; }
-        .card { background: white; border-radius: 8px; padding: 1.5em; margin-bottom: 1.5em; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
-        .card h2 { color: #1a3c6e; margin-bottom: 1em; font-size: 1.1em; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f1f5f9; color: #0f172a; }
+        header { background: #0f172a; color: white; padding: 1.5em 2.5em; display: flex; justify-content: space-between; align-items: center; }
+        header h1 { font-size: 1.4em; letter-spacing: -0.02em; }
+        header p { opacity: 0.7; font-size: 0.85em; margin-top: 0.2em; }
+        .live-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(34, 197, 94, 0.2); color: #22c55e; padding: 4px 10px; border-radius: 9999px; font-size: 0.8em; font-weight: 600; }
+        .dot { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; animation: pulse 1.8s infinite; }
+        @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+        nav { background: white; padding: 0.8em 2.5em; border-bottom: 1px solid #e2e8f0; display: flex; gap: 1.5em; }
+        nav a { color: #0f172a; text-decoration: none; font-weight: 600; font-size: 0.9em; }
+        nav a:hover { color: #2563eb; }
+        .container { padding: 2em 2.5em; max-width: 1300px; margin: 0 auto; }
+        .stats { display: flex; gap: 1.2em; flex-wrap: wrap; margin-bottom: 2em; }
+        .stat-box { background: white; border-radius: 8px; padding: 1.2em 1.5em; flex: 1; min-width: 160px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .stat-box .value { font-size: 1.8em; font-weight: 700; color: #0f172a; }
+        .stat-box .label { color: #64748b; font-size: 0.82em; margin-top: 0.3em; text-transform: uppercase; letter-spacing: 0.04em; }
+        .card { background: white; border-radius: 8px; padding: 1.5em; margin-bottom: 2em; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .card h2 { color: #0f172a; margin-bottom: 1em; font-size: 1.1em; font-weight: 600; }
         table { width: 100%; border-collapse: collapse; }
-        th { background: #1a3c6e; color: white; padding: 10px 12px; text-align: left; }
-        td { padding: 9px 12px; border-bottom: 1px solid #eee; }
-        tr:hover { background: #f9f9f9; }
-        .pass { color: #2e7d32; font-weight: bold; }
-        .fail { color: #c62828; font-weight: bold; }
-        .chart-img { max-width: 100%; border-radius: 4px; }
-        .stats { display: flex; gap: 1em; flex-wrap: wrap; margin-bottom: 1.5em; }
-        .stat-box { background: white; border-radius: 8px; padding: 1.2em 1.5em; flex: 1; min-width: 140px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
-        .stat-box .value { font-size: 2em; font-weight: bold; color: #1a3c6e; }
-        .stat-box .label { color: #666; font-size: 0.85em; margin-top: 0.2em; }
+        th { background: #f8fafc; color: #475569; padding: 10px 14px; text-align: left; font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #e2e8f0; }
+        td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; font-size: 0.9em; }
+        tr:hover { background: #f8fafc; }
+        .status-badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-weight: 700; font-size: 0.8em; }
+        .status-pass { background: #dcfce7; color: #15803d; }
+        .status-fail { background: #fee2e2; color: #b91c1c; }
+        .metric-cell { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 600; color: #0284c7; }
+        code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.9em; color: #334155; }
     </style>
 </head>
 <body>
     <header>
-        <h1>WiFi Validation Framework — Dashboard</h1>
-        <p>Automated regression testing for WiFi and network devices</p>
+        <div>
+            <h1>WiFi Validation Framework</h1>
+            <p>Automated regression testing, live metrics & firmware verification</p>
+        </div>
+        <div class="live-badge">
+            <div class="dot"></div> LIVE MONITORING
+        </div>
     </header>
     <nav>
-        <a href="/">Results</a>
-        <a href="/regressions">Regressions</a>
-        <a href="/chart">Pass Rate Chart</a>
+        <a href="/">Test Results</a>
+        <a href="/regressions">Regression Diff</a>
+        <a href="/chart">Static Chart</a>
         <a href="/export/csv">Export CSV</a>
     </nav>
     <div class="container">
         <div class="stats">
             <div class="stat-box">
-                <div class="value">{{ results|length }}</div>
-                <div class="label">Latest Tests</div>
+                <div class="value" id="stat-total">{{ results|length }}</div>
+                <div class="label">Latest Tests Run</div>
             </div>
             {% for pr in pass_rates %}
             <div class="stat-box">
@@ -55,35 +66,131 @@
         </div>
 
         <div class="card">
-            <h2>Pass Rate by Firmware Version</h2>
-            <img src="/chart" alt="Pass rate chart" class="chart-img">
+            <h2>Pass Rate Trend by Firmware Version</h2>
+            <div style="height: 260px; max-height: 260px;">
+                <canvas id="passRateCanvas"></canvas>
+            </div>
         </div>
 
         <div class="card">
-            <h2>Latest Test Results</h2>
-            {% if results %}
-            <table>
-                <tr>
-                    <th>Test</th>
-                    <th>Status</th>
-                    <th>Firmware</th>
-                    <th>Duration (ms)</th>
-                    <th>Timestamp</th>
-                </tr>
-                {% for r in results %}
-                <tr>
-                    <td>{{ r.test_name }}</td>
-                    <td class="{{ 'pass' if r.status == 'PASS' else 'fail' }}">{{ r.status }}</td>
-                    <td>{{ r.firmware_version }}</td>
-                    <td>{{ r.duration_ms or '—' }}</td>
-                    <td>{{ r.timestamp[:19] }}</td>
-                </tr>
-                {% endfor %}
-            </table>
-            {% else %}
-            <p>No test results yet. Run: <code>pytest tests/ -v</code></p>
-            {% endif %}
+            <h2>Latest Test Runs & Metric Measurements</h2>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Test Name</th>
+                            <th>Status</th>
+                            <th>Measured Metric</th>
+                            <th>Firmware</th>
+                            <th>Duration (ms)</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-body">
+                        {% if results %}
+                            {% for r in results %}
+                            <tr>
+                                <td><code>{{ r.test_name }}</code></td>
+                                <td>
+                                    <span class="status-badge {{ 'status-pass' if r.status == 'PASS' else 'status-fail' }}">
+                                        {{ r.status }}
+                                    </span>
+                                </td>
+                                <td class="metric-cell">
+                                    {% if r.metric_value is not none %}
+                                        {{ r.metric_value }} {{ r.metric_unit }}
+                                    {% else %}
+                                        <span style="color:#94a3b8">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ r.firmware_version }}</td>
+                                <td>{{ r.duration_ms or '—' }}</td>
+                                <td>{{ r.timestamp[:19].replace('T', ' ') }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" style="text-align: center; color: #64748b; padding: 2em;">
+                                    No test results logged yet. Run: <code>pytest tests/ -v</code>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
+
+    <script>
+        // Render Interactive Chart.js
+        fetch('/api/pass-rates')
+            .then(res => res.json())
+            .then(data => {
+                if (!data || data.length === 0) return;
+                const labels = data.map(d => d.firmware_version);
+                const rates = data.map(d => d.total ? Math.round((d.passed / d.total) * 1000) / 10 : 0);
+                const bgColors = rates.map(r => r >= 95 ? '#15803d' : (r >= 80 ? '#d97706' : '#b91c1c'));
+
+                new Chart(document.getElementById('passRateCanvas'), {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Pass Rate (%)',
+                            data: rates,
+                            backgroundColor: bgColors,
+                            borderRadius: 6,
+                            maxBarThickness: 50
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100,
+                                ticks: { callback: v => v + '%' }
+                            }
+                        }
+                    }
+                });
+            });
+
+        // Real-time polling every 10 seconds
+        setInterval(async () => {
+            try {
+                const res = await fetch('/api/results');
+                const results = await res.json();
+                if (!results || results.length === 0) return;
+
+                document.getElementById('stat-total').innerText = results.length;
+                const tbody = document.getElementById('results-body');
+                let rowsHtml = '';
+                for (const r of results) {
+                    const isPass = r.status === 'PASS';
+                    const badgeClass = isPass ? 'status-pass' : 'status-fail';
+                    const metricStr = (r.metric_value !== null && r.metric_value !== undefined) 
+                        ? `${r.metric_value} ${r.metric_unit || ''}`.trim() 
+                        : '<span style="color:#94a3b8">—</span>';
+                    const timeStr = r.timestamp ? r.timestamp.slice(0, 19).replace('T', ' ') : '—';
+
+                    rowsHtml += `
+                        <tr>
+                            <td><code>${r.test_name}</code></td>
+                            <td><span class="status-badge ${badgeClass}">${r.status}</span></td>
+                            <td class="metric-cell">${metricStr}</td>
+                            <td>${r.firmware_version}</td>
+                            <td>${r.duration_ms || '—'}</td>
+                            <td>${timeStr}</td>
+                        </tr>
+                    `;
+                }
+                tbody.innerHTML = rowsHtml;
+            } catch (err) {
+                console.error("Live poll error:", err);
+            }
+        }, 10000);
+    </script>
 </body>
 </html>

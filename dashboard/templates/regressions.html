@@ -2,47 +2,108 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Regressions — WiFi Validation Dashboard</title>
+    <title>Regression Analysis — WiFi Validation Framework</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 2em; background: #f0f4f8; }
-        h1 { color: #1a3c6e; }
-        nav a { margin-right: 1.5em; color: #1a3c6e; }
-        table { border-collapse: collapse; width: 100%; background: white; margin-top: 1em; }
-        th { background: #1a3c6e; color: white; padding: 10px; }
-        td { padding: 9px; border-bottom: 1px solid #eee; }
-        .regression { color: #c62828; font-weight: bold; }
-        .fixed { color: #2e7d32; font-weight: bold; }
-        .summary { background: #fff3e0; padding: 1em; border-radius: 4px; margin: 1em 0; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; color: #0f172a; }
+        header { background: #0f172a; color: white; padding: 1.5em 2.5em; }
+        header h1 { font-size: 1.4em; }
+        nav { background: white; padding: 0.8em 2.5em; border-bottom: 1px solid #e2e8f0; display: flex; gap: 1.5em; }
+        nav a { color: #0f172a; text-decoration: none; font-weight: 600; font-size: 0.9em; }
+        nav a:hover { color: #2563eb; }
+        .container { padding: 2em 2.5em; max-width: 1300px; margin: 0 auto; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1em; margin-bottom: 2em; }
+        .card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.2em; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .card-title { color: #64748b; font-size: 0.82em; text-transform: uppercase; font-weight: 600; letter-spacing: 0.04em; }
+        .card-num { font-size: 2em; font-weight: 700; margin-top: 0.2em; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        th { background: #1e293b; color: white; padding: 12px 16px; text-align: left; font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.05em; }
+        td { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 0.9em; }
+        tr:hover { background: #f1f5f9; }
+        code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.88em; background: #f1f5f9; padding: 2px 4px; border-radius: 4px; }
+        .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-weight: 700; font-size: 0.8em; color: white; }
+        .badge-hard { background: #c62828; }
+        .badge-soft { background: #e65100; }
+        .badge-fixed { background: #2e7d32; }
+        .badge-improved { background: #00897b; }
+        .badge-unchanged { background: #64748b; }
+        .badge-new { background: #1565c0; }
     </style>
 </head>
 <body>
+    <header>
+        <h1>Regression Intelligence Engine</h1>
+    </header>
     <nav>
-        <a href="/">Results</a>
-        <a href="/regressions">Regressions</a>
-        <a href="/chart">Chart</a>
+        <a href="/">Test Results</a>
+        <a href="/regressions">Regression Diff</a>
+        <a href="/chart">Static Chart</a>
         <a href="/export/csv">Export CSV</a>
     </nav>
-    <h1>Regression Analysis</h1>
-    <div class="summary">
-        <strong>{{ regressions|length }} regression(s)</strong> detected (PASS &rarr; FAIL)
+    <div class="container">
+        <div class="summary-grid">
+            <div class="card" style="border-left: 4px solid #c62828;">
+                <div class="card-title">Hard Regressions</div>
+                <div class="card-num" style="color: #c62828;">{{ regressions|length }}</div>
+            </div>
+            <div class="card" style="border-left: 4px solid #e65100;">
+                <div class="card-title">Soft Regressions (>20% Drop)</div>
+                <div class="card-num" style="color: #e65100;">{{ soft_regressions|length }}</div>
+            </div>
+            <div class="card" style="border-left: 4px solid #2e7d32;">
+                <div class="card-title">Fixed / Recovered</div>
+                <div class="card-num" style="color: #2e7d32;">
+                    {{ all_deltas|selectattr("classification", "equalto", "FIXED")|list|length }}
+                </div>
+            </div>
+            <div class="card" style="border-left: 4px solid #0f172a;">
+                <div class="card-title">Total Tests Compared</div>
+                <div class="card-num">{{ all_deltas|length }}</div>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Test Name</th>
+                    <th>Baseline</th>
+                    <th>Current</th>
+                    <th>Baseline Metric</th>
+                    <th>Current Metric</th>
+                    <th>Delta %</th>
+                    <th>Classification</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in all_deltas %}
+                <tr>
+                    <td><code>{{ d.test_name }}</code></td>
+                    <td>{{ d.baseline }}</td>
+                    <td>{{ d.current }}</td>
+                    <td>{{ d.baseline_metric ~ ' ' ~ d.metric_unit if d.baseline_metric is not none else '—' }}</td>
+                    <td>{{ d.current_metric ~ ' ' ~ d.metric_unit if d.current_metric is not none else '—' }}</td>
+                    <td style="font-weight: 600; {{ 'color: #c62828;' if d.delta_pct and d.delta_pct > 0 else 'color: #2e7d32;' if d.delta_pct and d.delta_pct < 0 else '' }}">
+                        {{ (('+' if d.delta_pct > 0 else '') ~ d.delta_pct ~ '%') if d.delta_pct is not none else '—' }}
+                    </td>
+                    <td>
+                        {% if d.classification == 'REGRESSION' %}
+                            <span class="badge badge-hard">HARD REGRESSION</span>
+                        {% elif d.classification == 'SOFT_REGRESSION' %}
+                            <span class="badge badge-soft">SOFT REGRESSION</span>
+                        {% elif d.classification == 'FIXED' %}
+                            <span class="badge badge-fixed">FIXED</span>
+                        {% elif d.classification == 'IMPROVED' %}
+                            <span class="badge badge-improved">IMPROVED</span>
+                        {% elif d.classification == 'UNCHANGED' %}
+                            <span class="badge badge-unchanged">UNCHANGED</span>
+                        {% else %}
+                            <span class="badge badge-new">{{ d.classification }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
-    <table>
-        <tr>
-            <th>Test</th>
-            <th>Baseline</th>
-            <th>Current</th>
-            <th>Classification</th>
-        </tr>
-        {% for d in all_deltas %}
-        <tr>
-            <td>{{ d.test_name }}</td>
-            <td>{{ d.baseline }}</td>
-            <td>{{ d.current }}</td>
-            <td class="{{ 'regression' if d.classification == 'REGRESSION' else 'fixed' if d.classification == 'FIXED' else '' }}">
-                {{ d.classification }}
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
 </body>
 </html>
