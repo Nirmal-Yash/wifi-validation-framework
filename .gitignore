@@ -9,3 +9,6 @@ wifi-venv/
 .pytest_cache/
 dist/
 build/
+.env
+artifacts/
+config/
