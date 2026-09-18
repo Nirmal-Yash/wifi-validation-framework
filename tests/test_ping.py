@@ -1,3 +1,4 @@
+import re
 import sys
 from pathlib import Path
 
@@ -7,39 +8,43 @@ if str(ROOT) not in sys.path:
 
 import pytest
 
-from lib.traffic import run_ping
+
+def client_ping(connection_pool, router_ip, count):
+    output = connection_pool.send_command(
+        "client_vm",
+        f"ping -c {count} -W 3 {router_ip} 2>&1",
+    )
+    loss_match = re.search(r"(\d+(?:\.\d+)?)% packet loss", output)
+    loss = float(loss_match.group(1)) if loss_match else 100.0
+    rtt_match = re.search(r"rtt min/avg/max/(?:mdev|stddev)\s*=\s*[\d.]+/([\d.]+)/", output, re.IGNORECASE)
+    avg = float(rtt_match.group(1)) if rtt_match else None
+    return {"success": loss < 100.0, "packet_loss_pct": loss, "avg_rtt_ms": avg, "output": output}
 
 
 @pytest.mark.perf
-def test_ping_success(params, metric_logger):
-    """Router must be reachable with ICMP echo requests."""
+def test_ping_success(params, connection_pool, metric_logger):
     router_ip = params["network"]["router_ip"]
-    result = run_ping(router_ip, count=5)
+    result = client_ping(connection_pool, router_ip, 5)
     metric_logger.log(1.0 if result["success"] else 0.0, "bool")
-    assert result["success"], f"Ping to router {router_ip} failed completely. Output: {result.get('stdout')}"
+    assert result["success"], f"Client WiFi ping to router {router_ip} failed: {result['output']}"
 
 
 @pytest.mark.perf
-def test_packet_loss_within_threshold(params, metric_logger):
-    """Packet loss to router should remain below the configured maximum percentage threshold."""
+def test_packet_loss_within_threshold(params, connection_pool, metric_logger):
     router_ip = params["network"]["router_ip"]
-    result = run_ping(router_ip, count=20)
+    result = client_ping(connection_pool, router_ip, 20)
     loss = result["packet_loss_pct"]
     metric_logger.log(loss, "%")
-
     threshold = params["thresholds"]["max_packet_loss_pct"]
-    assert loss <= threshold, f"Packet loss of {loss}% exceeds allowable threshold of {threshold}%"
+    assert loss <= threshold, f"Client WiFi packet loss of {loss}% exceeds threshold {threshold}%"
 
 
 @pytest.mark.perf
-def test_latency_within_threshold(params, metric_logger):
-    """Average RTT latency to router should remain within acceptable threshold."""
+def test_latency_within_threshold(params, connection_pool, metric_logger):
     router_ip = params["network"]["router_ip"]
-    result = run_ping(router_ip, count=10)
+    result = client_ping(connection_pool, router_ip, 10)
     rtt = result["avg_rtt_ms"]
-
-    assert rtt is not None, f"Could not parse average RTT from ping output: {result.get('stdout')}"
+    assert rtt is not None, f"Could not parse client WiFi average RTT: {result['output']}"
     metric_logger.log(rtt, "ms")
-
     threshold = params["thresholds"]["max_latency_ms"]
-    assert rtt <= threshold, f"Latency of {rtt}ms exceeds threshold of {threshold}ms"
+    assert rtt <= threshold, f"Client WiFi latency of {rtt}ms exceeds threshold {threshold}ms"

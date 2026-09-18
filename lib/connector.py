@@ -89,6 +89,7 @@ class ConnectionPool:
         return conn
 
     def send_command(self, device_name, command, **kwargs):
+        kwargs.setdefault("read_timeout", 30)
         conn = self.get_connection(device_name)
         return conn.send_command(command, **kwargs)
 

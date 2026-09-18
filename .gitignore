@@ -12,3 +12,5 @@ build/
 .env
 artifacts/
 config/
+.robust-backups/
+WiFi_Validation_Framework_Robust_Reproduction_Guide.docx

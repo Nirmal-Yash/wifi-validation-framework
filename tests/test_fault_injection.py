@@ -1,3 +1,4 @@
+import re
 import sys
 import time
 from pathlib import Path
@@ -9,50 +10,44 @@ if str(ROOT) not in sys.path:
 import pytest
 
 from lib.fault_injector import clear_conditions, fault_context, link_down, link_up
-from lib.traffic import run_ping
+
+
+def client_ping(connection_pool, router_ip, count=3):
+    output = connection_pool.send_command("client_vm", f"ping -c {count} {router_ip} 2>&1")
+    match = re.search(r"(\d+(?:\.\d+)?)% packet loss", output)
+    loss = float(match.group(1)) if match else 100.0
+    return {"success": loss < 100.0, "packet_loss_pct": loss, "output": output}
 
 
 @pytest.mark.regression
 def test_fault_injection_link_down_up(params, connection_pool, metric_logger):
-    """Network link disruption should cause ping failure; link recovery must restore connectivity."""
+    """Disrupt the real WiFi interface while SSH management stays on eth1."""
     router_ip = params["network"]["router_ip"]
     iface = params["network"]["client_interface"]
+    assert iface == "wlan0", "Real fault injection requires client_interface=wlan0"
 
-    # 1. Baseline verification
-    baseline = run_ping(router_ip, count=3)
+    baseline = client_ping(connection_pool, router_ip, 3)
     if not baseline["success"]:
-        # If offline/mock test environment, log nominal recovery time
-        metric_logger.log(0.0, "ms")
-        pytest.skip(f"Baseline connectivity to {router_ip} unavailable in this environment")
+        pytest.skip(f"Baseline client WiFi connectivity to {router_ip} unavailable")
 
-    # 2. Inject link down with guaranteed recovery via fault_context
     def do_down():
-        try:
-            link_down(iface, pool=connection_pool, device="client_vm")
-        except Exception:
-            link_down(iface)
+        link_down(iface, pool=connection_pool, device="client_vm")
 
     def do_up():
         try:
             link_up(iface, pool=connection_pool, device="client_vm")
             clear_conditions(iface, pool=connection_pool, device="client_vm")
+            connection_pool.send_command("client_vm", "wpa_cli -i wlan0 reconnect 2>/dev/null || true")
         except Exception:
-            try:
-                link_up(iface)
-                clear_conditions(iface)
-            except Exception:
-                pass
+            pass
 
     with fault_context(do_down, do_up):
-        down_result = run_ping(router_ip, count=3)
-        assert not down_result["success"] or down_result["packet_loss_pct"] > 50, (
-            "Ping should experience high loss or failure when link is down"
+        down_result = client_ping(connection_pool, router_ip, 3)
+        assert (not down_result["success"] or down_result["packet_loss_pct"] > 50), (
+            f"WiFi traffic was not disrupted: {down_result}"
         )
 
-    # 3. Verify recovery after link up
-    time.sleep(1)
-    recovered = run_ping(router_ip, count=3)
-    recovery_rtt = recovered.get("avg_rtt_ms") or 0.0
-    metric_logger.log(recovery_rtt, "ms")
-
-    assert recovered["success"], f"Connectivity did not recover after link up: {recovered}"
+    time.sleep(2)
+    recovered = client_ping(connection_pool, router_ip, 3)
+    metric_logger.log(recovered["packet_loss_pct"], "%")
+    assert recovered["success"], f"WiFi connectivity did not recover: {recovered}"

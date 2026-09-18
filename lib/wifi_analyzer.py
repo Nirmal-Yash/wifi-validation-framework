@@ -16,7 +16,7 @@ try:
         EAPOL,
         IP,
         UDP,
-        Bootp,
+        BOOTP,
         Dot11,
         Dot11Beacon,
         Dot11Elt,
@@ -184,7 +184,7 @@ def generate_synthetic_dhcp_pcap(output_path):
         Ether(src="00:11:22:33:44:55", dst="ff:ff:ff:ff:ff:ff")
         / IP(src="0.0.0.0", dst="255.255.255.255")
         / UDP(sport=68, dport=67)
-        / Bootp(chaddr=b"\x00\x11\x22\x33\x44\x55", xid=0x12345678)
+        / BOOTP(chaddr=b"\x00\x11\x22\x33\x44\x55", xid=0x12345678)
         / DHCP(options=[("message-type", 1), "end"])
     )
 
@@ -193,7 +193,7 @@ def generate_synthetic_dhcp_pcap(output_path):
         Ether(src="aa:bb:cc:dd:ee:ff", dst="00:11:22:33:44:55")
         / IP(src="192.168.122.10", dst="192.168.122.150")
         / UDP(sport=67, dport=68)
-        / Bootp(yiaddr="192.168.122.150", chaddr=b"\x00\x11\x22\x33\x44\x55", xid=0x12345678)
+        / BOOTP(yiaddr="192.168.122.150", chaddr=b"\x00\x11\x22\x33\x44\x55", xid=0x12345678)
         / DHCP(options=[("message-type", 2), ("server_id", "192.168.122.10"), "end"])
     )
 
@@ -202,7 +202,7 @@ def generate_synthetic_dhcp_pcap(output_path):
         Ether(src="00:11:22:33:44:55", dst="ff:ff:ff:ff:ff:ff")
         / IP(src="0.0.0.0", dst="255.255.255.255")
         / UDP(sport=68, dport=67)
-        / Bootp(chaddr=b"\x00\x11\x22\x33\x44\x55", xid=0x12345678)
+        / BOOTP(chaddr=b"\x00\x11\x22\x33\x44\x55", xid=0x12345678)
         / DHCP(options=[("message-type", 3), ("requested_addr", "192.168.122.150"), "end"])
     )
 
@@ -211,7 +211,7 @@ def generate_synthetic_dhcp_pcap(output_path):
         Ether(src="aa:bb:cc:dd:ee:ff", dst="00:11:22:33:44:55")
         / IP(src="192.168.122.10", dst="192.168.122.150")
         / UDP(sport=67, dport=68)
-        / Bootp(yiaddr="192.168.122.150", chaddr=b"\x00\x11\x22\x33\x44\x55", xid=0x12345678)
+        / BOOTP(yiaddr="192.168.122.150", chaddr=b"\x00\x11\x22\x33\x44\x55", xid=0x12345678)
         / DHCP(options=[("message-type", 5), ("lease_time", 43200), "end"])
     )
 

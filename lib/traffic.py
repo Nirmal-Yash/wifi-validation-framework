@@ -13,7 +13,7 @@ def load_params():
         return yaml.safe_load(f)
 
 
-def run_ping(host, count=10, timeout=15):
+def run_ping(host, count=10, timeout=30):
     """Execute ping command and parse packet loss and RTT statistics robustly."""
     try:
         # Check platform to support both Linux and Windows environments
