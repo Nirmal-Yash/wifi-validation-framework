@@ -10,15 +10,12 @@ import pytest
 
 @pytest.mark.smoke
 def test_ssid_visible(connection_pool, params, metric_logger):
-    """Configured SSID should appear in client WiFi scan results."""
+    """Configured SSID should be visible on the active WiFi link (non-destructive)."""
     ssid = params["wifi"]["ssid"]
-    # Ensure interface is UP, then trigger scan via iw or iwlist
-    scan_cmd = (
-        "sudo ip link set wlan0 up 2>/dev/null; "
-        "sudo iw dev wlan0 scan 2>/dev/null | grep -i 'SSID:' || "
-        "sudo iwlist wlan0 scan 2>/dev/null | grep -i 'ESSID:'"
+    output = connection_pool.send_command(
+        "client_vm",
+        "wpa_cli -i wlan0 status 2>/dev/null; iw dev wlan0 link 2>/dev/null",
     )
-    output = connection_pool.send_command("client_vm", scan_cmd)
-    found = ssid in output
+    found = ssid in output and "wpa_state=COMPLETED" in output
     metric_logger.log(1.0 if found else 0.0, "bool")
-    assert found, f"SSID '{ssid}' not found in scan results. Output: {output[:500]}"
+    assert found, f"SSID '{ssid}' not active on wlan0. Output: {output[:500]}"

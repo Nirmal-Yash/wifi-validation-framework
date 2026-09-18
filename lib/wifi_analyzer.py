@@ -22,7 +22,6 @@ try:
         Dot11Elt,
         Ether,
         rdpcap,
-        wrpcap,
     )
     SCAPY_AVAILABLE = True
 except ImportError:
@@ -173,47 +172,3 @@ def analyze_dns_traffic(pcap_path, expected_domain=None):
     }
 
 
-def generate_synthetic_dhcp_pcap(output_path):
-    """Generate a clean synthetic DHCP pcap for offline verification and testing."""
-    check_scapy()
-    out = Path(output_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    # 1. DHCP Discover
-    p_disc = (
-        Ether(src="00:11:22:33:44:55", dst="ff:ff:ff:ff:ff:ff")
-        / IP(src="0.0.0.0", dst="255.255.255.255")
-        / UDP(sport=68, dport=67)
-        / BOOTP(chaddr=b"\x00\x11\x22\x33\x44\x55", xid=0x12345678)
-        / DHCP(options=[("message-type", 1), "end"])
-    )
-
-    # 2. DHCP Offer
-    p_offer = (
-        Ether(src="aa:bb:cc:dd:ee:ff", dst="00:11:22:33:44:55")
-        / IP(src="192.168.122.10", dst="192.168.122.150")
-        / UDP(sport=67, dport=68)
-        / BOOTP(yiaddr="192.168.122.150", chaddr=b"\x00\x11\x22\x33\x44\x55", xid=0x12345678)
-        / DHCP(options=[("message-type", 2), ("server_id", "192.168.122.10"), "end"])
-    )
-
-    # 3. DHCP Request
-    p_req = (
-        Ether(src="00:11:22:33:44:55", dst="ff:ff:ff:ff:ff:ff")
-        / IP(src="0.0.0.0", dst="255.255.255.255")
-        / UDP(sport=68, dport=67)
-        / BOOTP(chaddr=b"\x00\x11\x22\x33\x44\x55", xid=0x12345678)
-        / DHCP(options=[("message-type", 3), ("requested_addr", "192.168.122.150"), "end"])
-    )
-
-    # 4. DHCP Ack
-    p_ack = (
-        Ether(src="aa:bb:cc:dd:ee:ff", dst="00:11:22:33:44:55")
-        / IP(src="192.168.122.10", dst="192.168.122.150")
-        / UDP(sport=67, dport=68)
-        / BOOTP(yiaddr="192.168.122.150", chaddr=b"\x00\x11\x22\x33\x44\x55", xid=0x12345678)
-        / DHCP(options=[("message-type", 5), ("lease_time", 43200), "end"])
-    )
-
-    wrpcap(str(out), [p_disc, p_offer, p_req, p_ack])
-    return str(out)

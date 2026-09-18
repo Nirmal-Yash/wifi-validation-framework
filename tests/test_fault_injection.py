@@ -27,19 +27,17 @@ def test_fault_injection_link_down_up(params, connection_pool, metric_logger):
     assert iface == "wlan0", "Real fault injection requires client_interface=wlan0"
 
     baseline = client_ping(connection_pool, router_ip, 3)
-    if not baseline["success"]:
-        pytest.skip(f"Baseline client WiFi connectivity to {router_ip} unavailable")
+    assert baseline["success"], (
+        f"Baseline client WiFi connectivity to {router_ip} unavailable: {baseline['output']}"
+    )
 
     def do_down():
         link_down(iface, pool=connection_pool, device="client_vm")
 
     def do_up():
-        try:
-            link_up(iface, pool=connection_pool, device="client_vm")
-            clear_conditions(iface, pool=connection_pool, device="client_vm")
-            connection_pool.send_command("client_vm", "wpa_cli -i wlan0 reconnect 2>/dev/null || true")
-        except Exception:
-            pass
+        link_up(iface, pool=connection_pool, device="client_vm")
+        clear_conditions(iface, pool=connection_pool, device="client_vm")
+        connection_pool.send_command("client_vm", "wpa_cli -i wlan0 reconnect 2>/dev/null || true")
 
     with fault_context(do_down, do_up):
         down_result = client_ping(connection_pool, router_ip, 3)

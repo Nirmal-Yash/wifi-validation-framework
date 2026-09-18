@@ -31,19 +31,31 @@ usage() {
 Usage:
   ./wifi_lab_reprovision_robust.sh
   ./wifi_lab_reprovision_robust.sh --setup-only
+  ./wifi_lab_reprovision_robust.sh --repro-test
+  ./wifi_lab_reprovision_robust.sh --force-normalize-config
   ./wifi_lab_reprovision_robust.sh --help
 
 Default: preflight -> repair/configure local lab -> validate real paths -> run all tests.
 --setup-only: preflight -> repair/configure -> validate, but do not run pytest.
+--repro-test: stop GNS3 lab nodes, clear runtime WiFi state, reprovision, run full pytest.
+--force-normalize-config: rewrite configs/*.yaml to lab constants (default: validate only).
 EOF
 }
 
-case "${1:-}" in
-  "") RUN_TESTS=1 ;;
-  --setup-only) RUN_TESTS=0 ;;
-  --help|-h) usage; exit 0 ;;
-  *) echo "ERROR: Unknown option: $1" >&2; usage >&2; exit 2 ;;
-esac
+RUN_TESTS=1
+FORCE_NORMALIZE_CONFIG=0
+REPRO_TEST=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --setup-only) RUN_TESTS=0 ;;
+    --repro-test) REPRO_TEST=1 ;;
+    --force-normalize-config) FORCE_NORMALIZE_CONFIG=1 ;;
+    --help|-h) usage; exit 0 ;;
+    "") ;;
+    *) echo "ERROR: Unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
 
 if [[ $EUID -eq 0 ]]; then
   echo "ERROR: Run as the normal Ubuntu user, not with sudo." >&2
@@ -67,6 +79,7 @@ step() {
 
 die() { echo "ERROR: $*" >&2; return 1; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing host command: $1"; }
+bash -n "${BASH_SOURCE[0]}" || die "Shell syntax check failed for ${BASH_SOURCE[0]}"
 
 # ---------------------------------------------------------------------------
 # Privilege helpers: prefer native access; fall back to sudo -n / privileged docker
@@ -369,29 +382,113 @@ require_container() {
   echo "${label}: $name"
 }
 
-ensure_hwsim_iface() {
-  local c="$1" label="$2"
-  if container_iface_has "$c" wlan0; then
-    echo "$label already has wlan0."
-    return 0
-  fi
-  if container_iface_has "$c" wlan1; then
-    dexec "$c" ip link set wlan1 name wlan0
-    dexec "$c" ip link set wlan0 up
-    echo "$label renamed wlan1 -> wlan0."
-    return 0
-  fi
+host_phy_list() {
+  host_root iw phy 2>/dev/null | awk '/^Wiphy / {print $2}' | sort -V
+}
 
-  local pid phy
+phy_in_host_netns() {
+  local phy="$1"
+  host_root iw phy "$phy" info >/dev/null 2>&1
+}
+
+move_phy_to_container() {
+  local phy="$1" c="$2" label="$3"
+  local pid
   pid="$("${DOCKER[@]}" inspect -f '{{.State.Pid}}' "$c")"
-  phy="$(host_root iw phy 2>/dev/null | awk '/^Wiphy / {print $2}' | head -n1 || true)"
-  [[ -n "$phy" ]] || die "No free host mac80211_hwsim PHY available for $label."
-  echo "Moving free PHY $phy into $label (PID $pid)."
+  [[ -n "$pid" && "$pid" != "0" ]] || die "Invalid PID for container $c"
+  if ! phy_in_host_netns "$phy"; then
+    echo "PHY $phy not on host; assuming already placed for $label."
+    return 0
+  fi
+  echo "Moving $phy into $label namespace (PID $pid)."
   host_root iw phy "$phy" set netns "$pid"
   sleep 1
-  if container_iface_has "$c" wlan1; then dexec "$c" ip link set wlan1 name wlan0; fi
-  dexec "$c" ip link set wlan0 up
-  container_iface_has "$c" wlan0 || die "$label did not receive wlan0."
+}
+
+normalize_container_wlan0() {
+  local c="$1" label="$2"
+  if container_iface_has "$c" wlan1 && ! container_iface_has "$c" wlan0; then
+    dexec "$c" ip link set wlan1 name wlan0
+  fi
+  if container_iface_has "$c" wlan0; then
+    dexec "$c" ip link set wlan0 up
+    return 0
+  fi
+  return 1
+}
+
+ensure_hwsim_iface() {
+  local c="$1" label="$2" want_phy="$3"
+  if container_iface_has "$c" wlan0; then
+    echo "$label already has wlan0."
+    dexec "$c" ip link set wlan0 up
+    return 0
+  fi
+  move_phy_to_container "$want_phy" "$c" "$label"
+  normalize_container_wlan0 "$c" "$label" || die "$label did not receive wlan0 from $want_phy."
+  echo "$label wlan0 ready ($want_phy)."
+}
+
+provision_hwsim_radios() {
+  local ap_has=0 client_has=0
+  container_iface_has "$AP" wlan0 && ap_has=1 || true
+  container_iface_has "$CLIENT" wlan0 && client_has=1 || true
+  if [[ ! -d /sys/module/mac80211_hwsim ]]; then
+    host_root modprobe mac80211_hwsim radios=2
+  elif (( ap_has == 0 && client_has == 0 )); then
+    local free_count
+    free_count="$(host_phy_list | wc -l)"
+    if (( free_count < 2 )); then
+      host_root modprobe -r mac80211_hwsim 2>/dev/null || true
+      host_root modprobe mac80211_hwsim radios=2
+    fi
+  fi
+  mapfile -t PHYS < <(host_phy_list)
+  if ((${#PHYS[@]} < 2)); then
+    die "Need at least 2 mac80211_hwsim PHYs (phy0, phy1); found: ${PHYS[*]:-none}"
+  fi
+  ensure_hwsim_iface "$AP" "AP" "${PHYS[0]}"
+  ensure_hwsim_iface "$CLIENT" "Client" "${PHYS[1]}"
+}
+
+configure_frr_dhcp() {
+  local client_mac="${1:-}"
+  dexec "$FRR" sh -c "
+    apk add --no-cache dnsmasq iperf3 2>/dev/null || true
+    mkdir -p /etc/dnsmasq.d
+    cat >/etc/dnsmasq.d/lab.conf <<EOF
+interface=eth1
+bind-interfaces
+except-interface=lo
+dhcp-range=192.168.122.100,192.168.122.200,255.255.255.0,12h
+dhcp-option=3,${FRR_IP}
+dhcp-option=6,8.8.8.8
+EOF
+    if [ -n '${client_mac}' ]; then
+      echo \"dhcp-host=${client_mac},${CLIENT_WIFI_IP}\" >>/etc/dnsmasq.d/lab.conf
+    fi
+    pkill dnsmasq 2>/dev/null || true
+    dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf
+  "
+  dexec "$FRR" sh -c 'pgrep dnsmasq >/dev/null' || die "FRR dnsmasq failed to start on eth1."
+}
+
+repro_reset_runtime() {
+  step "Repro test: reset runtime GNS3 node state"
+  load_gns3_credentials 2>/dev/null || true
+  if [[ -n "${GNS3_PROJECT_ID:-}" ]]; then
+    for node_id in "$NODE_FRR" "$NODE_AP" "$NODE_CLIENT" "$NODE_MONITOR"; do
+      [[ -n "$node_id" ]] || continue
+      gns3_curl POST "/v2/projects/$GNS3_PROJECT_ID/nodes/$node_id/stop" -o /tmp/gns3_repro_stop.json >/dev/null 2>&1 || true
+    done
+    sleep 3
+  fi
+  host_root pkill hostapd 2>/dev/null || true
+  host_root pkill wpa_supplicant 2>/dev/null || true
+  if [[ -d /sys/module/mac80211_hwsim ]]; then
+    host_root modprobe -r mac80211_hwsim 2>/dev/null || true
+  fi
+  sleep 1
 }
 
 set_admin_and_sshd() {
@@ -560,6 +657,15 @@ export GNS3_USER GNS3_PASS
 ensure_gns3_project_and_nodes
 export GNS3_USER GNS3_PASS GNS3_PROJECT_ID NODE_FRR NODE_AP NODE_CLIENT NODE_MONITOR NODE_SWITCH NODE_CLOUD
 
+if (( REPRO_TEST == 1 )); then
+  repro_reset_runtime
+  for node_id in "$NODE_SWITCH" "$NODE_CLOUD" "$NODE_FRR" "$NODE_AP" "$NODE_CLIENT" "$NODE_MONITOR"; do
+    [[ -n "$node_id" ]] || continue
+    gns3_curl POST "/v2/projects/$GNS3_PROJECT_ID/nodes/$node_id/start" -o /tmp/gns3_repro_start.json >/dev/null 2>&1 || true
+  done
+  sleep 5
+fi
+
 require_container FRR 'GNS3.frr-router' 'FRR router'
 require_container AP 'GNS3.hostapd-ap' 'access point'
 require_container CLIENT 'GNS3.wifi-client' 'WiFi client'
@@ -659,61 +765,8 @@ addopts = -v --tb=short
 INI
 fi
 
-"$PYTHON" - <<PY
-from pathlib import Path
-import yaml
-
-p=Path('configs/devices.yaml'); d=yaml.safe_load(p.read_text()) if p.exists() else {}; d=d or {}; dev=d.setdefault('devices',{})
-required={
- 'router1': {'host':'${FRR_IP}','username':'admin','password':'admin','device_type':'linux','port':22},
- 'router2': {'host':'192.168.122.11','username':'admin','password':'admin','device_type':'linux','port':22},
- 'ap_host': {'host':'${AP_IP}','username':'admin','password':'admin','device_type':'linux','port':22},
- 'client_vm': {'host':'${CLIENT_MGMT_IP}','username':'admin','password':'admin','device_type':'linux','port':22},
- 'monitor_vm': {'host':'${MONITOR_IP}','username':'admin','password':'admin','device_type':'linux','port':22},
-}
-for k,v in required.items():
-    cur=dev.setdefault(k,{})
-    cur.update(v)
-p.write_text(yaml.safe_dump(d,sort_keys=False))
-
-p=Path('configs/test_params.yaml'); d=yaml.safe_load(p.read_text()) if p.exists() else {}; d=d or {}
-d.setdefault('wifi',{}).update({'ssid':'${SSID}','password':'${WIFI_PSK}','security':'WPA2'})
-d.setdefault('thresholds',{}).update({'min_throughput_mbps':20,'max_latency_ms':50,'max_packet_loss_pct':2,'dhcp_timeout_sec':10,'dns_timeout_sec':5})
-d.setdefault('dns',{}).update({'test_hostname':'google.com'})
-d.setdefault('auth',{}).update({'wpa_version':'WPA2','connection_timeout_sec':15})
-d.setdefault('firmware',{}).update({'current_version':'v1.0','baseline_version':'v1.0','upgrade_version':'v2.0'})
-d.setdefault('network',{}).update({
-  'router_ip':'${FRR_IP}',
-  'client_interface':'wlan0',
-  'monitor_interface':'eth0',
-  'dhcp_subnet':'192.168.122.0/24',
-  'client_management_ip':'${CLIENT_MGMT_IP}',
-  'client_wifi_ip':'${CLIENT_WIFI_IP}',
-  'ap_ip':'${AP_IP}',
-  'monitor_ip':'${MONITOR_IP}',
-  'management_gateway':'${MGMT_GW}',
-  'lab_gateway':'${LAB_GW}',
-})
-p.write_text(yaml.safe_dump(d,sort_keys=False))
-
-p=Path('configs/topology.yaml')
-t={
- 'lab_name':'WiFi Regression Lab',
- 'nodes':[
-   {'name':'frr-router','type':'frr','ip':'${FRR_IP}','role':'iperf3 server and lab router'},
-   {'name':'hostapd-ap','type':'access_point','ip':'${AP_IP}','role':'Software WiFi access point (hostapd)'},
-   {'name':'wifi-client','type':'client','ip':'${CLIENT_WIFI_IP}','management_ip':'${CLIENT_MGMT_IP}','role':'WiFi client VM (wpa_supplicant)'},
-   {'name':'monitor','type':'monitor','ip':'${MONITOR_IP}','role':'Packet capture (tcpdump)'},
- ],
- 'links':[
-   {'from':'frr-router','to':'hostapd-ap','type':'ethernet'},
-   {'from':'hostapd-ap','to':'wifi-client','type':'simulated WiFi (mac80211_hwsim)'},
-   {'from':'frr-router','to':'monitor','type':'ethernet'},
-   {'from':'wifi-client','to':'host','type':'management via GNS3 Cloud to virbr0'},
- ]}
-p.write_text(yaml.safe_dump(t,sort_keys=False))
-print('configs normalized')
-PY
+export FORCE_NORMALIZE_CONFIG="${FORCE_NORMALIZE_CONFIG}"
+"$PYTHON" "$REPO_ROOT/scripts/validate_lab_configs.py"
 
 "$PYTHON" - <<'PY'
 from pathlib import Path
@@ -726,230 +779,30 @@ print('Scapy BOOTP/DHCP/WiFi imports: OK')
 PY
 
 # ---------------------------------------------------------------------------
-# 4. VERIFIED LOCAL CODE FIXES + STRICT TEST INTEGRITY
+# 4. VALIDATE TRACKED REPOSITORY (no runtime test overwrites)
 # ---------------------------------------------------------------------------
-step "Apply verified compatibility fixes and remove test success fallbacks"
-for f in lib/connector.py lib/traffic.py lib/wifi_analyzer.py tests/test_fault_injection.py tests/test_packet_capture.py tests/test_ping.py; do backup_once "$REPO_ROOT/$f"; done
-
-"$PYTHON" - <<'PY'
-from pathlib import Path
-
-p=Path('lib/connector.py'); s=p.read_text()
-s='\n'.join(line for line in s.splitlines() if 'dev.setdefault("read_timeout", 30)' not in line)+'\n'
-marker='    def send_command(self, device_name, command, **kwargs):\n'
-if 'kwargs.setdefault("read_timeout", 30)' not in s:
-    if marker not in s: raise SystemExit('connector.py send_command marker not found')
-    s=s.replace(marker,marker+'        kwargs.setdefault("read_timeout", 30)\n',1)
-p.write_text(s)
-
-p=Path('lib/traffic.py'); s=p.read_text().replace('def run_ping(host, count=10, timeout=15):','def run_ping(host, count=10, timeout=30):'); p.write_text(s)
-
-p=Path('lib/wifi_analyzer.py'); s=p.read_text().replace('Bootp,','BOOTP,').replace('Bootp(','BOOTP('); p.write_text(s)
-
-for f in ('lib/connector.py','lib/traffic.py','lib/wifi_analyzer.py','tests/test_ping.py','tests/test_fault_injection.py','tests/test_packet_capture.py'):
-    compile(Path(f).read_text(),f,'exec')
-PY
-
-cat >tests/test_fault_injection.py <<'PY'
-import re
-import sys
-import time
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-import pytest
-
-from lib.fault_injector import clear_conditions, fault_context, link_down, link_up
-
-
-def client_ping(connection_pool, router_ip, count=3):
-    output = connection_pool.send_command("client_vm", f"ping -c {count} {router_ip} 2>&1")
-    match = re.search(r"(\d+(?:\.\d+)?)% packet loss", output)
-    loss = float(match.group(1)) if match else 100.0
-    return {"success": loss < 100.0, "packet_loss_pct": loss, "output": output}
-
-
-@pytest.mark.regression
-def test_fault_injection_link_down_up(params, connection_pool, metric_logger):
-    """Disrupt the real WiFi interface while SSH management stays on eth1."""
-    router_ip = params["network"]["router_ip"]
-    iface = params["network"]["client_interface"]
-    assert iface == "wlan0", "Real fault injection requires client_interface=wlan0"
-
-    baseline = client_ping(connection_pool, router_ip, 3)
-    if not baseline["success"]:
-        pytest.skip(f"Baseline client WiFi connectivity to {router_ip} unavailable")
-
-    def do_down():
-        link_down(iface, pool=connection_pool, device="client_vm")
-
-    def do_up():
-        try:
-            link_up(iface, pool=connection_pool, device="client_vm")
-            clear_conditions(iface, pool=connection_pool, device="client_vm")
-            connection_pool.send_command("client_vm", "wpa_cli -i wlan0 reconnect 2>/dev/null || true")
-        except Exception:
-            pass
-
-    with fault_context(do_down, do_up):
-        down_result = client_ping(connection_pool, router_ip, 3)
-        assert (not down_result["success"] or down_result["packet_loss_pct"] > 50), (
-            f"WiFi traffic was not disrupted: {down_result}"
-        )
-
-    time.sleep(2)
-    recovered = client_ping(connection_pool, router_ip, 3)
-    metric_logger.log(recovered["packet_loss_pct"], "%")
-    assert recovered["success"], f"WiFi connectivity did not recover: {recovered}"
-PY
-
-cat >tests/test_ping.py <<'PY'
-import re
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-import pytest
-
-
-def client_ping(connection_pool, router_ip, count):
-    output = connection_pool.send_command(
-        "client_vm",
-        f"ping -c {count} -W 3 {router_ip} 2>&1",
-    )
-    loss_match = re.search(r"(\d+(?:\.\d+)?)% packet loss", output)
-    loss = float(loss_match.group(1)) if loss_match else 100.0
-    rtt_match = re.search(r"rtt min/avg/max/(?:mdev|stddev)\s*=\s*[\d.]+/([\d.]+)/", output, re.IGNORECASE)
-    avg = float(rtt_match.group(1)) if rtt_match else None
-    return {"success": loss < 100.0, "packet_loss_pct": loss, "avg_rtt_ms": avg, "output": output}
-
-
-@pytest.mark.perf
-def test_ping_success(params, connection_pool, metric_logger):
-    router_ip = params["network"]["router_ip"]
-    result = client_ping(connection_pool, router_ip, 5)
-    metric_logger.log(1.0 if result["success"] else 0.0, "bool")
-    assert result["success"], f"Client WiFi ping to router {router_ip} failed: {result['output']}"
-
-
-@pytest.mark.perf
-def test_packet_loss_within_threshold(params, connection_pool, metric_logger):
-    router_ip = params["network"]["router_ip"]
-    result = client_ping(connection_pool, router_ip, 20)
-    loss = result["packet_loss_pct"]
-    metric_logger.log(loss, "%")
-    threshold = params["thresholds"]["max_packet_loss_pct"]
-    assert loss <= threshold, f"Client WiFi packet loss of {loss}% exceeds threshold {threshold}%"
-
-
-@pytest.mark.perf
-def test_latency_within_threshold(params, connection_pool, metric_logger):
-    router_ip = params["network"]["router_ip"]
-    result = client_ping(connection_pool, router_ip, 10)
-    rtt = result["avg_rtt_ms"]
-    assert rtt is not None, f"Could not parse client WiFi average RTT: {result['output']}"
-    metric_logger.log(rtt, "ms")
-    threshold = params["thresholds"]["max_latency_ms"]
-    assert rtt <= threshold, f"Client WiFi latency of {rtt}ms exceeds threshold {threshold}ms"
-PY
-
-cat >tests/test_packet_capture.py <<'PY'
-import base64
-import re
-import sys
-import time
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-import pytest
-from lib.wifi_analyzer import analyze_dhcp_sequence
-
-
-@pytest.mark.regression
-def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
-    """Validate a real monitor capture; no synthetic PCAP fallback."""
-    monitor_iface = params["network"]["monitor_interface"]
-    client_iface = params["network"]["client_interface"]
-    remote_pcap = "/tmp/dhcp_test.pcap"
-    local_pcap = ROOT / "results" / "captures" / "dhcp_test.pcap"
-    local_pcap.parent.mkdir(parents=True, exist_ok=True)
-
-    capture = (
-        f"sudo rm -f {remote_pcap}; "
-        f"sudo timeout 12 tcpdump -i {monitor_iface} -nn -s0 -w {remote_pcap} "
-        f"'udp port 67 or udp port 68' >/tmp/dhcp_capture.log 2>&1 & echo $!"
-    )
-    pid = connection_pool.send_command("monitor_vm", capture, read_timeout=30).strip()
-    assert re.search(r"^\d+$", pid), f"Could not start tcpdump: {pid!r}"
-
-    time.sleep(1)
-    connection_pool.send_command(
-        "client_vm",
-        f"sudo dhclient -r {client_iface} 2>/dev/null || true; sudo dhclient {client_iface}",
-        read_timeout=30,
-    )
-    time.sleep(4)
-
-    state = connection_pool.send_command(
-        "monitor_vm", f"test -s {remote_pcap} && echo FILE_EXISTS || echo NO_FILE"
-    ).strip()
-    assert state == "FILE_EXISTS", "Monitor did not create a non-empty real DHCP PCAP"
-
-    b64 = connection_pool.send_command("monitor_vm", f"sudo base64 -w 0 {remote_pcap}", read_timeout=30)
-    clean = "".join(b64.split())
-    try:
-        data = base64.b64decode(clean, validate=True)
-    except Exception as exc:
-        raise AssertionError("Could not decode monitor PCAP") from exc
-    assert data, "Decoded monitor PCAP is empty"
-    local_pcap.write_bytes(data)
-
-    analysis = analyze_dhcp_sequence(str(local_pcap))
-    metric_logger.log(analysis["total_packets"], "packets")
-    assert analysis["total_packets"] > 0, f"No DHCP frames in real PCAP: {analysis}"
-    assert analysis["has_lease_acquired"], f"Real DHCP capture has no ACK: {analysis['message_counts']}"
-PY
+step "Validate Python dependencies and tracked repository sources"
+for f in lib/connector.py lib/traffic.py lib/wifi_analyzer.py tests/conftest.py; do
+  "$PYTHON" -m py_compile "$REPO_ROOT/$f"
+done
 
 # ---------------------------------------------------------------------------
-# 5. HOST WIFI RADIO PLACEMENT
+# 5. HOST WIFI RADIO PLACEMENT (phy0 -> AP, phy1 -> client)
 # ---------------------------------------------------------------------------
-step "Provision the two mac80211_hwsim radios"
-AP_HAS_WLAN=0; CLIENT_HAS_WLAN=0
-container_iface_has "$AP" wlan0 && AP_HAS_WLAN=1 || true
-container_iface_has "$CLIENT" wlan0 && CLIENT_HAS_WLAN=1 || true
-if [[ ! -d /sys/module/mac80211_hwsim ]]; then
-  host_root modprobe mac80211_hwsim radios=2
-elif (( AP_HAS_WLAN == 0 && CLIENT_HAS_WLAN == 0 )); then
-  FREE_PHYS="$(host_root iw phy 2>/dev/null | awk '/^Wiphy / {c++} END {print c+0}')"
-  if (( FREE_PHYS < 2 )); then
-    host_root modprobe -r mac80211_hwsim || true
-    host_root modprobe mac80211_hwsim radios=2
-  fi
-fi
-ensure_hwsim_iface "$AP" "AP"
-ensure_hwsim_iface "$CLIENT" "Client"
+step "Provision mac80211_hwsim radios (phy0=AP, phy1=client)"
+provision_hwsim_radios
 
 # ---------------------------------------------------------------------------
 # 6. FRR ROUTER
 # ---------------------------------------------------------------------------
-step "Configure FRR router and real iperf3 server"
+step "Configure FRR router, real DHCP (dnsmasq), and iperf3 server"
 dexec "$FRR" sh -c "
   ip link set eth1 up
   ip addr replace ${FRR_IP}/24 dev eth1
   ip route replace default via ${LAB_GW} dev eth1
   printf 'nameserver 8.8.8.8\\n' >/etc/resolv.conf
 "
-apk_install_container "$FRR" iperf3
-
+configure_frr_dhcp ""
 if ! dexec "$FRR" sh -c 'ss -lnt 2>/dev/null | grep -q "\\*:5201"'; then
   dexec "$FRR" iperf3 -s -D
 fi
@@ -1095,11 +948,12 @@ WIFI_MAC="$(dexec "$CLIENT" cat /sys/class/net/wlan0/address | tr -d '\r\n')"
 CLIENT_ETH0_MAC="$(dexec "$CLIENT" cat /sys/class/net/eth0/address | tr -d '\r\n')"
 CLIENT_ETH1_MAC="$(dexec "$CLIENT" cat /sys/class/net/eth1/address | tr -d '\r\n')"
 [[ "$WIFI_MAC" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] || die "Invalid wlan0 MAC: $WIFI_MAC"
-ensure_libvirt_reservation "$WIFI_MAC" "$CLIENT_WIFI_IP" "${CLIENT_ETH0_MAC},${CLIENT_ETH1_MAC}"
+configure_frr_dhcp "$WIFI_MAC"
+ensure_libvirt_reservation "$CLIENT_ETH1_MAC" "$CLIENT_MGMT_IP" "${CLIENT_ETH0_MAC}"
 
 dexec "$CLIENT" sh -c "
   dhclient -r wlan0 2>/dev/null || true
-  dhclient wlan0
+  dhclient -v wlan0
   # Ensure WiFi default route even if dhclient omits it after eth0 flush.
   ip route replace default via ${LAB_GW} dev wlan0
   ip link set eth1 up

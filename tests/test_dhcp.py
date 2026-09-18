@@ -12,18 +12,21 @@ import pytest
 
 @pytest.mark.smoke
 def test_dhcp_lease_assigned(connection_pool, params, metric_logger):
-    """Client VM should have a valid DHCP-assigned IP address."""
+    """Client wlan0 should have the reserved lab DHCP WiFi address."""
     iface = params["network"]["client_interface"]
+    expected = params["network"]["client_wifi_ip"]
     output = connection_pool.send_command("client_vm", f"ip -4 addr show {iface}")
-    match = re.search(r"inet\s+(192\.168\.\d+\.\d+)", output)
-    assert match is not None, f"No DHCP IPv4 address found on client interface {iface}. Output: {output}"
+    assert f"inet {expected}/" in output or f"inet {expected} " in output, (
+        f"Expected DHCP IP {expected} on {iface}. Output: {output}"
+    )
     metric_logger.log(1.0, "status")
 
 
 @pytest.mark.smoke
 def test_dhcp_within_timeout(connection_pool, params, metric_logger):
-    """DHCP renewal on client VM should complete within configured timeout threshold."""
+    """DHCP renewal on client wlan0 should complete within configured timeout."""
     iface = params["network"]["client_interface"]
+    expected = params["network"]["client_wifi_ip"]
     timeout = params["thresholds"]["dhcp_timeout_sec"]
 
     start = time.time()
@@ -35,6 +38,7 @@ def test_dhcp_within_timeout(connection_pool, params, metric_logger):
     metric_logger.log(elapsed, "seconds")
 
     output = connection_pool.send_command("client_vm", f"ip -4 addr show {iface}")
-    match = re.search(r"inet\s+(192\.168\.\d+\.\d+)", output)
-    assert match is not None, f"DHCP did not assign IP after renewal. Output: {output}"
+    assert f"inet {expected}/" in output or f"inet {expected} " in output, (
+        f"DHCP did not restore {expected} after renewal. Output: {output}"
+    )
     assert elapsed <= timeout, f"DHCP lease acquisition took {elapsed}s, exceeding threshold of {timeout}s"

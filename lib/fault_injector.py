@@ -6,13 +6,21 @@ def _exec(cmd, pool=None, device=None, check=True):
     """Execute command either remotely via SSH pool or locally via subprocess."""
     if pool is not None and device is not None:
         cmd_str = " ".join(cmd) if isinstance(cmd, list) else str(cmd)
-        return pool.send_command(device, cmd_str)
+        out = pool.send_command(device, cmd_str)
+        if check and out and "RTNETLINK answers: Operation not permitted" in out:
+            raise RuntimeError(f"Remote command failed on {device}: {out}")
+        return out
 
     if isinstance(cmd, str):
         cmd_list = cmd.split()
     else:
         cmd_list = cmd
-    return subprocess.run(cmd_list, check=check, capture_output=True, text=True)
+    result = subprocess.run(cmd_list, check=False, capture_output=True, text=True)
+    if check and result.returncode != 0:
+        raise RuntimeError(
+            f"Local command failed ({result.returncode}): {' '.join(cmd_list)}\n{result.stderr}"
+        )
+    return result
 
 
 def link_down(interface, pool=None, device=None):

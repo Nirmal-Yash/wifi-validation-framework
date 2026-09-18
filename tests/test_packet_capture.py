@@ -35,7 +35,16 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
         f"sudo dhclient -r {client_iface} 2>/dev/null || true; sudo dhclient {client_iface}",
         read_timeout=30,
     )
-    time.sleep(4)
+    for _ in range(12):
+        size = connection_pool.send_command(
+            "monitor_vm",
+            f"sudo stat -c%s {remote_pcap} 2>/dev/null || echo 0",
+        ).strip()
+        if size.isdigit() and int(size) > 64:
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError("Monitor PCAP did not grow to a non-trivial size")
 
     state = connection_pool.send_command(
         "monitor_vm", f"test -s {remote_pcap} && echo FILE_EXISTS || echo NO_FILE"
@@ -48,7 +57,7 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
         data = base64.b64decode(clean, validate=True)
     except Exception as exc:
         raise AssertionError("Could not decode monitor PCAP") from exc
-    assert data, "Decoded monitor PCAP is empty"
+    assert len(data) > 64, "Decoded monitor PCAP is too small to be real traffic"
     local_pcap.write_bytes(data)
 
     analysis = analyze_dhcp_sequence(str(local_pcap))

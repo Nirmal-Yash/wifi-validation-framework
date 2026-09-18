@@ -208,7 +208,16 @@ Edit these files to match your lab:
 
 ## Documentation
 
-- **[Installation Guide](docs/INSTALLATION_GUIDE.md)** — Complete manual setup for Ubuntu VM, GNS3, Docker, hostapd, and lab topology
+- **[WiFi Lab Reproduction](docs/WIFI_LAB_REPRODUCTION.md)** — Actual GNS3 topology, IPs, hwsim, and reprovision commands
+- **[Installation Guide](docs/INSTALLATION_GUIDE.md)** — General Ubuntu/GNS3 setup background
+
+## Lab provisioning (Ubuntu VM)
+
+```bash
+chmod +x wifi_lab_reprovision_robust.sh
+./wifi_lab_reprovision_robust.sh          # provision + full pytest
+./wifi_lab_reprovision_robust.sh --setup-only
+```
 
 ## Team
 
