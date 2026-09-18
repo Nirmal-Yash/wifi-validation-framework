@@ -467,8 +467,17 @@ EOF
     if [ -n '${client_mac}' ]; then
       echo \"dhcp-host=${client_mac},${CLIENT_WIFI_IP}\" >>/etc/dnsmasq.d/lab.conf
     fi
-    pkill dnsmasq 2>/dev/null || true
-    dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf
+    if pidof dnsmasq >/dev/null 2>&1; then
+      kill -HUP \"\$(pidof dnsmasq)\" 2>/dev/null || true
+      sleep 1
+    else
+      dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf
+    fi
+    if ! pidof dnsmasq >/dev/null 2>&1; then
+      pkill -9 dnsmasq 2>/dev/null || true
+      sleep 1
+      dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf
+    fi
   "
   dexec "$FRR" sh -c 'pgrep dnsmasq >/dev/null' || die "FRR dnsmasq failed to start on eth1."
 }
@@ -949,6 +958,8 @@ CLIENT_ETH0_MAC="$(dexec "$CLIENT" cat /sys/class/net/eth0/address | tr -d '\r\n
 CLIENT_ETH1_MAC="$(dexec "$CLIENT" cat /sys/class/net/eth1/address | tr -d '\r\n')"
 [[ "$WIFI_MAC" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] || die "Invalid wlan0 MAC: $WIFI_MAC"
 configure_frr_dhcp "$WIFI_MAC"
+# Keep virbr0 DHCP from handing 192.168.122.30 to eth0 before wlan0 claims the reservation.
+ensure_libvirt_reservation "$WIFI_MAC" "$CLIENT_WIFI_IP" "${CLIENT_ETH0_MAC},02:00:00:00:00:00"
 ensure_libvirt_reservation "$CLIENT_ETH1_MAC" "$CLIENT_MGMT_IP" "${CLIENT_ETH0_MAC}"
 
 dexec "$CLIENT" sh -c "
