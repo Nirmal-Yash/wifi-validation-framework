@@ -27,7 +27,10 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
         f"'udp port 67 or udp port 68' >/tmp/dhcp_capture.log 2>&1 & echo $!"
     )
     pid = connection_pool.send_command("monitor_vm", capture, read_timeout=30).strip()
-    assert re.search(r"^\d+$", pid), f"Could not start tcpdump: {pid!r}"
+    # Netmiko may include shell job-control output, e.g. "[1] 3713\n3713".
+    assert re.search(r"(?:^|\n|\s)\d+\s*$", pid), (
+        f"Could not start tcpdump: {pid!r}"
+    )
 
     time.sleep(1)
     connection_pool.send_command(

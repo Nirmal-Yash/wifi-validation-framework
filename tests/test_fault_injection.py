@@ -24,6 +24,7 @@ def test_fault_injection_link_down_up(params, connection_pool, metric_logger):
     """Disrupt the real WiFi interface while SSH management stays on eth1."""
     router_ip = params["network"]["router_ip"]
     iface = params["network"]["client_interface"]
+    expected_ip = params["network"]["client_wifi_ip"]
     assert iface == "wlan0", "Real fault injection requires client_interface=wlan0"
 
     baseline = client_ping(connection_pool, router_ip, 3)
@@ -37,7 +38,13 @@ def test_fault_injection_link_down_up(params, connection_pool, metric_logger):
     def do_up():
         link_up(iface, pool=connection_pool, device="client_vm")
         clear_conditions(iface, pool=connection_pool, device="client_vm")
-        connection_pool.send_command("client_vm", "wpa_cli -i wlan0 reconnect 2>/dev/null || true")
+        connection_pool.send_command(
+            "client_vm",
+            "wpa_cli -i wlan0 reconnect 2>/dev/null || true; "
+            f"sudo dhclient -1 -timeout {params['thresholds']['dhcp_timeout_sec']} wlan0 "
+            "2>/dev/null || true",
+            read_timeout=30,
+        )
 
     with fault_context(do_down, do_up):
         down_result = client_ping(connection_pool, router_ip, 3)
@@ -45,7 +52,21 @@ def test_fault_injection_link_down_up(params, connection_pool, metric_logger):
             f"WiFi traffic was not disrupted: {down_result}"
         )
 
-    time.sleep(2)
-    recovered = client_ping(connection_pool, router_ip, 3)
+    deadline = time.time() + max(5, params["auth"]["connection_timeout_sec"])
+    recovered = {"success": False, "packet_loss_pct": 100.0, "output": ""}
+    while time.time() < deadline:
+        state = connection_pool.send_command(
+            "client_vm",
+            "wpa_cli -i wlan0 status 2>/dev/null || true",
+        )
+        addr = connection_pool.send_command(
+            "client_vm",
+            f"ip -4 addr show {iface} 2>/dev/null || true",
+        )
+        if "wpa_state=COMPLETED" in state and f"inet {expected_ip}/" in addr:
+            recovered = client_ping(connection_pool, router_ip, 3)
+            if recovered["success"]:
+                break
+        time.sleep(1)
     metric_logger.log(recovered["packet_loss_pct"], "%")
     assert recovered["success"], f"WiFi connectivity did not recover: {recovered}"
