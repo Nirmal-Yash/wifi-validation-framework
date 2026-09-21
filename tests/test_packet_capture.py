@@ -54,7 +54,7 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
     ).strip()
     assert state == "FILE_EXISTS", "Monitor did not create a non-empty real DHCP PCAP"
 
-    b64 = connection_pool.send_command("monitor_vm", f"sudo base64 -w 0 {remote_pcap}", read_timeout=30)
+    b64 = connection_pool.send_command("monitor_vm", f"sudo base64 {remote_pcap}", read_timeout=30)
     clean = "".join(b64.split())
     try:
         data = base64.b64decode(clean, validate=True)
