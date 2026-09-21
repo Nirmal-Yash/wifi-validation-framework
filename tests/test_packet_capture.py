@@ -67,7 +67,7 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
         read_timeout=30,
     )
     match = re.search(
-        r"__PCAP_BEGIN__\\r?\\n(?P<data>.*?)\\r?\\n__PCAP_END__",
+        r"__PCAP_BEGIN__\r?\n(?P<data>.*?)\r?\n__PCAP_END__",
         b64,
         re.DOTALL,
     )
