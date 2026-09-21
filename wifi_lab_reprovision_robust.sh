@@ -429,24 +429,52 @@ ensure_hwsim_iface() {
   echo "$label wlan0 ready ($want_phy)."
 }
 
+wait_for_hwsim_phys() {
+  local attempts="${1:-15}" i
+  for ((i=1; i<=attempts; i++)); do
+    mapfile -t PHYS < <(host_phy_list)
+    if ((${#PHYS[@]} >= 2)); then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 provision_hwsim_radios() {
   local ap_has=0 client_has=0
   container_iface_has "$AP" wlan0 && ap_has=1 || true
   container_iface_has "$CLIENT" wlan0 && client_has=1 || true
+
+  # Reprovision can briefly restart the containers while their existing hwsim PHYs
+  # are still attached to those namespaces. Reuse that healthy state when possible.
+  if (( ap_has == 1 && client_has == 1 )); then
+    ensure_hwsim_iface "$AP" "AP" ""
+    ensure_hwsim_iface "$CLIENT" "Client" ""
+    return 0
+  fi
+
+  # The module can be present before its virtual PHYs are visible to iw.
   if [[ ! -d /sys/module/mac80211_hwsim ]]; then
     host_root modprobe mac80211_hwsim radios=2
-  elif (( ap_has == 0 && client_has == 0 )); then
-    local free_count
-    free_count="$(host_phy_list | wc -l)"
-    if (( free_count < 2 )); then
-      host_root modprobe -r mac80211_hwsim 2>/dev/null || true
-      host_root modprobe mac80211_hwsim radios=2
-    fi
+  else
+    wait_for_hwsim_phys 3 || true
   fi
+
+  # If fewer than two PHYs are available, recycle hwsim once and wait for both.
   mapfile -t PHYS < <(host_phy_list)
   if ((${#PHYS[@]} < 2)); then
-    die "Need at least 2 mac80211_hwsim PHYs (phy0, phy1); found: ${PHYS[*]:-none}"
+    host_root modprobe -r mac80211_hwsim 2>/dev/null || true
+    sleep 2
+    host_root modprobe mac80211_hwsim radios=2
   fi
+
+  wait_for_hwsim_phys 15 || {
+    mapfile -t PHYS < <(host_phy_list)
+    die "Need at least 2 mac80211_hwsim PHYs (phy0, phy1); found: ${PHYS[*]:-none}. Check: lsmod | grep mac80211_hwsim; iw phy"
+  }
+
+  mapfile -t PHYS < <(host_phy_list)
   ensure_hwsim_iface "$AP" "AP" "${PHYS[0]}"
   ensure_hwsim_iface "$CLIENT" "Client" "${PHYS[1]}"
 }
