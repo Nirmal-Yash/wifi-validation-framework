@@ -53,7 +53,7 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
     pid = ap_exec(
         f"cat {shlex.quote(remote_pid_file)} 2>/dev/null || true", timeout=10
     ).strip()
-    pid_match = re.fullmatch(r"(\\d+)", pid)
+    pid_match = re.fullmatch(r"(\d+)", pid)
     assert pid_match, f"Could not start tcpdump on {capture_device}: {pid!r}"
     pid = pid_match.group(1)
 
@@ -84,7 +84,7 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
     finally:
         ap_exec(
             f"if test -f {shlex.quote(remote_pid_file)}; then "
-            f"sudo -n kill -TERM \\$(cat {shlex.quote(remote_pid_file)}) 2>/dev/null || true; "
+            f"sudo -n kill -TERM $(cat {shlex.quote(remote_pid_file)}) 2>/dev/null || true; "
             f"sleep 1; rm -f {shlex.quote(remote_pid_file)}; fi",
             timeout=15,
         )
