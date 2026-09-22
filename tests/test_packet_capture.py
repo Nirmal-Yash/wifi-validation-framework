@@ -85,11 +85,10 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
             f"cat {shlex.quote(remote_pid_file)} 2>/dev/null || true",
             timeout=10,
         )
-        pid_match = re.fullmatch(r"\\s*(\\d+)\\s*", pid_output)
-        assert pid_match, (
+        pid = pid_output.strip()
+        assert pid.isdigit(), (
             f"Could not identify tcpdump PID on {capture_device}: {pid_output!r}"
         )
-        pid = pid_match.group(1)
 
         running_output, _, _ = ap_exec(
             f"sudo -n kill -0 {pid} 2>/dev/null && echo RUNNING || echo STOPPED",
