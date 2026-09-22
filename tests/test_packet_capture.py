@@ -27,7 +27,7 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
 
     capture_connection = connection_pool.get_connection(capture_device)
 
-    def ap_exec(command, timeout=20):
+    def ap_exec(command, timeout=20, check=True):
         """Run an AP-side command over a raw SSH exec channel, bypassing shell prompts."""
         stdin, stdout, stderr = capture_connection.remote_conn_pre.exec_command(
             command, timeout=timeout
@@ -35,87 +35,143 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
         out = stdout.read().decode("utf-8", errors="replace")
         err = stderr.read().decode("utf-8", errors="replace")
         rc = stdout.channel.recv_exit_status()
-        if rc != 0:
+        if check and rc != 0:
             raise AssertionError(
                 f"AP command failed (rc={rc}): {command!r}; stderr={err.strip()!r}"
             )
-        return out
+        return out, err, rc
 
-    capture_script = (
-        f"rm -f {shlex.quote(remote_pcap)} {shlex.quote(remote_pid_file)}; "
-        f"nohup tcpdump -i {shlex.quote(capture_iface)} -nn -s0 -U "
-        f"-w {shlex.quote(remote_pcap)} 'udp port 67 or udp port 68' "
-        f">/tmp/dhcp_capture.log 2>&1 </dev/null & "
-        f"echo $! >{shlex.quote(remote_pid_file)}"
+    # Keep tcpdump in a dedicated foreground SSH channel. A background child
+    # launched from an SSH exec session can be terminated when that session
+    # closes, even when wrapped with nohup. The dedicated channel stays alive
+    # until the DHCP transaction has completed.
+    ap_exec(
+        f"sudo -n rm -f {shlex.quote(remote_pcap)} {shlex.quote(remote_pid_file)} "
+        f"/tmp/dhcp_capture.log",
+        timeout=10,
     )
-    ap_exec(f"sudo -n sh -c {shlex.quote(capture_script)}", timeout=15)
 
-    pid = ap_exec(
-        f"cat {shlex.quote(remote_pid_file)} 2>/dev/null || true", timeout=10
-    ).strip()
-    pid_match = re.fullmatch(r"(\d+)", pid)
-    assert pid_match, f"Could not start tcpdump on {capture_device}: {pid!r}"
-    pid = pid_match.group(1)
+    capture_cmd = (
+        f"sudo -n sh -c "
+        f"{shlex.quote('echo $$ > ' + remote_pid_file + '; exec tcpdump -i ' + "
+                       capture_iface + " -nn -s0 -U -w " + remote_pcap + " "
+                       "'udp port 67 or udp port 68' >/tmp/dhcp_capture.log 2>&1")}"
+    )
+    capture_stdin, capture_stdout, capture_stderr = (
+        capture_connection.remote_conn_pre.exec_command(capture_cmd, timeout=15)
+    )
 
     try:
-        for _ in range(5):
-            running = ap_exec(
-                f"sudo -n kill -0 {pid} 2>/dev/null && echo RUNNING || echo STOPPED",
+        for _ in range(10):
+            ready, _, _ = ap_exec(
+                "grep -q 'listening on ' /tmp/dhcp_capture.log 2>/dev/null && "
+                "echo READY || echo NOT_READY",
                 timeout=10,
-            ).strip()
-            if running == "RUNNING":
+            )
+            if ready.strip() == "READY":
                 break
-            time.sleep(1)
+            time.sleep(0.5)
         else:
-            log = ap_exec(
-                "sudo -n tail -n 20 /tmp/dhcp_capture.log 2>/dev/null || true",
+            log, _, _ = ap_exec(
+                "cat /tmp/dhcp_capture.log 2>/dev/null || true",
                 timeout=10,
+                check=False,
             )
             raise AssertionError(
-                f"tcpdump did not stay running on {capture_device}: {log!r}"
+                f"tcpdump did not become ready on {capture_device}: {log!r}"
             )
 
-        time.sleep(1)
+        pid_output, _, _ = ap_exec(
+            f"cat {shlex.quote(remote_pid_file)} 2>/dev/null || true",
+            timeout=10,
+        )
+        pid_match = re.fullmatch(r"\\s*(\\d+)\\s*", pid_output)
+        assert pid_match, (
+            f"Could not identify tcpdump PID on {capture_device}: {pid_output!r}"
+        )
+        pid = pid_match.group(1)
+
+        running_output, _, _ = ap_exec(
+            f"sudo -n kill -0 {pid} 2>/dev/null && echo RUNNING || echo STOPPED",
+            timeout=10,
+        )
+        assert running_output.strip() == "RUNNING", (
+            f"tcpdump exited before DHCP traffic was generated on {capture_device}"
+        )
+
         connection_pool.send_command(
             "client_vm",
-            f"sudo dhclient -r {client_iface} 2>/dev/null || true; sudo dhclient {client_iface}",
+            f"sudo dhclient -r {client_iface} 2>/dev/null || true; "
+            f"sudo dhclient {client_iface}",
             read_timeout=30,
         )
-    finally:
+
+        # SIGINT lets tcpdump finish normally and flush the pcap cleanly.
         ap_exec(
-            f"if test -f {shlex.quote(remote_pid_file)}; then "
-            f"sudo -n kill -TERM $(cat {shlex.quote(remote_pid_file)}) 2>/dev/null || true; "
-            f"sleep 1; rm -f {shlex.quote(remote_pid_file)}; fi",
-            timeout=15,
+            f"sudo -n kill -INT {pid}",
+            timeout=10,
         )
 
+        capture_stdout.channel.settimeout(15)
+        capture_stderr.channel.settimeout(15)
+        capture_stdout.read()
+        capture_stderr.read()
+        capture_rc = capture_stdout.channel.recv_exit_status()
+        if capture_rc != 0:
+            log, _, _ = ap_exec(
+                "cat /tmp/dhcp_capture.log 2>/dev/null || true",
+                timeout=10,
+                check=False,
+            )
+            raise AssertionError(
+                f"tcpdump exited with rc={capture_rc} on {capture_device}: {log!r}"
+            )
+    finally:
+        # Do not mask the test failure with cleanup errors. All root-owned
+        # runtime files are removed through sudo.
+        try:
+            ap_exec(
+                f"sudo -n kill -INT $(cat {shlex.quote(remote_pid_file)}) "
+                f"2>/dev/null || true; "
+                f"sudo -n rm -f {shlex.quote(remote_pid_file)}",
+                timeout=10,
+                check=False,
+            )
+        finally:
+            try:
+                capture_stdin.close()
+            except Exception:
+                pass
 
     for _ in range(12):
-        size = ap_exec(
+        size_output, _, _ = ap_exec(
             f"sudo -n stat -c%s {shlex.quote(remote_pcap)} 2>/dev/null || echo 0",
             timeout=10,
-        ).strip()
+        )
+        size = size_output.strip()
         if size.isdigit() and int(size) > 64:
             break
         time.sleep(1)
     else:
-        log = ap_exec(
-            "sudo -n tail -n 20 /tmp/dhcp_capture.log 2>/dev/null || true",
+        log, _, _ = ap_exec(
+            "cat /tmp/dhcp_capture.log 2>/dev/null || true",
             timeout=10,
+            check=False,
         )
         raise AssertionError(
             f"AP PCAP did not grow to a non-trivial size: {log!r}"
         )
 
-    state = ap_exec(
+    state_output, _, _ = ap_exec(
         f"test -s {shlex.quote(remote_pcap)} && echo FILE_EXISTS || echo NO_FILE",
         timeout=10,
-    ).strip()
-    assert state == "FILE_EXISTS", "AP bridge did not create a non-empty real DHCP PCAP"
+    )
+    state = state_output.strip()
+    assert state == "FILE_EXISTS", (
+        "AP bridge did not create a non-empty real DHCP PCAP"
+    )
 
-    # The existing Netmiko command channel is text/prompt oriented; do not use it
-    # as a binary transport. Copy the AP capture to a readable temporary path
-    # and retrieve the bytes over the authenticated SSH session's SFTP channel.
+    # Retrieve the binary PCAP over the authenticated SSH session's SFTP channel.
     local_pcap.unlink(missing_ok=True)
     try:
         ap_exec(
@@ -128,12 +184,13 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
         with connection.remote_conn_pre.open_sftp() as sftp:
             sftp.get(remote_download, str(local_pcap))
 
-        remote_sha256 = ap_exec(
+        remote_sha256_output, _, _ = ap_exec(
             f"sha256sum {shlex.quote(remote_download)}", timeout=10
-        ).strip()
+        )
+        remote_sha256 = remote_sha256_output.strip()
     finally:
         ap_exec(
-            f"sudo -n rm -f {shlex.quote(remote_download)}", timeout=10
+            f"sudo -n rm -f {shlex.quote(remote_download)}", timeout=10, check=False
         )
 
     assert local_pcap.is_file(), "SFTP did not create the local PCAP"
