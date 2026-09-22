@@ -51,12 +51,13 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
         timeout=10,
     )
 
-    capture_cmd = (
-        f"sudo -n sh -c "
-        f"{shlex.quote('echo $$ > ' + remote_pid_file + '; exec tcpdump -i ' + "
-                       capture_iface + " -nn -s0 -U -w " + remote_pcap + " "
-                       "'udp port 67 or udp port 68' >/tmp/dhcp_capture.log 2>&1")}"
+    capture_script = (
+        f"echo $ > {shlex.quote(remote_pid_file)}; "
+        f"exec tcpdump -i {shlex.quote(capture_iface)} -nn -s0 -U "
+        f"-w {shlex.quote(remote_pcap)} 'udp port 67 or udp port 68' "
+        f">/tmp/dhcp_capture.log 2>&1"
     )
+    capture_cmd = f"sudo -n sh -c {shlex.quote(capture_script)}"
     capture_stdin, capture_stdout, capture_stderr = (
         capture_connection.remote_conn_pre.exec_command(capture_cmd, timeout=15)
     )
