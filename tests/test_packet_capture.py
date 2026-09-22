@@ -52,7 +52,7 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
     )
 
     capture_script = (
-        f"echo $ > {shlex.quote(remote_pid_file)}; "
+        "echo " + "$" + "$" + f" > {shlex.quote(remote_pid_file)}; "
         f"exec tcpdump -i {shlex.quote(capture_iface)} -nn -s0 -U "
         f"-w {shlex.quote(remote_pcap)} 'udp port 67 or udp port 68' "
         f">/tmp/dhcp_capture.log 2>&1"
