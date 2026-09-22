@@ -30,7 +30,13 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
         f"udp port 67 or udp port 68 >/tmp/dhcp_capture.log 2>&1 </dev/null & "
         f"echo $! >{remote_pid_file}'"
     )
-    connection_pool.send_command(capture_device, capture, read_timeout=15)
+    # Launching a background process through a PTY can leave Netmiko's prompt-based
+    # send_command waiting for shell markers. Use the timing-based API for this
+    # one control command; the tcpdump process itself is fully detached.
+    capture_connection = connection_pool.get_connection(capture_device)
+    capture_connection.send_command_timing(
+        capture, read_timeout=15, last_read=1.0, strip_prompt=False
+    )
     pid = connection_pool.send_command(
         capture_device, f"cat {remote_pid_file} 2>/dev/null || true", read_timeout=10
     ).strip()
