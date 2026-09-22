@@ -1,4 +1,4 @@
-import base64
+import hashlib
 import re
 import sys
 import time
@@ -18,6 +18,7 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
     monitor_iface = params["network"]["monitor_interface"]
     client_iface = params["network"]["client_interface"]
     remote_pcap = "/tmp/dhcp_test.pcap"
+    remote_download = "/tmp/dhcp_test.sftp.pcap"
     local_pcap = ROOT / "results" / "captures" / "dhcp_test.pcap"
     local_pcap.parent.mkdir(parents=True, exist_ok=True)
 
@@ -54,31 +55,38 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
     ).strip()
     assert state == "FILE_EXISTS", "Monitor did not create a non-empty real DHCP PCAP"
 
-    transfer_cmd = (
-        f'printf "__PCAP_BEGIN__\\n"; '
-        f"sudo base64 {remote_pcap}; "
-        f'printf "\\n__PCAP_END__\\n"'
-    )
-    b64 = connection_pool.send_command(
+    # The existing Netmiko command channel is text/prompt oriented; do not use it
+    # as a binary transport. Copy the capture to a readable temporary path and
+    # retrieve the bytes over the authenticated SSH session's SFTP channel.
+    connection_pool.send_command(
         "monitor_vm",
-        transfer_cmd,
-        expect_string=r"__PCAP_END__",
-        strip_prompt=False,
+        f"sudo cp -- {remote_pcap} {remote_download} && sudo chmod 0644 {remote_download}",
         read_timeout=30,
     )
-    match = re.search(
-        r"__PCAP_BEGIN__\r?\n(?P<data>.*?)\r?\n__PCAP_END__",
-        b64,
-        re.DOTALL,
-    )
-    assert match, "Could not frame PCAP payload returned by monitor"
-    clean = "".join(match.group("data").split())
+
+    connection = connection_pool.get_connection("monitor_vm")
     try:
-        data = base64.b64decode(clean, validate=True)
-    except Exception as exc:
-        raise AssertionError("Could not decode monitor PCAP") from exc
-    assert len(data) > 64, "Decoded monitor PCAP is too small to be real traffic"
-    local_pcap.write_bytes(data)
+        with connection.remote_conn_pre.open_sftp() as sftp:
+            sftp.get(remote_download, str(local_pcap))
+
+        remote_sha256 = connection_pool.send_command(
+            "monitor_vm", f"sha256sum {remote_download}", read_timeout=10
+        ).strip()
+    finally:
+        connection_pool.send_command(
+            "monitor_vm", f"sudo rm -f {remote_download}", read_timeout=10
+        )
+
+    assert local_pcap.is_file(), "SFTP did not create the local PCAP"
+    data = local_pcap.read_bytes()
+    assert len(data) > 64, "Downloaded monitor PCAP is too small to be real traffic"
+
+    local_sha256 = hashlib.sha256(data).hexdigest()
+    remote_match = re.match(r"^([0-9a-fA-F]{64})\s+", remote_sha256)
+    assert remote_match, f"Could not read remote PCAP checksum: {remote_sha256!r}"
+    assert local_sha256.lower() == remote_match.group(1).lower(), (
+        "Downloaded PCAP checksum does not match the monitor copy"
+    )
 
     analysis = analyze_dhcp_sequence(str(local_pcap))
     metric_logger.log(analysis["total_packets"], "packets")
