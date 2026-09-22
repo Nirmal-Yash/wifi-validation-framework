@@ -58,14 +58,15 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
     # The existing Netmiko command channel is text/prompt oriented; do not use it
     # as a binary transport. Copy the capture to a readable temporary path and
     # retrieve the bytes over the authenticated SSH session's SFTP channel.
-    connection_pool.send_command(
-        "monitor_vm",
-        f"sudo cp -- {remote_pcap} {remote_download} && sudo chmod 0644 {remote_download}",
-        read_timeout=30,
-    )
-
-    connection = connection_pool.get_connection("monitor_vm")
+    local_pcap.unlink(missing_ok=True)
     try:
+        connection_pool.send_command(
+            "monitor_vm",
+            f"sudo cp -- {remote_pcap} {remote_download} && sudo chmod 0644 {remote_download}",
+            read_timeout=30,
+        )
+
+        connection = connection_pool.get_connection("monitor_vm")
         with connection.remote_conn_pre.open_sftp() as sftp:
             sftp.get(remote_download, str(local_pcap))
 
