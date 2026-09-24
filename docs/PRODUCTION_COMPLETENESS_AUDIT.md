@@ -50,10 +50,10 @@ The React UI is an operational Runner shell with authenticated launch/inspection
 
 This audit uses a transparent rubric rather than a binary claim:
 
-- **Source completeness: 93%** — implementation contracts are substantially represented and the audited defects are closed, with the residual gaps above.
-- **Operational/security readiness: 92%** — durable idempotency, CSRF, rate limiting, path confinement, release gates, recovery and readiness checks are present.
+- **Source completeness: 94%** — implementation contracts are substantially represented and the audited defects are closed, with the residual gaps above.
+- **Operational/security readiness: 93%** — durable idempotency, CSRF, rate limiting, path confinement, release gates, recovery and readiness checks are present.
 - **Execution certification readiness: 70%** — source and simulated controls are in place, but protected REAL_LAB and runtime/browser evidence is not established by this source audit.
 
-**Overall production readiness: 87%.**
+**Overall production readiness: 88%.**
 
 The system is therefore **source-complete enough for dedicated production certification**, but it should not be represented as fully runtime-certified until the protected execution gates are actually run and their evidence is persisted.

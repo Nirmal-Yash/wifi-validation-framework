@@ -1,5 +1,5 @@
 netmiko==4.7.0
-paramiko==3.4.0
+paramiko==3.5.1
 pytest==8.1.0
 pytest-html==4.1.1
 pyshark==0.6

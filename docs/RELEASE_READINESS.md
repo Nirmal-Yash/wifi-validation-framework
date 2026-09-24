@@ -8,7 +8,7 @@ The current completeness audit was performed on 2026-09-24 against the pre-audit
 
 ## Source completeness result
 
-**93% source implementation completeness.**
+**94% source implementation completeness.**
 
 The completeness wave closes the audited source-level defects in:
 - DHCP T1 renewal and T2 rebind transaction evidence;
@@ -27,7 +27,7 @@ The remaining source-level deductions are limited to the first-class multi-proje
 
 ### Overall
 
-**Estimated production readiness: 87%.**
+**Estimated production readiness: 88%.**
 
 This percentage is an audit score, not a process exit code. It weights:
 - source completeness and architecture: 50%;
@@ -44,7 +44,11 @@ This percentage is an audit score, not a process exit code. It weights:
 | Operations/recovery/synchronization | 92% |
 | Frontend operational surface | 82% |
 | Real execution certification evidence | 70% |
-| **Overall production readiness** | **87%** |
+| **Overall production readiness** | **88%** |
+
+## Post-audit CI dependency correction
+
+The first post-push CI run failed during dependency installation because Netmiko 4.7.0 requires Paramiko >=3.5.0 while the repository had pinned Paramiko 3.4.0. The repository pin is now corrected to Paramiko 3.5.1; the source score below reflects the correction, while runtime certification remains a separate gate. citeturn124826search0turn124826search1
 
 ## Remaining release gates
 
