@@ -450,3 +450,18 @@ They become compatibility wrappers around the new v1 services rather than separa
 4. APIs return persisted evidence-derived state.
 5. authorization happens before artifact access.
 6. API responses remain compatible within the v1 contract.
+
+
+## 13A. Regression comparison contract
+
+The Runner's new regression service returns a derived `RunRegressionReport` containing:
+- `baseline_run_id`;
+- `current_run_id`;
+- comparability status and reason;
+- one `RegressionAssessment` per selected test;
+- composable regression dimensions;
+- one `RegressionMetricComparison` per compared metric;
+- threshold used and percentage delta;
+- optional flaky-history diagnostics.
+
+This is derived analysis, not mutable source-of-truth test data. The source Run, Attempt, TestResult and Sample records remain authoritative.

@@ -463,3 +463,15 @@ Historical results are never recomputed under newer definitions.
 8. Release rules are Project scoped.
 9. Device capabilities control test applicability.
 10. Technical validation and human release approval are separate decisions.
+
+
+## 32. Regression Intelligence 2.0 invariants
+
+1. A comparison names an explicit baseline Run ID.
+2. No comparison is performed across incompatible lab/profile/test-definition/environment context.
+3. `NO_BASELINE` means no comparable baseline exists; it is not a product failure.
+4. `UNVALIDATED` means the current Run lacks trustworthy comparison evidence.
+5. PASS→FAIL and FAIL→PASS are functional classifications independent of performance metric classifications.
+6. Multiple metrics remain independently visible; aggregate TestResult classification cannot hide a missing or invalid metric.
+7. Regression thresholds are frozen inputs to the comparison and default to the existing 20% compatibility behavior only when no explicit override exists.
+8. Flaky history is diagnostic context and never changes historical Attempt facts.

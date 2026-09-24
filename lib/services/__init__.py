@@ -77,6 +77,10 @@ __all__ = [
     "StatisticSummary",
     "TelemetryCollectionError",
     "WifiTelemetryService",
+    "RegressionIntelligenceError",
+    "RegressionIntelligenceService",
 ]
 
 from .wifi_telemetry import TelemetryCollectionError, WifiTelemetryService
+
+from .regression_intelligence import RegressionIntelligenceError, RegressionIntelligenceService

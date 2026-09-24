@@ -341,3 +341,20 @@ The service derives SNR only when both RSSI and noise are actually observed, and
 Every `TelemetryPoint` carries `VIRTUAL_WIFI` or `PHYSICAL_WIFI` plus source, interface and timestamp. The current lab is configured as `VIRTUAL_WIFI`; the schema is intentionally identical for future physical adapters.
 
 Telemetry is contextual evidence and does not become an authoritative PASS metric unless a future TestRegistry definition explicitly opts into it. Virtual hwsim telemetry never represents RF certification.
+
+
+## 19D. RegressionIntelligenceService
+
+`RegressionIntelligenceService` is the canonical Run-to-Run comparison seam for Phase 7.
+
+It:
+- resolves an explicit baseline Run by ID;
+- reads the latest Attempt from baseline and current Runs;
+- verifies profile/lab/test-definition/environment comparability;
+- evaluates functional status transitions;
+- evaluates multiple metrics through the TestRegistry's frozen MeasurementPolicy;
+- applies explicit per-test/per-metric percentage overrides;
+- emits typed `NO_BASELINE` and `UNVALIDATED` classifications;
+- retains flaky history as diagnostic context.
+
+The legacy `regression/regression_classifier.py` and firmware-string diff CLI remain compatibility paths and are intentionally not repointed in this slice.

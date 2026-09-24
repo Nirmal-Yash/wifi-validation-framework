@@ -199,3 +199,12 @@ WiFi telemetry is now a typed Runner service rather than an unstructured dashboa
 Every point is explicitly labeled `VIRTUAL_WIFI` or `PHYSICAL_WIFI`. Missing source values remain unavailable and are never synthesized. RunContext now exposes the service and the session fixture constructs it for the current virtual lab.
 
 Verification remains pending in this environment: local/unit execution, a real telemetry capture against mac80211_hwsim, and the protected real-lab regression suite were not executed.
+
+
+## 23. Iteration 15 status
+
+Regression Intelligence 2.0 is now implemented as a typed Run-to-Run service. It requires an explicit baseline Run ID, validates comparison context, evaluates multiple metrics using frozen measurement policies, supports per-test/per-metric regression thresholds, exposes composable regression dimensions and retains flaky-history diagnostics.
+
+The older firmware-string regression CLI remains compatibility code rather than the canonical comparison source.
+
+Verification remains pending in this environment: local/unit execution and the protected real-lab regression gate were not executed.

@@ -655,3 +655,20 @@ A phase is complete only when:
 12. Add statistical policies.
 
 Only then expand functional WiFi coverage.
+
+
+## 18A. Iteration 15 — Regression Intelligence 2.0
+
+The new regression path is Run-scoped and requires an explicit `baseline_run_id`. Firmware version strings remain only a compatibility lookup for the legacy CLI.
+
+Comparability is fail-closed:
+- validation profile must match;
+- lab identity must match;
+- selected tests and frozen test-definition versions must match;
+- both environment classes must be supplied and equal.
+
+A comparable baseline is never inferred from the nearest firmware run.
+
+For PASS→PASS results, each metric is evaluated independently using its declared `MeasurementPolicy`. Per-test/per-metric percentage thresholds may be supplied under the Run's `regression.thresholds` configuration; the existing 20% behavior remains the compatibility default.
+
+The evaluator emits composable regression dimensions, explicit `NO_BASELINE`/ `UNVALIDATED` states and optional flaky-history diagnostics. Flaky history never erases the underlying Attempt/result.

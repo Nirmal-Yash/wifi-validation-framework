@@ -65,6 +65,12 @@ __all__ = [
     "TelemetryMetric",
     "TelemetryPoint",
     "WifiTelemetrySnapshot",
+    "ComparabilityStatus",
+    "RegressionDimension",
+    "FlakyTestHistory",
+    "RegressionMetricComparison",
+    "RegressionAssessment",
+    "RunRegressionReport",
 ]
 
 from .protocol_evidence import (
@@ -78,3 +84,5 @@ from .protocol_evidence import (
 )
 
 from .telemetry import TelemetryEnvironmentClass, TelemetryMetric, TelemetryPoint, WifiTelemetrySnapshot
+
+from .regression import ComparabilityStatus, FlakyTestHistory, RegressionAssessment, RegressionDimension, RegressionMetricComparison, RunRegressionReport

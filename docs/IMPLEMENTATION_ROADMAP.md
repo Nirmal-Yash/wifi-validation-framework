@@ -185,3 +185,20 @@ Next:
 
 Next:
 - Iteration 15 — Regression Intelligence 2.0.
+
+
+## Iteration 15 — Regression Intelligence 2.0 ✅
+- [x] Added typed comparability, regression-dimension, metric-comparison, assessment and Run-report contracts.
+- [x] Added explicit Run-to-Run comparison keyed by baseline Run ID.
+- [x] Added fail-closed profile/lab/test-definition/environment comparability checks.
+- [x] Added multi-metric PASS→PASS evaluation through the declared MeasurementPolicy.
+- [x] Added per-test/per-metric threshold overrides with the existing 20% compatibility default.
+- [x] Added `NO_BASELINE` and `UNVALIDATED` handling.
+- [x] Added composable regression dimensions and flaky-history diagnostics.
+- [x] Preserved the legacy firmware-string regression path as compatibility code.
+- [x] Added focused regression-intelligence tests.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Protected real-lab gate: unavailable in this environment.
+
+Next:
+- Iteration 16 — Dashboard/API regression and telemetry contracts.

@@ -393,3 +393,21 @@ Telemetry unit tests must verify:
 - JSON serialization preserves environment class on every point.
 
 The telemetry service uses read-only commands through `SecureCommandRunner`; it does not alter the protected DHCP capture or validation traffic paths.
+
+
+## 25. Iteration 15 regression-intelligence validation
+
+Targeted tests must verify:
+- explicit baseline Run identity;
+- incompatible environment/profile/lab/test-definition context is blocked;
+- missing comparison context is never guessed;
+- PASS→FAIL and FAIL→PASS classification;
+- multiple metrics use declared statistical decision values;
+- per-test/per-metric thresholds override the compatibility default;
+- missing current results become `UNVALIDATED`;
+- invalid current evidence becomes `UNVALIDATED`;
+- baseline-side invalid evidence prevents comparison;
+- new tests remain explicitly visible as `NEW_PASS`/`NEW_FAILURE`;
+- flaky history is retained without mutating the primary classification.
+
+The legacy firmware-string regression path remains a compatibility boundary and is not treated as the authoritative Phase 7 engine.
