@@ -460,3 +460,12 @@ The integration boundary remains three-layered:
 3. protected real-lab execution through the existing GNS3/mac80211_hwsim topology.
 
 Iteration 27 introduces the final 11-scenario certification matrix. A scenario is evidence-complete only when every required control is present. Source-only CI generates the matrix and validates its contract but does not substitute synthetic evidence for the protected real-lab baseline.
+
+## Iterations 28–30 release verification
+Iteration 28 validates release structure through source compilation, security/readiness checks, certification-matrix generation, working-tree auditing and the release manifest. Iteration 29 adds reproducible RunnerDoctor checks plus SQLite integrity inspection and content-addressed release inventory. Iteration 30 freezes the architecture/security/testing contract while preserving the distinction between source readiness and protected real-lab certification evidence.
+
+~~~bash
+python scripts/netregress_release.py verify
+python scripts/netregress_release.py doctor
+python scripts/netregress_release.py manifest
+~~~

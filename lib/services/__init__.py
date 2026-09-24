@@ -86,6 +86,7 @@ __all__ = [
     "CertificationMatrix", "CertificationScenario", "CERTIFICATION_SCENARIOS",
     "AuditIntegrityService", "BackupResult", "SQLiteBackupService", "RetentionResult", "RetentionService", "RunRecoveryService", "StaleLockRecovery",
     "CsrfService", "IdempotencyRecord", "IdempotencyStore", "LoginRateLimiter", "RequestSecurityError", "apply_security_headers", "resolve_confined_path", "validate_https_endpoint",
+    "ReleaseAudit", "ReleaseManifestService", "DoctorCheck", "DoctorReport", "RunnerDoctor",
 ]
 
 from .wifi_telemetry import TelemetryCollectionError, WifiTelemetryService
@@ -112,3 +113,5 @@ from .failure_injection import FailureInjectionCase, FailureInjectionCatalog, Fa
 from .certification import CertificationMatrix, CertificationScenario, CERTIFICATION_SCENARIOS
 from .operational_recovery import AuditIntegrityService, BackupResult, SQLiteBackupService, RetentionResult, RetentionService, RunRecoveryService, StaleLockRecovery
 from .api_security import CsrfService, IdempotencyRecord, IdempotencyStore, LoginRateLimiter, RequestSecurityError, apply_security_headers, resolve_confined_path, validate_https_endpoint
+from .release_manifest import ReleaseAudit, ReleaseManifestService
+from .doctor import DoctorCheck, DoctorReport, RunnerDoctor

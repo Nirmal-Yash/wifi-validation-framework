@@ -1467,64 +1467,49 @@ Before the final commit:
 # ITERATION 28 — FINAL SINGLE-COMMIT RELEASE INTEGRATION
 
 ## Objective
-
-Package the entire completed implementation as one clean release commit on `main`.
-
-This is a release-integration iteration only.
+Package the completed implementation as one clean release state on main.
 
 ## 28.1 Freeze
-
-After Iteration 27 certification:
-
 - stop feature development;
 - stop refactoring;
 - do not introduce unrelated cleanup;
-- do not alter protected behavior unless required by certification evidence.
+- do not alter protected behavior unless required by release-readiness evidence.
 
-## 28.2 Full verification
+## 28.2 Final verification contract
+The release tooling covers Python compilation, security/readiness auditing, certification-matrix generation, optional core release-policy tests, working-tree/tracked-artifact auditing, manifest generation and release invariants. Protected real-lab execution remains an execution-class gate.
 
-Run the complete available verification stack in final order:
+## 28.3 Single commit
+The complete release wave uses exactly one final commit on main with:
 
-1. static compilation/type checking;
-2. linting;
-3. unit tests;
-4. service/repository tests;
-5. API/OpenAPI contract tests;
-6. migration tests;
-7. security scans;
-8. failure-injection suite;
-9. simulated integration suite;
-10. protected real-lab suite;
-11. final documentation consistency check;
-12. credential/secrets scan.
-
-Record exact commands and results.
-
-## 28.3 Working-tree audit
-
-Require:
-
-- only intended source/docs/config/test changes;
-- no runtime databases;
-- no logs;
-- no PCAPs;
-- no result dumps;
-- no local credentials;
-- no temporary files.
-
-## 28.4 Single commit
-
-Stage the entire finished implementation and create exactly one commit on `main`:
-
-```
+~~~text
 feat(runner): complete production-grade validation platform
-```
+~~~
 
-Do not create any additional implementation commit after this point.
+# ITERATION 29 — REPRODUCIBLE OPERATIONAL READINESS
 
-The final commit should contain the full completed standalone Runner implementation, frontend, APIs, persistence, tests, documentation, security hardening, and certification changes as one coherent release state.
+## Objective
+Make release consumption deterministic and diagnosable without a Cloud dependency or a parallel production execution path.
 
----
+## Implementation
+- ReleaseManifestService records branch, commit, tree, cleanliness, tracked-file inventory and SHA-256 hashes.
+- RunnerDoctor checks interpreter/tool/path/authentication/database readiness.
+- Release and doctor CLIs expose deterministic operational checks.
+- SQLite integrity is inspected when a database exists.
+- Generated manifests remain in ignored runtime output.
+
+# ITERATION 30 — FINAL GOVERNANCE AND ARCHITECTURE FREEZE
+
+## Objective
+Freeze the standalone Runner as the coherent release unit and reconcile the operational contracts around it.
+
+## Implementation
+- Runner authority remains local for labs, devices, raw evidence and execution.
+- Cloud/SaaS remains above the certified Runner and is not part of this release.
+- Fake/simulated adapters remain verification seams only.
+- REAL_LAB certification remains an explicit evidence class.
+- API, security, release-gate, baseline, waiver and artifact invariants are frozen.
+- Documentation is synchronized to the final architecture.
+- No unrelated post-freeze feature is permitted.
 
 # FINAL TARGET ARCHITECTURE
 
@@ -1591,43 +1576,14 @@ The future Cloud control plane remains a separate layer above the certified Runn
 
 ---
 
+
 # FINAL IMPLEMENTATION ORDER
 
-The only permitted development order is:
+~~~text
+20 → 21 → 22 → 23 → 24 → 25 → 26 → 27 → 28 → 29 → 30 → ONE FINAL COMMIT ON main
+~~~
 
-```
-20
-Foundation / Security / Contract Freeze
-        ↓
-21
-Orchestration / Configuration / Lab Control / Locking
-        ↓
-22
-Evidence / Protocol / Telemetry / Performance
-        ↓
-23
-Firmware / Failure Semantics / Diagnostics
-        ↓
-24
-API / Frontend / Persistence
-        ↓
-25
-Baseline / Regression / Release Intelligence / Offline Runner
-        ↓
-26
-Failure Injection / Integration / Security Hardening
-        ↓
-27
-Final End-to-End Certification / Documentation Freeze
-        ↓
-28
-Single Final Commit on main
-```
+No Cloud/SaaS implementation is introduced in this release wave.
 
-No Cloud/SaaS implementation is permitted before Iteration 27 certification.
-
-No iteration is complete merely because code exists. Completion requires implementation, tests, failure-path verification, documentation synchronization, and the applicable real-lab gate.
-
-
-## Implementation status — Iterations 20–25
-The consolidated source implementation for Iterations 20–25 is complete. The next implementation wave is Iteration 26: full failure injection, multi-layer integration, security hardening and release readiness. Iteration 27 remains the end-to-end certification freeze, and Iteration 28 remains the final single-commit release integration.
+## Final implementation status — Iterations 20–30
+Iterations 20–27 are source-complete from the preceding consolidated passes. Iterations 28–30 are the final release wave: release integration, reproducible operational readiness and governance/architecture freeze. The final Git state is consolidated into one commit on main.

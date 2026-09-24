@@ -142,3 +142,14 @@ The Runner now survives Cloud outages with a durable local synchronization queue
 The Runner now includes the final source-level failure/recovery and certification controls before dedicated debugging/certification execution: typed failure-injection coverage, durable API idempotency, CSRF/rate limiting/security headers, SSRF/path confinement, operational backup/restore and stale-lock recovery, audit-chain integrity, security/readiness CLI checks, and an 11-scenario certification matrix.
 
 The implementation is consolidated directly on main with the repository single-commit release discipline. Real GNS3/mac80211_hwsim certification remains an explicit execution-class boundary and is not replaced by synthetic test fixtures.
+
+## Iterations 28–30 — Final Release Wave
+The final release wave is consolidated into one commit on main and adds deterministic release integration, operational readiness tooling and architecture/governance freeze controls.
+
+~~~bash
+python scripts/netregress_release.py verify
+python scripts/netregress_release.py doctor
+python scripts/netregress_release.py manifest
+~~~
+
+The release manifest records the current commit/tree, working-tree cleanliness, tracked-file inventory and SHA-256 hashes. It is source-readiness evidence, not a substitute for protected GNS3/mac80211_hwsim execution evidence.

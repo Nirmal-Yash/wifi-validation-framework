@@ -251,3 +251,6 @@ Iterations 20–25 are source-complete as the current Runner platform context. I
 Iteration 26 source implementation is complete: typed failure-injection coverage, recovery services, API replay/CSRF controls, SSRF/path confinement, audit-chain integrity, backup/restore, retention, stale-lock recovery and source security/readiness tooling are integrated with the existing Runner boundaries.
 
 Iteration 27 source implementation is complete: the 11-scenario certification matrix, evidence completeness evaluator, certification CLI and documentation/repository freeze controls are integrated. Certification evidence must come from the appropriate execution class; the real-lab scenario is not satisfied by fake adapters.
+
+## Iterations 28–30 final release wave
+Iterations 28–30 are one coherent release slice. Iteration 28 owns final release integration and the single-commit rule; Iteration 29 owns reproducible operational readiness and release/doctor tooling; Iteration 30 owns governance and architecture freeze. Runner remains locally authoritative; Cloud/SaaS remains deferred above it. The release manifest is structural/source evidence and does not substitute for protected REAL_LAB execution evidence.

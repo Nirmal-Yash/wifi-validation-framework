@@ -240,3 +240,6 @@ The Runner now has a durable idempotency store for state-changing API requests, 
 Outbound synchronization requires HTTPS and rejects endpoints resolving to loopback/private/link-local/multicast/unspecified addresses. Firmware operation paths are confined to an explicit firmware root. Diagnostic bundles carry a deterministic audit-event chain digest. Operational recovery includes SQLite backup/restore, stale-lock recovery and retention controls.
 
 Security audit tooling performs Python syntax, tracked-secret-pattern, shell-invocation and production TODO/FIXME checks, while CI also runs dependency consistency validation before the release policy gate.
+
+## Iterations 28–30 release security and governance
+The final release wave adds content-addressed release inventory, tracked-artifact rejection, clean-tree enforcement, source syntax auditing and operational readiness checks. Release tooling does not introduce a network trust dependency and does not bypass authentication, RBAC, artifact containment, idempotency, firmware authorization or release-gate controls. REAL_LAB evidence remains execution-bound and cannot be inferred from a release manifest.
