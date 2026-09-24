@@ -1,3 +1,4 @@
+from .health import EnvironmentHealthStatus, HealthObservation, HealthObservationStatus, LabHealthSnapshot
 from .models import (
     Artifact,
     ArtifactType,
@@ -29,7 +30,11 @@ __all__ = [
     "ConfigSnapshot",
     "Criticality",
     "DomainValidationError",
+    "EnvironmentHealthStatus",
     "EnvironmentSnapshot",
+    "HealthObservation",
+    "HealthObservationStatus",
+    "LabHealthSnapshot",
     "EvidenceState",
     "LifecycleEvent",
     "Metric",

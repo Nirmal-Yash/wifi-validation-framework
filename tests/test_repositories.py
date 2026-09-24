@@ -8,6 +8,7 @@ from lib.domain import (
     Attempt,
     Baseline,
     Criticality,
+    EnvironmentHealthStatus,
     EvidenceState,
     LifecycleEvent,
     Metric,
@@ -278,3 +279,16 @@ def test_normalized_baseline_table_is_archived_for_legacy_compatibility(tmp_path
     assert "run_baselines" in names
     assert "legacy_baselines_archive" in names
     assert SQLiteBaselineRepository(database).get("b-old") is not None
+
+
+def test_run_environment_health_round_trip(tmp_path):
+    database = make_database(tmp_path)
+    repository = SQLiteRunRepository(database)
+    expected = make_run()
+    expected.environment_health = EnvironmentHealthStatus.DEGRADED
+
+    repository.save(expected)
+    restored = repository.get(expected.run_id)
+
+    assert restored is not None
+    assert restored.environment_health is EnvironmentHealthStatus.DEGRADED

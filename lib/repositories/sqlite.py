@@ -13,6 +13,7 @@ from lib.domain import (
     Attempt,
     Baseline,
     BusinessOutcome,
+    EnvironmentHealthStatus,
     ConfigSnapshot,
     Criticality,
     EnvironmentSnapshot,
@@ -28,7 +29,7 @@ from lib.domain import (
 )
 from .interfaces import RepositoryConflictError
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -65,6 +66,7 @@ CREATE TABLE IF NOT EXISTS runs (
     repository_commit TEXT NOT NULL,
     lifecycle TEXT NOT NULL,
     outcome TEXT,
+    environment_health TEXT,
     environment_snapshot_id TEXT REFERENCES environment_snapshots(snapshot_id),
     config_snapshot_id TEXT REFERENCES config_snapshots(snapshot_id),
     created_at TEXT,
@@ -214,7 +216,10 @@ class SQLiteDatabase:
     @staticmethod
     def _migrate_schema(connection: sqlite3.Connection) -> None:
         table_additions = {
-            "runs": {"provenance": "TEXT NOT NULL DEFAULT 'NATIVE'"},
+            "runs": {
+                "provenance": "TEXT NOT NULL DEFAULT 'NATIVE'",
+                "environment_health": "TEXT",
+            },
             "test_results": {"provenance": "TEXT NOT NULL DEFAULT 'NATIVE'"},
             "artifacts": {
                 "display_name": "TEXT NOT NULL DEFAULT ''",
@@ -341,9 +346,9 @@ class SQLiteRunRepository:
                     validation_profile, selected_tests_json,
                     test_definition_versions_json, resolved_config_json,
                     configuration_hash, repository_commit, lifecycle, outcome,
-                    environment_snapshot_id, config_snapshot_id,
+                    environment_health, environment_snapshot_id, config_snapshot_id,
                     created_at, started_at, completed_at, provenance
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     run.run_id,
                     run.display_id,
@@ -357,6 +362,7 @@ class SQLiteRunRepository:
                     run.repository_commit,
                     run.lifecycle.value,
                     run.outcome.value if run.outcome else None,
+                    run.environment_health.value if run.environment_health else None,
                     run.environment.snapshot_id if run.environment else None,
                     run.config_snapshot.snapshot_id if run.config_snapshot else None,
                     _dt(run.created_at),
@@ -375,11 +381,12 @@ class SQLiteRunRepository:
                 raise RepositoryConflictError(f"run does not exist: {run.run_id}")
             connection.execute(
                 """UPDATE runs
-                   SET lifecycle = ?, outcome = ?, started_at = ?, completed_at = ?
+                   SET lifecycle = ?, outcome = ?, environment_health = ?, started_at = ?, completed_at = ?
                    WHERE run_id = ?""",
                 (
                     run.lifecycle.value,
                     run.outcome.value if run.outcome else None,
+                    run.environment_health.value if run.environment_health else None,
                     _dt(run.started_at),
                     _dt(run.completed_at),
                     run.run_id,
@@ -443,6 +450,11 @@ class SQLiteRunRepository:
                 lifecycle=RunLifecycle(row["lifecycle"]),
                 outcome=(
                     BusinessOutcome(row["outcome"]) if row["outcome"] else None
+                ),
+                environment_health=(
+                    EnvironmentHealthStatus(row["environment_health"])
+                    if row["environment_health"]
+                    else None
                 ),
                 environment=environment,
                 config_snapshot=config_snapshot,

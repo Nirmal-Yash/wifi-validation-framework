@@ -137,7 +137,7 @@ Every Run records before/after Lab Health.
 
 Health components must be independently testable.
 
-Health checks are expected to verify both the check logic and the diagnostic artifact generated when a component fails.
+Health checks are expected to verify both the check logic and the diagnostic artifact generated when a component fails. The component set includes GNS3/project nodes, Docker, libvirt, namespace-scoped hwsim PHYs, management SSH, AP/client/router/monitor interfaces, DHCP, DNS, iperf3, disk and clock/NTP. A required FAILED health result must block test execution and produce LAB_FAILED; DEGRADED/UNKNOWN must remain visible without triggering automatic repair.
 
 ## 9. CommandRunner verification
 

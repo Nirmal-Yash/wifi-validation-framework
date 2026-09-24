@@ -1,3 +1,4 @@
+from .lab_health_service import LabHealthService
 from .command_security import (
     CommandAuditError,
     CommandAuditRecorder,
@@ -31,6 +32,7 @@ __all__ = [
     "ParamikoExecRunner",
     "SSHConnectionSpec",
     "redact_command",
+    "LabHealthService",
     "CommandAuditError",
     "CommandAuditRecorder",
     "CommandSecurityError",

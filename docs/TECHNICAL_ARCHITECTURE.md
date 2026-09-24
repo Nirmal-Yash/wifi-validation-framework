@@ -183,9 +183,9 @@ LabController gradually absorbs reusable provisioning logic:
 
 ## 16. LabHealthService
 
-LabHealthService diagnoses environment health and captures evidence. It does not silently repair a failing lab.
+LabHealthService is a read-only infrastructure gate executed before and after each Run. It produces a typed `LabHealthSnapshot` containing per-component status, duration, diagnostics, evidence references and tool metadata. Coverage includes GNS3/project nodes, Docker, libvirt, hwsim PHY placement in the AP/client namespaces, management SSH, AP/client/router/monitor interfaces, DHCP, DNS, iperf3, disk capacity and clock synchronization.
 
-Health coverage includes GNS3, Docker, libvirt, hwsim, AP, client, router, management, DHCP, DNS, iperf3, SSH, disk and clock synchronization.
+Health states are `HEALTHY`, `DEGRADED`, `FAILED`, and `UNKNOWN`. A required component in `FAILED` state blocks execution and transitions the Run to `LAB_FAILED`. `DEGRADED` and `UNKNOWN` remain contextual health state and do not trigger repair. Every snapshot is registered as `LAB_HEALTH_SNAPSHOT`; unhealthy snapshots additionally register a `DIAGNOSTIC_BUNDLE`. The service never silently repairs or reprovisions the lab.
 
 ## 17. Environment fingerprint
 

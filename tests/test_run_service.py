@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from lib.domain import RunLifecycle
+from lib.domain import EnvironmentHealthStatus, RunLifecycle
 from lib.services import RunService, generate_ulid, redact_configuration
 from lib.repositories import (
     RepositoryConflictError,
@@ -136,3 +136,38 @@ def test_record_test_result_persists_samples(tmp_path):
     result = SQLiteTestResultRepository(database).list_for_attempt(attempt.attempt_id)
     assert len(result) == 1
     assert [sample.value for sample in result[0].metrics[0].samples] == [10.0, 12.0]
+
+
+def test_health_gated_run_lifecycle(tmp_path):
+    service, database = make_service(
+        tmp_path,
+        [
+            "01RUN00000000000000000000",
+            "01ATTEMPT0000000000000000",
+            "01EVENT000000000000000001",
+            "01EVENT000000000000000002",
+            "01EVENT000000000000000003",
+            "01EVENT000000000000000004",
+            "01EVENT000000000000000005",
+            "01EVENT000000000000000006",
+        ],
+    )
+    database.initialize()
+    run, _ = service.create_run(
+        firmware_version="v1.0",
+        lab_id="lab-1",
+        validation_profile="Smoke",
+        selected_tests=["wifi.test"],
+        test_definition_versions={"wifi.test": "1.0"},
+        resolved_config={},
+        repository_commit="abc",
+    )
+
+    service.begin_lab_health_check(run.run_id)
+    service.record_environment_health(run.run_id, EnvironmentHealthStatus.DEGRADED)
+    service.start_run_after_health(run.run_id)
+
+    restored = SQLiteRunRepository(database).get(run.run_id)
+    assert restored is not None
+    assert restored.lifecycle is RunLifecycle.RUNNING
+    assert restored.environment_health is EnvironmentHealthStatus.DEGRADED

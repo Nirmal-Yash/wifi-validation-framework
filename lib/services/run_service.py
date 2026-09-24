@@ -12,6 +12,7 @@ from lib.domain import (
     BusinessOutcome,
     DomainValidationError,
     Criticality,
+    EnvironmentHealthStatus,
     EvidenceState,
     LifecycleEvent,
     Metric,
@@ -278,8 +279,43 @@ class RunService:
         self._event(run_id, "ATTEMPT_CREATED", self.clock(), attempt_id=attempt.attempt_id)
         return attempt
 
-    def start_run(self, run_id: str) -> Run:
-        run = self.transition(run_id, RunLifecycle.PREPARING)
+    def begin_lab_health_check(self, run_id: str) -> Run:
+        return self.transition(run_id, RunLifecycle.LAB_HEALTH_CHECK)
+
+    def record_environment_health(
+        self,
+        run_id: str,
+        status: EnvironmentHealthStatus,
+    ) -> Run:
+        run = self._require_run(run_id)
+        if run.lifecycle not in {
+            RunLifecycle.LAB_HEALTH_CHECK,
+            RunLifecycle.RUNNING,
+            RunLifecycle.COMPLETED,
+            RunLifecycle.FAILED,
+            RunLifecycle.LAB_FAILED,
+        }:
+            raise DomainValidationError(
+                f"cannot record environment health while Run is {run.lifecycle.value}"
+            )
+        severity = {
+            EnvironmentHealthStatus.HEALTHY: 0,
+            EnvironmentHealthStatus.DEGRADED: 1,
+            EnvironmentHealthStatus.UNKNOWN: 1,
+            EnvironmentHealthStatus.FAILED: 2,
+        }
+        current = run.environment_health
+        if current is None or severity[status] > severity[current]:
+            run.environment_health = status
+            self.run_repository.update(run)
+        return run
+
+    def start_run_after_health(self, run_id: str) -> Run:
+        run = self._require_run(run_id)
+        if run.lifecycle != RunLifecycle.LAB_HEALTH_CHECK:
+            raise DomainValidationError(
+                f"Run must be in LAB_HEALTH_CHECK before execution: {run.lifecycle.value}"
+            )
         run = self.transition(run_id, RunLifecycle.RUNNING)
         now = self.clock()
         run.started_at = now
@@ -288,8 +324,18 @@ class RunService:
         if attempts and attempts[0].started_at is None:
             attempts[0].started_at = now
             self.attempt_repository.update(attempts[0])
-        self._event(run_id, "RUN_STARTED", now, attempt_id=attempts[0].attempt_id if attempts else None)
+        self._event(
+            run_id,
+            "RUN_STARTED",
+            now,
+            attempt_id=attempts[0].attempt_id if attempts else None,
+        )
         return run
+
+    def start_run(self, run_id: str) -> Run:
+        """Backward-compatible start path for callers that have no health phase yet."""
+        run = self.transition(run_id, RunLifecycle.PREPARING)
+        return self.start_run_after_health(run_id)
 
     def complete_run(self, run_id: str, outcome: BusinessOutcome | None = None) -> Run:
         return self._finish(run_id, RunLifecycle.COMPLETED, outcome, "RUN_COMPLETED")

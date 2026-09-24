@@ -98,3 +98,22 @@ Next:
 
 Next:
 - Iteration 10 — LabHealthService and typed infrastructure health evidence.
+
+
+## Iteration 10 — LabHealthService + Typed Infrastructure Health Evidence ✅
+- [x] Added typed EnvironmentHealthStatus, HealthObservation and LabHealthSnapshot domain models.
+- [x] Added Run.environment_health with SQLite persistence and additive schema migration.
+- [x] Added LabHealthService with read-only checks for GNS3, Docker, libvirt, hwsim PHY placement, management SSH, AP/client/router/monitor, DHCP, DNS, iperf3, disk and clock/NTP.
+- [x] GNS3 health validates API reachability, configured project discovery and required node availability/state.
+- [x] hwsim health validates PHY visibility inside the AP/client namespaces, matching the protected topology rather than relying on host-only PHY visibility.
+- [x] FAILED required health blocks validation before tests execute and marks the Run LAB_FAILED.
+- [x] DEGRADED/UNKNOWN health is retained as Run context without silently repairing the lab.
+- [x] BEFORE and AFTER health snapshots are executed around the pytest Run.
+- [x] Every health snapshot is registered as LAB_HEALTH_SNAPSHOT evidence; unhealthy snapshots also register DIAGNOSTIC_BUNDLE evidence.
+- [x] LAB_HEALTH_STARTED and LAB_HEALTH_COMPLETED lifecycle events are emitted.
+- [x] Component/unit tests cover healthy, failed and degraded health paths plus Run persistence.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required because orchestration, SSH health checks and pytest gating changed; unavailable in this environment.
+
+Next:
+- Iteration 11 — Statistical measurement policies and aggregate evaluation.

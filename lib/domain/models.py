@@ -10,6 +10,9 @@ class DomainValidationError(ValueError):
     """Raised when a domain entity violates a business invariant."""
 
 
+from .health import EnvironmentHealthStatus
+
+
 class RunLifecycle(str, Enum):
     QUEUED = "QUEUED"
     PREPARING = "PREPARING"
@@ -278,6 +281,7 @@ class Run:
     repository_commit: str
     lifecycle: RunLifecycle = RunLifecycle.QUEUED
     outcome: BusinessOutcome | None = None
+    environment_health: EnvironmentHealthStatus | None = None
     attempts: list[Attempt] = field(default_factory=list)
     environment: EnvironmentSnapshot | None = None
     config_snapshot: ConfigSnapshot | None = None

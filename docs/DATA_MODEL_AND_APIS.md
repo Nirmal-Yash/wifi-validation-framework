@@ -35,7 +35,7 @@ Required fields:
 | firmware_version | human label |
 | firmware_artifact_id | exact firmware reference when available |
 | profile | validation profile |
-| lifecycle_status | mechanical Run state |
+| lifecycle_status | mechanical Run state |\n| environment_health | latest observed lab health rollup |
 | business_outcome | validation decision |
 | evidence_state | completeness of evidence |
 | started_at | UTC start |
@@ -155,12 +155,16 @@ Each health snapshot contains component observations.
 Component fields:
 
 - component;
-- status;
-- latency/duration where relevant;
+- status (`HEALTHY/DEGRADED/FAILED/UNKNOWN`);
+- required flag;
+- duration;
 - diagnostic summary;
+- details;
 - evidence artifact;
 - observed_at;
 - tool/version metadata.
+
+A Run records the worst observed health rollup across its BEFORE and AFTER snapshots. Health snapshots themselves remain immutable Run-scoped artifacts.
 
 ## 9. EnvironmentSnapshot
 

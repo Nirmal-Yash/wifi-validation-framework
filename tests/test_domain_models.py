@@ -10,7 +10,11 @@ from lib.domain import (
     Attempt,
     Criticality,
     DomainValidationError,
+    EnvironmentHealthStatus,
     EvidenceState,
+    HealthObservation,
+    HealthObservationStatus,
+    LabHealthSnapshot,
     Metric,
     Run,
     Sample,
@@ -132,3 +136,39 @@ def test_sample_preserves_warmup_and_retry_metadata() -> None:
     sample = Sample(value=12.5, warmup=True, retried=True, captured_at=NOW)
     assert sample.warmup is True
     assert sample.retried is True
+
+
+def test_lab_health_snapshot_preserves_typed_statuses() -> None:
+    started = datetime.now(timezone.utc)
+    observation = HealthObservation(
+        component="hwsim",
+        status=HealthObservationStatus.HEALTHY,
+        duration_ms=12,
+        summary="PHYs present",
+        observed_at=started,
+    )
+    snapshot = LabHealthSnapshot(
+        snapshot_id="health-1",
+        run_id="run-1",
+        phase="BEFORE",
+        overall_status=EnvironmentHealthStatus.HEALTHY,
+        observations=(observation,),
+        started_at=started,
+        completed_at=started,
+    )
+    assert snapshot.overall_status is EnvironmentHealthStatus.HEALTHY
+    assert snapshot.observations[0].status is HealthObservationStatus.HEALTHY
+
+
+def test_lab_health_snapshot_rejects_backwards_time() -> None:
+    started = datetime.now(timezone.utc)
+    with pytest.raises(ValueError):
+        LabHealthSnapshot(
+            snapshot_id="health-1",
+            run_id="run-1",
+            phase="BEFORE",
+            overall_status=EnvironmentHealthStatus.HEALTHY,
+            observations=(),
+            started_at=started,
+            completed_at=started.replace(year=2025),
+        )

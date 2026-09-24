@@ -16,12 +16,14 @@ import yaml
 
 from lib.connector import ConnectionPool, load_devices
 from lib.db_helper import init_db, insert_result
-from lib.domain import TestResultStatus
+from lib.domain import EnvironmentHealthStatus, RunLifecycle, TestResultStatus
 from lib.repositories import SQLiteDatabase
 from lib.services import (
     ArtifactService,
     CommandAuditRecorder,
+    LabHealthService,
     CommandSecurityPolicy,
+    LocalRunner,
     MetricCollector,
     NetmikoRunner,
     RunContext,
@@ -89,6 +91,12 @@ class MetricLogger(MetricCollector):
             val_float = None
         self._node.user_properties.append(("metric_value", val_float))
         self._node.user_properties.append(("metric_unit", str(unit)))
+
+
+@pytest.fixture(autouse=True)
+def lab_health_gate(request):
+    if getattr(request.config, "_netregress_health_blocked", False):
+        pytest.skip("Lab health failed before validation execution")
 
 
 @pytest.fixture
@@ -215,7 +223,7 @@ def pytest_collection_finish(session):
         repository_commit=os.getenv("NETREGRESS_REPOSITORY_COMMIT")
         or repository_commit(str(ROOT)),
     )
-    service.start_run(run.run_id)
+    service.begin_lab_health_check(run.run_id)
     artifact_service = ArtifactService.from_sqlite(service.run_repository.database)
     audit_recorder = CommandAuditRecorder(
         artifact_service=artifact_service,
@@ -228,6 +236,10 @@ def pytest_collection_finish(session):
         NetmikoRunner(ConnectionPool()),
         security_policy=CommandSecurityPolicy.compatibility(),
         audit_recorder=audit_recorder,
+    )
+    local_runner = SecureCommandRunner(
+        LocalRunner(),
+        security_policy=CommandSecurityPolicy.default(),
     )
     session.config._netregress_run_context = RunContext(
         run_service=service,
@@ -242,22 +254,96 @@ def pytest_collection_finish(session):
         logger=logging.getLogger("netregress"),
     )
 
+    health_service = LabHealthService(
+        run_id=run.run_id,
+        attempt_id=attempt.attempt_id,
+        local_runner=local_runner,
+        remote_runner=command_runner,
+        artifact_service=artifact_service,
+        event_repository=service.event_repository,
+        output_directory=ROOT / "results" / "lab-health",
+        resolved_config=persisted_config,
+        gns3_api=os.getenv("GNS3_API", "http://127.0.0.1:3080"),
+        gns3_project_name=os.getenv("GNS3_PROJECT_NAME", "WiFi-Regression-Lab"),
+    )
+    session.config._netregress_health_service = health_service
+    session.config._netregress_local_health_runner = local_runner
+    try:
+        pre_health = health_service.check(phase="BEFORE")
+        service.record_environment_health(run.run_id, pre_health.overall_status)
+        health_failed = pre_health.overall_status == EnvironmentHealthStatus.FAILED
+    except Exception as exc:
+        sys.stderr.write(f"\n[ERROR] Pre-run lab health evaluation failed: {exc}\n")
+        service.lab_fail_run(run.run_id)
+        health_failed = True
+    session.config._netregress_health_blocked = health_failed
+    session.config._netregress_health_blocked = (
+        pre_health.overall_status == EnvironmentHealthStatus.FAILED
+    )
+    if not session.config._netregress_health_blocked:
+        service.start_run_after_health(run.run_id)
+
 
 def pytest_sessionfinish(session, exitstatus):
     context = getattr(session.config, "_netregress_run_context", None)
     if context is None:
         return
 
+    run = context.run_service.run_repository.get(context.run_id)
+    health_error = None
     runner_error = None
+
+    if run is not None and run.lifecycle not in {
+        RunLifecycle.COMPLETED,
+        RunLifecycle.FAILED,
+        RunLifecycle.LAB_FAILED,
+        RunLifecycle.CANCELLED,
+        RunLifecycle.ABORTED,
+    }:
+        try:
+            health_service = getattr(session.config, "_netregress_health_service", None)
+            if health_service is not None:
+                post_health = health_service.check(phase="AFTER")
+                context.run_service.record_environment_health(
+                    context.run_id,
+                    post_health.overall_status,
+                )
+                if post_health.overall_status == EnvironmentHealthStatus.FAILED:
+                    context.run_service.lab_fail_run(context.run_id)
+                    health_error = "post-run lab health failed"
+        except Exception as exc:
+            health_error = str(exc)
+            context.run_service.lab_fail_run(context.run_id)
+
     close = getattr(context.command_runner, "close", None)
     if close is not None:
         try:
             close()
         except Exception as exc:
             runner_error = exc
-            sys.stderr.write(f"\n[ERROR] Command execution audit finalization failed: {exc}\n")
+            sys.stderr.write(
+                f"\n[ERROR] Command execution audit finalization failed: {exc}\n"
+            )
 
-    if runner_error is not None:
+    local_health_runner = getattr(session.config, "_netregress_local_health_runner", None)
+    local_close = getattr(local_health_runner, "close", None)
+    if local_close is not None:
+        try:
+            local_close()
+        except Exception as exc:
+            runner_error = runner_error or exc
+
+    run = context.run_service.run_repository.get(context.run_id)
+    if run is None or run.lifecycle in {
+        RunLifecycle.COMPLETED,
+        RunLifecycle.FAILED,
+        RunLifecycle.LAB_FAILED,
+        RunLifecycle.CANCELLED,
+        RunLifecycle.ABORTED,
+    }:
+        return
+
+    if runner_error is not None or health_error is not None:
         context.run_service.lab_fail_run(context.run_id)
     elif exitstatus == 0:
         context.run_service.complete_run(context.run_id)
