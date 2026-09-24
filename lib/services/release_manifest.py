@@ -38,7 +38,7 @@ class ReleaseManifestService:
             path=self.root/p
             if not path.is_file(): continue
             data=path.read_bytes();files.append({"path":p,"size_bytes":len(data),"sha256":hashlib.sha256(data).hexdigest()})
-        return {"schema_version":"netregress-release-manifest.v1","generated_at":datetime.now(timezone.utc).isoformat(),"release_track":"standalone-runner","branch":audit.branch,"commit":audit.commit,"tree":audit.tree,"working_tree_clean":audit.clean,"required_paths_present":audit.required_paths_present,"forbidden_tracked_files":list(audit.forbidden_tracked_files),"syntax_errors":list(audit.syntax_errors),"system_state_sha256":hashlib.sha256(current.read_bytes()).hexdigest() if current.is_file() else None,"roadmap_sha256":hashlib.sha256(roadmap.read_bytes()).hexdigest() if roadmap.is_file() else None,"tracked_file_count":len(files),"files":files}
+        return {"schema_version":"netregress-release-manifest.v1","generated_at":datetime.now(timezone.utc).isoformat(),"release_track":"standalone-runner","branch":audit.branch,"commit":audit.commit,"tree":audit.tree,"working_tree_clean":audit.clean,"required_paths_present":audit.required_paths_present,"forbidden_tracked_files":list(audit.forbidden_tracked_files),"syntax_errors":list(audit.syntax_errors),"release_ready":audit.release_ready,"system_state_sha256":hashlib.sha256(current.read_bytes()).hexdigest() if current.is_file() else None,"roadmap_sha256":hashlib.sha256(roadmap.read_bytes()).hexdigest() if roadmap.is_file() else None,"tracked_file_count":len(files),"files":files}
     def write_manifest(self,output:str|Path)->Path:
         destination=Path(output)
         if not destination.is_absolute(): destination=self.root/destination
