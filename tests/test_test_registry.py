@@ -5,7 +5,7 @@ def test_default_registry_maps_all_validation_nodes():
     registry = TestRegistry.default()
     definitions = registry.definitions()
 
-    assert len(definitions) == 11
+    assert len(definitions) == 18
     assert len({item.test_id for item in definitions}) == 11
     assert len({item.node_id for item in definitions}) == 11
 
@@ -57,3 +57,18 @@ def test_latency_decision_policy_uses_p95():
 
     assert definition.decision_metric == "latency"
     assert definition.measurement_policies["latency"].aggregate.value == "p95"
+
+
+def test_recovery_definitions_are_destructive_and_have_fault_metrics():
+    registry = TestRegistry.default()
+
+    recovery = [
+        definition
+        for definition in registry.definitions()
+        if definition.category == "Recovery"
+    ]
+
+    assert len(recovery) == 8
+    assert all(definition.destructive for definition in recovery)
+    assert all("fault_observed" in definition.metric_definitions for definition in recovery)
+    assert all("recovery_time" in definition.metric_definitions for definition in recovery)

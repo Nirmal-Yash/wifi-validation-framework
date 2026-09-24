@@ -40,12 +40,19 @@ DEFAULT_ALLOWED_EXECUTABLES = frozenset(
 
 DEFAULT_DESTRUCTIVE_PREFIXES = (
     ("dhclient",),
+    ("dnsmasq",),
+    ("hostapd",),
     ("ip", "link", "set"),
     ("iptables",),
     ("pkill",),
     ("systemctl", "start"),
     ("systemctl", "stop"),
     ("tc", "qdisc"),
+    ("wpa_cli", "disable_network"),
+    ("wpa_cli", "disconnect"),
+    ("wpa_cli", "set_network"),
+    ("wpa_cli", "terminate"),
+    ("wpa_supplicant",),
 )
 
 

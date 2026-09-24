@@ -21,6 +21,7 @@ from lib.repositories import SQLiteDatabase
 from lib.services import (
     ArtifactService,
     CommandAuditRecorder,
+    FaultService,
     LabHealthService,
     CommandSecurityPolicy,
     LocalRunner,
@@ -251,6 +252,7 @@ def pytest_collection_finish(session):
         LocalRunner(),
         security_policy=CommandSecurityPolicy.default(),
     )
+    fault_service = FaultService(command_runner)
     session.config._netregress_run_context = RunContext(
         run_service=service,
         run_id=run.run_id,
@@ -261,6 +263,7 @@ def pytest_collection_finish(session):
         test_registry=registry,
         artifact_service=artifact_service,
         command_runner=command_runner,
+        fault_service=fault_service,
         logger=logging.getLogger("netregress"),
     )
 
@@ -366,3 +369,10 @@ def pytest_sessionfinish(session, exitstatus):
 @pytest.fixture(scope="session")
 def run_context(request):
     return getattr(request.config, "_netregress_run_context", None)
+
+
+@pytest.fixture
+def fault_service(run_context):
+    assert run_context is not None
+    assert run_context.fault_service is not None
+    return run_context.fault_service

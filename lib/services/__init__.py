@@ -16,6 +16,7 @@ from .run_context import RunContext
 from .legacy_migration import LegacyDatabaseMigrationService
 from .artifact_service import ArtifactService
 from .metric_collector import MetricCollector
+from .fault_service import FaultDefinition, FaultService
 from .statistics import (
     InsufficientSamplesError,
     MeasurementEvaluationError,
@@ -57,6 +58,8 @@ __all__ = [
     "LegacyDatabaseMigrationService",
     "ArtifactService",
     "MetricCollector",
+    "FaultDefinition",
+    "FaultService",
     "RunService",
     "configuration_hash",
     "generate_ulid",

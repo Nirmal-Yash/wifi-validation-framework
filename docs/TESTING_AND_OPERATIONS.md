@@ -345,3 +345,22 @@ new behavior correctly evidenced
 +
 no weakened assertion
 ~~~
+
+
+## 22. Iteration 12 recovery validation
+
+The expanded functional suite contains explicit disruption/recovery cases for:
+
+- WPA2 wrong-PSK rejection and recovery;
+- WiFi disconnect/reconnect;
+- DHCP renewal;
+- DHCP service interruption and lease recovery;
+- DNS failure/recovery;
+- AP hostapd restart/recovery;
+- client wpa_supplicant restart/recovery.
+
+Each destructive case preserves the management path and must prove both the fault and the restored data/control path. Fault application and restoration are audited through CommandRunner, and FaultService restores state in a finalization boundary.
+
+The original 11 validation tests remain the protected behavioral subset. Because Iteration 12 adds real network-mutating tests, both the protected subset and the expanded recovery suite require execution on the GNS3/mac80211_hwsim lab before this iteration can be considered runtime-verified.
+
+Protocol-accurate DHCP T2 rebind is not inferred from a generic lease reacquisition. That assertion is reserved for the later transaction-aware DHCP evidence phase.

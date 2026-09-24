@@ -222,6 +222,22 @@ TestResult, its metrics and artifact references should be committed atomically.
 
 Physical artifacts are created and verified first. Orphan reconciliation handles files whose database registration failed.
 
+## 19A. FaultService
+
+`FaultService` is the controlled fault-injection boundary used by recovery tests. A `FaultDefinition` declares a stable fault ID, target, apply commands, restore commands and description. Apply/restore commands execute only through the Run's secured `CommandRunner`, so command authorization and audit evidence remain centralized.
+
+The fault context always executes restoration, including when the fault application or validation body raises. Recovery tests therefore follow:
+
+~~~text
+baseline
+→ apply fault
+→ verify disruption
+→ restore
+→ verify recovery
+~~~
+
+The service does not decide whether disruption or recovery constitutes a product outcome; the test assertion and Run orchestration retain that responsibility.
+
 ## 20. Lifecycle events
 
 Persist significant events such as RUN_CREATED, RUN_STARTED, LAB_HEALTH_STARTED, LAB_HEALTH_COMPLETED, TEST_STARTED, TEST_COMPLETED, ARTIFACT_CREATED, BASELINE_PROMOTED, RUN_COMPLETED and RUN_CANCELLED.

@@ -133,3 +133,24 @@ Next:
 
 Next:
 - Iteration 12 — Functional WiFi expansion and negative/recovery cases.
+
+
+## Iteration 12 — Functional WiFi Negative + Recovery Validation ✅
+- [x] Added typed `FaultDefinition`/`FaultService` over the secured `CommandRunner`.
+- [x] Fault contexts restore unconditionally, including when fault application or validation raises.
+- [x] Added real wrong-PSK rejection and recovery validation.
+- [x] Added explicit WiFi disconnect/reconnect recovery validation.
+- [x] Added DHCP lease renewal validation.
+- [x] Added DHCP service-loss and lease recovery validation using the real FRR/dnsmasq service.
+- [x] Added DNS failure/recovery validation using a real client firewall fault.
+- [x] Added AP hostapd restart recovery validation.
+- [x] Added client wpa_supplicant restart recovery validation while management remains on eth1.
+- [x] Registered all new recovery cases with semantic TestRegistry metadata and destructive classification.
+- [x] Added recovery marker and FaultService unit coverage.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Protected original 11-test real-lab subset: unavailable in this environment.
+- [ ] Full expanded recovery suite real-lab execution: unavailable in this environment.
+- [ ] Protocol-accurate DHCP T2 rebind evidence: deferred to the transaction-aware protocol-evidence phase.
+
+Next:
+- Iteration 13 — Protocol-aware evidence and transaction correlation.

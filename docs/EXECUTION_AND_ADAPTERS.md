@@ -312,7 +312,7 @@ Results are normalized into Metric/Sample objects.
 
 ## 22. Fault injection
 
-FaultService uses CommandRunner and explicit fault definitions.
+FaultService is implemented as the controlled execution boundary for functional recovery tests.
 
 Each fault declares:
 
@@ -337,7 +337,7 @@ prepare
 
 ## 23. Cleanup guarantee
 
-Run Orchestrator owns the final cleanup boundary.
+Run Orchestrator owns the final cleanup boundary. FaultService also provides an unconditional context restoration boundary so partial fault application cannot leave the shared lab mutated.
 
 try/finally behavior must ensure restoration of:
 
