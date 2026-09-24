@@ -79,8 +79,11 @@ __all__ = [
     "WifiTelemetryService",
     "RegressionIntelligenceError",
     "RegressionIntelligenceService",
+    "FirmwareOperationService",
 ]
 
 from .wifi_telemetry import TelemetryCollectionError, WifiTelemetryService
 
 from .regression_intelligence import RegressionIntelligenceError, RegressionIntelligenceService
+
+from .firmware_service import FirmwareOperationService

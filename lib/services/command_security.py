@@ -34,7 +34,7 @@ DEFAULT_ALLOWED_EXECUTABLES = frozenset(
         "grep", "hostname", "id", "iperf3", "ip", "iptables", "iw", "nslookup",
         "pgrep", "ping", "pkill", "printf", "sed", "sha256sum", "stat", "sudo",
         "systemctl", "tc", "test", "timedatectl", "true",
-        "uname", "whoami", "wpa_cli",
+        "uname", "ubus", "whoami", "wpa_cli",
     }
 )
 

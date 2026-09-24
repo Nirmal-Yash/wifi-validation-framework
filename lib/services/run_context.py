@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from .command_runner import CommandRunner
 from .fault_service import FaultService
+from lib.adapters import DeviceAdapter, FirmwareAdapter
 from .protocol_evidence import ProtocolEvidenceService
 from .wifi_telemetry import WifiTelemetryService
 
@@ -28,6 +29,8 @@ class RunContext:
     fault_service: FaultService | None = None
     protocol_evidence_service: ProtocolEvidenceService | None = None
     telemetry_service: WifiTelemetryService | None = None
+    device_adapter: DeviceAdapter | None = None
+    firmware_adapter: FirmwareAdapter | None = None
     logger: logging.Logger | None = None
 
     def __post_init__(self) -> None:

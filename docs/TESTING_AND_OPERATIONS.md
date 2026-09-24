@@ -427,3 +427,10 @@ Targeted verification must cover:
 - artifact SHA-256 verification before JSON interpretation;
 - artifact download containment under results/;
 - legacy /api/* compatibility routes.
+
+
+## 27. Iteration 17 adapter validation
+
+Adapter tests cover capability declarations, Linux/OpenWrt profile behavior, version parsing, image hash/model validation, explicit authorization, nominal lifecycle, flash failure, reboot failure without implicit rollback and explicit rollback.
+
+Operational acceptance still requires real-hardware flash/reboot/rollback tests against the supported device family before production firmware control is enabled. Those physical operations were not executed in this environment.

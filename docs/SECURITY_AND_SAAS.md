@@ -201,3 +201,19 @@ Before Cloud exposure:
 ## 25. Explicitly deferred security
 
 Do not implement speculatively: enterprise SAML, HSMs, service mesh, database row-level isolation, multi-region infrastructure or advanced SIEM integration.
+
+
+## 12A. Phase 9 firmware controls implemented
+
+The Runner now enforces firmware-specific technical controls below the future Project/RBAC authority boundary:
+- image SHA-256 verification before upload;
+- optional detached signature verification;
+- device-model compatibility checks;
+- remote SHA-256 verification after upload;
+- explicit authorization scope for every mutating firmware stage;
+- firmware-specific destructive-command allowlisting;
+- no automatic flash retry;
+- no automatic rollback;
+- lifecycle audit events for firmware stages.
+
+Cloud/operator authorization remains the higher-level business authority and is not replaced by adapter-side checks.

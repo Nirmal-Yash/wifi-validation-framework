@@ -221,3 +221,22 @@ Next:
 
 Next:
 - Iteration 17 — Device/Firmware Adapter production seam.
+
+
+## Iteration 17 — Device/Firmware Adapter Production Seam ✅
+- [x] Added typed DeviceAdapter/FirmwareAdapter contracts.
+- [x] Added VirtualLinux and OpenWrt SSH adapter implementations.
+- [x] Added machine-readable device capabilities.
+- [x] Added FirmwareImage SHA-256 and optional detached-signature validation.
+- [x] Added SFTP upload plus remote integrity verification.
+- [x] Added explicit authorization for firmware mutation stages.
+- [x] Added staged firmware lifecycle orchestration and Run audit events.
+- [x] Added explicit rollback as a separate operation; no automatic retry/rollback.
+- [x] Added deterministic fake adapters and failure-path tests.
+- [x] Wired adapters into RunContext without changing protected validation traffic.
+- [x] Migrated `regression/fw_simulator.py` to the fake adapter boundary.
+- [ ] Real hardware flash/reboot/rollback execution: unavailable in this environment.
+- [ ] Protected 11-test real-lab gate: unavailable in this environment.
+
+Next:
+- Iteration 18 — Internal CI release gate.

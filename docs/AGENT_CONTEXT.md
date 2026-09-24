@@ -219,3 +219,12 @@ Derived telemetry and health JSON is interpreted only after path containment and
 Legacy /api/* endpoints remain compatibility wrappers. The new /api/v1 surface is the canonical dashboard contract.
 
 Runtime verification remains pending in this environment; no pytest or real GNS3/mac80211_hwsim gate was executed.
+
+
+## 25. Iteration 17 status
+
+Device/Firmware adapters are implemented under `lib/adapters`. The current GNS3/Linux class uses a `VirtualLinuxDeviceAdapter`; OpenWrt has an explicit firmware-capable profile. Firmware images are validated, uploaded through SFTP, remotely hash-verified, flashed through a target-specific secured runner, rebooted explicitly, readiness-polled and version-verified. Rollback is a separate explicit operation.
+
+RunContext now carries optional DeviceAdapter and FirmwareAdapter instances. The pytest session constructs these adapters without performing firmware mutation.
+
+No real hardware firmware flash, reboot or rollback was executed in this environment.

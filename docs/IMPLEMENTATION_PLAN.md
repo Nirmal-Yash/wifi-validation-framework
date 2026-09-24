@@ -691,3 +691,22 @@ Canonical versioned endpoints now cover:
 Jinja pages consume these same contracts. Legacy /api routes and the existing firmware pass-rate/chart/export views remain compatibility views.
 
 Artifact JSON is never trusted solely because its database record exists: the registered path must remain under the results root and its SHA-256 must still match before interpretation.
+
+
+## 20A. Iteration 17 implementation
+
+Iteration 17 makes Phase 9 executable through typed adapters rather than documentation-only interfaces.
+
+Implemented:
+- DeviceAdapter with profile-driven SSH execution.
+- VirtualLinuxDeviceAdapter for the current GNS3/Linux device class.
+- OpenWrtDeviceAdapter with OpenWrt-specific version and sysupgrade defaults.
+- machine-readable capability declarations controlling firmware applicability.
+- FirmwareImage SHA-256 validation and optional detached-signature verification.
+- SFTP upload and remote SHA-256 verification.
+- explicit authorization for upload, prepare, flash, reboot and rollback.
+- staged FirmwareOperationService lifecycle with Run audit events.
+- explicit rollback only; no automatic retry or rollback after uncertain state.
+- deterministic fake Device/Firmware adapters for hardware-free lifecycle testing.
+
+Real firmware mutation is not invoked by the current WiFi pytest suite.

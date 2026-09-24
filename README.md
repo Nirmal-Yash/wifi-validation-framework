@@ -126,3 +126,7 @@ Phase 11: PostgreSQL after real concurrent Cloud workload.
 ## License
 
 MIT — current repository remains suitable for academic and personal development while the production architecture is built incrementally.
+
+## Iteration 17
+
+Device and firmware control is now adapter-backed. The Runner supports profile-driven Linux/OpenWrt device access, SHA-256 firmware validation, optional signature verification, SFTP transfer, explicit firmware authorization, staged lifecycle auditing and deterministic fake adapters.

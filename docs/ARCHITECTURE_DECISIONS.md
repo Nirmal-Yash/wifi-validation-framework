@@ -374,3 +374,13 @@ If you want the next artifact to be the actual `Run`/`TestResult`/`Artifact` SQL
 Iteration 14 standardizes the telemetry contract around immutable typed points rather than UI-specific fields. The initial Runner implementation collects RSSI, SNR, channel, frequency, bitrate, PHY mode and available transmit retry/failure counters from read-only `wpa_cli`/`iw` observations.
 
 Every point is labeled `VIRTUAL_WIFI` or `PHYSICAL_WIFI`. The Runner does not emit RF-certification telemetry, and virtual hwsim observations are never promoted to physical RF claims.
+
+
+## 20A. Iteration 17 implementation decisions
+
+1. SSH/SFTP is the first physical transport because it requires no new infrastructure and matches the existing runner boundary.
+2. Linux/GNS3 remains a non-firmware reference device class; OpenWrt is the first concrete firmware-capable specialization.
+3. Firmware SHA-256 validation is mandatory when an expected digest is provided. A supplied detached signature must verify.
+4. Firmware mutation requires explicit scoped authorization. Uncertain flash state is never automatically retried or rolled back.
+5. The fake adapter is the reference hardware-free implementation and covers both success and failure semantics.
+6. Multi-device/SKU orchestration remains deferred; one image targets one device in this phase.

@@ -79,3 +79,14 @@ When future documents disagree:
 Only decisions explicitly marked deferred in the Architecture Decision Record remain intentionally open, primarily exact Cloud retention terms, final Cloud provider and final object-storage provider.
 
 All other discovery questions have an implementation decision.
+
+## Iteration 17 traceability
+
+| Requirement | Implementation | Verification |
+|---|---|---|
+| DeviceAdapter boundary | `lib/adapters/device.py` | adapter contract tests |
+| FirmwareAdapter lifecycle | `lib/adapters/firmware.py`, `lib/services/firmware_service.py` | fake lifecycle tests |
+| Image integrity | SHA-256 validation + remote hash check | hash mismatch test |
+| Explicit authorization | `FirmwareAuthorization` | authorization rejection test |
+| Fake adapter | `lib/adapters/fake.py` | nominal/failure lifecycle tests |
+| Run integration | `RunContext.device_adapter`, `RunContext.firmware_adapter` | session wiring audit |

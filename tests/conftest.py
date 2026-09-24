@@ -15,6 +15,7 @@ import pytest
 import yaml
 
 from lib.connector import ConnectionPool, load_devices
+from lib.adapters import DeviceProfile, OpenWrtDeviceAdapter, SSHFirmwareAdapter, VirtualLinuxDeviceAdapter
 from lib.db_helper import init_db, insert_result
 from lib.domain import (
     EnvironmentHealthStatus,
@@ -264,6 +265,18 @@ def pytest_collection_finish(session):
     telemetry_environment = TelemetryEnvironmentClass(
         os.getenv("NETREGRESS_WIFI_ENVIRONMENT_CLASS", "VIRTUAL_WIFI").upper()
     )
+    device_id = os.getenv("NETREGRESS_DEVICE_ID", "client_vm")
+    configured_devices = load_devices()
+    if device_id not in configured_devices:
+        raise RuntimeError(f"Configured device is missing from devices.yaml: {device_id}")
+    device_profile = DeviceProfile.from_mapping(device_id, configured_devices[device_id])
+    device_adapter = (
+        OpenWrtDeviceAdapter.from_profile(device_profile, command_runner)
+        if device_profile.device_type.lower() == "openwrt"
+        else VirtualLinuxDeviceAdapter.from_profile(device_profile, command_runner)
+    )
+    firmware_adapter = SSHFirmwareAdapter(device_adapter)
+
     telemetry_service = WifiTelemetryService(
         command_runner=command_runner,
         target=os.getenv("NETREGRESS_DEVICE_ID", "client_vm"),
@@ -283,6 +296,8 @@ def pytest_collection_finish(session):
         fault_service=fault_service,
         protocol_evidence_service=protocol_evidence_service,
         telemetry_service=telemetry_service,
+        device_adapter=device_adapter,
+        firmware_adapter=firmware_adapter,
         logger=logging.getLogger("netregress"),
     )
 
@@ -395,6 +410,20 @@ def fault_service(run_context):
     assert run_context is not None
     assert run_context.fault_service is not None
     return run_context.fault_service
+
+
+@pytest.fixture
+def device_adapter(run_context):
+    assert run_context is not None
+    assert run_context.device_adapter is not None
+    return run_context.device_adapter
+
+
+@pytest.fixture
+def firmware_adapter(run_context):
+    assert run_context is not None
+    assert run_context.firmware_adapter is not None
+    return run_context.firmware_adapter
 
 
 @pytest.fixture

@@ -397,3 +397,18 @@ Adapters decide how a particular device performs the operation.
 CommandRunner decides how a command is safely executed.
 
 Run Orchestrator decides what the observed result means for the Run.
+
+
+## 28. Iteration 17 adapter implementation
+
+`lib/adapters` is now the canonical device-control boundary.
+
+`DeviceProfile` contains device identity, SSH material, capabilities and command mappings. `SSHDeviceAdapter` owns the transport-independent device behavior. `VirtualLinuxDeviceAdapter` represents the current GNS3/Linux class. `OpenWrtDeviceAdapter` provides firmware-capable defaults for OpenWrt.
+
+`SSHFirmwareAdapter` performs identify → validate image → upload → remote hash verify → prepare → flash → reboot → wait ready → verify version. SHA-256 is mandatory when an expected hash is supplied; detached signatures are verified when a signature is supplied.
+
+Firmware mutations require `FirmwareAuthorization` with actor, reason, operation scope and an explicit authorization flag. The adapter uses a dedicated firmware command-security policy for `sysupgrade` and `reboot`; the general validation command policy is not widened.
+
+`FirmwareOperationService` owns stage sequencing and Run audit events. Flash is never automatically retried after uncertain state. Rollback is a separate explicitly authorized operation.
+
+`FakeDeviceAdapter` and `FakeFirmwareAdapter` are deterministic reference adapters for nominal, incompatible-image, flash-failure, reboot-failure and rollback scenarios.

@@ -367,3 +367,16 @@ DashboardQueryService is the read-only presentation boundary between persisted r
 It resolves the latest Attempt for Run detail, serializes TestResult/Metric/Sample/Artifact state, and provides derived telemetry/health views only after artifact path containment and SHA-256 verification.
 
 The legacy dashboard remains available; /api/v1 is the canonical contract for new consumers.
+
+
+## 28. Device/Firmware adapter implementation
+
+`lib/adapters` is the Phase 9 execution seam. Device-specific behavior stays out of pytest tests.
+
+`DeviceCapabilities` is machine-readable and includes firmware, reboot, WiFi and transport capabilities. Unsupported firmware operations are rejected by capability rather than by an accidental command failure.
+
+`FirmwareImage` is immutable image metadata. `SSHFirmwareAdapter` verifies image integrity before upload and remote SHA-256 after upload. Optional detached GPG signatures are fatal when supplied but unverifiable.
+
+`FirmwareOperationService` translates adapter stages into immutable lifecycle events. It never assigns Run business outcomes and never performs implicit rollback.
+
+RunContext now exposes optional `device_adapter` and `firmware_adapter` instances. The current pytest session constructs them without performing firmware mutation.
