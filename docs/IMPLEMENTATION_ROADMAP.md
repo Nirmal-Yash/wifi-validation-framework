@@ -79,3 +79,22 @@ Next:
 
 Next:
 - Iteration 9 — Execution security and command authorization/redaction hardening.
+
+
+## Iteration 9 — Execution Security + Command Authorization/Redaction ✅
+- [x] Central CommandSecurityPolicy with per-target executable and destructive-operation allow lists.
+- [x] Strict structured execution rejects shell operators and command substitution by default.
+- [x] Explicit compatibility shell execution supports only the existing limited validation grammar (semicolon, double-pipe, /dev/null redirection).
+- [x] Destructive lab operations require explicit policy authorization and remain limited to documented prefixes: dhclient, ip link set, iptables, pkill, systemctl start/stop and tc qdisc.
+- [x] Privilege normalization centralizes sudo handling and uses non-interactive sudo -n.
+- [x] Command and output redaction covers passwords, PSKs, tokens, authorization headers and sensitive query values.
+- [x] SecureCommandRunner wraps all standard pytest remote-command compatibility calls without changing existing test node IDs or CLI behavior.
+- [x] COMMAND_EXECUTED lifecycle audit events include command IDs, safe commands, transport, privilege and outcome metadata without raw secrets.
+- [x] Run-scoped COMMAND_OUTPUT evidence is registered through ArtifactService at session close.
+- [x] Local command compatibility and protected DHCP raw Paramiko capture boundaries remain explicit.
+- [x] Security-focused unit tests added for injection resistance, destructive allow-list enforcement, privilege normalization, redaction and audit evidence.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required because execution security and pytest command routing changed; unavailable in this environment.
+
+Next:
+- Iteration 10 — LabHealthService and typed infrastructure health evidence.

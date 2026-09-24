@@ -20,10 +20,14 @@ from lib.domain import TestResultStatus
 from lib.repositories import SQLiteDatabase
 from lib.services import (
     ArtifactService,
-    NetmikoRunner,
+    CommandAuditRecorder,
+    CommandSecurityPolicy,
     MetricCollector,
+    NetmikoRunner,
     RunContext,
+    SecureCommandRunner,
     RunService,
+    legacy_pool_adapter,
     TestRegistry,
     repository_commit,
     redact_configuration,
@@ -61,10 +65,11 @@ def devices():
 @pytest.fixture(scope="session")
 def connection_pool(request):
     context = getattr(request.config, "_netregress_run_context", None)
-    if context is not None and isinstance(context.command_runner, NetmikoRunner):
-        pool = context.command_runner.pool
-    else:
-        pool = ConnectionPool()
+    if context is not None and isinstance(context.command_runner, SecureCommandRunner):
+        yield legacy_pool_adapter(context.command_runner)
+        return
+
+    pool = ConnectionPool()
     yield pool
     pool.close_all()
 
@@ -211,6 +216,19 @@ def pytest_collection_finish(session):
         or repository_commit(str(ROOT)),
     )
     service.start_run(run.run_id)
+    artifact_service = ArtifactService.from_sqlite(service.run_repository.database)
+    audit_recorder = CommandAuditRecorder(
+        artifact_service=artifact_service,
+        event_repository=service.event_repository,
+        run_id=run.run_id,
+        attempt_id=attempt.attempt_id,
+        directory=ROOT / "results" / "command_logs",
+    )
+    command_runner = SecureCommandRunner(
+        NetmikoRunner(ConnectionPool()),
+        security_policy=CommandSecurityPolicy.compatibility(),
+        audit_recorder=audit_recorder,
+    )
     session.config._netregress_run_context = RunContext(
         run_service=service,
         run_id=run.run_id,
@@ -219,8 +237,8 @@ def pytest_collection_finish(session):
         device_id=os.getenv("NETREGRESS_DEVICE_ID", "client_vm"),
         resolved_config=persisted_config,
         test_registry=registry,
-        artifact_service=ArtifactService.from_sqlite(service.run_repository.database),
-        command_runner=NetmikoRunner(ConnectionPool()),
+        artifact_service=artifact_service,
+        command_runner=command_runner,
         logger=logging.getLogger("netregress"),
     )
 
@@ -230,17 +248,23 @@ def pytest_sessionfinish(session, exitstatus):
     if context is None:
         return
 
-    if exitstatus == 0:
+    runner_error = None
+    close = getattr(context.command_runner, "close", None)
+    if close is not None:
+        try:
+            close()
+        except Exception as exc:
+            runner_error = exc
+            sys.stderr.write(f"\n[ERROR] Command execution audit finalization failed: {exc}\n")
+
+    if runner_error is not None:
+        context.run_service.lab_fail_run(context.run_id)
+    elif exitstatus == 0:
         context.run_service.complete_run(context.run_id)
     elif exitstatus == 2:
         context.run_service.abort_run(context.run_id)
     else:
         context.run_service.fail_run(context.run_id)
-
-    runner = context.command_runner
-    close = getattr(runner, "close", None)
-    if close is not None:
-        close()
 
 
 @pytest.fixture(scope="session")

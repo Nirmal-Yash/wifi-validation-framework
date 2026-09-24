@@ -1,3 +1,14 @@
+from .command_security import (
+    CommandAuditError,
+    CommandAuditRecorder,
+    CommandSecurityError,
+    CommandSecurityPolicy,
+    LegacyConnectionPoolAdapter,
+    SecureCommandRunner,
+    legacy_pool_adapter,
+    redact_command,
+    redact_output,
+)
 from .command_runner import CommandResult, CommandRunner, LocalRunner, NetmikoRunner, ParamikoExecRunner, SSHConnectionSpec, redact_command
 from .test_registry import TestDefinition, TestRegistry
 from .run_context import RunContext
@@ -20,6 +31,15 @@ __all__ = [
     "ParamikoExecRunner",
     "SSHConnectionSpec",
     "redact_command",
+    "CommandAuditError",
+    "CommandAuditRecorder",
+    "CommandSecurityError",
+    "CommandSecurityPolicy",
+    "LegacyConnectionPoolAdapter",
+    "SecureCommandRunner",
+    "legacy_pool_adapter",
+    "redact_command",
+    "redact_output",
     "RunContext",
     "TestDefinition",
     "TestRegistry",

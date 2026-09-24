@@ -254,7 +254,12 @@ Command execution itself adds no automatic retry policy. Existing Netmiko connec
 
 The dedicated raw Paramiko foreground channel used for AP `br0` DHCP tcpdump is intentionally not replaced by `ParamikoExecRunner`, because that capture requires long-lived channel control and a specific stop/download lifecycle.
 
-## 17. Retry semantics
+## 17. Command security boundary
+
+SecureCommandRunner decorates the transport runner with authorization, shell-safety, privilege normalization, redaction and command auditing. The strict policy defaults to structured argv-safe execution. A compatibility policy exists only for the current validation suite and is limited to the documented shell grammar and destructive operation prefixes. It is not a general-purpose shell interface.
+
+Every standard pytest command is routed through this decorated runner. The raw AP br0 DHCP tcpdump Paramiko channel remains intentionally outside the decorator because it controls a long-lived foreground capture session.
+## 18. Retry semantics
 
 Connection establishment may retry.
 
@@ -264,7 +269,7 @@ Mutating operations are not blindly retried.
 
 Firmware flash must never be automatically retried after uncertain state.
 
-## 18. Device locking
+## 19. Device locking
 
 Exclusive operations require DEVICE_EXCLUSIVE ownership.
 
@@ -277,7 +282,7 @@ Examples:
 
 Compatible read-only/network operations may use NETWORK_CONCURRENT when safe.
 
-## 19. Capture integration
+## 20. Capture integration
 
 CaptureService is available through RunContext.
 
@@ -291,7 +296,7 @@ Transport selection is handled by the capture layer.
 
 The current AP br0 Paramiko path remains a transport implementation rather than a test-specific architectural rule.
 
-## 20. Traffic integration
+## 21. Traffic integration
 
 TrafficService should eventually provide:
 
@@ -305,7 +310,7 @@ TrafficService should eventually provide:
 
 Results are normalized into Metric/Sample objects.
 
-## 21. Fault injection
+## 22. Fault injection
 
 FaultService uses CommandRunner and explicit fault definitions.
 
@@ -330,7 +335,7 @@ prepare
 → verify recovery
 ~~~
 
-## 22. Cleanup guarantee
+## 23. Cleanup guarantee
 
 Run Orchestrator owns the final cleanup boundary.
 
@@ -344,7 +349,7 @@ try/finally behavior must ensure restoration of:
 - temporary files;
 - device sessions.
 
-## 23. Physical versus virtual adapters
+## 24. Physical versus virtual adapters
 
 Both virtual and physical adapters use the same service contracts.
 
@@ -352,7 +357,7 @@ Every telemetry point identifies its environment class.
 
 Virtual hwsim does not satisfy physical RF-certification claims.
 
-## 24. Future vendor adapter pattern
+## 25. Future vendor adapter pattern
 
 Vendor adapter should contain:
 
@@ -366,7 +371,7 @@ Vendor adapter should contain:
 
 The validation test itself should remain unchanged.
 
-## 25. Acceptance tests for adapters
+## 26. Acceptance tests for adapters
 
 Every adapter requires:
 
@@ -381,7 +386,7 @@ Every adapter requires:
 9. timeout/disconnect behavior;
 10. artifact/evidence verification.
 
-## 26. Design invariant
+## 27. Design invariant
 
 Tests state what must be validated.
 

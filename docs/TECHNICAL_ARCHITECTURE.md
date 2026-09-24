@@ -145,7 +145,12 @@ CommandResult contains command ID, host, safe display command, exit code, stdout
 
 `CommandRunner` is the single structured execution seam for local and device commands. `NetmikoRunner` wraps the existing `ConnectionPool` without changing its connection/retry behavior; `ParamikoExecRunner` provides non-interactive SSH execution with explicit timeout metadata; `LocalRunner` executes without a shell unless `execute_shell()` is explicitly requested. Every execution returns a `CommandResult` carrying a command ID, target, safe display command, output, exit status when available, duration, timeout metadata, privilege/idempotency context and transport errors. The raw foreground Paramiko channel used by DHCP tcpdump remains outside this abstraction so its lifecycle behavior is preserved.
 
-## 13. CaptureService
+## 13. Command security and evidence
+
+SecureCommandRunner decorates each transport with CommandSecurityPolicy enforcement. Structured execution is the default and rejects shell operators; shell execution is explicit and allow-listed. Destructive operations are authorized only by documented per-target policy prefixes. Privilege handling is normalized to non-interactive sudo -n. Command and output content is redacted before results, lifecycle events or artifacts are persisted. Each executed command produces a COMMAND_EXECUTED event and, for Run-scoped runners, contributes to a COMMAND_OUTPUT evidence artifact.
+
+The existing pytest connection_pool fixture is now a compatibility facade over SecureCommandRunner, so legacy test code receives the same security controls without changing node IDs. The AP DHCP capture test retains its raw Paramiko foreground-channel escape hatch because its long-lived tcpdump lifecycle is a protected behavioral requirement.
+## 14. CaptureService
 
 Capture lifecycle:
 
@@ -162,7 +167,7 @@ start
 
 The current AP br0 DHCP capture remains the behavioral reference.
 
-## 14. LabController
+## 15. LabController
 
 LabController gradually absorbs reusable provisioning logic:
 
@@ -176,33 +181,33 @@ LabController gradually absorbs reusable provisioning logic:
 - AP readiness;
 - controlled recovery.
 
-## 15. LabHealthService
+## 16. LabHealthService
 
 LabHealthService diagnoses environment health and captures evidence. It does not silently repair a failing lab.
 
 Health coverage includes GNS3, Docker, libvirt, hwsim, AP, client, router, management, DHCP, DNS, iperf3, SSH, disk and clock synchronization.
 
-## 16. Environment fingerprint
+## 17. Environment fingerprint
 
 Capture host OS/kernel, Python, tool versions, GNS3, Docker, hostapd, wpa_supplicant, FRR, hwsim state, repository commit and effective configuration hash.
 
-## 17. Persistence
+## 18. Persistence
 
 Services depend on repositories.
 
 Phase 1 repositories use SQLite. Later they use SQLAlchemy/PostgreSQL without changing the service contracts.
 
-## 18. Transaction boundaries
+## 19. Transaction boundaries
 
 TestResult, its metrics and artifact references should be committed atomically.
 
 Physical artifacts are created and verified first. Orphan reconciliation handles files whose database registration failed.
 
-## 19. Lifecycle events
+## 20. Lifecycle events
 
 Persist significant events such as RUN_CREATED, RUN_STARTED, LAB_HEALTH_STARTED, LAB_HEALTH_COMPLETED, TEST_STARTED, TEST_COMPLETED, ARTIFACT_CREATED, BASELINE_PROMOTED, RUN_COMPLETED and RUN_CANCELLED.
 
-## 20. Error taxonomy
+## 21. Error taxonomy
 
 ~~~text
 FrameworkError
@@ -217,7 +222,7 @@ FrameworkError
 
 Adapters raise technical exceptions. Run Orchestrator translates them into Run/Test business semantics.
 
-## 21. Lifecycle translation
+## 22. Lifecycle translation
 
 ~~~text
 SSH timeout
@@ -233,7 +238,7 @@ test assertion failure
 → Run REJECTED
 ~~~
 
-## 22. Concurrency
+## 23. Concurrency
 
 One physical lab may own only one active Run.
 
@@ -242,25 +247,25 @@ Device locks use two conceptual classes:
 - DEVICE_EXCLUSIVE for flash, reboot and configuration mutation;
 - NETWORK_CONCURRENT for compatible read, capture and measurement work.
 
-## 23. Timeout model
+## 24. Timeout model
 
 Commands and jobs may define connection timeout, execution timeout, idle timeout and total timeout.
 
 Timeout reason is persisted.
 
-## 24. Retry model
+## 25. Retry model
 
 Retry only when the operation is explicitly idempotent and the retry cannot hide state mutation.
 
 Never blindly retry firmware flashing, tc mutation, interface state mutation, DHCP mutation or arbitrary shell commands.
 
-## 25. Offline Runner
+## 26. Offline Runner
 
 Runner stores raw execution state locally if Cloud is unavailable and synchronizes later.
 
 Cloud disconnection must not alter a technical outcome already observed locally.
 
-## 26. SaaS boundary
+## 27. SaaS boundary
 
 This repository remains the Runner/Core validation engine.
 

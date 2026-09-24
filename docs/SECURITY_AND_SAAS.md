@@ -136,13 +136,16 @@ All remote commands use CommandRunner.
 
 Controls include structured arguments, explicit shell mode, destructive-command allow lists, timeout classes, centralized privilege handling, output redaction, command IDs, audit correlation and declared idempotency.
 
-## 15. SaaS execution
+## 15. Phase 1S command controls implemented in the Runner
+
+The Runner now enforces a shared CommandSecurityPolicy before transport execution. The default path is structured execution with shell syntax rejected. The temporary compatibility policy used by the existing pytest suite permits only documented read/diagnostic commands plus explicitly allow-listed lab mutations. Privilege normalization uses non-interactive sudo -n, command and output secrets are scrubbed, and each Run emits COMMAND_EXECUTED audit events plus a sensitive COMMAND_OUTPUT artifact. This is a Runner-side technical control; future Cloud role/project authorization remains the higher-level business authorization boundary.
+## 16. SaaS execution
 
 Initial Cloud architecture is a modular Flask application with Celery workers, Redis and relational persistence.
 
 Kubernetes and microservices are deferred until measured scale requires them.
 
-## 16. Multi-tenant execution
+## 17. Multi-tenant execution
 
 The initial target is approximately 5–20 organizations with one lab each and low concurrent Run volume.
 
@@ -150,37 +153,37 @@ Tenant isolation is logical routing plus authorization.
 
 A physical lab is an exclusive resource. Only one Run may own a lab at a time.
 
-## 17. Runner disconnect
+## 18. Runner disconnect
 
 The Runner continues locally when the Cloud is temporarily unavailable. Raw execution state remains local and synchronizes later.
 
 A Runner disconnect is infrastructure state, never a product regression.
 
-## 18. Worker failure
+## 19. Worker failure
 
 Distinguish LAB_FAILED, RUNNER_DISCONNECTED, WORKER_CRASHED and TIMED_OUT from product-level failure.
 
 An infrastructure fault must never contaminate product quality statistics.
 
-## 19. Data lifecycle
+## 20. Data lifecycle
 
 Schema supports retain-until metadata, soft deletion, audit retention and contractual holds.
 
 Exact commercial retention terms are deferred.
 
-## 20. Data export
+## 21. Data export
 
 Project export should include Run metadata, TestResults, samples, statistics, baseline relationships, classifications, artifacts and evidence metadata.
 
-## 21. Database isolation
+## 22. Database isolation
 
 Application-level tenant authorization is sufficient for the first Cloud release. Database-level isolation becomes a requirement only when compliance or scale justifies it.
 
-## 22. Observability
+## 23. Observability
 
 New subsystems use structured JSON logging with request, Run, Attempt, TestResult, Device, Organization and Project correlation identifiers.
 
-## 23. Security acceptance gate
+## 24. Security acceptance gate
 
 Before Cloud exposure:
 
@@ -195,6 +198,6 @@ Before Cloud exposure:
 - CI signatures verified;
 - Runner credentials short-lived.
 
-## 24. Explicitly deferred security
+## 25. Explicitly deferred security
 
 Do not implement speculatively: enterprise SAML, HSMs, service mesh, database row-level isolation, multi-region infrastructure or advanced SIEM integration.

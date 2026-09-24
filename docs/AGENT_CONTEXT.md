@@ -148,7 +148,9 @@ Iteration 6 implementation is present on main, but its local/unit and real-lab v
 
 Iteration 8 implementation is present on main; local/unit and real-lab verification gates remain pending because this environment cannot execute the repository or GNS3/mac80211_hwsim lab.
 
-The next architectural slice is Iteration 9: execution security and command authorization/redaction hardening.
+Iteration 9 implementation is assembled for main; local/unit and real-lab verification gates remain pending because this environment cannot execute the repository or GNS3/mac80211_hwsim lab.
+
+The next architectural slice is Iteration 10: LabHealthService and typed infrastructure health evidence.
 
 Legacy test result storage remains as compatibility storage until the migration is explicitly retired.
 
@@ -166,3 +168,8 @@ TestRegistry and RunContext are implemented. Existing validation node IDs remain
 CommandRunner extraction is implemented with typed `CommandResult`, Netmiko/Paramiko/local transports, explicit shell execution, command redaction metadata and timeout/idempotency context. RunContext now carries a typed NetmikoRunner backed by the existing ConnectionPool. The dedicated DHCP tcpdump Paramiko foreground channel remains unchanged.
 
 Verification is intentionally still pending: no local Python/unit execution or real 11/11 lab run was possible in this environment.
+
+
+## 17. Iteration 9 status
+
+Command execution security is now centralized through SecureCommandRunner and CommandSecurityPolicy. Strict structured execution rejects shell syntax by default; the explicit compatibility shell boundary is allow-listed and destructive operations require a Run policy that authorizes the documented lab mutation prefixes. Privilege normalization forces non-interactive sudo, command/output secrets are redacted before evidence, and each Run records COMMAND_EXECUTED lifecycle events plus a COMMAND_OUTPUT artifact. The raw DHCP capture Paramiko path remains an explicit protected exception.

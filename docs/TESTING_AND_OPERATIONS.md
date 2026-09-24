@@ -153,7 +153,10 @@ Test:
 - redaction;
 - allow-list enforcement.
 
-## 10. Artifact verification
+## 10. Command security acceptance
+
+Security component tests must prove shell injection rejection, executable allow-list enforcement, destructive-command authorization, centralized sudo -n normalization, secret redaction in command/output/error material, COMMAND_EXECUTED audit events and Run-scoped COMMAND_OUTPUT artifact registration. Real-lab verification remains mandatory because standard pytest command routing changed.
+## 11. Artifact verification
 
 Test:
 
@@ -166,7 +169,7 @@ Test:
 - authorization on download;
 - soft deletion and audit trail.
 
-## 11. Database migration verification
+## 12. Database migration verification
 
 Use the actual current SQLite schema/data as a migration fixture.
 
@@ -182,7 +185,7 @@ Verify:
 - indexes present;
 - post-migration queries return expected results.
 
-## 12. Regression verification
+## 13. Regression verification
 
 Classifier tests must cover:
 
@@ -197,13 +200,13 @@ Classifier tests must cover:
 - per-test thresholds;
 - environment mismatch.
 
-## 13. Flaky-test verification
+## 14. Flaky-test verification
 
 Generate controlled sequences where outcomes alternate under unchanged conditions.
 
 Verify the framework flags inconsistency without replacing raw history with the eventual PASS.
 
-## 14. API contract verification
+## 15. API contract verification
 
 Every versioned endpoint must have schema validation for:
 
@@ -216,7 +219,7 @@ Every versioned endpoint must have schema validation for:
 - filtering;
 - idempotency.
 
-## 15. Security tests
+## 16. Security tests
 
 Verify:
 
@@ -231,7 +234,7 @@ Verify:
 - idempotency-key behavior;
 - audit event generation.
 
-## 16. Real-lab change gate
+## 17. Real-lab change gate
 
 Any code change affecting these areas requires the 11-test gate:
 
@@ -247,7 +250,7 @@ Any code change affecting these areas requires the 11-test gate:
 
 If the physical lab is unavailable, state that limitation explicitly. Do not claim the real-lab gate passed.
 
-## 17. Operational run modes
+## 18. Operational run modes
 
 ### Full validation
 Provision lab, run health, execute full test suite, collect evidence.
@@ -263,7 +266,7 @@ Explicitly rewrite configuration only when requested.
 
 Existing shell flags remain supported during migration.
 
-## 18. Operational evidence
+## 19. Operational evidence
 
 Expected runtime directories:
 
@@ -276,7 +279,7 @@ results/setup-logs/
 
 Runtime evidence remains gitignored.
 
-## 19. Acceptance gates by phase
+## 20. Acceptance gates by phase
 
 ### Phase 1
 - new Run IDs present;
@@ -314,7 +317,7 @@ Runtime evidence remains gitignored.
 - physical adapter can identify/flash/verify where available;
 - rollback path tested if supported.
 
-## 20. Regression-proof refactor rule
+## 21. Regression-proof refactor rule
 
 The framework is itself a system under validation.
 
