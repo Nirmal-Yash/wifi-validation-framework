@@ -25,42 +25,24 @@ That baseline protects the current network behavior while the application archit
 - Flask dashboard;
 - automated GNS3 laboratory provisioning.
 
-## Target platform
+## Canonical documentation
 
-The final architecture adds:
+Read the canonical documents in this order:
 
-- Run and Attempt lifecycle;
-- TestResult, Metric, Sample and Artifact model;
-- Lab Health;
-- evidence completeness;
-- statistical validation;
-- protocol transaction correlation;
-- WiFi telemetry;
-- DeviceAdapter/FirmwareAdapter;
-- authenticated API;
-- CI release gates;
-- NetRegress Runner;
-- NetRegress Cloud.
+1. docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md — development order, historical phases and roadmap
+2. docs/02_SYSTEM_ARCHITECTURE_DATA_API.md — backend architecture, data model and API
+3. docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md — traceability, audit and readiness
+4. docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md — installation, exact lab reproduction and operations
+5. docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md — architecture decisions and business invariants
 
-## Documentation
+Supporting contracts remain separate:
+- docs/EXECUTION_AND_ADAPTERS.md
+- docs/SECURITY_AND_SAAS.md
+- docs/FRONTEND_DESIGN.md
+- docs/PRD.md
+- docs/AGENT_CONTEXT.md
 
-Start with:
-
-1. docs/ARCHITECTURE_DECISIONS.md
-2. docs/IMPLEMENTATION_PLAN.md
-3. docs/BUSINESS_LOGIC.md
-4. docs/TECHNICAL_ARCHITECTURE.md
-5. docs/DATA_MODEL_AND_APIS.md
-6. docs/EXECUTION_AND_ADAPTERS.md
-7. docs/SECURITY_AND_SAAS.md
-8. docs/TESTING_AND_OPERATIONS.md
-9. docs/FRONTEND_DESIGN.md
-10. docs/DOCUMENTATION_TRACEABILITY.md
-
-Operational references remain:
-
-- docs/WIFI_LAB_REPRODUCTION.md
-- docs/INSTALLATION_GUIDE.md
+Legacy documentation paths remain as compatibility pointers to the canonical documents above.
 
 ## Current quick start
 
@@ -93,58 +75,7 @@ Run the provisioning script as the normal Ubuntu user, not with sudo.
 - never return PASS when required evidence failed;
 - keep runtime results gitignored.
 
-## Roadmap
-
-Phase 0: baseline protection.
-
-Phase 1: Run/Evidence foundation.
-
-Phase 1S: security gate.
-
-Phase 2: Lab Health.
-
-Phase 3: statistical rigor.
-
-Phase 4: functional WiFi expansion.
-
-Phase 5: protocol evidence.
-
-Phase 6: WiFi telemetry.
-
-Phase 7: regression intelligence.
-
-Phase 8: dashboard 2.0.
-
-Phase 9: device/firmware adapters.
-
-Phase 10a: internal CI release gate.
-
-Phase 10b: NetRegress Cloud.
-
-Phase 11: PostgreSQL after real concurrent Cloud workload.
-
-## License
-
-MIT — current repository remains suitable for academic and personal development while the production architecture is built incrementally.
-
-## Iteration 17
-
-Device and firmware control is now adapter-backed. The Runner supports profile-driven Linux/OpenWrt device access, SHA-256 firmware validation, optional signature verification, SFTP transfer, explicit firmware authorization, staged lifecycle auditing and deterministic fake adapters.
-
-### Internal CI release gate
-
-GitHub-hosted CI validates the hardware-free core and release-policy contracts on every push/PR. The protected GNS3/mac80211_hwsim suite is separated into an explicit self-hosted lab dispatch so generic CI never misrepresents lab availability as product validation.
-
-## Iteration 19
-
-The Runner now survives Cloud outages with a durable local synchronization queue. Terminal Runs are snapshotted locally and can be synchronized later through an outbound HTTPS transport using deterministic idempotency keys.
-## Iterations 26–27
-The Runner now includes the final source-level failure/recovery and certification controls before dedicated debugging/certification execution: typed failure-injection coverage, durable API idempotency, CSRF/rate limiting/security headers, SSRF/path confinement, operational backup/restore and stale-lock recovery, audit-chain integrity, security/readiness CLI checks, and an 11-scenario certification matrix.
-
-The implementation is consolidated directly on main with the repository single-commit release discipline. Real GNS3/mac80211_hwsim certification remains an explicit execution-class boundary and is not replaced by synthetic test fixtures.
-
-## Iterations 28–30 — Final Release Wave
-The final release wave is consolidated into one commit on main and adds deterministic release integration, operational readiness tooling and architecture/governance freeze controls.
+## Release verification
 
 ~~~bash
 python scripts/netregress_release.py verify
@@ -152,4 +83,4 @@ python scripts/netregress_release.py doctor
 python scripts/netregress_release.py manifest
 ~~~
 
-The release manifest records the current commit/tree, working-tree cleanliness, tracked-file inventory and SHA-256 hashes. It is source-readiness evidence, not a substitute for protected GNS3/mac80211_hwsim execution evidence.
+The release manifest is source-readiness evidence. It does not substitute for protected GNS3/mac80211_hwsim execution evidence.

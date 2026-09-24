@@ -6,14 +6,14 @@ This is the primary repository context for future engineers and coding agents.
 
 Read order:
 
-1. ARCHITECTURE_DECISIONS.md
-2. IMPLEMENTATION_PLAN.md
-3. BUSINESS_LOGIC.md
-4. TECHNICAL_ARCHITECTURE.md
-5. DATA_MODEL_AND_APIS.md
+1. 05_ARCHITECTURE_DECISIONS_AND_05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
+2. 01_DEVELOPMENT_PLAN_AND_ROADMAP.md
+3. 05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
+4. 02_SYSTEM_ARCHITECTURE_DATA_API.md
+5. 02_SYSTEM_ARCHITECTURE_DATA_API.md
 6. EXECUTION_AND_ADAPTERS.md
 7. SECURITY_AND_SAAS.md
-8. TESTING_AND_OPERATIONS.md
+8. 04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md
 9. FRONTEND_DESIGN.md
 10. source files directly related to the change
 
@@ -244,7 +244,7 @@ Iterations 20–22 are source-implemented as the current Runner foundation: exte
 
 
 ## 29. Iterations 23–25 consolidated pass
-Iterations 20–25 are source-complete as the current Runner platform context. Iteration 23 owns failure semantics, firmware lifecycle control, cancellation, diagnostics and reproduction. Iteration 24 owns authorized state-changing API, OpenAPI, operational frontend and migration boundary. Iteration 25 owns baseline/release intelligence, scoped waivers and offline Runner continuity. Read FINAL_SYSTEM_DEVELOPMENT_PLAN.md before continuing with Iteration 26.
+Iterations 20–25 are source-complete as the current Runner platform context. Iteration 23 owns failure semantics, firmware lifecycle control, cancellation, diagnostics and reproduction. Iteration 24 owns authorized state-changing API, OpenAPI, operational frontend and migration boundary. Iteration 25 owns baseline/release intelligence, scoped waivers and offline Runner continuity. Read 01_DEVELOPMENT_PLAN_AND_ROADMAP.md before continuing with Iteration 26.
 
 
 ## Iterations 26–27 status

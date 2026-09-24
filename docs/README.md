@@ -1,48 +1,41 @@
 # NetRegress Documentation Index
 
-## Authoritative decision and implementation documents
+## Canonical documentation set
 
 | Document | Purpose | Authority |
 |---|---|---|
-| ARCHITECTURE_DECISIONS.md | Frozen answers to the full discovery questionnaire and cross-cutting architecture decisions | Architecture decision source |
-| IMPLEMENTATION_PLAN.md | Exact refactor phases, order, files, gates and acceptance criteria | Implementation sequence |
-| BUSINESS_LOGIC.md | Run/test/baseline/release semantics and business invariants | Product semantics |
-| TECHNICAL_ARCHITECTURE.md | Target code/service/layer architecture and dependency boundaries | Technical structure |
-| DATA_MODEL_AND_APIS.md | Run-scoped persistence schema and /api/v1 contracts | Data/API contract |
-| EXECUTION_AND_ADAPTERS.md | Pytest, CommandRunner, DeviceAdapter, FirmwareAdapter and capture execution contracts | Execution contract |
-| SECURITY_AND_SAAS.md | Identity, RBAC, secrets, tenant isolation, Cloud and Runner security | Security contract |
-| TESTING_AND_OPERATIONS.md | Testing pyramid, real-lab gate, migration verification and operations | Verification contract |
-| FRONTEND_DESIGN.md | Flask/Jinja dashboard, API-first UI, React migration boundary | UX/UI contract |
+| 01_DEVELOPMENT_PLAN_AND_ROADMAP.md | Implementation order, historical phases, current iterations, roadmap and completion gates | Development order/status |
+| 02_SYSTEM_ARCHITECTURE_DATA_API.md | Backend architecture, persistence model, data ownership and API contracts | Technical/data/API contract |
+| 03_TRACEABILITY_AND_SYSTEM_READINESS.md | Requirement traceability, current state, completeness audit and release readiness | Verification/readiness |
+| 04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md | Installation, exact lab reproduction, testing, operations, troubleshooting and recovery | Operator/runtime procedure |
+| 05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md | Frozen architecture decisions, product semantics and business invariants | Upstream design/business semantics |
 
-## Current operational references
+## Separate contracts
 
 | Document | Purpose |
 |---|---|
-| WIFI_LAB_REPRODUCTION.md | Current GNS3 topology and practical reproduction |
-| INSTALLATION_GUIDE.md | Historical/general installation background |
+| EXECUTION_AND_ADAPTERS.md | Pytest, CommandRunner, DeviceAdapter, FirmwareAdapter and capture execution contracts |
+| SECURITY_AND_SAAS.md | Identity, RBAC, secrets, tenant isolation, Cloud and Runner security |
+| FRONTEND_DESIGN.md | API-first UI and presentation architecture |
+| PRD.md | Product requirements and product scope |
+| AGENT_CONTEXT.md | Working context and historical implementation state |
 
-## Current source-of-truth hierarchy
+## Documentation hierarchy
 
-1. Current executable source on main.
-2. Current configuration.
-3. Current operational documentation.
-4. Recorded runtime evidence.
-5. Historical installation material.
+~~~text
+Architecture Decisions & Business Logic
+                 ↓
+System Architecture + Data/API
+                 ↓
+Development Plan + Roadmap
+                 ↓
+Implementation
+                 ↓
+Traceability + Readiness
+                 ↓
+Lab Reproduction + Testing + Operations
+~~~
 
-Future architecture decisions are frozen in ARCHITECTURE_DECISIONS.md.
+Executable source on main remains the current behavioral authority until the corresponding planned migration or contract is fully applied.
 
-## Recommended contributor workflow
-
-Read the architecture decisions first.
-
-Read the implementation phase relevant to the change.
-
-Read business logic before changing classification/policy.
-
-Read data/API contracts before changing persistence or dashboard behavior.
-
-Read execution/adapter rules before changing network/device control.
-
-Use TESTING_AND_OPERATIONS.md to select the appropriate verification gate.
-
-Keep the protected 436026e behavioral baseline intact.
+Legacy merged-document paths remain as compatibility pointers. The canonical documents above are the locations to edit.

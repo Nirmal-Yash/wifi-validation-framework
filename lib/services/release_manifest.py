@@ -4,7 +4,7 @@ from datetime import datetime,timezone
 import hashlib,json,os,subprocess
 from pathlib import Path
 from typing import Any
-DEFAULT_REQUIRED_PATHS=("README.md","requirements.txt","docs/CURRENT_SYSTEM_STATE.md","docs/IMPLEMENTATION_ROADMAP.md","docs/FINAL_SYSTEM_DEVELOPMENT_PLAN.md","docs/RELEASE_READINESS.md","docs/PRODUCTION_COMPLETENESS_AUDIT.md","docs/openapi.yaml","scripts/ci_release_gate.py","scripts/netregress_security_audit.py","scripts/netregress_certification.py","scripts/netregress_release.py","scripts/netregress_doctor.py")
+DEFAULT_REQUIRED_PATHS=("README.md","requirements.txt","docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md","docs/02_SYSTEM_ARCHITECTURE_DATA_API.md","docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md","docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md","docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md","docs/openapi.yaml","scripts/ci_release_gate.py","scripts/netregress_security_audit.py","scripts/netregress_certification.py","scripts/netregress_release.py","scripts/netregress_doctor.py")
 FORBIDDEN_TRACKED_SUFFIXES=(".db",".pcap",".log",".tmp",".pyc")
 FORBIDDEN_TRACKED_NAMES={".env",".env.local",".env.production"}
 @dataclass(frozen=True,slots=True)
@@ -33,7 +33,7 @@ class ReleaseManifestService:
         ready=branch=="main" and clean and required and not forbidden and not errors
         return ReleaseAudit(branch,commit,tree,clean,required,forbidden,tuple(sorted(errors)),ready)
     def manifest(self,*,audit:ReleaseAudit|None=None)->dict[str,Any]:
-        audit=audit or self.audit();current=self.root/"docs/CURRENT_SYSTEM_STATE.md";roadmap=self.root/"docs/IMPLEMENTATION_ROADMAP.md";files=[]
+        audit=audit or self.audit();current=self.root/"docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md";roadmap=self.root/"docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md";files=[]
         for p in self.tracked_files():
             path=self.root/p
             if not path.is_file(): continue
