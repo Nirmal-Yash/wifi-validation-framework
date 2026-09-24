@@ -12,6 +12,7 @@ from .wifi_telemetry import WifiTelemetryService
 
 from .artifact_service import ArtifactService
 from .run_service import RunService
+from .lab_controller import LabController
 from .test_registry import TestDefinition, TestRegistry
 
 
@@ -31,6 +32,10 @@ class RunContext:
     telemetry_service: WifiTelemetryService | None = None
     device_adapter: DeviceAdapter | None = None
     firmware_adapter: FirmwareAdapter | None = None
+    lab_controller: LabController | None = None
+    configuration_hash: str | None = None
+    configuration_provenance: Mapping[str, tuple[str, ...]] | None = None
+    environment_fingerprint: str | None = None
     logger: logging.Logger | None = None
 
     def __post_init__(self) -> None:

@@ -40,6 +40,11 @@ from lib.services import (
     legacy_pool_adapter,
     TestRegistry,
     WifiTelemetryService,
+    ConfigurationResolver,
+    EnvironmentFingerprintService,
+    ResourceLockManager,
+    LabController,
+    RunOrchestrator,
     repository_commit,
     redact_configuration,
 )
@@ -229,19 +234,41 @@ def pytest_collection_finish(session):
     selected_tests = [item.nodeid for item in session.items]
     registry = TestRegistry.default()
     test_versions = registry.version_map(selected_tests)
-    persisted_config = redact_configuration(params)
+    resolver = ConfigurationResolver()
+    resolved = resolver.resolve(defaults=params, environment=resolver.environment_json())
+    persisted_config = redact_configuration(resolved.values)
 
     service = _create_run_service()
-    run, attempt = service.create_run(
+    lock_manager = ResourceLockManager(ROOT / "results" / "locks")
+    fingerprint_service = EnvironmentFingerprintService(ROOT)
+    lab_controller = LabController(
+        command_runner=LocalRunner(),
+        provisioning_script=ROOT / "wifi_lab_reprovision_robust.sh",
+        lab_id=os.getenv("NETREGRESS_LAB_ID", "WiFi-Regression-Lab"),
+    )
+    orchestrator = RunOrchestrator(
+        run_service=service,
+        resolver=resolver,
+        fingerprint_service=fingerprint_service,
+        lock_manager=lock_manager,
+        lab_controller=lab_controller,
+    )
+    orchestration = orchestrator.prepare(
         firmware_version=firmware_version,
         lab_id=os.getenv("NETREGRESS_LAB_ID", "WiFi-Regression-Lab"),
         validation_profile=_validation_profile(session.config),
         selected_tests=selected_tests,
         test_definition_versions=test_versions,
-        resolved_config=persisted_config,
+        defaults=params,
+        environment=resolver.environment_json(),
         repository_commit=os.getenv("NETREGRESS_REPOSITORY_COMMIT")
         or repository_commit(str(ROOT)),
+        device_identity={"device_id": os.getenv("NETREGRESS_DEVICE_ID", "client_vm")},
+        topology=params.get("network", {}),
     )
+    run, attempt = orchestration.run, orchestration.attempt
+    session.config._netregress_resource_lease = orchestration.lease
+    session.config._netregress_environment_fingerprint = orchestration.fingerprint
     service.begin_lab_health_check(run.run_id)
     artifact_service = ArtifactService.from_sqlite(service.run_repository.database)
     audit_recorder = CommandAuditRecorder(
@@ -298,6 +325,10 @@ def pytest_collection_finish(session):
         telemetry_service=telemetry_service,
         device_adapter=device_adapter,
         firmware_adapter=firmware_adapter,
+        lab_controller=lab_controller,
+        configuration_hash=resolved.configuration_hash,
+        configuration_provenance=resolved.provenance,
+        environment_fingerprint=orchestration.fingerprint.fingerprint,
         logger=logging.getLogger("netregress"),
     )
 
@@ -396,6 +427,11 @@ def pytest_sessionfinish(session, exitstatus):
             context.run_service.abort_run(context.run_id)
         else:
             context.run_service.fail_run(context.run_id)
+
+    lease = getattr(session.config, "_netregress_resource_lease", None)
+    if lease is not None:
+        try: lease.release()
+        except Exception as exc: sys.stderr.write(f"\n[WARN] Failed to release lab resource lock: {exc}\n")
 
     try:
         from lib.services import RunnerSyncService

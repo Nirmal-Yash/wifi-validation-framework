@@ -225,3 +225,6 @@ The Runner never uploads arbitrary filesystem paths. Synchronization envelopes i
 The HTTPS transport requires an `https://` endpoint and sends the queue idempotency key as an HTTP idempotency header. Bearer-token support is optional and is supplied externally; credentials are not persisted in the queue.
 
 Synchronization retries are transport retries only. They never retry device commands, firmware flashes or validation tests.
+
+## 26. Iterations 20–22 Runner security/orchestration status
+Tracked operational credentials are externalized through environment markers and resolved only at the connection boundary. Local authentication/RBAC is enforced at the dashboard API boundary. Deterministic configuration, environment fingerprinting, exclusive lab locking and Run orchestration are implemented. Cloud remains the higher-level business authority and is deferred until standalone Runner certification.

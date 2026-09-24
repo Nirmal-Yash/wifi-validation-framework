@@ -238,3 +238,6 @@ Internal CI/release gating is implemented. Core CI is hardware-free and cannot c
 A durable Runner offline queue is implemented. Run snapshots are stored locally in SQLite and can be synchronized later through an outbound HTTPS transport. The local Runner remains authoritative for raw facts, and synchronization failures do not alter Run/TestResult outcomes. Pytest session completion queues the terminal Run best-effort.
 
 No external Cloud endpoint is configured or contacted in this environment.
+
+## 28. Iterations 20–22 consolidated pass
+Iterations 20–22 are source-implemented as the current Runner foundation: externalized credentials, local authentication/RBAC, deterministic configuration, environment fingerprinting, lab ownership, resource locking, Run orchestration, and mandatory evidence/protocol/telemetry/measurement boundaries. Runtime verification remains separate and is required before certification. Future implementation resumes at Iteration 23.

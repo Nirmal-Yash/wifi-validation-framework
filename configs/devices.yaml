@@ -2,30 +2,30 @@ devices:
   router1:
     host: 192.168.122.10
     username: admin
-    password: admin
+    password: "__ENV__:WIFI_ROUTER1_PASSWORD"
     device_type: linux
     port: 22
   router2:
     host: 192.168.122.11
     username: admin
-    password: admin
+    password: "__ENV__:WIFI_ROUTER2_PASSWORD"
     device_type: linux
     port: 22
   ap_host:
     host: 192.168.122.20
     username: admin
-    password: admin
+    password: "__ENV__:WIFI_AP_HOST_PASSWORD"
     device_type: linux
     port: 22
   client_vm:
     host: 10.10.10.30
     username: admin
-    password: admin
+    password: "__ENV__:WIFI_CLIENT_VM_PASSWORD"
     device_type: linux
     port: 22
   monitor_vm:
     host: 192.168.122.40
     username: admin
-    password: admin
+    password: "__ENV__:WIFI_MONITOR_VM_PASSWORD"
     device_type: linux
     port: 22

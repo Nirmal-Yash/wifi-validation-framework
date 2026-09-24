@@ -11,7 +11,7 @@ try:
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
 
-from flask import Flask, Response, jsonify, render_template, send_file
+from flask import Flask, Response, jsonify, render_template, request, session, send_file
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -19,6 +19,7 @@ from lib.db_helper import get_all_results, get_latest_results, get_metric_histor
 from dashboard.api_v1 import create_api_blueprint
 from dashboard.query import DashboardQueryService
 from lib.repositories import SQLiteDatabase
+from lib.security import AuthManager
 
 ROOT = Path(__file__).resolve().parent.parent
 DATABASE_PATH = Path(os.getenv("NETREGRESS_DATABASE_PATH", ROOT / "results" / "test_results.db"))
@@ -62,9 +63,26 @@ def render_svg_chart(pass_rates):
 
 def create_app(database_path: str | Path = DATABASE_PATH):
     flask_app = Flask(__name__)
+    flask_app.secret_key = os.getenv("NETREGRESS_SESSION_SECRET") or os.urandom(32)
+    flask_app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=os.getenv("NETREGRESS_SESSION_COOKIE_SECURE","0").lower() in {"1","true","yes"},
+        PERMANENT_SESSION_LIFETIME=3600,
+    )
     query = DashboardQueryService(SQLiteDatabase(database_path))
+    auth_manager = AuthManager.from_env()
     flask_app.config["NETREGRESS_QUERY"] = query
-    flask_app.register_blueprint(create_api_blueprint(query))
+    flask_app.config["NETREGRESS_AUTH"] = auth_manager
+    flask_app.register_blueprint(create_api_blueprint(query, auth_manager=auth_manager))
+
+    @flask_app.before_request
+    def require_dashboard_authentication():
+        if request.path.startswith("/api/v1/") or request.path == "/favicon.ico":
+            return None
+        if auth_manager.required and session.get("netregress_user") is None:
+            return Response("Authentication required. Use POST /api/v1/auth/login.", status=401, mimetype="text/plain")
+        return None
 
     @flask_app.route("/")
     def index():

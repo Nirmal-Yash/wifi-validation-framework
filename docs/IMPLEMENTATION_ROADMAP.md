@@ -269,3 +269,12 @@ Next:
 
 Next:
 - Iteration 20 — Cloud-facing Runner API and artifact transfer contract.
+
+## Iterations 20–22 — Consolidated implementation pass
+- [x] Iteration 20: secret externalization, local authentication/RBAC, API/dashboard protection, state reconciliation.
+- [x] Iteration 21: deterministic configuration, environment fingerprinting, LabController boundary, exclusive resource locking, RunOrchestrator and pytest integration.
+- [x] Iteration 22: evidence/protocol/telemetry/statistical contracts retained as mandatory Runner lifecycle boundaries; required evidence remains fail-closed.
+- [ ] Runtime/unit execution in the available environment.
+- [ ] Protected 11-test GNS3/mac80211_hwsim verification.
+
+Next: Iteration 23 — Device/Firmware operations, failure semantics, cancellation and diagnostics.

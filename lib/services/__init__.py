@@ -92,3 +92,9 @@ from .firmware_service import FirmwareOperationService
 from .release_gate import ReleaseGateDecision, ReleaseGateEvaluator, ReleaseGateInput, ReleaseGateIssue, ReleaseGatePolicy, ReleaseGateStatus
 
 from .sync_service import HttpSyncTransport, RunnerSyncService, SyncAck, SyncTransport, SyncTransportError
+
+from .configuration import ConfigurationResolver, ResolvedConfiguration
+from .environment_fingerprint import EnvironmentFingerprint, EnvironmentFingerprintService
+from .resource_lock import ResourceLockError, ResourceLease, ResourceLockManager
+from .lab_controller import LabController, LabControllerError
+from .run_orchestrator import RunExecutionSession, RunOrchestrator
