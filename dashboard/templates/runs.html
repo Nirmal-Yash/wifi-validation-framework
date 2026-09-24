@@ -1,0 +1,13 @@
+{% extends "layout.html" %}
+{% block title %}Runs — NetRegress{% endblock %}
+{% block content %}
+<div class="card"><h2>Historical Runs</h2><p class="small">Persisted Run, Attempt and TestResult state.</p></div>
+<div class="card"><div class="controls">
+<div class="control"><label>Firmware</label><input id="firmware"></div><div class="control"><label>Lab</label><input id="lab"></div><div class="control"><label>Profile</label><input id="profile"></div><div class="control"><label>Status</label><input id="status"></div><button onclick="loadRuns()">Filter</button>
+</div></div>
+<div class="card"><p id="summary" class="small"></p><div style="overflow:auto"><table><thead><tr><th>Run</th><th>Firmware</th><th>Device</th><th>Lab</th><th>Profile</th><th>Lifecycle</th><th>Outcome</th><th>Environment</th><th>Created</th></tr></thead><tbody id="rows"></tbody></table></div></div>
+<script>
+async function loadRuns(){var q=new URLSearchParams();["firmware","lab","profile","status"].forEach(function(id){var v=document.getElementById(id).value.trim();if(v)q.set(id,v)});var res=await fetch("/api/v1/runs?"+q);var body=await res.json();if(!res.ok){document.getElementById("summary").textContent=body.error.message;return}var d=body.data;document.getElementById("summary").textContent=d.total+" run(s)";var html="";d.items.forEach(function(r){html+="<tr><td><a href=\"/runs/"+encodeURIComponent(r.run_id)+"\">"+r.display_id+"</a><div class=\"small\">"+r.run_id+"</div></td><td>"+r.firmware_version+"</td><td>"+r.device_id+"</td><td>"+r.lab_id+"</td><td>"+r.validation_profile+"</td><td>"+r.lifecycle_status+"</td><td>"+(r.business_outcome||"—")+"</td><td>"+(r.environment_class||"—")+"</td><td>"+(r.created_at||"—")+"</td></tr>"});document.getElementById("rows").innerHTML=html}
+loadRuns();
+</script>
+{% endblock %}

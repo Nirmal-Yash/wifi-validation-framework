@@ -313,3 +313,9 @@ When API and Cloud auth are stable:
 4. UI never exposes unauthorized artifacts.
 5. UI never claims virtual WiFi is physical RF certification.
 6. UI must always make the distinction between lifecycle status and business outcome visible.
+
+## 19. Iteration 16 implementation status
+
+Phase 8 is now API-backed rather than documentation-only. Jinja pages consume the same /api/v1 contracts intended for a future React client. The dashboard remains read-only until an authentication/RBAC boundary is implemented for state-changing actions.
+
+Telemetry and regression pages preserve environment/evidence semantics rather than presenting inferred values as facts.

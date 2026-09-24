@@ -358,3 +358,12 @@ It:
 - retains flaky history as diagnostic context.
 
 The legacy `regression/regression_classifier.py` and firmware-string diff CLI remain compatibility paths and are intentionally not repointed in this slice.
+
+
+## 19E. DashboardQueryService
+
+DashboardQueryService is the read-only presentation boundary between persisted repositories and Flask/Jinja/API consumers. It does not execute tests, mutate Runs, trigger lab health, or repair infrastructure.
+
+It resolves the latest Attempt for Run detail, serializes TestResult/Metric/Sample/Artifact state, and provides derived telemetry/health views only after artifact path containment and SHA-256 verification.
+
+The legacy dashboard remains available; /api/v1 is the canonical contract for new consumers.

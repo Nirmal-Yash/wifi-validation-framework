@@ -1,0 +1,13 @@
+{% extends "layout.html" %}
+{% block title %}Test Detail — NetRegress{% endblock %}
+{% block content %}<div id="app"><div class="card">Loading…</div></div>
+<script>
+var runId={{ run_id|tojson }}, resultId={{ test_result_id|tojson }};
+async function load(){var res=await fetch("/api/v1/runs/"+encodeURIComponent(runId)+"/tests/"+encodeURIComponent(resultId));var body=await res.json();if(!res.ok){document.getElementById("app").textContent=body.error.message;return}var t=body.data,d=t.definition,html="<div class=\"card\"><h2>"+t.test_id+"</h2><div class=\"grid\"><div class=\"stat\"><strong>"+t.status+"</strong><span class=\"small\">Functional</span></div><div class=\"stat\"><strong>"+t.evidence_state+"</strong><span class=\"small\">Evidence</span></div><div class=\"stat\"><strong>"+t.test_version+"</strong><span class=\"small\">Test version</span></div><div class=\"stat\"><strong>"+d.category+"</strong><span class=\"small\">Category</span></div></div></div>";
+html+="<div class=\"card\"><h2>Execution contract</h2><p>Protocol: "+d.protocol+"</p><p>Requires: "+(d.requires||[]).join(", ")+"</p><p>Capabilities: "+(d.capabilities||[]).join(", ")+"</p><p>Direction: "+d.direction+"</p></div>";
+html+="<div class=\"card\"><h2>Metrics & samples</h2>";t.metrics.forEach(function(m){html+="<h3>"+m.name+" ("+m.unit+")</h3><table><thead><tr><th>Value</th><th>Status</th><th>Warmup</th><th>Retried</th><th>Captured</th></tr></thead><tbody>";m.samples.forEach(function(s){html+="<tr><td>"+s.value+"</td><td>"+s.status+"</td><td>"+s.warmup+"</td><td>"+s.retried+"</td><td>"+(s.captured_at||"—")+"</td></tr>"});html+="</tbody></table>"});if(!t.metrics.length)html+="<p class=\"small\">No metrics recorded.</p>";html+="</div>";
+html+="<div class=\"card\"><h2>Failure / reproduction</h2><p>"+(t.error_reason||"No failure reason recorded.")+"</p><p class=\"small\">Pytest node: "+t.node_id+"</p></div>";
+document.getElementById("app").innerHTML=html}
+load();
+</script>
+{% endblock %}

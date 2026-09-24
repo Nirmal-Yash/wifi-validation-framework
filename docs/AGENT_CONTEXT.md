@@ -208,3 +208,14 @@ Regression Intelligence 2.0 is now implemented as a typed Run-to-Run service. It
 The older firmware-string regression CLI remains compatibility code rather than the canonical comparison source.
 
 Verification remains pending in this environment: local/unit execution and the protected real-lab regression gate were not executed.
+
+
+## 24. Iteration 16 status
+
+Dashboard/API 2.0 is implemented as a real read-only integration layer. Flask now exposes versioned API contracts for Runs, Tests, Metrics, Regression, Telemetry, Lab Health, Artifacts and Baselines. Jinja pages consume those contracts for Run history/detail, Test detail, Regression, Performance, Telemetry, Lab Health and Artifact browsing.
+
+Derived telemetry and health JSON is interpreted only after path containment and SHA-256 verification. Artifact downloads are restricted to the registered results root; local downloads work without a token, while remote downloads require NETREGRESS_DASHBOARD_TOKEN.
+
+Legacy /api/* endpoints remain compatibility wrappers. The new /api/v1 surface is the canonical dashboard contract.
+
+Runtime verification remains pending in this environment; no pytest or real GNS3/mac80211_hwsim gate was executed.

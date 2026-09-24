@@ -464,6 +464,14 @@ class SQLiteRunRepository:
                 provenance=row["provenance"] or "NATIVE",
             )
 
+    
+    def list(self) -> list[Run]:
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                "SELECT run_id FROM runs ORDER BY created_at DESC, run_id DESC"
+            ).fetchall()
+        return [run for row in rows if (run := self.get(row["run_id"])) is not None]
+
 
 class SQLiteAttemptRepository:
     def __init__(self, database: SQLiteDatabase) -> None:
@@ -640,6 +648,15 @@ class SQLiteTestResultRepository:
                 (attempt_id,),
             ).fetchall()
             return [self._to_domain(connection, row) for row in rows]
+    
+    def list_for_run(self, run_id: str) -> list[TestResult]:
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM test_results WHERE run_id = ? ORDER BY completed_at, test_result_id",
+                (run_id,),
+            ).fetchall()
+            return [self._to_domain(connection, row) for row in rows]
+
 
     @staticmethod
     def _insert_artifact(
@@ -775,6 +792,14 @@ class SQLiteArtifactRepository:
                 (run_id,),
             ).fetchall()
         return [self._to_domain(row) for row in rows]
+    
+    def list_all(self) -> list[Artifact]:
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM artifacts ORDER BY created_at DESC, artifact_id DESC"
+            ).fetchall()
+            return [self._to_domain(row) for row in rows]
+
 
     @staticmethod
     def _to_domain(row: sqlite3.Row | None) -> Artifact | None:
@@ -789,6 +814,12 @@ class SQLiteArtifactRepository:
             size_bytes=row["size_bytes"],
             evidence_state=EvidenceState(row["evidence_state"]),
             test_result_id=row["test_result_id"],
+            display_name=row["display_name"] or row["path"].rsplit("/", 1)[-1],
+            created_at=_parse_dt(row["created_at"]),
+            sensitivity_class=row["sensitivity_class"] or "INTERNAL",
+            retain_until=_parse_dt(row["retain_until"]),
+            soft_deleted_at=_parse_dt(row["soft_deleted_at"]),
+            provenance=row["provenance"] or "NATIVE",
         )
 
 

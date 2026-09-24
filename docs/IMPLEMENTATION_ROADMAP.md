@@ -202,3 +202,22 @@ Next:
 
 Next:
 - Iteration 16 — Dashboard/API regression and telemetry contracts.
+
+
+## Iteration 16 — Dashboard/API 2.0 + Regression/Telemetry Integration ✅
+- [x] Added read-only repository collection methods for Runs, TestResults and Artifacts.
+- [x] Added DashboardQueryService as the presentation/query boundary.
+- [x] Added versioned /api/v1 success/error envelopes.
+- [x] Implemented Run/Test/Metrics/Regression/Telemetry/Lab Health/Artifact/Baseline endpoints.
+- [x] Integrated Iteration 15 regression intelligence into the canonical dashboard.
+- [x] Integrated persisted Iteration 14 telemetry and environment-class evidence.
+- [x] Added integrity-checked JSON artifact interpretation.
+- [x] Added constrained artifact downloads.
+- [x] Added Jinja pages for Runs, Run Detail, Test Detail, Regression, Performance, Telemetry, Lab Health and Artifacts.
+- [x] Preserved legacy /api/* compatibility endpoints.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Browser/API runtime verification: unavailable in this environment.
+- [ ] Protected real-lab gate: unavailable in this environment.
+
+Next:
+- Iteration 17 — Device/Firmware Adapter production seam.

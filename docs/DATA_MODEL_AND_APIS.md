@@ -465,3 +465,21 @@ The Runner's new regression service returns a derived `RunRegressionReport` cont
 - optional flaky-history diagnostics.
 
 This is derived analysis, not mutable source-of-truth test data. The source Run, Attempt, TestResult and Sample records remain authoritative.
+
+
+## 24. Dashboard query and transport contract
+
+The dashboard queries persisted Run/Attempt/TestResult/Artifact repositories rather than arbitrary filesystem paths. Derived telemetry and health JSON is consumed only after registered-path containment and SHA-256 verification.
+
+Versioned API responses use:
+- success: {data: ...};
+- error: {error: {code, message, details}}.
+
+The Phase 8 dashboard is read-only. State-changing Run/baseline operations remain service-layer capabilities until authenticated/RBAC API actions are introduced.
+
+
+## 24A. Phase 8 collection behavior
+
+Collection responses are paginated where historical growth can become unbounded, including Runs and Artifacts. Versioned API consumers must use the page/limit fields rather than assuming an unbounded result set.
+
+Artifact metadata never exposes arbitrary filesystem content. Binary download is constrained to registered paths under the Results root and re-verifies SHA-256 before serving.

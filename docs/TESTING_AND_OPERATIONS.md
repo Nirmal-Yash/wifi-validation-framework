@@ -411,3 +411,19 @@ Targeted tests must verify:
 - flaky history is retained without mutating the primary classification.
 
 The legacy firmware-string regression path remains a compatibility boundary and is not treated as the authoritative Phase 7 engine.
+
+
+## 26. Iteration 16 dashboard/API validation
+
+Targeted verification must cover:
+- /api/v1 success and error envelope consistency;
+- Run filters and pagination;
+- Run/Test detail from persisted Run/Attempt/TestResult state;
+- explicit-baseline regression comparison;
+- visible incompatible/missing comparison context;
+- performance sample history;
+- telemetry environment/source/timestamp presentation;
+- health snapshot display without repair;
+- artifact SHA-256 verification before JSON interpretation;
+- artifact download containment under results/;
+- legacy /api/* compatibility routes.

@@ -672,3 +672,22 @@ A comparable baseline is never inferred from the nearest firmware run.
 For PASS→PASS results, each metric is evaluated independently using its declared `MeasurementPolicy`. Per-test/per-metric percentage thresholds may be supplied under the Run's `regression.thresholds` configuration; the existing 20% behavior remains the compatibility default.
 
 The evaluator emits composable regression dimensions, explicit `NO_BASELINE`/ `UNVALIDATED` states and optional flaky-history diagnostics. Flaky history never erases the underlying Attempt/result.
+
+
+## 19A. Iteration 16 implementation
+
+Phase 8 is implemented as an additive, read-only API/UI layer over the Run/Attempt/TestResult/Artifact repositories.
+
+Canonical versioned endpoints now cover:
+- Runs and Run detail;
+- Test results and test detail;
+- metrics and historical samples;
+- explicit Run-to-Run regression comparison;
+- Run telemetry and inferred environment class;
+- Run/lab health evidence;
+- artifact metadata and constrained download;
+- active baseline metadata.
+
+Jinja pages consume these same contracts. Legacy /api routes and the existing firmware pass-rate/chart/export views remain compatibility views.
+
+Artifact JSON is never trusted solely because its database record exists: the registered path must remain under the results root and its SHA-256 must still match before interpretation.
