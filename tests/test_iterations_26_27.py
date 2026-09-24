@@ -85,6 +85,7 @@ def test_stale_lock_recovery(tmp_path):
 
 def test_run_recovery_classifies_dead_worker(tmp_path, monkeypatch):
     service,run=_running_service(tmp_path)
+    run.lifecycle=RunLifecycle.RUNNING
     run.execution_pid=2147483647;service.run_repository.update(run)
     monkeypatch.setattr(RunRecoveryService, "_pid_alive", staticmethod(lambda pid: False))
     monkeypatch.setattr(service.run_repository, "list", lambda: (run,))
