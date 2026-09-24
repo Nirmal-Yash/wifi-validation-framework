@@ -438,3 +438,11 @@ Operational acceptance still requires real-hardware flash/reboot/rollback tests 
 ## 28. Iteration 18 CI gate
 
 The always-on GitHub-hosted job is hardware-free and runs ci_tests outside the real-lab pytest conftest. The protected lab job is explicitly dispatchable on a self-hosted netregress-lab runner. The persisted release evaluator rejects missing or invalid release evidence instead of treating unavailable infrastructure as a product PASS.
+
+## 29. Iteration 19 offline operation
+
+At Run completion, the pytest session attempts to enqueue a local snapshot. Queue failure emits a warning and does not change the Run outcome.
+
+Synchronization is explicit through `python scripts/netregress_sync.py --url https://...`. Temporary connectivity failures remain retryable. Stale in-flight leases are recoverable. Repeated delivery uses the same idempotency key so the future Cloud can safely deduplicate accepted envelopes.
+
+The current environment has no configured Cloud endpoint, so no external synchronization was attempted.

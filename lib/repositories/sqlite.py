@@ -29,7 +29,7 @@ from lib.domain import (
 )
 from .interfaces import RepositoryConflictError
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -180,6 +180,29 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts(run_id);
 CREATE INDEX IF NOT EXISTS idx_events_run ON lifecycle_events(run_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_active_baseline_name
     ON run_baselines(name) WHERE superseded_by IS NULL;
+
+CREATE TABLE IF NOT EXISTS sync_queue (
+    envelope_id TEXT PRIMARY KEY,
+    runner_id TEXT NOT NULL,
+    run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    payload_json TEXT NOT NULL,
+    payload_sha256 TEXT NOT NULL,
+    state TEXT NOT NULL,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT,
+    leased_at TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_queue_ready
+    ON sync_queue(state, next_attempt_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_sync_queue_run
+    ON sync_queue(run_id);
 """
 
 
@@ -865,6 +888,147 @@ class SQLiteEventRepository:
             )
             for row in rows
         ]
+
+
+class SQLiteSyncQueueRepository:
+    def __init__(self, database: SQLiteDatabase) -> None:
+        self.database = database
+
+    def enqueue(self, envelope):
+        now = datetime.now().astimezone()
+        with self.database.connection() as connection:
+            existing = connection.execute(
+                "SELECT * FROM sync_queue WHERE idempotency_key = ?",
+                (envelope.idempotency_key,),
+            ).fetchone()
+            if existing:
+                return self._to_domain(existing)
+            connection.execute(
+                """INSERT INTO sync_queue(
+                    envelope_id, runner_id, run_id, kind, schema_version,
+                    idempotency_key, payload_json, payload_sha256, state,
+                    attempt_count, next_attempt_at, leased_at, last_error,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, NULL, ?, ?)""",
+                (
+                    envelope.envelope_id, envelope.runner_id, envelope.run_id,
+                    envelope.kind, envelope.schema_version, envelope.idempotency_key,
+                    envelope.payload_json, envelope.payload_sha256, "QUEUED",
+                    _dt(now), _dt(now), _dt(now),
+                ),
+            )
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM sync_queue WHERE envelope_id = ?",
+                (envelope.envelope_id,),
+            ).fetchone()
+        return self._to_domain(row)
+
+    def get(self, envelope_id):
+        with self.database.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM sync_queue WHERE envelope_id = ?", (envelope_id,)
+            ).fetchone()
+        return self._to_domain(row) if row else None
+
+    def list_ready(self, now, limit=20):
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                """SELECT * FROM sync_queue
+                   WHERE state IN ('QUEUED','FAILED')
+                     AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                   ORDER BY created_at, envelope_id
+                   LIMIT ?""",
+                (_dt(now), limit),
+            ).fetchall()
+        return [self._to_domain(row) for row in rows]
+
+    def claim(self, envelope_id, leased_at, lease_until):
+        with self.database.connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM sync_queue WHERE envelope_id = ?", (envelope_id,)
+            ).fetchone()
+            if not row or row["state"] not in {"QUEUED", "FAILED"}:
+                return None
+            connection.execute(
+                """UPDATE sync_queue
+                   SET state = 'IN_FLIGHT', leased_at = ?, updated_at = ?
+                   WHERE envelope_id = ?""",
+                (_dt(lease_until), _dt(lease_until), envelope_id),
+            )
+            connection.commit()
+            updated = connection.execute(
+                "SELECT * FROM sync_queue WHERE envelope_id = ?", (envelope_id,)
+            ).fetchone()
+        return self._to_domain(updated)
+
+    def ack(self, envelope_id, updated_at):
+        with self.database.connection() as connection:
+            connection.execute(
+                """UPDATE sync_queue
+                   SET state = 'ACKED', leased_at = NULL, next_attempt_at = NULL,
+                       last_error = NULL, updated_at = ?
+                   WHERE envelope_id = ?""",
+                (_dt(updated_at), envelope_id),
+            )
+            connection.commit()
+
+    def fail(self, envelope_id, *, next_attempt_at, error, updated_at, blocked=False):
+        state = "BLOCKED" if blocked else "FAILED"
+        with self.database.connection() as connection:
+            connection.execute(
+                """UPDATE sync_queue
+                   SET state = ?, attempt_count = attempt_count + 1,
+                       next_attempt_at = ?, leased_at = NULL, last_error = ?,
+                       updated_at = ?
+                   WHERE envelope_id = ?""",
+                (state, _dt(next_attempt_at), error[:2000], _dt(updated_at), envelope_id),
+            )
+            connection.commit()
+
+    def recover_expired(self, now):
+        with self.database.connection() as connection:
+            cursor = connection.execute(
+                """UPDATE sync_queue
+                   SET state = 'FAILED', leased_at = NULL,
+                       next_attempt_at = ?, last_error = COALESCE(last_error, 'lease expired'),
+                       updated_at = ?
+                   WHERE state = 'IN_FLIGHT' AND leased_at IS NOT NULL AND leased_at <= ?""",
+                (_dt(now), _dt(now), _dt(now)),
+            )
+            connection.commit()
+            return cursor.rowcount
+
+    def list_for_run(self, run_id):
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM sync_queue WHERE run_id = ? ORDER BY created_at, envelope_id",
+                (run_id,),
+            ).fetchall()
+        return [self._to_domain(row) for row in rows]
+
+    @staticmethod
+    def _to_domain(row):
+        from lib.domain import SyncEnvelope, SyncQueueItem, SyncState
+        return SyncQueueItem(
+            envelope=SyncEnvelope(
+                envelope_id=row["envelope_id"],
+                runner_id=row["runner_id"],
+                run_id=row["run_id"],
+                kind=row["kind"],
+                schema_version=row["schema_version"],
+                idempotency_key=row["idempotency_key"],
+                payload_json=row["payload_json"],
+                payload_sha256=row["payload_sha256"],
+                created_at=_parse_dt(row["created_at"]),
+            ),
+            state=SyncState(row["state"]),
+            attempt_count=row["attempt_count"],
+            next_attempt_at=_parse_dt(row["next_attempt_at"]),
+            leased_at=_parse_dt(row["leased_at"]),
+            last_error=row["last_error"],
+            updated_at=_parse_dt(row["updated_at"]),
+        )
 
 
 class SQLiteBaselineRepository:

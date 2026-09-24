@@ -232,3 +232,9 @@ No real hardware firmware flash, reboot or rollback was executed in this environ
 ## 26. Iteration 18 status
 
 Internal CI/release gating is implemented. Core CI is hardware-free and cannot claim the 11/11 real-lab baseline. A separate dispatch-only self-hosted netregress-lab job runs the existing provisioning and pytest flow. Regression Intelligence now normalizes persisted pytest node IDs to semantic TestRegistry IDs.
+
+## 27. Iteration 19 status
+
+A durable Runner offline queue is implemented. Run snapshots are stored locally in SQLite and can be synchronized later through an outbound HTTPS transport. The local Runner remains authoritative for raw facts, and synchronization failures do not alter Run/TestResult outcomes. Pytest session completion queues the terminal Run best-effort.
+
+No external Cloud endpoint is configured or contacted in this environment.

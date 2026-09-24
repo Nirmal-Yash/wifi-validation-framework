@@ -391,3 +391,11 @@ Every point is labeled `VIRTUAL_WIFI` or `PHYSICAL_WIFI`. The Runner does not em
 2. Real GNS3/mac80211_hwsim execution is dispatch-only on a self-hosted runner labeled netregress-lab; generic CI must not claim lab validation.
 3. The release gate defaults to fail-closed for NO_BASELINE, UNVALIDATED, REGRESSION, SOFT_REGRESSION, NEW_FAILURE, missing required tests, invalid required evidence, incomplete Runs and unhealthy labs.
 4. Existing pytest node IDs remain protected; regression comparison normalizes them to semantic TestRegistry IDs.
+
+## 20C. Iteration 19 offline synchronization decisions
+
+1. SQLite durable outbox is the first Runner queue because local execution must survive Cloud outages and process restarts without broker infrastructure.
+2. One Run snapshot is an immutable, content-addressed synchronization envelope. Re-queueing the same Run state is idempotent by `run_id + payload_sha256`.
+3. In-flight entries use an expiry timestamp rather than permanent locks, allowing safe recovery after a sync-process crash.
+4. The Runner synchronizes technical facts, not release decisions. Cloud authorization and waivers remain outside this repository.
+5. Artifact binaries are not embedded in Run snapshots. Their immutable metadata and SHA-256 are synchronized first; transfer is a separate controlled operation.

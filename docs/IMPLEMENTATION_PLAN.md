@@ -714,3 +714,9 @@ Real firmware mutation is not invoked by the current WiFi pytest suite.
 ## 21A. Iteration 18 implementation
 
 The internal release gate is now a fail-closed policy boundary. Core CI performs source parsing and hardware-free release-policy contract tests. A separate dispatchable self-hosted job runs the protected GNS3/mac80211_hwsim suite using the existing provisioning script and canonical pytest command. Persisted Run/regression evaluation is available through scripts/ci_release_gate.py.
+
+## 22A. Iteration 19 implementation
+
+Iteration 19 implements the Runner-side offline synchronization seam as a durable SQLite outbox. A terminal Run is snapshotted locally into a deterministic envelope containing Run, Attempt, TestResult, metric/sample, artifact metadata and lifecycle facts. Artifact binaries remain local; the envelope carries immutable integrity metadata only.
+
+Synchronization is outbound-only and transport-agnostic. `HttpSyncTransport` is a minimal HTTPS implementation for the future Cloud contract. Queue delivery is idempotent, lease-based and retryable. Cloud unavailability never changes an already persisted Run outcome.

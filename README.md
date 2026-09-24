@@ -134,3 +134,7 @@ Device and firmware control is now adapter-backed. The Runner supports profile-d
 ### Internal CI release gate
 
 GitHub-hosted CI validates the hardware-free core and release-policy contracts on every push/PR. The protected GNS3/mac80211_hwsim suite is separated into an explicit self-hosted lab dispatch so generic CI never misrepresents lab availability as product validation.
+
+## Iteration 19
+
+The Runner now survives Cloud outages with a durable local synchronization queue. Terminal Runs are snapshotted locally and can be synchronized later through an outbound HTTPS transport using deterministic idempotency keys.

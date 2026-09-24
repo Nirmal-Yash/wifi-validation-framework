@@ -254,3 +254,18 @@ Next:
 
 Next:
 - Iteration 19 — Runner/offline execution and synchronization seam.
+
+## Iteration 19 — Runner Offline Execution + Synchronization ✅
+- [x] Added typed sync envelope and durable SQLite queue.
+- [x] Added deterministic Run snapshot and idempotency key.
+- [x] Added lease-based in-flight recovery.
+- [x] Added bounded retry and BLOCKED state after repeated failures.
+- [x] Added outbound HTTPS transport seam with optional bearer token.
+- [x] Added explicit sync CLI.
+- [x] Queued terminal Runs from pytest without changing Run outcomes on queue failure.
+- [x] Added queue/service contract tests.
+- [ ] External Cloud synchronization: unavailable/not configured in this environment.
+- [ ] Protected 11-test real-lab gate: unavailable in this environment.
+
+Next:
+- Iteration 20 — Cloud-facing Runner API and artifact transfer contract.

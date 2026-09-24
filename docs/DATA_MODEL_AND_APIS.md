@@ -483,3 +483,12 @@ The Phase 8 dashboard is read-only. State-changing Run/baseline operations remai
 Collection responses are paginated where historical growth can become unbounded, including Runs and Artifacts. Versioned API consumers must use the page/limit fields rather than assuming an unbounded result set.
 
 Artifact metadata never exposes arbitrary filesystem content. Binary download is constrained to registered paths under the Results root and re-verifies SHA-256 before serving.
+
+
+## 23. Runner synchronization envelope
+
+`SyncEnvelope` is a content-addressed snapshot of Runner-authoritative facts. Fields include envelope ID, Runner ID, Run ID, schema version, idempotency key, payload SHA-256 and creation timestamp.
+
+`SyncQueueItem` adds local delivery state: QUEUED, IN_FLIGHT, ACKED, FAILED or BLOCKED, attempt count, retry time, lease timestamp/expiry, and last error.
+
+The v1 Cloud endpoint for these envelopes is intentionally not fixed in Iteration 19; only the Runner-side transport protocol and deterministic payload contract are established.

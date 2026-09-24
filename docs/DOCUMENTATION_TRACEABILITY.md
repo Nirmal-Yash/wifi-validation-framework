@@ -101,3 +101,14 @@ All other discovery questions have an implementation decision.
 | GitHub-hosted core CI | .github/workflows/internal-release-gate.yml | workflow source audit |
 | Protected real-lab gate | dispatch-only self-hosted job | workflow source audit |
 | Pytest node/semantic ID normalization | RegressionIntelligenceService | regression contract test |
+
+## Iteration 19 traceability
+
+| Requirement | Implementation | Verification |
+|---|---|---|
+| Durable offline queue | `SQLiteSyncQueueRepository` | queue persistence tests |
+| Idempotent Run snapshot | `RunnerSyncService.queue_run` | idempotency test |
+| Lease/recovery | queue claim/recover methods | expired-lease test |
+| Retry semantics | `RunnerSyncService.sync_pending` | offline transport test |
+| Outbound transport | `HttpSyncTransport` | source contract audit |
+| Terminal Run queueing | `tests/conftest.py` | session wiring audit |

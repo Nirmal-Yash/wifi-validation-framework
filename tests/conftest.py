@@ -381,23 +381,30 @@ def pytest_sessionfinish(session, exitstatus):
             runner_error = runner_error or exc
 
     run = context.run_service.run_repository.get(context.run_id)
-    if run is None or run.lifecycle in {
+    if run is not None and run.lifecycle not in {
         RunLifecycle.COMPLETED,
         RunLifecycle.FAILED,
         RunLifecycle.LAB_FAILED,
         RunLifecycle.CANCELLED,
         RunLifecycle.ABORTED,
     }:
-        return
+        if runner_error is not None or health_error is not None:
+            context.run_service.lab_fail_run(context.run_id)
+        elif exitstatus == 0:
+            context.run_service.complete_run(context.run_id)
+        elif exitstatus == 2:
+            context.run_service.abort_run(context.run_id)
+        else:
+            context.run_service.fail_run(context.run_id)
 
-    if runner_error is not None or health_error is not None:
-        context.run_service.lab_fail_run(context.run_id)
-    elif exitstatus == 0:
-        context.run_service.complete_run(context.run_id)
-    elif exitstatus == 2:
-        context.run_service.abort_run(context.run_id)
-    else:
-        context.run_service.fail_run(context.run_id)
+    try:
+        from lib.services import RunnerSyncService
+        RunnerSyncService.from_sqlite(
+            context.run_service.run_repository.database,
+            runner_id=os.getenv("NETREGRESS_RUNNER_ID", os.getenv("HOSTNAME", "local-runner")),
+        ).queue_run(context.run_id)
+    except Exception as exc:
+        sys.stderr.write(f"\n[WARN] Failed to queue Run for synchronization: {exc}\n")
 
 
 @pytest.fixture(scope="session")

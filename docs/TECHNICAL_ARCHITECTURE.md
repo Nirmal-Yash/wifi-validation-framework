@@ -384,3 +384,11 @@ RunContext now exposes optional `device_adapter` and `firmware_adapter` instance
 ## 29. Internal CI / release gate
 
 The CI boundary has two execution classes: GitHub-hosted core CI for source and policy contracts, and self-hosted lab CI for the protected topology. ReleaseGateEvaluator consumes normalized Run/regression facts rather than raw output and never executes device commands.
+
+## 30. Offline Runner synchronization
+
+`RunnerSyncService` is the Runner-side outbox boundary. `SyncEnvelope` snapshots persisted facts without exposing local filesystem paths. `SyncQueueRepository` stores durable state in SQLite, including idempotency key, attempts, lease expiry and last error.
+
+A transport failure affects only synchronization state. It never mutates Run/TestResult business outcomes and never reruns validation. Expired in-flight leases become retryable. After the configured retry budget, an item becomes `BLOCKED` for intervention.
+
+The explicit `scripts/netregress_sync.py` command performs outbound synchronization when connectivity is available.

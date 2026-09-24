@@ -8,6 +8,7 @@ from .interfaces import (
     RepositoryNotFoundError,
     RunRepository,
     TestResultRepository,
+    SyncQueueRepository,
 )
 from .sqlite import (
     SQLiteArtifactRepository,
@@ -17,6 +18,7 @@ from .sqlite import (
     SQLiteEventRepository,
     SQLiteRunRepository,
     SQLiteTestResultRepository,
+    SQLiteSyncQueueRepository,
 )
 
 __all__ = [
@@ -29,6 +31,7 @@ __all__ = [
     "RepositoryNotFoundError",
     "RunRepository",
     "TestResultRepository",
+    "SyncQueueRepository",
     "SQLiteArtifactRepository",
     "SQLiteAttemptRepository",
     "SQLiteBaselineRepository",
@@ -36,4 +39,5 @@ __all__ = [
     "SQLiteEventRepository",
     "SQLiteRunRepository",
     "SQLiteTestResultRepository",
+    "SQLiteSyncQueueRepository",
 ]

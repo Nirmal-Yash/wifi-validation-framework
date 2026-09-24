@@ -217,3 +217,11 @@ The Runner now enforces firmware-specific technical controls below the future Pr
 - lifecycle audit events for firmware stages.
 
 Cloud/operator authorization remains the higher-level business authority and is not replaced by adapter-side checks.
+
+## 18A. Iteration 19 Runner synchronization controls
+
+The Runner never uploads arbitrary filesystem paths. Synchronization envelopes include artifact identifiers, display names, type, size, SHA-256, evidence state and sensitivity metadata; binary transfer remains a separate controlled capability.
+
+The HTTPS transport requires an `https://` endpoint and sends the queue idempotency key as an HTTP idempotency header. Bearer-token support is optional and is supplied externally; credentials are not persisted in the queue.
+
+Synchronization retries are transport retries only. They never retry device commands, firmware flashes or validation tests.
