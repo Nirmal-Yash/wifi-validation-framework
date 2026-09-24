@@ -28,7 +28,7 @@ def test_admin_can_create_waiver(tmp_path, monkeypatch):
     response = client.post("/api/v1/auth/login", json={"username":"admin","password":"pw"})
     assert response.status_code == 200
     csrf = response.get_json()["data"]["csrf_token"]
-    waiver = client.post("/api/v1/waivers", headers={"X-CSRF-Token": csrf}, json={
+    waiver = client.post("/api/v1/waivers", headers={"X-CSRF-Token": csrf, "Idempotency-Key": "waiver-admin-test-1"}, json={
         "scope":"RELEASE",
         "target_id":"*",
         "issue_code":"NO_BASELINE",

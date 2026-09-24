@@ -83,9 +83,10 @@ def test_stale_lock_recovery(tmp_path):
     lock.write_text(json.dumps({"resource_id":"lab","owner":"runner:999999:abc","expires_at":expired}))
     assert StaleLockRecovery().recover(tmp_path)==1
 
-def test_run_recovery_classifies_dead_worker(tmp_path):
+def test_run_recovery_classifies_dead_worker(tmp_path, monkeypatch):
     service,run=_running_service(tmp_path)
     run.execution_pid=2147483647;service.run_repository.update(run)
+    monkeypatch.setattr(RunRecoveryService, "_pid_alive", staticmethod(lambda pid: False))
     recovered=RunRecoveryService().recover_orphaned_runs(service)
     assert recovered==(run.run_id,)
     assert service.run_repository.get(run.run_id).failure_class is FailureClass.WORKER_CRASHED

@@ -368,24 +368,37 @@ class ProtocolEvidenceService:
         akms = ()
         has_rsn = False
 
-        for element in self._iter_elements(beacon):
-            if element.ID == 0:
-                ssid = element.info.decode("utf-8", errors="replace")
-            elif element.ID == 3 and element.info:
-                channel = int(element.info[0])
+        raw_ies = b""
+        try:
+            raw_ies = bytes(beacon[Dot11Beacon].payload)
+        except Exception:
+            raw_ies = b""
 
-        if Dot11EltRSN is not None:
-            rsn_element = beacon.getlayer(Dot11EltRSN)
-            if rsn_element is not None:
+        offset = 0
+        while offset + 2 <= len(raw_ies):
+            element_id = raw_ies[offset]
+            element_length = raw_ies[offset + 1]
+            start = offset + 2
+            end = start + element_length
+            if end > len(raw_ies):
+                break
+            info = raw_ies[start:end]
+            if element_id == 0:
+                ssid = info.decode("utf-8", errors="replace")
+            elif element_id == 3 and info:
+                channel = int(info[0])
+            elif element_id == 48:
                 has_rsn = True
-                raw_rsn = bytes(rsn_element)
-                group_cipher, pairwise, akms = self._parse_rsn(raw_rsn[2:])
+                group_cipher, pairwise, akms = self._parse_rsn(info)
+            offset = end
+
         if not has_rsn:
             for element in self._iter_elements(beacon):
                 if getattr(element, "ID", None) == 48:
                     has_rsn = True
-                    info = getattr(element, "info", b"")
-                    group_cipher, pairwise, akms = self._parse_rsn(bytes(info))
+                    raw_element = bytes(element)
+                    info = raw_element[2:] if len(raw_element) >= 2 else b""
+                    group_cipher, pairwise, akms = self._parse_rsn(info)
                     break
 
         return BeaconEvidence(

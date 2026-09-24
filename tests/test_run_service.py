@@ -46,6 +46,7 @@ def test_create_start_complete_run_lifecycle(tmp_path):
             "01EVENT000000000000000003",
             "01EVENT000000000000000004",
             "01EVENT000000000000000005",
+            "01EVENT000000000000000006",
         ],
     )
     database.initialize()
@@ -111,6 +112,7 @@ def test_product_failure_sets_rejected_business_outcome(tmp_path):
             "01EVENT000000000000000002",
             "01EVENT000000000000000003",
             "01EVENT000000000000000004",
+            "01EVENT000000000000000005",
         ],
     )
     database.initialize()
