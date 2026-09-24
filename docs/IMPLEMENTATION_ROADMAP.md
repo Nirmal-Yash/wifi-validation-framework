@@ -117,3 +117,19 @@ Next:
 
 Next:
 - Iteration 11 — Statistical measurement policies and aggregate evaluation.
+
+
+## Iteration 11 — Statistical Measurement Policies + Aggregate Evaluation ✅
+- [x] Added typed `StatisticKind`, `MeasurementPolicy`, `MetricDefinition` and `StatisticSummary` contracts.
+- [x] Added deterministic evaluator for count, minimum, maximum, mean, median, p90, p95 and population standard deviation.
+- [x] Warm-up samples and disallowed sample statuses are excluded from aggregates.
+- [x] Retried measurements retain explicit retry metadata without multiplying statistical observations.
+- [x] Added minimum-sample enforcement and metric name/unit validation.
+- [x] Extended TestRegistry so performance tests declare a semantic `decision_metric` and aggregate policy.
+- [x] Added semantic metric naming in the pytest collector when a test has one policy-driven metric, without changing existing test node IDs or CLI behavior.
+- [x] Added unit coverage for statistics, policy enforcement and registry metadata.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required because pytest metric collection and result semantics changed; unavailable in this environment.
+
+Next:
+- Iteration 12 — Functional WiFi expansion and negative/recovery cases.

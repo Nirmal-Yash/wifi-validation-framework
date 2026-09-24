@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import re
 from typing import Mapping
 
-from lib.domain import ArtifactType, Criticality, Severity
+from lib.domain import ArtifactType, Criticality, MeasurementPolicy, MetricDefinition, Severity, StatisticKind
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +24,8 @@ class TestDefinition:
     capabilities: tuple[str, ...] = ()
     metric_definitions: Mapping[str, str] = field(default_factory=dict)
     threshold_definitions: Mapping[str, str] = field(default_factory=dict)
+    measurement_policies: Mapping[str, MeasurementPolicy] = field(default_factory=dict)
+    decision_metric: str | None = None
     evidence_requirements: tuple[ArtifactType, ...] = ()
 
     def __post_init__(self) -> None:
@@ -41,6 +43,19 @@ class TestDefinition:
             raise ValueError("estimated_duration_sec cannot be negative")
         if len(set(self.requires)) != len(self.requires):
             raise ValueError("requires must not contain duplicates")
+        unknown_policies = set(self.measurement_policies) - set(self.metric_definitions)
+        if unknown_policies:
+            raise ValueError(
+                f"measurement policies reference unknown metrics: {sorted(unknown_policies)}"
+            )
+        if self.decision_metric is not None:
+            if self.decision_metric not in self.metric_definitions:
+                raise ValueError(f"decision metric is not defined: {self.decision_metric}")
+            if self.decision_metric not in self.measurement_policies:
+                raise ValueError("decision metric must have a measurement policy")
+        if self.category.lower() == "performance" and self.metric_definitions:
+            if self.decision_metric is None:
+                raise ValueError("performance tests with metrics must declare decision_metric")
 
 
 class TestRegistry:
@@ -90,6 +105,27 @@ class TestRegistry:
 
     def definitions(self) -> tuple[TestDefinition, ...]:
         return tuple(self._by_test_id.values())
+
+    def metric_definition(self, test_id: str, metric_name: str) -> MetricDefinition:
+        definition = self.get(test_id)
+        unit = definition.metric_definitions.get(metric_name)
+        if unit is None:
+            raise KeyError(f"metric is not defined for test: {metric_name}")
+        policy = definition.measurement_policies.get(metric_name)
+        if policy is None:
+            raise KeyError(f"measurement policy is not defined for metric: {metric_name}")
+        return MetricDefinition(
+            name=metric_name,
+            unit=unit,
+            measurement_policy=policy,
+            authoritative=metric_name == definition.decision_metric,
+        )
+
+    def decision_metric_definition(self, test_id: str) -> MetricDefinition | None:
+        definition = self.get(test_id)
+        if definition.decision_metric is None:
+            return None
+        return self.metric_definition(test_id, definition.decision_metric)
 
     def version_map(self, node_ids: list[str] | tuple[str, ...]) -> dict[str, str]:
         return {
@@ -144,6 +180,13 @@ class TestRegistry:
                     capabilities=("dhcp",),
                     metric_definitions={"dhcp_duration": "seconds"},
                     threshold_definitions={"max_dhcp_duration": "thresholds.dhcp_timeout_sec"},
+                    measurement_policies={
+                        "dhcp_duration": MeasurementPolicy(
+                            aggregate=StatisticKind.P95,
+                            minimum_samples=1,
+                        ),
+                    },
+                    decision_metric="dhcp_duration",
                 ),
                 TestDefinition(
                     "wifi.dns.resolution",
@@ -164,7 +207,14 @@ class TestRegistry:
                     requires=("wifi.dhcp.lease",),
                     destructive=False, estimated_duration_sec=15,
                     capabilities=("icmp",),
-                    metric_definitions={"ping_rtt": "ms"},
+                    metric_definitions={"ping_success": "bool"},
+                    measurement_policies={
+                        "ping_success": MeasurementPolicy(
+                            aggregate=StatisticKind.MEAN,
+                            minimum_samples=1,
+                        ),
+                    },
+                    decision_metric="ping_success",
                 ),
                 TestDefinition(
                     "wifi.latency.threshold",
@@ -177,6 +227,13 @@ class TestRegistry:
                     capabilities=("icmp",),
                     metric_definitions={"latency": "ms"},
                     threshold_definitions={"max_latency": "thresholds.max_latency_ms"},
+                    measurement_policies={
+                        "latency": MeasurementPolicy(
+                            aggregate=StatisticKind.P95,
+                            minimum_samples=1,
+                        ),
+                    },
+                    decision_metric="latency",
                 ),
                 TestDefinition(
                     "wifi.packet_loss.threshold",
@@ -189,6 +246,13 @@ class TestRegistry:
                     capabilities=("icmp",),
                     metric_definitions={"packet_loss": "percent"},
                     threshold_definitions={"max_packet_loss": "thresholds.max_packet_loss_pct"},
+                    measurement_policies={
+                        "packet_loss": MeasurementPolicy(
+                            aggregate=StatisticKind.MEAN,
+                            minimum_samples=1,
+                        ),
+                    },
+                    decision_metric="packet_loss",
                 ),
                 TestDefinition(
                     "wifi.throughput.minimum",
@@ -201,6 +265,13 @@ class TestRegistry:
                     capabilities=("iperf3",),
                     metric_definitions={"throughput": "Mbps"},
                     threshold_definitions={"min_throughput": "thresholds.min_throughput_mbps"},
+                    decision_metric="throughput",
+                    measurement_policies={
+                        "throughput": MeasurementPolicy(
+                            aggregate=StatisticKind.MEAN,
+                            minimum_samples=1,
+                        ),
+                    },
                 ),
                 TestDefinition(
                     "wifi.recovery.link_flap",

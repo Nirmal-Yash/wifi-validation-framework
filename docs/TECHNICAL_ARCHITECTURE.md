@@ -94,6 +94,25 @@ Metadata covers test ID, version, categories, protocol, severity, criticality, c
 
 Pytest remains the physical execution engine.
 
+## 8A. Statistical measurement policies
+
+Statistical evaluation is separated from raw sample collection.
+
+`MetricCollector` preserves every observed `Sample`. `MeasurementPolicy` defines the eligible sample population and authoritative aggregate. `MetricDefinition` binds the policy to a metric name/unit, and `StatisticSummary` contains all initial aggregates:
+
+- count;
+- minimum;
+- maximum;
+- mean;
+- median;
+- p90;
+- p95;
+- population standard deviation.
+
+Warm-up samples are always excluded from aggregates. Samples with disallowed status are excluded. A retried sample is still one measurement; retry metadata does not create additional statistical observations. Outliers are retained in the raw history and therefore remain reproducible.
+
+Performance tests declare an explicit `decision_metric` in the `TestRegistry`. The evaluator exposes that metric's configured aggregate as the decision value. The current compatibility configuration uses a minimum of one sample so existing one-measurement tests retain their execution behavior; higher minimums can be declared per test without changing the collector contract.
+
 ## 9. DeviceAdapter
 
 Generic responsibilities:

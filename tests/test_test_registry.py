@@ -30,3 +30,30 @@ def test_registry_fallback_is_deterministic():
     assert first.test_id == second.test_id
     assert first.node_id == second.node_id
     assert first.category == "internal"
+
+
+def test_performance_definitions_declare_decision_metric_policies():
+    registry = TestRegistry.default()
+
+    performance = [
+        definition
+        for definition in registry.definitions()
+        if definition.category == "Performance"
+    ]
+
+    assert performance
+    for definition in performance:
+        assert definition.decision_metric in definition.metric_definitions
+        assert definition.decision_metric in definition.measurement_policies
+        metric_definition = registry.decision_metric_definition(definition.test_id)
+        assert metric_definition is not None
+        assert metric_definition.authoritative is True
+
+
+def test_latency_decision_policy_uses_p95():
+    registry = TestRegistry.default()
+
+    definition = registry.get("wifi.latency.threshold")
+
+    assert definition.decision_metric == "latency"
+    assert definition.measurement_policies["latency"].aggregate.value == "p95"

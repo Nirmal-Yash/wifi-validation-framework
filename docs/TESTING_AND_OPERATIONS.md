@@ -107,6 +107,21 @@ Performance tests use:
 
 Do not silently discard samples or silently replace one failure with a successful retry.
 
+## 6A. Statistical policy verification
+
+Unit tests must verify:
+
+- all configured initial aggregates;
+- deterministic percentile interpolation;
+- warm-up exclusion;
+- exclusion of disallowed sample statuses;
+- retry metadata does not duplicate observations;
+- minimum sample enforcement;
+- metric name/unit compatibility;
+- explicit performance-test decision metrics.
+
+The raw `Sample` collection must remain unchanged by aggregate evaluation.
+
 ## 7. Failure taxonomy tests
 
 Explicitly inject and verify:

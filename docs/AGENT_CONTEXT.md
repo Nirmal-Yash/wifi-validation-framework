@@ -152,7 +152,9 @@ Iteration 9 implementation is present on main; local/unit and real-lab verificat
 
 Iteration 10 implementation is present on main; local/unit and real-lab verification gates remain pending because this environment cannot execute the repository or GNS3/mac80211_hwsim lab.
 
-The next architectural slice is Iteration 11: statistical measurement policies and aggregate evaluation.
+Iteration 11 implementation is present on main: statistical measurement policies, deterministic aggregate evaluation, warm-up exclusion, retry-aware sample handling and semantic decision-metric metadata. Local/unit and real-lab verification remain pending because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
+
+The next architectural slice is Iteration 12: functional WiFi expansion and negative/recovery cases.
 
 Legacy test result storage remains as compatibility storage until the migration is explicitly retired.
 
@@ -176,3 +178,10 @@ Verification is intentionally still pending: no local Python/unit execution or r
 
 Command execution security is now centralized through SecureCommandRunner and CommandSecurityPolicy. Strict structured execution rejects shell syntax by default; the explicit compatibility shell boundary is allow-listed and destructive operations require a Run policy that authorizes the documented lab mutation prefixes. Privilege normalization forces non-interactive sudo, command/output secrets are redacted before evidence, and each Run records COMMAND_EXECUTED lifecycle events plus a COMMAND_OUTPUT artifact. The raw DHCP capture Paramiko path remains an explicit protected exception.
 \n## 18. Iteration 10 status\n\nLabHealthService is integrated into the Run lifecycle. Every Run performs a read-only BEFORE health gate and an AFTER health check. Health covers GNS3/project nodes, Docker, libvirt, mac80211_hwsim PHY placement, management SSH, AP/client/router/monitor interfaces, DHCP, DNS, iperf3, disk capacity and clock synchronization. Health snapshots are typed, persisted as LAB_HEALTH_SNAPSHOT evidence, and unhealthy snapshots additionally produce DIAGNOSTIC_BUNDLE evidence. FAILED required health blocks test execution and marks the Run LAB_FAILED; DEGRADED and UNKNOWN remain contextual health states. No automatic repair is triggered.
+
+
+## 19. Iteration 11 status
+
+Statistical measurement policy is now a typed contract. `MeasurementPolicy` selects the authoritative aggregate and minimum sample count; `MetricDefinition` binds a policy to a named metric and unit; `StatisticSummary` exposes count, minimum, maximum, mean, median, p90, p95 and population standard deviation. Warm-up samples and non-allowed sample statuses are excluded from aggregates, while retried samples remain one measurement when included. Performance TestRegistry definitions now declare their decision metric and aggregate policy, while pytest metric logging automatically uses that semantic metric name when a single policy-driven metric exists.
+
+Raw samples remain the source of truth. Aggregate evaluation is deterministic and does not discard or rewrite raw measurements.

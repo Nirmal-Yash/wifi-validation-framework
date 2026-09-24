@@ -20,6 +20,15 @@ from .models import (
     TestResult,
     TestResultStatus,
 )
+from .statistics import (
+    InsufficientSamplesError,
+    MeasurementEvaluationError,
+    MeasurementPolicy,
+    MeasurementPolicyEvaluator,
+    MetricDefinition,
+    StatisticKind,
+    StatisticSummary,
+)
 
 __all__ = [
     "Artifact",
@@ -45,4 +54,11 @@ __all__ = [
     "Severity",
     "TestResult",
     "TestResultStatus",
+    "InsufficientSamplesError",
+    "MeasurementEvaluationError",
+    "MeasurementPolicy",
+    "MeasurementPolicyEvaluator",
+    "MetricDefinition",
+    "StatisticKind",
+    "StatisticSummary",
 ]

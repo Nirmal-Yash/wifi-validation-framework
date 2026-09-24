@@ -77,13 +77,16 @@ def connection_pool(request):
 
 
 class MetricLogger(MetricCollector):
-    """Backward-compatible metric fixture with raw sample collection."""
+    """Backward-compatible metric fixture with semantic policy-aware naming."""
 
-    def __init__(self, node):
+    def __init__(self, node, default_name="metric"):
         super().__init__()
         self._node = node
+        self._default_name = default_name
 
     def log(self, value, unit, **kwargs):
+        if "name" not in kwargs:
+            kwargs["name"] = self._default_name
         super().log(value, unit, **kwargs)
         try:
             val_float = float(value)
@@ -101,7 +104,14 @@ def lab_health_gate(request):
 
 @pytest.fixture
 def metric_logger(request):
-    collector = MetricLogger(request.node)
+    default_name = "metric"
+    context = getattr(request.config, "_netregress_run_context", None)
+    if context is not None:
+        definition = context.definition_for(request.node.nodeid)
+        policy_metrics = tuple(definition.measurement_policies)
+        if len(policy_metrics) == 1:
+            default_name = policy_metrics[0]
+    collector = MetricLogger(request.node, default_name=default_name)
     request.node._metric_collector = collector
     return collector
 

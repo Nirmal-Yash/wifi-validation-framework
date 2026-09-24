@@ -94,6 +94,8 @@ Fields:
 - baseline value;
 - delta percentage;
 - regression classification.
+- measurement policy and authoritative decision aggregate.
+- derived decision value from the configured aggregate.
 
 ## 6. Sample
 
@@ -115,6 +117,14 @@ Fields:
 - diagnostic metadata.
 
 Valid statistical samples are distinguished from RETRIED or failed measurements.
+
+## 6A. Statistical measurement policy
+
+`MeasurementPolicy` is immutable run/test-definition metadata containing the authoritative statistic, minimum eligible sample count, allowed sample statuses and retry inclusion rule.
+
+`StatisticSummary` is derived from raw samples and includes count, minimum, maximum, mean, median, p90, p95 and population standard deviation. Warm-up samples are excluded from the eligible population, outliers are retained, and retry metadata never multiplies the sample count.
+
+Historical raw samples remain authoritative. Aggregate values are derived from the frozen test-definition/policy version rather than silently replacing the original sample history.
 
 ## 7. Artifact
 
