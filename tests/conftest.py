@@ -20,6 +20,7 @@ from lib.domain import TestResultStatus
 from lib.repositories import SQLiteDatabase
 from lib.services import (
     ArtifactService,
+    NetmikoRunner,
     MetricCollector,
     RunContext,
     RunService,
@@ -58,8 +59,12 @@ def devices():
 
 
 @pytest.fixture(scope="session")
-def connection_pool():
-    pool = ConnectionPool()
+def connection_pool(request):
+    context = getattr(request.config, "_netregress_run_context", None)
+    if context is not None and isinstance(context.command_runner, NetmikoRunner):
+        pool = context.command_runner.pool
+    else:
+        pool = ConnectionPool()
     yield pool
     pool.close_all()
 
@@ -215,7 +220,7 @@ def pytest_collection_finish(session):
         resolved_config=persisted_config,
         test_registry=registry,
         artifact_service=ArtifactService.from_sqlite(service.run_repository.database),
-        command_runner=None,
+        command_runner=NetmikoRunner(ConnectionPool()),
         logger=logging.getLogger("netregress"),
     )
 
@@ -231,6 +236,11 @@ def pytest_sessionfinish(session, exitstatus):
         context.run_service.abort_run(context.run_id)
     else:
         context.run_service.fail_run(context.run_id)
+
+    runner = context.command_runner
+    close = getattr(runner, "close", None)
+    if close is not None:
+        close()
 
 
 @pytest.fixture(scope="session")

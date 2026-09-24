@@ -1,3 +1,4 @@
+from .command_runner import CommandResult, CommandRunner, LocalRunner, NetmikoRunner, ParamikoExecRunner, SSHConnectionSpec, redact_command
 from .test_registry import TestDefinition, TestRegistry
 from .run_context import RunContext
 from .legacy_migration import LegacyDatabaseMigrationService
@@ -12,6 +13,13 @@ from .run_service import (
 )
 
 __all__ = [
+    "CommandResult",
+    "CommandRunner",
+    "LocalRunner",
+    "NetmikoRunner",
+    "ParamikoExecRunner",
+    "SSHConnectionSpec",
+    "redact_command",
     "RunContext",
     "TestDefinition",
     "TestRegistry",

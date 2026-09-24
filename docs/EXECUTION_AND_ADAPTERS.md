@@ -240,7 +240,21 @@ Structured result fields:
 - idempotency;
 - redaction state.
 
-## 16. Retry semantics
+## 16. CommandRunner implementations
+
+The current implementation provides three transports:
+
+- `NetmikoRunner` wraps the established `ConnectionPool` so existing SSH retry/connection behavior remains compatible.
+- `ParamikoExecRunner` provides structured non-interactive SSH execution with exit-status capture and timeout metadata.
+- `LocalRunner` uses argv execution by default; shell parsing is opt-in through `execute_shell()`.
+
+All transports return `CommandResult`. The result includes command ID, target, category, safe display command, stdout/stderr, exit code when the transport exposes one, duration, connection/execution/idle timeout metadata, timeout state, idempotency, privilege context, redaction state and transport errors.
+
+Command execution itself adds no automatic retry policy. Existing Netmiko connection establishment retries remain in `ConnectionPool`; mutating operations remain non-retryable by caller policy.
+
+The dedicated raw Paramiko foreground channel used for AP `br0` DHCP tcpdump is intentionally not replaced by `ParamikoExecRunner`, because that capture requires long-lived channel control and a specific stop/download lifecycle.
+
+## 17. Retry semantics
 
 Connection establishment may retry.
 
@@ -250,7 +264,7 @@ Mutating operations are not blindly retried.
 
 Firmware flash must never be automatically retried after uncertain state.
 
-## 17. Device locking
+## 18. Device locking
 
 Exclusive operations require DEVICE_EXCLUSIVE ownership.
 
@@ -263,7 +277,7 @@ Examples:
 
 Compatible read-only/network operations may use NETWORK_CONCURRENT when safe.
 
-## 18. Capture integration
+## 19. Capture integration
 
 CaptureService is available through RunContext.
 
@@ -277,7 +291,7 @@ Transport selection is handled by the capture layer.
 
 The current AP br0 Paramiko path remains a transport implementation rather than a test-specific architectural rule.
 
-## 19. Traffic integration
+## 20. Traffic integration
 
 TrafficService should eventually provide:
 
@@ -291,7 +305,7 @@ TrafficService should eventually provide:
 
 Results are normalized into Metric/Sample objects.
 
-## 20. Fault injection
+## 21. Fault injection
 
 FaultService uses CommandRunner and explicit fault definitions.
 
@@ -316,7 +330,7 @@ prepare
 → verify recovery
 ~~~
 
-## 21. Cleanup guarantee
+## 22. Cleanup guarantee
 
 Run Orchestrator owns the final cleanup boundary.
 
@@ -330,7 +344,7 @@ try/finally behavior must ensure restoration of:
 - temporary files;
 - device sessions.
 
-## 22. Physical versus virtual adapters
+## 23. Physical versus virtual adapters
 
 Both virtual and physical adapters use the same service contracts.
 
@@ -338,7 +352,7 @@ Every telemetry point identifies its environment class.
 
 Virtual hwsim does not satisfy physical RF-certification claims.
 
-## 23. Future vendor adapter pattern
+## 24. Future vendor adapter pattern
 
 Vendor adapter should contain:
 
@@ -352,7 +366,7 @@ Vendor adapter should contain:
 
 The validation test itself should remain unchanged.
 
-## 24. Acceptance tests for adapters
+## 25. Acceptance tests for adapters
 
 Every adapter requires:
 
@@ -367,7 +381,7 @@ Every adapter requires:
 9. timeout/disconnect behavior;
 10. artifact/evidence verification.
 
-## 25. Design invariant
+## 26. Design invariant
 
 Tests state what must be validated.
 

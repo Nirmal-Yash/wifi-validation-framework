@@ -52,3 +52,30 @@ Next:
 
 Next:
 - Iteration 7 — Test Registry + RunContext semantic execution metadata.
+
+
+## Iteration 7 — Test Registry + RunContext ✅
+- [x] Stable semantic IDs mapped 1:1 to existing pytest node IDs.
+- [x] Full test-definition metadata and deterministic internal fallback definitions.
+- [x] RunContext introduced with Run/Attempt, lab/device, resolved config, TestRegistry and ArtifactService.
+- [x] Semantic test metadata integrated into Run-scoped TestResult persistence.
+- [x] Existing pytest CLI and node IDs preserved.
+- [x] Unit tests added for registry and context behavior.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required; unavailable in this environment.
+
+## Iteration 8 — CommandRunner Extraction + Structured Command Results ✅
+- [x] Typed CommandRunner protocol and immutable CommandResult contract.
+- [x] NetmikoRunner wraps the existing ConnectionPool without altering protected connection behavior.
+- [x] ParamikoExecRunner added for structured non-interactive SSH execution.
+- [x] LocalRunner added with shell execution available only through explicit execute_shell().
+- [x] Command timeout, idempotency, privilege and redaction metadata captured for each result.
+- [x] Common command-secret redaction for display/logging implemented.
+- [x] RunContext now carries a typed CommandRunner instance.
+- [x] Existing raw Paramiko DHCP tcpdump lifecycle remains untouched.
+- [x] Unit tests added for redaction, structured Netmiko results, local execution and RunContext integration.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required because execution plumbing changed; unavailable in this environment.
+
+Next:
+- Iteration 9 — Execution security and command authorization/redaction hardening.

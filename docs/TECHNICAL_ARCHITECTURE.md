@@ -141,7 +141,11 @@ Implementations:
 
 CommandResult contains command ID, host, safe display command, exit code, stdout, stderr, duration, timeout information, privilege context and idempotency metadata.
 
-## 12. CaptureService
+## 12. Command execution contract
+
+`CommandRunner` is the single structured execution seam for local and device commands. `NetmikoRunner` wraps the existing `ConnectionPool` without changing its connection/retry behavior; `ParamikoExecRunner` provides non-interactive SSH execution with explicit timeout metadata; `LocalRunner` executes without a shell unless `execute_shell()` is explicitly requested. Every execution returns a `CommandResult` carrying a command ID, target, safe display command, output, exit status when available, duration, timeout metadata, privilege/idempotency context and transport errors. The raw foreground Paramiko channel used by DHCP tcpdump remains outside this abstraction so its lifecycle behavior is preserved.
+
+## 13. CaptureService
 
 Capture lifecycle:
 
@@ -158,7 +162,7 @@ start
 
 The current AP br0 DHCP capture remains the behavioral reference.
 
-## 13. LabController
+## 14. LabController
 
 LabController gradually absorbs reusable provisioning logic:
 
@@ -172,33 +176,33 @@ LabController gradually absorbs reusable provisioning logic:
 - AP readiness;
 - controlled recovery.
 
-## 14. LabHealthService
+## 15. LabHealthService
 
 LabHealthService diagnoses environment health and captures evidence. It does not silently repair a failing lab.
 
 Health coverage includes GNS3, Docker, libvirt, hwsim, AP, client, router, management, DHCP, DNS, iperf3, SSH, disk and clock synchronization.
 
-## 15. Environment fingerprint
+## 16. Environment fingerprint
 
 Capture host OS/kernel, Python, tool versions, GNS3, Docker, hostapd, wpa_supplicant, FRR, hwsim state, repository commit and effective configuration hash.
 
-## 16. Persistence
+## 17. Persistence
 
 Services depend on repositories.
 
 Phase 1 repositories use SQLite. Later they use SQLAlchemy/PostgreSQL without changing the service contracts.
 
-## 17. Transaction boundaries
+## 18. Transaction boundaries
 
 TestResult, its metrics and artifact references should be committed atomically.
 
 Physical artifacts are created and verified first. Orphan reconciliation handles files whose database registration failed.
 
-## 18. Lifecycle events
+## 19. Lifecycle events
 
 Persist significant events such as RUN_CREATED, RUN_STARTED, LAB_HEALTH_STARTED, LAB_HEALTH_COMPLETED, TEST_STARTED, TEST_COMPLETED, ARTIFACT_CREATED, BASELINE_PROMOTED, RUN_COMPLETED and RUN_CANCELLED.
 
-## 19. Error taxonomy
+## 20. Error taxonomy
 
 ~~~text
 FrameworkError
@@ -213,7 +217,7 @@ FrameworkError
 
 Adapters raise technical exceptions. Run Orchestrator translates them into Run/Test business semantics.
 
-## 20. Lifecycle translation
+## 21. Lifecycle translation
 
 ~~~text
 SSH timeout
@@ -229,7 +233,7 @@ test assertion failure
 → Run REJECTED
 ~~~
 
-## 21. Concurrency
+## 22. Concurrency
 
 One physical lab may own only one active Run.
 
@@ -238,25 +242,25 @@ Device locks use two conceptual classes:
 - DEVICE_EXCLUSIVE for flash, reboot and configuration mutation;
 - NETWORK_CONCURRENT for compatible read, capture and measurement work.
 
-## 22. Timeout model
+## 23. Timeout model
 
 Commands and jobs may define connection timeout, execution timeout, idle timeout and total timeout.
 
 Timeout reason is persisted.
 
-## 23. Retry model
+## 24. Retry model
 
 Retry only when the operation is explicitly idempotent and the retry cannot hide state mutation.
 
 Never blindly retry firmware flashing, tc mutation, interface state mutation, DHCP mutation or arbitrary shell commands.
 
-## 24. Offline Runner
+## 25. Offline Runner
 
 Runner stores raw execution state locally if Cloud is unavailable and synchronizes later.
 
 Cloud disconnection must not alter a technical outcome already observed locally.
 
-## 25. SaaS boundary
+## 26. SaaS boundary
 
 This repository remains the Runner/Core validation engine.
 
@@ -267,4 +271,4 @@ The Runner owns lab/device execution and raw evidence.
 ### Test Registry and RunContext
 The Runner maintains a semantic TestRegistry mapped 1:1 to stable pytest node IDs. Test definitions carry version, category, protocol, severity, criticality, equipment, direction, prerequisites, destructive flag, duration, capabilities, metric/threshold definitions and evidence requirements.
 
-Each pytest session exposes a RunContext carrying Run/Attempt identity, lab/device, resolved configuration, TestRegistry, ArtifactService, a future CommandRunner slot and structured logger. The existing pytest CLI and node IDs remain unchanged.
+Each pytest session exposes a RunContext carrying Run/Attempt identity, lab/device, resolved configuration, TestRegistry, ArtifactService, a typed CommandRunner and structured logger. The existing pytest CLI and node IDs remain unchanged.

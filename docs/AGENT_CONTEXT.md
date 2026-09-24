@@ -146,7 +146,9 @@ Runtime DBs, reports, PCAPs and logs remain gitignored.
 
 Iteration 6 implementation is present on main, but its local/unit and real-lab verification gates remain pending because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
 
-After verification passes, the next code slice is Iteration 8: CommandRunner extraction and structured command results.
+Iteration 8 implementation is present on main; local/unit and real-lab verification gates remain pending because this environment cannot execute the repository or GNS3/mac80211_hwsim lab.
+
+The next architectural slice is Iteration 9: execution security and command authorization/redaction hardening.
 
 Legacy test result storage remains as compatibility storage until the migration is explicitly retired.
 
@@ -158,3 +160,9 @@ Historical SQLite migration is implemented with deterministic legacy provenance 
 ## 15. Iteration 7 status
 
 TestRegistry and RunContext are implemented. Existing validation node IDs remain unchanged; semantic metadata is now attached to persisted Run-scoped TestResults.
+
+## 16. Iteration 8 status
+
+CommandRunner extraction is implemented with typed `CommandResult`, Netmiko/Paramiko/local transports, explicit shell execution, command redaction metadata and timeout/idempotency context. RunContext now carries a typed NetmikoRunner backed by the existing ConnectionPool. The dedicated DHCP tcpdump Paramiko foreground channel remains unchanged.
+
+Verification is intentionally still pending: no local Python/unit execution or real 11/11 lab run was possible in this environment.

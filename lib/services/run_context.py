@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import logging
 from typing import Any, Mapping
 
+from .command_runner import CommandRunner
+
 from .artifact_service import ArtifactService
 from .run_service import RunService
 from .test_registry import TestDefinition, TestRegistry
@@ -19,7 +21,7 @@ class RunContext:
     resolved_config: Mapping[str, Any]
     test_registry: TestRegistry
     artifact_service: ArtifactService | None = None
-    command_runner: Any | None = None
+    command_runner: CommandRunner | None = None
     logger: logging.Logger | None = None
 
     def __post_init__(self) -> None:
