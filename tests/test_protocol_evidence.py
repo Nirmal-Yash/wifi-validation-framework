@@ -103,6 +103,10 @@ def test_dhcp_packet_counts_do_not_fake_correlation(tmp_path):
     assert evidence.has_lease_acquired is False
 
 
+def test_scapy_eapol_key_api_is_available():
+    assert EAPOL_KEY is not None
+
+
 def test_eapol_requires_ordered_four_way_handshake(tmp_path):
     frames = []
     key_shapes = (
