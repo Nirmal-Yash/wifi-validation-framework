@@ -62,3 +62,13 @@ __all__ = [
     "StatisticKind",
     "StatisticSummary",
 ]
+
+from .protocol_evidence import (
+    BeaconEvidence,
+    DhcpEvidence,
+    DhcpTransactionEvidence,
+    DnsEvidence,
+    DnsTransactionEvidence,
+    EapolEvidence,
+    EapolHandshakeEvidence,
+)

@@ -157,6 +157,19 @@ Artifact types:
 - ENV_FINGERPRINT;
 - DIAGNOSTIC_BUNDLE;
 - FIRMWARE_REFERENCE.
+- PROTOCOL_EVIDENCE.
+
+## 7A. Protocol evidence
+
+`PROTOCOL_EVIDENCE` is a derived Run-scoped artifact linked to the original raw PCAP.
+
+The derived JSON records correlation facts such as:
+- DHCP transaction IDs, client identities, ordered DORA state and assigned address;
+- EAPOL handshake key-message sequence and replay counters;
+- beacon security/identity fields;
+- DNS transaction IDs, questions, correlated response counts and answers.
+
+Derived evidence never replaces the raw PCAP and is reproducible from that artifact.
 
 ## 8. LabHealth
 

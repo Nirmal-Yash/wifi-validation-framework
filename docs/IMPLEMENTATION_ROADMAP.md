@@ -154,3 +154,21 @@ Next:
 
 Next:
 - Iteration 13 — Protocol-aware evidence and transaction correlation.
+
+## Iteration 13 — Protocol-Aware Evidence + Transaction Correlation ✅
+- [x] Added typed DHCP, EAPOL, beacon and DNS evidence models.
+- [x] Added `ProtocolEvidenceService` with transaction-aware DHCP DORA correlation.
+- [x] DHCP correlation uses transaction ID and client identity instead of independent packet counts.
+- [x] Added ordered WPA2/EAPOL four-way handshake detection.
+- [x] Added beacon SSID/BSSID/channel/RSN/cipher/AKM/beacon-interval/capability extraction.
+- [x] Added DNS query/response correlation by transaction ID and question.
+- [x] Preserved `lib.wifi_analyzer` compatibility entry points as wrappers over the new service.
+- [x] Upgraded real DHCP PCAP validation to require correlated DORA evidence.
+- [x] Registered derived DHCP protocol JSON as Run-scoped `PROTOCOL_EVIDENCE` while preserving the verified raw PCAP.
+- [x] Added parser/component tests covering correlation failures that packet counts alone would incorrectly accept.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Protected original 11-test real-lab gate: unavailable in this environment.
+- [ ] Real DHCP capture + protocol-evidence gate: unavailable in this environment.
+
+Next:
+- Iteration 14 — WiFi telemetry and environment-class-aware measurements.

@@ -364,3 +364,17 @@ Each destructive case preserves the management path and must prove both the faul
 The original 11 validation tests remain the protected behavioral subset. Because Iteration 12 adds real network-mutating tests, both the protected subset and the expanded recovery suite require execution on the GNS3/mac80211_hwsim lab before this iteration can be considered runtime-verified.
 
 Protocol-accurate DHCP T2 rebind is not inferred from a generic lease reacquisition. That assertion is reserved for the later transaction-aware DHCP evidence phase.
+
+## 23. Iteration 13 protocol evidence validation
+
+Protocol analyzer tests must verify:
+
+- DHCP correlation by transaction ID and client identity;
+- DORA ordering rather than independent packet counts;
+- EAPOL four-way message ordering;
+- beacon RSN/cipher/AKM extraction;
+- DNS query/response transaction correlation;
+- raw PCAP remains unchanged after analysis;
+- derived protocol evidence can be serialized and registered as Run-scoped evidence.
+
+The real DHCP capture test must continue using the protected AP `br0` tcpdump + SFTP + SHA-256 path while its assertion is upgraded from packet count/ACK presence to correlated DORA evidence.

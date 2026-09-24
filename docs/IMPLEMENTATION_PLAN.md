@@ -426,33 +426,33 @@ baseline
 
 ## 16. Phase 5 — Protocol evidence
 
-Replace packet-count validation with transaction-aware evidence.
+Replace packet-count validation with transaction-aware protocol evidence.
 
 DHCP:
+- correlate DISCOVER → OFFER → REQUEST → ACK using transaction ID and client identity;
+- preserve the assigned address and server identifier where available;
+- do not treat independent message counts as a valid transaction.
 
-~~~text
-DISCOVER
-→ OFFER
-→ REQUEST
-→ ACK
-~~~
+EAPOL:
+- identify the ordered WPA four-way handshake messages 1/4 through 4/4;
+- correlate the exchange to the same endpoints and replay sequence.
 
-must correlate to the same transaction.
-
-EAPOL identifies actual four-way handshake messages.
-
-Beacon checks include:
-
+Beacon checks:
 - SSID;
 - BSSID;
 - channel;
-- RSN;
-- cipher;
+- RSN presence;
+- group/pairwise cipher;
 - AKM;
 - beacon interval;
 - capabilities.
 
-DNS checks correlate query, response, transaction ID and answers.
+DNS:
+- correlate query and response by transaction ID and question;
+- preserve response/answer data;
+- distinguish unmatched queries from correlated responses.
+
+Protocol evidence is immutable Run-scoped derived evidence. The raw PCAP remains the source of truth. No analyzer may synthesize or repair missing protocol frames.
 
 ## 17. Phase 6 — WiFi telemetry
 

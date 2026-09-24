@@ -22,6 +22,7 @@ from lib.services import (
     ArtifactService,
     CommandAuditRecorder,
     FaultService,
+    ProtocolEvidenceService,
     LabHealthService,
     CommandSecurityPolicy,
     LocalRunner,
@@ -253,6 +254,7 @@ def pytest_collection_finish(session):
         security_policy=CommandSecurityPolicy.default(),
     )
     fault_service = FaultService(command_runner)
+    protocol_evidence_service = ProtocolEvidenceService()
     session.config._netregress_run_context = RunContext(
         run_service=service,
         run_id=run.run_id,
@@ -264,6 +266,7 @@ def pytest_collection_finish(session):
         artifact_service=artifact_service,
         command_runner=command_runner,
         fault_service=fault_service,
+        protocol_evidence_service=protocol_evidence_service,
         logger=logging.getLogger("netregress"),
     )
 

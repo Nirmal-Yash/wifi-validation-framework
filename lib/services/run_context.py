@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from .command_runner import CommandRunner
 from .fault_service import FaultService
+from .protocol_evidence import ProtocolEvidenceService
 
 from .artifact_service import ArtifactService
 from .run_service import RunService
@@ -24,6 +25,7 @@ class RunContext:
     artifact_service: ArtifactService | None = None
     command_runner: CommandRunner | None = None
     fault_service: FaultService | None = None
+    protocol_evidence_service: ProtocolEvidenceService | None = None
     logger: logging.Logger | None = None
 
     def __post_init__(self) -> None:

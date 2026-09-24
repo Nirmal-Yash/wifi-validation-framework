@@ -388,7 +388,10 @@ class TestRegistry:
                     requires=("wifi.dhcp.lease",),
                     destructive=False, estimated_duration_sec=45,
                     capabilities=("pcap_capture", "sftp"),
-                    metric_definitions={"dhcp_packets": "packets"},
+                    metric_definitions={
+                        "dhcp_packets": "packets",
+                        "dora_transactions": "transactions",
+                    },
                     evidence_requirements=(ArtifactType.PCAP,),
                 ),
             )

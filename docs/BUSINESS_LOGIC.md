@@ -163,6 +163,17 @@ A required test is PASS-eligible only when:
 4. required metrics meet policy;
 5. required sample minimums are present.
 
+## 10A. Protocol evidence
+
+Protocol validation is based on correlated protocol events rather than packet counts.
+
+- DHCP PASS evidence requires a correlated transaction with the expected DORA ordering.
+- EAPOL authentication evidence requires an ordered four-way key exchange.
+- Beacon evidence records identity and RSN/security parameters.
+- DNS evidence correlates query and response transaction IDs/questions.
+
+Missing or contradictory protocol evidence is an evidence problem and therefore may produce UNVALIDATED rather than being converted into a product failure.
+
 ## 11. Run-level VALIDATED
 
 A Run becomes VALIDATED only when:

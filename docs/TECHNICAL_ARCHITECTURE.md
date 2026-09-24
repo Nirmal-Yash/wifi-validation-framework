@@ -238,6 +238,18 @@ baseline
 
 The service does not decide whether disruption or recovery constitutes a product outcome; the test assertion and Run orchestration retain that responsibility.
 
+## 19B. ProtocolEvidenceService
+
+`ProtocolEvidenceService` consumes verified PCAP artifacts and derives typed protocol evidence without modifying the raw capture.
+
+Supported correlation:
+- DHCP transaction ID + client identity with ordered DORA detection;
+- EAPOL endpoint grouping + four-way handshake key-message ordering;
+- beacon SSID/BSSID/channel/RSN/cipher/AKM/beacon-interval/capability extraction;
+- DNS transaction ID + question correlation.
+
+The service writes JSON evidence only after packet parsing succeeds. The raw PCAP remains authoritative, and compatibility functions in `lib/wifi_analyzer.py` delegate to this service.
+
 ## 20. Lifecycle events
 
 Persist significant events such as RUN_CREATED, RUN_STARTED, LAB_HEALTH_STARTED, LAB_HEALTH_COMPLETED, TEST_STARTED, TEST_COMPLETED, ARTIFACT_CREATED, BASELINE_PROMOTED, RUN_COMPLETED and RUN_CANCELLED.

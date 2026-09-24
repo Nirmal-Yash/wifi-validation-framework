@@ -10,13 +10,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import pytest
-from lib.wifi_analyzer import analyze_dhcp_sequence
 from lib.domain import ArtifactType
-from lib.services import ArtifactService
+from lib.services import ArtifactService, ProtocolEvidenceService
 
 
 @pytest.mark.regression
-def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
+def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger, run_context):
     """Validate real DHCP traffic at the AP bridge; no synthetic PCAP fallback."""
     capture_device = params["network"].get("capture_device", "ap_host")
     capture_iface = params["network"].get("capture_interface", "br0")
@@ -219,7 +218,45 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
         "Downloaded PCAP checksum does not match the monitor copy"
     )
 
-    analysis = analyze_dhcp_sequence(str(local_pcap))
-    metric_logger.log(analysis["total_packets"], "packets")
-    assert analysis["total_packets"] > 0, f"No DHCP frames in real PCAP: {analysis}"
-    assert analysis["has_lease_acquired"], f"Real DHCP capture has no ACK: {analysis['message_counts']}"
+    protocol_service = (
+        run_context.protocol_evidence_service
+        if run_context is not None and run_context.protocol_evidence_service is not None
+        else ProtocolEvidenceService()
+    )
+    evidence = protocol_service.analyze_dhcp(local_pcap)
+    metric_logger.log(evidence.total_packets, "packets", name="dhcp_packets")
+    metric_logger.log(
+        evidence.correlated_dora_count,
+        "transactions",
+        name="dora_transactions",
+    )
+
+    evidence_path = (
+        ROOT / "results" / "evidence" / (
+            (run_context.run_id if run_context is not None else "adhoc")
+            + "-dhcp-protocol.json"
+        )
+    )
+    protocol_service.write_json(evidence, evidence_path)
+    if run_context is not None:
+        artifact_service = run_context.artifact_service or ArtifactService.from_sqlite(
+            run_context.run_service.run_repository.database
+        )
+        artifact_service.register_file(
+            run_id=run_context.run_id,
+            path=evidence_path,
+            artifact_type=ArtifactType.PROTOCOL_EVIDENCE,
+            display_name="dhcp_protocol_evidence.json",
+        )
+
+    assert evidence.total_packets > 0, (
+        f"No DHCP frames in real PCAP: {evidence.as_dict()}"
+    )
+    assert evidence.has_dora, (
+        "Real DHCP capture did not contain a correlated DORA transaction: "
+        f"{evidence.as_dict()}"
+    )
+    assert evidence.has_lease_acquired, (
+        "Correlated DHCP evidence has no ACK with an assigned address: "
+        f"{evidence.as_dict()}"
+    )

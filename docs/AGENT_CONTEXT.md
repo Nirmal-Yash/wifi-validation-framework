@@ -146,7 +146,9 @@ Runtime DBs, reports, PCAPs and logs remain gitignored.
 
 Iterations 6 through 12 are implemented on main. Local/unit execution and the required real-lab gates remain pending where documented because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
 
-The next architectural slice is Iteration 13: protocol-aware evidence and transaction correlation.
+Iteration 13 implementation is present on main: typed protocol evidence, DHCP transaction correlation, EAPOL four-way sequence detection, beacon RSN/security extraction, DNS query/response correlation and Run-scoped protocol-evidence artifacts. Local/unit and real-lab verification remain pending because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
+
+The next architectural slice is Iteration 14: telemetry and environment-class-aware WiFi measurements.
 
 Legacy test result storage remains as compatibility storage until the migration is explicitly retired.
 
@@ -179,3 +181,10 @@ LabHealthService is integrated into the Run lifecycle. Every Run performs a read
 Statistical measurement policy is now a typed contract. `MeasurementPolicy` selects the authoritative aggregate and minimum sample count; `MetricDefinition` binds a policy to a named metric and unit; `StatisticSummary` exposes count, minimum, maximum, mean, median, p90, p95 and population standard deviation. Warm-up samples and non-allowed sample statuses are excluded from aggregates, while retried samples remain one measurement when included. Performance TestRegistry definitions now declare their decision metric and aggregate policy, while pytest metric logging automatically uses that semantic metric name when a single policy-driven metric exists.
 
 Raw samples remain the source of truth. Aggregate evaluation is deterministic and does not discard or rewrite raw measurements.
+
+
+## 21. Iteration 13 status
+
+Protocol evidence is now separated from raw packet collection. `ProtocolEvidenceService` preserves the protected DHCP capture path while validating correlated DHCP DORA transactions, and it provides typed analyzers for EAPOL four-way handshakes, 802.11 beacons/RSN parameters and DNS transaction correlation. DHCP protocol evidence is emitted as a Run-scoped JSON artifact beside the verified PCAP.
+
+Legacy `lib.wifi_analyzer` entry points remain available as compatibility wrappers and now expose the richer correlated evidence fields.

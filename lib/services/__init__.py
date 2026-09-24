@@ -17,6 +17,7 @@ from .legacy_migration import LegacyDatabaseMigrationService
 from .artifact_service import ArtifactService
 from .metric_collector import MetricCollector
 from .fault_service import FaultDefinition, FaultService
+from .protocol_evidence import ProtocolEvidenceError, ProtocolEvidenceService
 from .statistics import (
     InsufficientSamplesError,
     MeasurementEvaluationError,
@@ -60,6 +61,8 @@ __all__ = [
     "MetricCollector",
     "FaultDefinition",
     "FaultService",
+    "ProtocolEvidenceError",
+    "ProtocolEvidenceService",
     "RunService",
     "configuration_hash",
     "generate_ulid",
