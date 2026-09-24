@@ -15,8 +15,9 @@ import yaml
 
 from lib.connector import ConnectionPool, load_devices
 from lib.db_helper import init_db, insert_result
+from lib.domain import TestResultStatus
 from lib.repositories import SQLiteDatabase
-from lib.services import RunService, repository_commit, redact_configuration
+from lib.services import MetricCollector, RunService, repository_commit, redact_configuration
 
 
 def pytest_addoption(parser):
@@ -54,13 +55,15 @@ def connection_pool():
     pool.close_all()
 
 
-class MetricLogger:
-    """Fixture helper to record numerical metrics with units for regression intelligence."""
+class MetricLogger(MetricCollector):
+    """Backward-compatible metric fixture with raw sample collection."""
 
     def __init__(self, node):
+        super().__init__()
         self._node = node
 
-    def log(self, value, unit):
+    def log(self, value, unit, **kwargs):
+        super().log(value, unit, **kwargs)
         try:
             val_float = float(value)
         except (ValueError, TypeError):
@@ -71,7 +74,9 @@ class MetricLogger:
 
 @pytest.fixture
 def metric_logger(request):
-    return MetricLogger(request.node)
+    collector = MetricLogger(request.node)
+    request.node._metric_collector = collector
+    return collector
 
 
 @pytest.fixture(autouse=True)
@@ -111,6 +116,26 @@ def record_test_result(request, firmware_version):
     except Exception as db_err:
         # Prevent database insertion errors from failing the test suite
         sys.stderr.write(f"\n[WARN] Failed to insert test result to DB: {db_err}\n")
+
+    context = getattr(request.config, "_netregress_run_context", None)
+    if context is not None:
+        service, run_id, attempt_id = context
+        collector = getattr(request.node, "_metric_collector", None)
+        metrics = collector.metrics() if collector is not None else ()
+        result_status = (
+            TestResultStatus.PASS
+            if rep_call is not None and rep_call.passed
+            else TestResultStatus.FAIL
+        )
+        service.record_test_result(
+            run_id=run_id,
+            attempt_id=attempt_id,
+            test_id=request.node.nodeid,
+            node_id=request.node.nodeid,
+            status=result_status,
+            metrics=metrics,
+            error_reason=error_message,
+        )
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)

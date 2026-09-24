@@ -11,18 +11,26 @@ from lib.domain import (
     Attempt,
     BusinessOutcome,
     DomainValidationError,
+    Criticality,
+    EvidenceState,
     LifecycleEvent,
+    Metric,
     Run,
     RunLifecycle,
+    Severity,
+    TestResult,
+    TestResultStatus,
 )
 from lib.repositories import (
     AttemptRepository,
     EventRepository,
     RunRepository,
+    TestResultRepository,
     SQLiteAttemptRepository,
     SQLiteDatabase,
     SQLiteEventRepository,
     SQLiteRunRepository,
+    SQLiteTestResultRepository,
 )
 
 ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -141,6 +149,7 @@ class RunService:
         run_repository: RunRepository,
         attempt_repository: AttemptRepository,
         event_repository: EventRepository,
+        test_result_repository: TestResultRepository | None = None,
         *,
         clock: Clock | None = None,
         id_generator: IdGenerator | None = None,
@@ -148,6 +157,7 @@ class RunService:
         self.run_repository = run_repository
         self.attempt_repository = attempt_repository
         self.event_repository = event_repository
+        self.test_result_repository = test_result_repository
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.id_generator = id_generator or generate_ulid
 
@@ -160,6 +170,7 @@ class RunService:
             SQLiteRunRepository(database),
             SQLiteAttemptRepository(database),
             SQLiteEventRepository(database),
+            SQLiteTestResultRepository(database),
             **kwargs,
         )
 
@@ -211,6 +222,47 @@ class RunService:
         self._event(run.run_id, "ATTEMPT_CREATED", now, attempt_id=attempt.attempt_id)
         return run, attempt
 
+    def record_test_result(
+        self,
+        *,
+        run_id: str,
+        attempt_id: str,
+        test_id: str,
+        node_id: str,
+        status: TestResultStatus,
+        metrics: tuple[Metric, ...] = (),
+        error_reason: str | None = None,
+        started_at: datetime | None = None,
+        completed_at: datetime | None = None,
+        criticality: Criticality = Criticality.INFORMATIONAL,
+        severity: Severity = Severity.LOW,
+        evidence_state: EvidenceState = EvidenceState.NOT_REQUIRED,
+    ) -> TestResult:
+        if self.test_result_repository is None:
+            raise DomainValidationError("test result repository is not configured")
+        run = self._require_run(run_id)
+        attempt = self.attempt_repository.get(attempt_id)
+        if attempt is None or attempt.run_id != run_id:
+            raise DomainValidationError(f"Attempt does not belong to Run: {attempt_id}")
+        result = TestResult(
+            test_result_id=self.id_generator(),
+            run_id=run_id,
+            attempt_id=attempt_id,
+            test_id=test_id,
+            node_id=node_id,
+            test_version=run.test_definition_versions.get(test_id, "1.0"),
+            status=status,
+            criticality=criticality,
+            severity=severity,
+            evidence_state=evidence_state,
+            metrics=metrics,
+            error_reason=error_reason,
+            started_at=started_at,
+            completed_at=completed_at,
+        )
+        self.test_result_repository.save(result)
+        self._event(run_id, "TEST_COMPLETED", completed_at or self.clock(), attempt_id=attempt_id)
+        return result
     def create_attempt(self, run_id: str) -> Attempt:
         run = self._require_run(run_id)
         if run.lifecycle in _terminal_states():

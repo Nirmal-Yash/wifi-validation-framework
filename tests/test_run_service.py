@@ -10,6 +10,7 @@ from lib.repositories import (
     SQLiteDatabase,
     SQLiteEventRepository,
     SQLiteRunRepository,
+    SQLiteTestResultRepository,
 )
 
 def make_service(tmp_path, ids):
@@ -18,6 +19,7 @@ def make_service(tmp_path, ids):
         SQLiteRunRepository(database),
         SQLiteAttemptRepository(database),
         SQLiteEventRepository(database),
+        SQLiteTestResultRepository(database),
         clock=lambda: datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc),
         id_generator=iter(ids).__next__,
     ), database
@@ -96,3 +98,41 @@ def test_invalid_transition_is_rejected(tmp_path):
     )
     with pytest.raises(Exception):
         service.complete_run(run.run_id)
+
+
+def test_record_test_result_persists_samples(tmp_path):
+    service, database = make_service(
+        tmp_path,
+        [
+            "01RUN00000000000000000000",
+            "01ATTEMPT0000000000000000",
+            "01EVENT000000000000000001",
+            "01EVENT000000000000000002",
+            "01RESULT000000000000000001",
+            "01EVENT000000000000000003",
+        ],
+    )
+    database.initialize()
+    run, attempt = service.create_run(
+        firmware_version="v1.0",
+        lab_id="lab-1",
+        validation_profile="Performance",
+        selected_tests=["wifi.latency"],
+        test_definition_versions={"wifi.latency": "1.0"},
+        resolved_config={},
+        repository_commit="abc",
+    )
+    from lib.domain import Metric, Sample, TestResultStatus
+    from lib.repositories import SQLiteTestResultRepository
+
+    service.record_test_result(
+        run_id=run.run_id,
+        attempt_id=attempt.attempt_id,
+        test_id="wifi.latency",
+        node_id="tests/test_ping.py::test_latency",
+        status=TestResultStatus.PASS,
+        metrics=(Metric(name="latency", unit="ms", samples=(Sample(value=10.0), Sample(value=12.0, warmup=True))),),
+    )
+    result = SQLiteTestResultRepository(database).list_for_attempt(attempt.attempt_id)
+    assert len(result) == 1
+    assert [sample.value for sample in result[0].metrics[0].samples] == [10.0, 12.0]
