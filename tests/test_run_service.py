@@ -100,6 +100,36 @@ def test_invalid_transition_is_rejected(tmp_path):
         service.complete_run(run.run_id)
 
 
+def test_product_failure_sets_rejected_business_outcome(tmp_path):
+    service, database = make_service(
+        tmp_path,
+        [
+            "01RUN00000000000000000000",
+            "01ATTEMPT0000000000000000",
+            "01EVENT000000000000000001",
+            "01EVENT000000000000000002",
+            "01EVENT000000000000000003",
+            "01EVENT000000000000000004",
+        ],
+    )
+    database.initialize()
+    run, _ = service.create_run(
+        firmware_version="v1.0",
+        lab_id="lab-1",
+        validation_profile="Full",
+        selected_tests=["wifi.test"],
+        test_definition_versions={"wifi.test": "1.0"},
+        resolved_config={},
+        repository_commit="abc",
+    )
+    service.begin_lab_health_check(run.run_id)
+    service.record_environment_health(run.run_id, EnvironmentHealthStatus.HEALTHY)
+    service.start_run_after_health(run.run_id)
+    failed = service.fail_run(run.run_id, "assertion failed")
+    assert failed.lifecycle is RunLifecycle.FAILED
+    assert failed.outcome.value == "REJECTED"
+
+
 def test_record_test_result_persists_samples(tmp_path):
     service, database = make_service(
         tmp_path,

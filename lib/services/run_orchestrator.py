@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from typing import Callable
-from lib.domain import Attempt,EnvironmentSnapshot,Run,RunLifecycle
+from lib.domain import Attempt,ConfigSnapshot,EnvironmentSnapshot,Run,RunLifecycle
 from .configuration import ConfigurationResolver,ResolvedConfiguration
 from .environment_fingerprint import EnvironmentFingerprint,EnvironmentFingerprintService
 from .resource_lock import ResourceLease,ResourceLockManager
@@ -19,7 +19,20 @@ class RunOrchestrator:
             run=self.run_service.transition(run.run_id, RunLifecycle.PREPARING)
             fp=self.fingerprint_service.capture(lab_id=lab_id,configuration_hash=configuration.configuration_hash,topology=topology,device_identity=device_identity)
             run.configuration_hash=configuration.configuration_hash
-            run.environment=EnvironmentSnapshot(self.run_service.id_generator(),fp.payload["host"]["os"],fp.payload["host"]["kernel"],fp.payload["host"]["python"],repository_commit,configuration.configuration_hash,{"fingerprint":fp.fingerprint})
+            run.config_snapshot=ConfigSnapshot(
+                snapshot_id=self.run_service.id_generator(),
+                resolved_config=redact_configuration(configuration.values),
+                configuration_hash=configuration.configuration_hash,
+            )
+            run.environment=EnvironmentSnapshot(
+                self.run_service.id_generator(),
+                fp.payload["host"]["os"],
+                fp.payload["host"]["kernel"],
+                fp.payload["host"]["python"],
+                repository_commit,
+                configuration.configuration_hash,
+                {"fingerprint":fp.fingerprint},
+            )
             self.run_service.run_repository.update(run)
             return RunExecutionSession(run,attempt,configuration,fp,lease)
         except Exception:

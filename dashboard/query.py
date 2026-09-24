@@ -17,7 +17,9 @@ from lib.repositories import (
 )
 from lib.services.regression_intelligence import RegressionIntelligenceService
 from lib.services.run_service import RunService
+from lib.services.release_gate import ReleaseGateEvaluator, ReleaseGateInput
 from lib.services.test_registry import TestRegistry
+from lib.services.waiver_service import WaiverService
 
 
 class DashboardQueryError(RuntimeError):
@@ -413,6 +415,61 @@ class DashboardQueryService:
             "reason": report.reason,
             "environment": {"baseline": baseline_env, "current": current_env},
             "assessments": assessments,
+        }
+
+    def release_gate(self, current_run_id: str, baseline_run_id: str) -> dict[str, Any]:
+        current = self.run_repository.get(current_run_id)
+        if current is None:
+            raise DashboardQueryError(f"Run not found: {current_run_id}")
+        baseline = self.run_repository.get(baseline_run_id)
+        if baseline is None:
+            raise DashboardQueryError(f"Baseline Run not found: {baseline_run_id}")
+
+        baseline_env = self.environment_class(baseline_run_id)
+        current_env = self.environment_class(current_run_id)
+        report = self.regression_service.compare_runs(
+            baseline_run_id=baseline_run_id,
+            current_run_id=current_run_id,
+            baseline_environment_class=baseline_env,
+            current_environment_class=current_env,
+        )
+        current_results = self._latest_results(current_run_id)
+        required_list = []
+        for selected in current.selected_tests:
+            try:
+                required_list.append(self.test_registry.get(selected).test_id)
+            except KeyError:
+                required_list.append(self.test_registry.resolve_or_fallback(selected).test_id)
+        required = tuple(dict.fromkeys(required_list))
+        waivers = tuple(WaiverService.from_sqlite(self.database).repository.list_active())
+        decision = ReleaseGateEvaluator().evaluate(
+            ReleaseGateInput(
+                run_lifecycle=current.lifecycle.value,
+                run_id=current.run_id,
+                lab_health=current.environment_health.value if current.environment_health else None,
+                baseline_available=not report.no_baseline,
+                required_test_ids=required,
+                observed_test_ids=tuple(item.test_id for item in current_results),
+                test_statuses={item.test_id: item.status.value for item in current_results},
+                evidence_states={item.test_id: item.evidence_state.value for item in current_results},
+                regression_classifications={
+                    item.test_id: item.classification.value for item in report.assessments
+                },
+                waivers=waivers,
+            )
+        )
+        return {
+            "status": decision.status.value,
+            "accepted": decision.accepted,
+            "summary": decision.summary,
+            "issues": [
+                {"code": item.code, "message": item.message, "test_id": item.test_id}
+                for item in decision.issues
+            ],
+            "current_run_id": current_run_id,
+            "baseline_run_id": baseline_run_id,
+            "comparability": report.comparability.value,
+            "comparability_reason": report.reason,
         }
 
     def baselines(self):

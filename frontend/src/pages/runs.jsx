@@ -22,7 +22,7 @@ export default function RunsPage({user}){
    <Field label="Lab"><input value={filters.lab} onChange={e=>setFilters({...filters,lab:e.target.value})}/></Field>
    <Field label="Profile"><input value={filters.profile} onChange={e=>setFilters({...filters,profile:e.target.value})}/></Field>
    <Field label="Status"><select value={filters.status} onChange={e=>setFilters({...filters,status:e.target.value})}>{statusOptions.map(value=><option key={value} value={value}>{value||"All"}</option>)}</select></Field>
-   <Field label="Outcome"><select value={filters.outcome} onChange={e=>setFilters({...filters,outcome:e.target.value})}><option value="">All</option><option>PASS</option><option>FAIL</option><option>UNVALIDATED</option></select></Field>
+   <Field label="Outcome"><select value={filters.outcome} onChange={e=>setFilters({...filters,outcome:e.target.value})}><option value="">All</option><option>VALIDATED</option><option>VALIDATED_WITH_WARNINGS</option><option>REJECTED</option><option>UNVALIDATED</option></select></Field>
    <div className="filter-actions"><Button type="submit">Apply</Button><Button type="button" variant="secondary" onClick={()=>setFilters({firmware:"",lab:"",profile:"",status:"",outcome:"",page:1})}>Reset</Button></div>
   </form></Section>
   <Section title="Historical Runs" subtitle={(loader.data?.total||0)+" Run(s)"}>

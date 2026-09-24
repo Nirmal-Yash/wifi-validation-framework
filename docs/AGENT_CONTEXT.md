@@ -142,7 +142,7 @@ Runtime DBs, reports, PCAPs and logs remain gitignored.
 
 ## 13. Current next step
 
-The React/Vite frontend is now source-complete across the documented standalone Runner UI surface. Browser/runtime evidence and the protected REAL_LAB execution gate remain separate from source completion.
+The backend and React/Vite frontend are source-complete across the documented standalone Runner feature surface. The remaining source-level deferrals are the future Cloud/SaaS Project control plane and full protected live wiring for EAPOL/Beacon/DNS evidence. Browser/runtime evidence and the protected REAL_LAB execution gate remain separate from source completion.
 
 Iterations 6 through 12 are implemented on main. Local/unit execution and the required real-lab gates remain pending where documented because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
 

@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path: sys.path.insert(0,str(ROOT))
 from lib.repositories import SQLiteDatabase
-from lib.services import RegressionIntelligenceService, RunService, TestRegistry
+from lib.services import RegressionIntelligenceService, RunService, TestRegistry, WaiverService
 from lib.services.release_gate import ReleaseGateEvaluator, ReleaseGateInput
 
 def compile_sources():
@@ -38,7 +38,9 @@ def evaluate_run(db_path, baseline_run_id, current_run_id, environment_class):
         run_lifecycle=current.lifecycle.value,run_id=current.run_id,lab_health=current.environment_health.value if current.environment_health else None,
         baseline_available=not report.no_baseline,required_test_ids=required,observed_test_ids=tuple(x.test_id for x in results),
         test_statuses={x.test_id:x.status.value for x in results},evidence_states={x.test_id:x.evidence_state.value for x in results},
-        regression_classifications={x.test_id:x.classification.value for x in report.assessments}))
+        regression_classifications={x.test_id:x.classification.value for x in report.assessments},
+        waivers=tuple(WaiverService.from_sqlite(db).repository.list_active()),
+    ))
     return report,decision
 
 def main():

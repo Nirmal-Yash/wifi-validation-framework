@@ -32,7 +32,7 @@ from lib.domain import (
 )
 from .interfaces import RepositoryConflictError
 
-SCHEMA_VERSION = "6"
+SCHEMA_VERSION = "7"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -104,7 +104,10 @@ CREATE TABLE IF NOT EXISTS test_results (
     error_reason TEXT,
     started_at TEXT,
     completed_at TEXT,
-    provenance TEXT NOT NULL DEFAULT 'NATIVE'
+    provenance TEXT NOT NULL DEFAULT 'NATIVE',
+    failure_class TEXT,
+    failure_reason TEXT,
+    execution_pid INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS metrics (
@@ -268,7 +271,12 @@ class SQLiteDatabase:
                 "failure_reason": "TEXT",
                 "execution_pid": "INTEGER",
             },
-            "test_results": {"provenance": "TEXT NOT NULL DEFAULT 'NATIVE'"},
+            "test_results": {
+                "provenance": "TEXT NOT NULL DEFAULT 'NATIVE'",
+                "failure_class": "TEXT",
+                "failure_reason": "TEXT",
+                "execution_pid": "INTEGER",
+            },
             "artifacts": {
                 "display_name": "TEXT NOT NULL DEFAULT ''",
                 "created_at": "TEXT",
@@ -276,6 +284,9 @@ class SQLiteDatabase:
                 "retain_until": "TEXT",
                 "soft_deleted_at": "TEXT",
                 "provenance": "TEXT NOT NULL DEFAULT 'NATIVE'",
+                "failure_class": "TEXT",
+                "failure_reason": "TEXT",
+                "execution_pid": "INTEGER",
             },
         }
         for table, additions in table_additions.items():
@@ -430,14 +441,49 @@ class SQLiteRunRepository:
                 "SELECT 1 FROM runs WHERE run_id = ?", (run.run_id,)
             ).fetchone():
                 raise RepositoryConflictError(f"run does not exist: {run.run_id}")
+            if run.environment:
+                connection.execute(
+                    """INSERT OR IGNORE INTO environment_snapshots(
+                       snapshot_id, host_os, kernel, python_version,
+                       repository_commit, configuration_hash, tools_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        run.environment.snapshot_id,
+                        run.environment.host_os,
+                        run.environment.kernel,
+                        run.environment.python_version,
+                        run.environment.repository_commit,
+                        run.environment.configuration_hash,
+                        _json(run.environment.tools),
+                    ),
+                )
+            if run.config_snapshot:
+                connection.execute(
+                    """INSERT OR IGNORE INTO config_snapshots(
+                       snapshot_id, resolved_config_json, configuration_hash
+                    ) VALUES (?, ?, ?)""",
+                    (
+                        run.config_snapshot.snapshot_id,
+                        _json(run.config_snapshot.resolved_config),
+                        run.config_snapshot.configuration_hash,
+                    ),
+                )
             connection.execute(
                 """UPDATE runs
-                   SET lifecycle = ?, outcome = ?, environment_health = ?, started_at = ?, completed_at = ?, failure_class = ?, failure_reason = ?, execution_pid = ?
+                   SET lifecycle = ?, outcome = ?, environment_health = ?,
+                       configuration_hash = ?, resolved_config_json = ?,
+                       environment_snapshot_id = ?, config_snapshot_id = ?,
+                       started_at = ?, completed_at = ?,
+                       failure_class = ?, failure_reason = ?, execution_pid = ?
                    WHERE run_id = ?""",
                 (
                     run.lifecycle.value,
                     run.outcome.value if run.outcome else None,
                     run.environment_health.value if run.environment_health else None,
+                    run.configuration_hash,
+                    _json(run.resolved_config),
+                    run.environment.snapshot_id if run.environment else None,
+                    run.config_snapshot.snapshot_id if run.config_snapshot else None,
                     _dt(run.started_at),
                     _dt(run.completed_at),
                     run.failure_class.value if run.failure_class else None,
@@ -605,6 +651,10 @@ class SQLiteAttemptRepository:
                 number=row["number"],
                 started_at=_parse_dt(row["started_at"]),
                 completed_at=_parse_dt(row["completed_at"]),
+                failure_class=(FailureClass(row["failure_class"]) if row["failure_class"] else None),
+                failure_reason=row["failure_reason"],
+                execution_pid=row["execution_pid"],
+                provenance=row["provenance"] or "NATIVE",
             )
             for row in rows
         ]
@@ -628,8 +678,9 @@ class SQLiteTestResultRepository:
                 """INSERT INTO test_results(
                     test_result_id, run_id, attempt_id, test_id, node_id,
                     test_version, status, criticality, severity, evidence_state,
-                    error_reason, started_at, completed_at, provenance
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    error_reason, started_at, completed_at, provenance,
+                    failure_class, failure_reason, execution_pid
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     result.test_result_id,
                     result.run_id,
@@ -645,6 +696,9 @@ class SQLiteTestResultRepository:
                     _dt(result.started_at),
                     _dt(result.completed_at),
                     result.provenance,
+                    result.failure_class.value if result.failure_class else None,
+                    result.failure_reason,
+                    result.execution_pid,
                 ),
             )
 
@@ -739,6 +793,9 @@ class SQLiteTestResultRepository:
                 _dt(artifact.retain_until),
                 _dt(artifact.soft_deleted_at),
                 artifact.provenance,
+                artifact.failure_class.value if artifact.failure_class else None,
+                artifact.failure_reason,
+                artifact.execution_pid,
             ),
         )
 
@@ -876,6 +933,9 @@ class SQLiteArtifactRepository:
             retain_until=_parse_dt(row["retain_until"]),
             soft_deleted_at=_parse_dt(row["soft_deleted_at"]),
             provenance=row["provenance"] or "NATIVE",
+            failure_class=(FailureClass(row["failure_class"]) if row["failure_class"] else None),
+            failure_reason=row["failure_reason"],
+            execution_pid=row["execution_pid"],
         )
 
 

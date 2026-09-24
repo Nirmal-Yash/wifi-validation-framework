@@ -246,6 +246,10 @@ class RunService:
         criticality: Criticality = Criticality.INFORMATIONAL,
         severity: Severity = Severity.LOW,
         evidence_state: EvidenceState = EvidenceState.NOT_REQUIRED,
+        failure_class: FailureClass | None = None,
+        failure_reason: str | None = None,
+        execution_pid: int | None = None,
+        provenance: str = "NATIVE",
     ) -> TestResult:
         if self.test_result_repository is None:
             raise DomainValidationError("test result repository is not configured")
@@ -268,6 +272,10 @@ class RunService:
             error_reason=error_reason,
             started_at=started_at,
             completed_at=completed_at,
+            failure_class=failure_class,
+            failure_reason=failure_reason,
+            execution_pid=execution_pid,
+            provenance=provenance,
         )
         self.test_result_repository.save(result)
         self._event(run_id, "TEST_COMPLETED", completed_at or self.clock(), attempt_id=attempt_id)
@@ -340,15 +348,73 @@ class RunService:
         return run
 
     def start_run(self, run_id: str) -> Run:
-        """Backward-compatible start path for callers that have no health phase yet."""
-        run = self.transition(run_id, RunLifecycle.PREPARING)
+        """Backward-compatible start path that preserves the full lifecycle ordering."""
+        self.transition(run_id, RunLifecycle.PREPARING)
+        self.transition(run_id, RunLifecycle.LAB_HEALTH_CHECK)
         return self.start_run_after_health(run_id)
 
     def complete_run(self, run_id: str, outcome: BusinessOutcome | None = None) -> Run:
+        if outcome is None:
+            outcome = self.derive_business_outcome(run_id)
         return self._finish(run_id, RunLifecycle.COMPLETED, outcome, "RUN_COMPLETED", None)
 
+    def derive_business_outcome(self, run_id: str) -> BusinessOutcome:
+        """Derive the business validation decision from persisted test/evidence facts."""
+        run = self._require_run(run_id)
+        if run.environment_health in {
+            EnvironmentHealthStatus.FAILED,
+            EnvironmentHealthStatus.UNKNOWN,
+        }:
+            return BusinessOutcome.UNVALIDATED
+        if self.test_result_repository is None:
+            return BusinessOutcome.UNVALIDATED
+
+        results = self.test_result_repository.list_for_run(run_id)
+        if not results or len({item.test_id for item in results}) < len(run.selected_tests):
+            return BusinessOutcome.UNVALIDATED
+
+        warning = False
+        for result in results:
+            if result.criticality is Criticality.BLOCKING:
+                if result.status in {
+                    TestResultStatus.FAIL,
+                    TestResultStatus.ERROR,
+                    TestResultStatus.BLOCKED,
+                    TestResultStatus.KNOWN_FAILURE,
+                }:
+                    return BusinessOutcome.REJECTED
+                if result.status is TestResultStatus.SKIPPED:
+                    return BusinessOutcome.UNVALIDATED
+                if result.status is TestResultStatus.UNVALIDATED:
+                    return BusinessOutcome.UNVALIDATED
+                if result.evidence_state in {
+                    EvidenceState.REQUIRED,
+                    EvidenceState.INCOMPLETE,
+                    EvidenceState.INVALID,
+                }:
+                    return BusinessOutcome.UNVALIDATED
+            if result.status in {
+                TestResultStatus.KNOWN_FAILURE,
+                TestResultStatus.XPASS,
+                TestResultStatus.SKIPPED,
+            } and result.criticality is not Criticality.BLOCKING:
+                warning = True
+            if result.criticality is not Criticality.BLOCKING and result.status is not TestResultStatus.PASS:
+                warning = True
+
+        return (
+            BusinessOutcome.VALIDATED_WITH_WARNINGS
+            if warning
+            else BusinessOutcome.VALIDATED
+        )
+
     def fail_run(self, run_id: str, reason: str | None = None, failure_class: FailureClass = FailureClass.PRODUCT_FAILED) -> Run:
-        return self._finish(run_id, RunLifecycle.FAILED, None, "RUN_FAILED", failure_class, reason)
+        outcome = (
+            BusinessOutcome.REJECTED
+            if failure_class is FailureClass.PRODUCT_FAILED
+            else BusinessOutcome.UNVALIDATED
+        )
+        return self._finish(run_id, RunLifecycle.FAILED, outcome, "RUN_FAILED", failure_class, reason)
 
     def lab_fail_run(self, run_id: str, reason: str | None = None) -> Run:
         return self._finish(run_id, RunLifecycle.LAB_FAILED, BusinessOutcome.UNVALIDATED, "RUN_LAB_FAILED", FailureClass.LAB_FAILED, reason)

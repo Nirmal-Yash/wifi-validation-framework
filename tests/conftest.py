@@ -81,6 +81,8 @@ def devices():
 
 @pytest.fixture(scope="session")
 def connection_pool(request):
+    if os.getenv("NETREGRESS_CI_MODE","0").lower() in {"1","true","yes"}:
+        pytest.skip("REAL_LAB connection fixture is disabled in hardware-free CI mode")
     context = getattr(request.config, "_netregress_run_context", None)
     if context is not None and isinstance(context.command_runner, SecureCommandRunner):
         yield legacy_pool_adapter(context.command_runner)
@@ -133,6 +135,9 @@ def metric_logger(request):
 
 @pytest.fixture(autouse=True)
 def record_test_result(request, firmware_version):
+    if os.getenv("NETREGRESS_CI_MODE","0").lower() in {"1","true","yes"}:
+        yield
+        return
     start_time = time.time()
     context = getattr(request.config, "_netregress_run_context", None)
     telemetry_before = None
@@ -268,7 +273,7 @@ def _run_repository_context(session):
 
 @pytest.hookimpl(trylast=True)
 def pytest_collection_finish(session):
-    if not session.items:
+    if not session.items or os.getenv("NETREGRESS_CI_MODE","0").lower() in {"1","true","yes"}:
         return
 
     params_path = ROOT / "configs" / "test_params.yaml"

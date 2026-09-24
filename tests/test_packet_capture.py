@@ -15,7 +15,8 @@ from lib.services import ArtifactService, ProtocolEvidenceService
 
 
 @pytest.mark.regression
-def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger, run_context):
+@pytest.mark.real_lab
+def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger, run_context, request):
     """Validate real DHCP traffic at the AP bridge; no synthetic PCAP fallback."""
     capture_device = params["network"].get("capture_device", "ap_host")
     capture_iface = params["network"].get("capture_interface", "br0")

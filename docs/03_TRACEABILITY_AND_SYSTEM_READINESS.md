@@ -183,10 +183,9 @@ Iterations 20–30 are source-implemented and the full core/release-readiness CI
 
 ## Remaining production gaps
 
-1. **Project-scoped authorization model:** RBAC currently has project identifiers as an authorization primitive, but the persisted domain does not yet model a first-class Project entity and propagate project ownership through Runs, Devices and Labs.
-2. **Protocol live wiring breadth:** DHCP evidence is live-wired into the protected real capture path; EAPOL, Beacon/RSN and DNS analyzers still require explicit execution-class integration evidence.
-3. **Frontend operations:** firmware mutation, waiver administration, baseline administration, Run workflows, detailed regression analysis and Runner readiness are represented in the React shell. Backend authorization and release semantics remain authoritative.
-4. **Execution certification:** CI/source gates cannot replace GNS3/mac80211_hwsim, real device, browser and production-like runtime evidence.
+1. **Project/Cloud control plane:** a durable first-class Project entity, organization model and end-to-end multi-project ownership remain intentionally deferred to the future Cloud/SaaS control plane; the standalone Runner keeps local role/project primitives without inventing Cloud persistence.
+2. **Protocol live wiring breadth:** DHCP evidence is live-wired into the protected real capture path; EAPOL, Beacon/RSN and DNS analyzers have typed implementations and unit coverage but still require protected execution-class integration evidence.
+3. **Execution certification:** CI/source gates cannot replace GNS3/mac80211_hwsim, real device, browser and production-like runtime evidence.
 
 ## Protected behavioral baseline
 

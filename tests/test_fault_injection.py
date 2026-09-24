@@ -9,6 +9,8 @@ if str(ROOT) not in sys.path:
 
 import pytest
 
+pytestmark = pytest.mark.real_lab
+
 from lib.fault_injector import clear_conditions, fault_context, link_down, link_up
 
 

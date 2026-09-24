@@ -5,6 +5,8 @@ import time
 
 import pytest
 
+pytestmark = pytest.mark.real_lab
+
 from lib.traffic import run_dns_lookup
 
 

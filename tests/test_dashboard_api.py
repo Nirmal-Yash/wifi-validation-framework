@@ -152,6 +152,34 @@ def test_regression_and_telemetry_are_read_through_canonical_v1(tmp_path):
     assert telemetry.get_json()["data"]["environment_class"] == "VIRTUAL_WIFI"
 
 
+def test_release_gate_is_available_through_canonical_v1(tmp_path):
+    db_path = tmp_path / "db.sqlite"
+    db = SQLiteDatabase(db_path)
+    db.initialize()
+    service = make_service(db)
+    baseline, base_attempt = create_run(service, "v1.0")
+    current, current_attempt = create_run(service, "v1.1")
+    record(service, baseline, base_attempt, TestResultStatus.PASS, 10)
+    record(service, current, current_attempt, TestResultStatus.PASS, 10)
+    service.begin_lab_health_check(baseline.run_id)
+    service.record_environment_health(baseline.run_id, __import__("lib.domain", fromlist=["EnvironmentHealthStatus"]).EnvironmentHealthStatus.HEALTHY)
+    service.start_run_after_health(baseline.run_id)
+    service.complete_run(baseline.run_id, __import__("lib.domain", fromlist=["BusinessOutcome"]).BusinessOutcome.VALIDATED)
+    service.begin_lab_health_check(current.run_id)
+    service.record_environment_health(current.run_id, __import__("lib.domain", fromlist=["EnvironmentHealthStatus"]).EnvironmentHealthStatus.HEALTHY)
+    service.start_run_after_health(current.run_id)
+    service.complete_run(current.run_id, __import__("lib.domain", fromlist=["BusinessOutcome"]).BusinessOutcome.VALIDATED)
+    app = create_app(db_path)
+    response = app.test_client().get(
+        "/api/v1/runs/" + current.run_id + "/release-gate?baseline_run_id=" + baseline.run_id
+    )
+    assert response.status_code == 200
+    body = response.get_json()["data"]
+    assert body["current_run_id"] == current.run_id
+    assert body["baseline_run_id"] == baseline.run_id
+    assert "accepted" in body
+
+
 def test_artifact_json_fails_closed_after_integrity_change(tmp_path):
     db_path=tmp_path / "db.sqlite"
     db=SQLiteDatabase(db_path)

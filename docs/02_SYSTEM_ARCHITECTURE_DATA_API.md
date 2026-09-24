@@ -791,6 +791,12 @@ GET /api/v1/runs/{run_id}/regressions
 
 Returns classifications for one Run.
 
+### Release gate
+
+GET /api/v1/runs/{run_id}/release-gate?baseline_run_id={baseline_run_id}
+
+Returns the persisted Run's fail-closed release decision, issue list, waiver-filtered result and baseline comparability context.
+
 ### Artifacts
 
 GET /api/v1/artifacts
@@ -874,7 +880,8 @@ They become compatibility wrappers around the new v1 services rather than separa
 3. APIs never promote partial evidence into PASS.
 4. APIs return persisted evidence-derived state.
 5. authorization happens before artifact access.
-6. API responses remain compatible within the v1 contract.
+6. release-gate decisions are derived from persisted Run/regression/evidence facts and scoped waivers.
+7. API responses remain compatible within the v1 contract.
 
 
 ## 13A. Regression comparison contract

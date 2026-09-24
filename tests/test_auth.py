@@ -7,6 +7,8 @@ if str(ROOT) not in sys.path:
 
 import pytest
 
+pytestmark = pytest.mark.real_lab
+
 
 @pytest.mark.regression
 def test_wpa2_authentication(connection_pool, params, metric_logger):

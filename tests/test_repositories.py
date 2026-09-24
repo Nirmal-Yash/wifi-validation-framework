@@ -134,6 +134,43 @@ def test_attempt_and_result_round_trip_with_metric_sample_artifact(tmp_path) -> 
     assert restored.artifacts[0] == artifact
 
 
+def test_failure_metadata_and_snapshots_round_trip(tmp_path):
+    database = make_database(tmp_path)
+    run = make_run()
+    from lib.domain import ConfigSnapshot, EnvironmentSnapshot, FailureClass
+    run.config_snapshot = ConfigSnapshot("config-1", {"threshold": 10}, "f" * 64)
+    run.environment = EnvironmentSnapshot(
+        "env-1", "linux", "kernel", "python", "commit-1", "f" * 64, {"fingerprint": "e" * 64}
+    )
+    SQLiteRunRepository(database).save(run)
+    restored_run = SQLiteRunRepository(database).get(run.run_id)
+    assert restored_run is not None
+    assert restored_run.config_snapshot is not None
+    assert restored_run.environment is not None
+
+    result = DomainTestResult(
+        test_result_id="tr-failure",
+        run_id="run-1",
+        attempt_id="a-1",
+        test_id="wifi.latency",
+        node_id="tests/test_ping.py::test_latency",
+        test_version="1.0",
+        status=DomainTestResultStatus.FAIL,
+        criticality=Criticality.BLOCKING,
+        severity=Severity.HIGH,
+        evidence_state=EvidenceState.COMPLETE,
+        failure_class=FailureClass.PRODUCT_FAILED,
+        failure_reason="threshold exceeded",
+        execution_pid=123,
+    )
+    SQLiteTestResultRepository(database).save(result)
+    restored = SQLiteTestResultRepository(database).get("tr-failure")
+    assert restored is not None
+    assert restored.failure_class is FailureClass.PRODUCT_FAILED
+    assert restored.failure_reason == "threshold exceeded"
+    assert restored.execution_pid == 123
+
+
 def test_artifact_repository_round_trip(tmp_path) -> None:
     database = make_database(tmp_path)
     SQLiteRunRepository(database).save(make_run())
