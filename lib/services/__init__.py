@@ -1,3 +1,4 @@
+from .artifact_service import ArtifactService
 from .metric_collector import MetricCollector
 from .run_service import (
     RunService,
@@ -8,6 +9,7 @@ from .run_service import (
 )
 
 __all__ = [
+    "ArtifactService",
     "MetricCollector",
     "RunService",
     "configuration_hash",

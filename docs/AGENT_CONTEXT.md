@@ -146,6 +146,6 @@ Runtime DBs, reports, PCAPs and logs remain gitignored.
 
 Iteration 4 implementation is present on main, but its local/unit and real-lab verification gates remain pending because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
 
-After verification passes, the next code slice is Iteration 5: ArtifactService and evidence registry integration.
+After verification passes, the next code slice is Iteration 6: Historical database migration and legacy Run attribution.
 
 Legacy test result storage remains as compatibility storage until the migration is explicitly retired.

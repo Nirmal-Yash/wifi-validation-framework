@@ -11,6 +11,8 @@ if str(ROOT) not in sys.path:
 
 import pytest
 from lib.wifi_analyzer import analyze_dhcp_sequence
+from lib.domain import ArtifactType
+from lib.services import ArtifactService
 
 
 @pytest.mark.regression
@@ -198,6 +200,20 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
     assert len(data) > 64, "Downloaded monitor PCAP is too small to be real traffic"
 
     local_sha256 = hashlib.sha256(data).hexdigest()
+    run_context = getattr(request.config, "_netregress_run_context", None)
+    if run_context is not None:
+        run_service, run_id, _attempt_id = run_context
+        artifact_service = ArtifactService.from_sqlite(
+            run_service.run_repository.database
+        )
+        artifact_service.register_file(
+            run_id=run_id,
+            path=local_pcap,
+            artifact_type=ArtifactType.PCAP,
+            display_name="dhcp_test.pcap",
+            expected_sha256=local_sha256,
+            expected_size_bytes=len(data),
+        )
     remote_match = re.match(r"^([0-9a-fA-F]{64})\s+", remote_sha256)
     assert remote_match, f"Could not read remote PCAP checksum: {remote_sha256!r}"
     assert local_sha256.lower() == remote_match.group(1).lower(), (

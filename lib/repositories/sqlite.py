@@ -127,7 +127,12 @@ CREATE TABLE IF NOT EXISTS artifacts (
     path TEXT NOT NULL,
     sha256 TEXT NOT NULL,
     size_bytes INTEGER NOT NULL,
-    evidence_state TEXT NOT NULL
+    evidence_state TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    created_at TEXT,
+    sensitivity_class TEXT NOT NULL DEFAULT 'INTERNAL',
+    retain_until TEXT,
+    soft_deleted_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS lifecycle_events (
@@ -193,9 +198,29 @@ class SQLiteDatabase:
         finally:
             connection.close()
 
+    @staticmethod
+    def _migrate_schema(connection: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(artifacts)").fetchall()
+        }
+        additions = {
+            "display_name": "TEXT NOT NULL DEFAULT ''",
+            "created_at": "TEXT",
+            "sensitivity_class": "TEXT NOT NULL DEFAULT 'INTERNAL'",
+            "retain_until": "TEXT",
+            "soft_deleted_at": "TEXT",
+        }
+        for name, declaration in additions.items():
+            if name not in columns:
+                connection.execute(
+                    f"ALTER TABLE artifacts ADD COLUMN {name} {declaration}"
+                )
+
     def initialize(self) -> None:
         with self.connection() as connection:
             connection.executescript(SCHEMA)
+            self._migrate_schema(connection)
             connection.execute(
                 """INSERT INTO schema_meta(key, value)
                    VALUES ('version', ?)
@@ -539,8 +564,9 @@ class SQLiteTestResultRepository:
         connection.execute(
             """INSERT INTO artifacts(
                 artifact_id, run_id, test_result_id, artifact_type, path,
-                sha256, size_bytes, evidence_state
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                sha256, size_bytes, evidence_state, display_name, created_at,
+                sensitivity_class, retain_until, soft_deleted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 artifact.artifact_id,
                 artifact.run_id,
@@ -550,6 +576,11 @@ class SQLiteTestResultRepository:
                 artifact.sha256,
                 artifact.size_bytes,
                 artifact.evidence_state.value,
+                artifact.display_name,
+                _dt(artifact.created_at),
+                artifact.sensitivity_class,
+                _dt(artifact.retain_until),
+                _dt(artifact.soft_deleted_at),
             ),
         )
 
@@ -597,6 +628,11 @@ class SQLiteTestResultRepository:
                 size_bytes=artifact_row["size_bytes"],
                 evidence_state=EvidenceState(artifact_row["evidence_state"]),
                 test_result_id=artifact_row["test_result_id"],
+                display_name=artifact_row["display_name"] or artifact_row["path"].rsplit("/", 1)[-1],
+                created_at=_parse_dt(artifact_row["created_at"]),
+                sensitivity_class=artifact_row["sensitivity_class"] or "INTERNAL",
+                retain_until=_parse_dt(artifact_row["retain_until"]),
+                soft_deleted_at=_parse_dt(artifact_row["soft_deleted_at"]),
             )
             for artifact_row in connection.execute(
                 "SELECT * FROM artifacts WHERE test_result_id = ? "

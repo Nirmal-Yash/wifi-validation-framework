@@ -132,12 +132,18 @@ class Artifact:
     size_bytes: int
     evidence_state: EvidenceState = EvidenceState.COMPLETE
     test_result_id: str | None = None
+    display_name: str = ""
+    created_at: datetime | None = None
+    sensitivity_class: str = "INTERNAL"
+    retain_until: datetime | None = None
+    soft_deleted_at: datetime | None = None
 
     def __post_init__(self) -> None:
         for name, value in (
             ("artifact_id", self.artifact_id),
             ("run_id", self.run_id),
             ("path", self.path),
+            ("sensitivity_class", self.sensitivity_class),
         ):
             _require_text(name, value)
         if len(self.sha256) != 64 or any(
@@ -148,6 +154,10 @@ class Artifact:
             )
         if self.size_bytes < 0:
             raise DomainValidationError("artifact size cannot be negative")
+        if not self.display_name.strip():
+            object.__setattr__(
+                self, "display_name", self.path.rsplit("/", 1)[-1]
+            )
 
 
 @dataclass(frozen=True, slots=True)

@@ -25,5 +25,15 @@ Verification:
 - [ ] Run-scoped sample persistence verification: not executable from this environment.
 - [ ] Full real-lab 11/11 gate: unavailable in this environment.
 
+## Iteration 5 — ArtifactService + Evidence Registry ✅
+- [x] Artifact metadata: display name, creation time, sensitivity class, retention fields.
+- [x] Migration-safe SQLite schema for new artifact metadata.
+- [x] ArtifactService verifies file existence, expected size and SHA-256 before registration.
+- [x] ARTIFACT_CREATED lifecycle events persisted.
+- [x] Existing real DHCP PCAP producer registers the verified PCAP as Run-scoped evidence.
+- [x] Artifact integrity verification and legacy-schema migration tests added.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required because the DHCP evidence path changed; unavailable in this environment.
+
 Next:
-- Iteration 5 — ArtifactService and evidence registry integration.
+- Iteration 6 — Historical database migration and legacy Run attribution.

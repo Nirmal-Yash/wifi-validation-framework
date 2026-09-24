@@ -184,3 +184,56 @@ def test_baseline_duplicate_is_rejected(tmp_path) -> None:
 
     with pytest.raises(RepositoryConflictError):
         repository.save(baseline)
+
+
+def test_legacy_artifact_schema_is_migrated(tmp_path):
+    database = SQLiteDatabase(tmp_path / "legacy.db")
+    with database.connection() as connection:
+        connection.executescript("""
+            CREATE TABLE runs (
+                run_id TEXT PRIMARY KEY,
+                display_id TEXT NOT NULL UNIQUE,
+                firmware_version TEXT NOT NULL,
+                lab_id TEXT NOT NULL,
+                validation_profile TEXT NOT NULL,
+                selected_tests_json TEXT NOT NULL,
+                test_definition_versions_json TEXT NOT NULL,
+                resolved_config_json TEXT NOT NULL,
+                configuration_hash TEXT NOT NULL,
+                repository_commit TEXT NOT NULL,
+                lifecycle TEXT NOT NULL,
+                outcome TEXT,
+                environment_snapshot_id TEXT,
+                config_snapshot_id TEXT,
+                created_at TEXT,
+                started_at TEXT,
+                completed_at TEXT
+            );
+            CREATE TABLE artifacts (
+                artifact_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                test_result_id TEXT,
+                artifact_type TEXT NOT NULL,
+                path TEXT NOT NULL,
+                sha256 TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                evidence_state TEXT NOT NULL
+            );
+        """)
+        connection.commit()
+
+    database.initialize()
+    SQLiteRunRepository(database).save(make_run())
+    artifact = Artifact(
+        artifact_id="legacy-art",
+        run_id="run-1",
+        artifact_type=ArtifactType.SETUP_LOG,
+        path="results/setup.log",
+        sha256="d" * 64,
+        size_bytes=4,
+    )
+    SQLiteArtifactRepository(database).save(artifact)
+    restored = SQLiteArtifactRepository(database).get("legacy-art")
+    assert restored is not None
+    assert restored.display_name == "setup.log"
+    assert restored.sensitivity_class == "INTERNAL"
