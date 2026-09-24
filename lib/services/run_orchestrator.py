@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from typing import Callable
-from lib.domain import Attempt,EnvironmentSnapshot,Run
+from lib.domain import Attempt,EnvironmentSnapshot,Run,RunLifecycle
 from .configuration import ConfigurationResolver,ResolvedConfiguration
 from .environment_fingerprint import EnvironmentFingerprint,EnvironmentFingerprintService
 from .resource_lock import ResourceLease,ResourceLockManager
@@ -16,6 +16,7 @@ class RunOrchestrator:
         lease=self.lock_manager.acquire(f"lab:{lab_id}",f"runner:{os.getpid()}:{self.run_service.id_generator()[-8:]}")
         try:
             run,attempt=self.run_service.create_run(firmware_version=firmware_version,lab_id=lab_id,validation_profile=validation_profile,selected_tests=selected_tests,test_definition_versions=test_definition_versions,resolved_config=redact_configuration(configuration.values),repository_commit=repository_commit)
+            run=self.run_service.transition(run.run_id, RunLifecycle.PREPARING)
             fp=self.fingerprint_service.capture(lab_id=lab_id,configuration_hash=configuration.configuration_hash,topology=topology,device_identity=device_identity)
             run.configuration_hash=configuration.configuration_hash
             run.environment=EnvironmentSnapshot(self.run_service.id_generator(),fp.payload["host"]["os"],fp.payload["host"]["kernel"],fp.payload["host"]["python"],repository_commit,configuration.configuration_hash,{"fingerprint":fp.fingerprint})
