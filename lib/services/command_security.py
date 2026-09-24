@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import shlex
+import uuid
 from typing import Any, Mapping, Protocol, Sequence
 
 from lib.domain import ArtifactType, LifecycleEvent
@@ -350,7 +351,11 @@ class SecureCommandRunner:
             idempotent=result.idempotent,
             privilege_mode=result.privilege_mode,
             redaction_applied=(
-                result.redaction_applied or command_redacted or error_redacted
+                result.redaction_applied
+                or command_redacted
+                or stdout_redacted
+                or stderr_redacted
+                or error_redacted
             ),
             transport=result.transport,
             transport_error=error,

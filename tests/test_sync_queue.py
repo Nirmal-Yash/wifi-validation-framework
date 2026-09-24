@@ -3,9 +3,25 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 
-from lib.domain import SyncEnvelope, SyncState
-from lib.repositories import SQLiteDatabase, SQLiteSyncQueueRepository
+from lib.domain import Run, SyncEnvelope, SyncState
+from lib.repositories import SQLiteDatabase, SQLiteRunRepository, SQLiteSyncQueueRepository
 
+
+def create_run(db, run_id="run-1"):
+    SQLiteRunRepository(db).save(
+        Run(
+            run_id=run_id,
+            display_id=run_id.upper(),
+            firmware_version="v1.0",
+            lab_id="lab-1",
+            validation_profile="Full",
+            selected_tests=("t",),
+            test_definition_versions={"t": "1.0"},
+            resolved_config={},
+            configuration_hash="c" * 64,
+            repository_commit="commit",
+        )
+    )
 
 def envelope(run_id="run-1", payload='{"run_id":"run-1"}'):
     digest = hashlib.sha256(payload.encode()).hexdigest()
@@ -24,6 +40,7 @@ def envelope(run_id="run-1", payload='{"run_id":"run-1"}'):
 
 def test_queue_is_idempotent(tmp_path):
     db=SQLiteDatabase(tmp_path/"sync.db"); db.initialize()
+    create_run(db)
     repo=SQLiteSyncQueueRepository(db)
     first=repo.enqueue(envelope())
     second=repo.enqueue(envelope())

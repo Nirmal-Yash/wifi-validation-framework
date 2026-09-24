@@ -295,6 +295,9 @@ class RunService:
         return attempt
 
     def begin_lab_health_check(self, run_id: str) -> Run:
+        run = self._require_run(run_id)
+        if run.lifecycle is RunLifecycle.QUEUED:
+            self.transition(run_id, RunLifecycle.PREPARING)
         return self.transition(run_id, RunLifecycle.LAB_HEALTH_CHECK)
 
     def record_environment_health(

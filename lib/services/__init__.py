@@ -7,6 +7,11 @@ service modules without importing the entire service graph during package initia
 from importlib import import_module
 
 _EXPORTS = {
+    "AuthManager": ("..security.auth", "AuthManager"),
+    "AuthConfigurationError": ("..security.auth", "AuthConfigurationError"),
+    "AuthenticatedUser": ("..security.auth", "AuthenticatedUser"),
+    "UserRecord": ("..security.auth", "UserRecord"),
+    "Role": ("..security.auth", "Role"),
     "CommandResult": (".command_runner", "CommandResult"),
     "CommandRunner": (".command_runner", "CommandRunner"),
     "LocalRunner": (".command_runner", "LocalRunner"),

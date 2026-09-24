@@ -67,7 +67,7 @@ def test_environment_mismatch_and_missing_current_are_not_guessed():
 
 def test_invalid_evidence_and_flaky_history():
     base=run("base"); current=run("current")
-    cur=result("current","current-attempt",TestResultStatus.PASS,Metric("latency","ms",(Sample(10),)),EvidenceState.INVALID)
+    cur=result("current","current-attempt",TestResultStatus.UNVALIDATED,Metric("latency","ms",(Sample(10),)),EvidenceState.INVALID)
     svc=service(base,current,[result("base","base-attempt",TestResultStatus.PASS)],[cur])
     report=svc.compare_runs(baseline_run_id="base",current_run_id="current",baseline_environment_class="VIRTUAL_WIFI",current_environment_class="VIRTUAL_WIFI",flaky_history={"wifi.latency.threshold":["PASS","FAIL","PASS"]})
     assert report.assessments[0].classification.value=="UNVALIDATED"

@@ -143,6 +143,7 @@ def test_failure_metadata_and_snapshots_round_trip(tmp_path):
         "env-1", "linux", "kernel", "python", "commit-1", "f" * 64, {"fingerprint": "e" * 64}
     )
     SQLiteRunRepository(database).save(run)
+    SQLiteAttemptRepository(database).save(Attempt("a-1", "run-1", 1))
     restored_run = SQLiteRunRepository(database).get(run.run_id)
     assert restored_run is not None
     assert restored_run.config_snapshot is not None
@@ -284,6 +285,7 @@ def test_normalized_baseline_table_is_archived_for_legacy_compatibility(tmp_path
             CREATE TABLE runs (
                 run_id TEXT PRIMARY KEY
             );
+            INSERT INTO runs(run_id) VALUES ('run-old');
             CREATE TABLE baselines (
                 baseline_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,

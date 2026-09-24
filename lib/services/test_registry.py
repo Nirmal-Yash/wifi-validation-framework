@@ -310,7 +310,11 @@ class TestRegistry:
                     requires=("wifi.dhcp.lease",),
                     destructive=True, estimated_duration_sec=20,
                     capabilities=("dhcp",),
-                    metric_definitions={"renewal_time": "seconds"},
+                    metric_definitions={
+                        "fault_observed": "bool",
+                        "recovery_time": "seconds",
+                        "renewal_time": "seconds",
+                    },
                 ),
                 TestDefinition(
                     "wifi.dhcp.server_recovery",
@@ -377,6 +381,10 @@ class TestRegistry:
                     requires=("wifi.ping.success",),
                     destructive=True, estimated_duration_sec=45,
                     capabilities=("link_control",),
+                    metric_definitions={
+                        "fault_observed": "bool",
+                        "recovery_time": "seconds",
+                    },
                     evidence_requirements=(),
                 ),
                 TestDefinition(

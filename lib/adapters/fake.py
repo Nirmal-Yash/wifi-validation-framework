@@ -14,6 +14,9 @@ class FakeDeviceAdapter:
         self.profile = DeviceProfile(device_id=self.device_id, host='simulator', username='simulator', device_type='simulator', model=self.model,
             capabilities=DeviceCapabilities(supports_firmware_flash=True, supports_rollback=True, supports_ssh=False),
             version_command='true', health_command='true')
+    def identify(self):
+        return self.version()
+
     def connect(self):
         if self.scenario == 'unavailable': raise RuntimeError('simulated device unavailable')
     def disconnect(self): return None

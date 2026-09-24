@@ -654,10 +654,6 @@ class SQLiteAttemptRepository:
                 number=row["number"],
                 started_at=_parse_dt(row["started_at"]),
                 completed_at=_parse_dt(row["completed_at"]),
-                failure_class=(FailureClass(row["failure_class"]) if row["failure_class"] else None),
-                failure_reason=row["failure_reason"],
-                execution_pid=row["execution_pid"],
-                provenance=row["provenance"] or "NATIVE",
             )
             for row in rows
         ]
@@ -779,8 +775,9 @@ class SQLiteTestResultRepository:
             """INSERT INTO artifacts(
                 artifact_id, run_id, test_result_id, artifact_type, path,
                 sha256, size_bytes, evidence_state, display_name, created_at,
-                sensitivity_class, retain_until, soft_deleted_at, provenance
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                sensitivity_class, retain_until, soft_deleted_at, provenance,
+                failure_class, failure_reason, execution_pid
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 artifact.artifact_id,
                 artifact.run_id,

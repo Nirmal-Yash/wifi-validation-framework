@@ -385,8 +385,8 @@ class RegressionIntelligenceService:
             reason="metric-aware PASS to PASS comparison",
         )
 
-    def _metric_value(self, _run: Run, result: TestResult, metric) -> _MetricValue:
-        definition = self.test_registry.metric_definition(result.test_id, metric.name)
+    def _metric_value(self, _run: Run, metric, test_id: str) -> _MetricValue:
+        definition = self.test_registry.metric_definition(test_id, metric.name)
         summary = MeasurementPolicyEvaluator.evaluate(
             metric, definition.measurement_policy
         )

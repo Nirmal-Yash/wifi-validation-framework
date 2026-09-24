@@ -345,6 +345,9 @@ class ParamikoExecRunner:
 class LocalRunner:
     """Local execution runner that avoids shell=True unless explicitly requested."""
 
+    def __init__(self, security_policy=None):
+        self.security_policy = security_policy
+
     def execute(
         self,
         target: str,
@@ -358,6 +361,10 @@ class LocalRunner:
         privilege_mode: str = "USER",
         display_command: str | None = None,
     ) -> CommandResult:
+        if self.security_policy is not None:
+            command = self.security_policy.prepare(
+                target, command, shell=False, privilege_mode=privilege_mode
+            )
         started = time.monotonic()
         safe_command, redacted = _display_command(command, display_command)
         timed_out = False
@@ -407,8 +414,15 @@ class LocalRunner:
         )
 
     def execute_shell(self, target: str, command: str, **kwargs) -> CommandResult:
-        started = time.monotonic()
         command_category = kwargs.pop("command_category", "shell")
+        if self.security_policy is not None:
+            command = self.security_policy.prepare(
+                target,
+                command,
+                shell=True,
+                privilege_mode=kwargs.get("privilege_mode", "USER"),
+            )
+        started = time.monotonic()
         execution_timeout_sec = kwargs.get("execution_timeout_sec", 30.0)
         connect_timeout_sec = kwargs.get("connect_timeout_sec")
         idle_timeout_sec = kwargs.get("idle_timeout_sec")

@@ -17,10 +17,12 @@ from lib.domain.protocol_evidence import (
 
 try:
     from scapy.all import BOOTP, DHCP, DNS, Dot11, Dot11Beacon, Dot11Elt, EAPOL
+    from scapy.layers.dot11 import Dot11EltRSN
     from scapy.layers.eap import EAPOL_KEY
     from scapy.all import rdpcap
     SCAPY_AVAILABLE = True
 except ImportError:
+    Dot11EltRSN = None
     SCAPY_AVAILABLE = False
 
 
@@ -217,7 +219,7 @@ class ProtocolEvidenceService:
         packets = [
             packet
             for packet in self._load(pcap_path)
-            if packet.haslayer(EAPOL) and packet.haslayer(EAPOL_KEY)
+            if packet.haslayer(EAPOL_KEY)
         ]
         grouped: dict[tuple[str | None, str | None], list[Any]] = defaultdict(list)
 
@@ -371,9 +373,13 @@ class ProtocolEvidenceService:
                 ssid = element.info.decode("utf-8", errors="replace")
             elif element.ID == 3 and element.info:
                 channel = int(element.info[0])
-            elif element.ID == 48:
+
+        if Dot11EltRSN is not None:
+            rsn_element = beacon.getlayer(Dot11EltRSN)
+            if rsn_element is not None:
                 has_rsn = True
-                group_cipher, pairwise, akms = self._parse_rsn(bytes(element.info))
+                raw_rsn = bytes(rsn_element)
+                group_cipher, pairwise, akms = self._parse_rsn(raw_rsn[2:])
 
         return BeaconEvidence(
             beacon_count=len(packets),

@@ -6,8 +6,8 @@ def test_default_registry_maps_all_validation_nodes():
     definitions = registry.definitions()
 
     assert len(definitions) == 18
-    assert len({item.test_id for item in definitions}) == 11
-    assert len({item.node_id for item in definitions}) == 11
+    assert len({item.test_id for item in definitions}) == 18
+    assert len({item.node_id for item in definitions}) == 18
 
     definition = registry.resolve(
         "tests/test_ping.py::test_latency_within_threshold"
