@@ -368,3 +368,9 @@ Answers are grouped exactly under the original lettered sections (A–AF, then B
 Every phase in the merged refactor plan from our last exchange can now be implemented against a fixed contract instead of an assumption. The one item worth flagging before code starts: **TC-05 (kill the `ConnectionPool` singleton) and Q87 (unify command execution) both touch the same files as Phase 1's `Run` model work** — sequence them together rather than as separate slices, since doing Phase 1 first and then discovering the singleton blocks multi-tenancy later means touching `connector.py` twice.
 
 If you want the next artifact to be the actual `Run`/`TestResult`/`Artifact` SQLAlchemy-or-dataclass schema plus the `conftest.py` fixture rewrite implementing TC-24's compatibility wrapper, that's the cleanest place to start — it's the one piece every other phase depends on.
+
+## N.1 Telemetry implementation boundary
+
+Iteration 14 standardizes the telemetry contract around immutable typed points rather than UI-specific fields. The initial Runner implementation collects RSSI, SNR, channel, frequency, bitrate, PHY mode and available transmit retry/failure counters from read-only `wpa_cli`/`iw` observations.
+
+Every point is labeled `VIRTUAL_WIFI` or `PHYSICAL_WIFI`. The Runner does not emit RF-certification telemetry, and virtual hwsim observations are never promoted to physical RF claims.

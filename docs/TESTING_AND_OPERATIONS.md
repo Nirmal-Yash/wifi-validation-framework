@@ -378,3 +378,18 @@ Protocol analyzer tests must verify:
 - derived protocol evidence can be serialized and registered as Run-scoped evidence.
 
 The real DHCP capture test must continue using the protected AP `br0` tcpdump + SFTP + SHA-256 path while its assertion is upgraded from packet count/ACK presence to correlated DORA evidence.
+
+## 24. Iteration 14 telemetry validation
+
+Telemetry unit tests must verify:
+
+- parsing of `wpa_cli signal_poll`, `iw link` and `iw station dump`;
+- RSSI/SNR/frequency/channel/bitrate extraction;
+- PHY-mode extraction only from observed driver bitrate data;
+- retry/failure counters remain explicitly labeled as counters;
+- environment class is present on the snapshot and every point;
+- invalid interfaces are rejected before command execution;
+- completely missing source observations are not converted into fabricated measurements;
+- JSON serialization preserves environment class on every point.
+
+The telemetry service uses read-only commands through `SecureCommandRunner`; it does not alter the protected DHCP capture or validation traffic paths.

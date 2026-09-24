@@ -148,7 +148,9 @@ Iterations 6 through 12 are implemented on main. Local/unit execution and the re
 
 Iteration 13 implementation is present on main: typed protocol evidence, DHCP transaction correlation, EAPOL four-way sequence detection, beacon RSN/security extraction, DNS query/response correlation and Run-scoped protocol-evidence artifacts. Local/unit and real-lab verification remain pending because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
 
-The next architectural slice is Iteration 14: telemetry and environment-class-aware WiFi measurements.
+Iteration 14 implementation is present on main: typed WiFi telemetry points/snapshots, secured read-only collection through wpa_cli/iw, environment-class labeling, retry/failure counters where available and RunContext integration. Local/unit and real-lab verification remain pending because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
+
+The next architectural slice is Iteration 15: Regression Intelligence 2.0.
 
 Legacy test result storage remains as compatibility storage until the migration is explicitly retired.
 
@@ -188,3 +190,12 @@ Raw samples remain the source of truth. Aggregate evaluation is deterministic an
 Protocol evidence is now separated from raw packet collection. `ProtocolEvidenceService` preserves the protected DHCP capture path while validating correlated DHCP DORA transactions, and it provides typed analyzers for EAPOL four-way handshakes, 802.11 beacons/RSN parameters and DNS transaction correlation. DHCP protocol evidence is emitted as a Run-scoped JSON artifact beside the verified PCAP.
 
 Legacy `lib.wifi_analyzer` entry points remain available as compatibility wrappers and now expose the richer correlated evidence fields.
+
+
+## 22. Iteration 14 status
+
+WiFi telemetry is now a typed Runner service rather than an unstructured dashboard concern. `WifiTelemetryService` collects observed RSSI, SNR, channel, frequency, bitrate, PHY mode and available retry/failure counters through the secured read-only CommandRunner boundary.
+
+Every point is explicitly labeled `VIRTUAL_WIFI` or `PHYSICAL_WIFI`. Missing source values remain unavailable and are never synthesized. RunContext now exposes the service and the session fixture constructs it for the current virtual lab.
+
+Verification remains pending in this environment: local/unit execution, a real telemetry capture against mac80211_hwsim, and the protected real-lab regression suite were not executed.

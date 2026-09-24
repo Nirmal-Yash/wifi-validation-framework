@@ -464,16 +464,22 @@ Initial fields:
 - frequency;
 - bitrate;
 - PHY mode;
-- retry information where available.
+- retry counters where available.
 
-Every telemetry value includes its environment class:
+Iteration 14 introduces a typed `WifiTelemetrySnapshot` made of immutable `TelemetryPoint` values. Every point carries the environment class, source command/derivation, interface, capture timestamp, unit and observed value.
+
+Supported environment classes are:
 
 ~~~text
 VIRTUAL_WIFI
 PHYSICAL_WIFI
 ~~~
 
-Virtual hwsim values are never presented as RF certification.
+The current virtual GNS3/mac80211_hwsim lab is labeled `VIRTUAL_WIFI`. Physical adapters can emit the same schema with `PHYSICAL_WIFI`.
+
+Virtual hwsim measurements are diagnostic/network-behavior telemetry only. They are never presented as RF certification or as proof of calibrated physical radio performance.
+
+Telemetry collection is read-only and must execute through `SecureCommandRunner`. No telemetry value is synthesized when its source observation is unavailable.
 
 ## 18. Phase 7 — Regression Intelligence 2.0
 

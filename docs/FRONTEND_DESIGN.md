@@ -197,9 +197,10 @@ Show:
 - frequency;
 - bitrate;
 - PHY mode;
-- retry rate when available.
+- retry/failure counters when available;
+- source and capture timestamp.
 
-Every graph identifies whether data is VIRTUAL_WIFI or PHYSICAL_WIFI.
+Every graph identifies whether data is VIRTUAL_WIFI or PHYSICAL_WIFI. Telemetry cards must preserve the same label at point level rather than relying only on a chart-level legend.
 
 UI copy must explicitly state that virtual telemetry is not RF certification.
 

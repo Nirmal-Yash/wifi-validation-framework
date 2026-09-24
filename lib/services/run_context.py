@@ -7,6 +7,7 @@ from typing import Any, Mapping
 from .command_runner import CommandRunner
 from .fault_service import FaultService
 from .protocol_evidence import ProtocolEvidenceService
+from .wifi_telemetry import WifiTelemetryService
 
 from .artifact_service import ArtifactService
 from .run_service import RunService
@@ -26,6 +27,7 @@ class RunContext:
     command_runner: CommandRunner | None = None
     fault_service: FaultService | None = None
     protocol_evidence_service: ProtocolEvidenceService | None = None
+    telemetry_service: WifiTelemetryService | None = None
     logger: logging.Logger | None = None
 
     def __post_init__(self) -> None:

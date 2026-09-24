@@ -174,6 +174,16 @@ Protocol validation is based on correlated protocol events rather than packet co
 
 Missing or contradictory protocol evidence is an evidence problem and therefore may produce UNVALIDATED rather than being converted into a product failure.
 
+## 10B. WiFi telemetry semantics
+
+Telemetry is contextual evidence, not a blanket PASS signal.
+
+- A telemetry point is trustworthy only when its source observation was actually collected.
+- Missing source fields remain unavailable; they are never back-filled with synthetic values.
+- `VIRTUAL_WIFI` telemetry describes virtualized WiFi behavior and cannot be interpreted as physical RF certification.
+- `PHYSICAL_WIFI` telemetry uses the same schema so hardware-backed adapters can be introduced without changing the consumer contract.
+- Unless a future test definition explicitly declares a telemetry metric as authoritative, telemetry does not independently change PASS/FAIL.
+
 ## 11. Run-level VALIDATED
 
 A Run becomes VALIDATED only when:

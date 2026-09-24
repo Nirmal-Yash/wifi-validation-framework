@@ -170,5 +170,18 @@ Next:
 - [ ] Protected original 11-test real-lab gate: unavailable in this environment.
 - [ ] Real DHCP capture + protocol-evidence gate: unavailable in this environment.
 
+## Iteration 14 — WiFi Telemetry + Environment-Class-Aware Measurements ✅
+- [x] Added typed `TelemetryEnvironmentClass`, `TelemetryMetric`, `TelemetryPoint` and `WifiTelemetrySnapshot` contracts.
+- [x] Added `WifiTelemetryService` using only secured read-only `wpa_cli`/`iw` observations.
+- [x] Added RSSI, SNR, frequency, derived channel, bitrate, PHY-mode and available retry/failure telemetry parsing.
+- [x] Every telemetry point carries explicit `VIRTUAL_WIFI` or `PHYSICAL_WIFI` environment class.
+- [x] Missing measurements remain unavailable; no synthetic or inferred RF values are emitted.
+- [x] Added Run-scoped `TELEMETRY` artifact support and JSON serialization.
+- [x] Wired telemetry service into `RunContext` and the pytest session fixture without changing protected test node IDs, topology or traffic/capture paths.
+- [x] Added parser/service tests for environment labeling, missing-source behavior, interface validation and JSON provenance.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Real-lab telemetry capture: unavailable in this environment.
+- [ ] Protected original 11-test real-lab gate: unavailable in this environment.
+
 Next:
-- Iteration 14 — WiFi telemetry and environment-class-aware measurements.
+- Iteration 15 — Regression Intelligence 2.0.

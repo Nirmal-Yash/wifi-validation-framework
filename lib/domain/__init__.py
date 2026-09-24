@@ -61,6 +61,10 @@ __all__ = [
     "MetricDefinition",
     "StatisticKind",
     "StatisticSummary",
+    "TelemetryEnvironmentClass",
+    "TelemetryMetric",
+    "TelemetryPoint",
+    "WifiTelemetrySnapshot",
 ]
 
 from .protocol_evidence import (
@@ -72,3 +76,5 @@ from .protocol_evidence import (
     EapolEvidence,
     EapolHandshakeEvidence,
 )
+
+from .telemetry import TelemetryEnvironmentClass, TelemetryMetric, TelemetryPoint, WifiTelemetrySnapshot

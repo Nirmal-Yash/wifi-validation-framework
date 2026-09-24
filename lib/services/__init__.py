@@ -75,4 +75,8 @@ __all__ = [
     "MetricDefinition",
     "StatisticKind",
     "StatisticSummary",
+    "TelemetryCollectionError",
+    "WifiTelemetryService",
 ]
+
+from .wifi_telemetry import TelemetryCollectionError, WifiTelemetryService

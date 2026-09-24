@@ -353,7 +353,9 @@ try/finally behavior must ensure restoration of:
 
 Both virtual and physical adapters use the same service contracts.
 
-Every telemetry point identifies its environment class.
+Every telemetry point identifies its environment class (`VIRTUAL_WIFI` or `PHYSICAL_WIFI`).
+
+Iteration 14 collects telemetry through the secured `CommandRunner` using read-only `wpa_cli`/`iw` observations. The service records source, interface and timestamp on every measurement and preserves unavailable fields as warnings rather than synthesizing values.
 
 Virtual hwsim does not satisfy physical RF-certification claims.
 

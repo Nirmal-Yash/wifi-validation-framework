@@ -16,7 +16,12 @@ import yaml
 
 from lib.connector import ConnectionPool, load_devices
 from lib.db_helper import init_db, insert_result
-from lib.domain import EnvironmentHealthStatus, RunLifecycle, TestResultStatus
+from lib.domain import (
+    EnvironmentHealthStatus,
+    RunLifecycle,
+    TelemetryEnvironmentClass,
+    TestResultStatus,
+)
 from lib.repositories import SQLiteDatabase
 from lib.services import (
     ArtifactService,
@@ -33,6 +38,7 @@ from lib.services import (
     RunService,
     legacy_pool_adapter,
     TestRegistry,
+    WifiTelemetryService,
     repository_commit,
     redact_configuration,
 )
@@ -255,6 +261,15 @@ def pytest_collection_finish(session):
     )
     fault_service = FaultService(command_runner)
     protocol_evidence_service = ProtocolEvidenceService()
+    telemetry_environment = TelemetryEnvironmentClass(
+        os.getenv("NETREGRESS_WIFI_ENVIRONMENT_CLASS", "VIRTUAL_WIFI").upper()
+    )
+    telemetry_service = WifiTelemetryService(
+        command_runner=command_runner,
+        target=os.getenv("NETREGRESS_DEVICE_ID", "client_vm"),
+        environment_class=telemetry_environment,
+        output_directory=ROOT / "results" / "telemetry",
+    )
     session.config._netregress_run_context = RunContext(
         run_service=service,
         run_id=run.run_id,
@@ -267,6 +282,7 @@ def pytest_collection_finish(session):
         command_runner=command_runner,
         fault_service=fault_service,
         protocol_evidence_service=protocol_evidence_service,
+        telemetry_service=telemetry_service,
         logger=logging.getLogger("netregress"),
     )
 
@@ -379,3 +395,10 @@ def fault_service(run_context):
     assert run_context is not None
     assert run_context.fault_service is not None
     return run_context.fault_service
+
+
+@pytest.fixture
+def telemetry_service(run_context):
+    assert run_context is not None
+    assert run_context.telemetry_service is not None
+    return run_context.telemetry_service

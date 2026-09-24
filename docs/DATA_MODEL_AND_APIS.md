@@ -156,8 +156,9 @@ Artifact types:
 - LAB_HEALTH_SNAPSHOT;
 - ENV_FINGERPRINT;
 - DIAGNOSTIC_BUNDLE;
-- FIRMWARE_REFERENCE.
-- PROTOCOL_EVIDENCE.
+- FIRMWARE_REFERENCE;
+- PROTOCOL_EVIDENCE;
+- TELEMETRY.
 
 ## 7A. Protocol evidence
 
@@ -170,6 +171,25 @@ The derived JSON records correlation facts such as:
 - DNS transaction IDs, questions, correlated response counts and answers.
 
 Derived evidence never replaces the raw PCAP and is reproducible from that artifact.
+
+## 7B. WiFi telemetry
+
+A telemetry artifact contains an immutable `WifiTelemetrySnapshot` and one `TelemetryPoint` per observed measurement.
+
+Each point stores:
+
+- metric;
+- value;
+- unit;
+- `VIRTUAL_WIFI` or `PHYSICAL_WIFI` environment class;
+- source;
+- interface;
+- UTC capture timestamp;
+- diagnostic metadata.
+
+Current metric names include `rssi_dbm`, `snr_db`, `channel`, `frequency_mhz`, `bitrate_mbps`, `phy_mode`, `tx_retries_total` and `tx_failed_total`.
+
+The raw source command output remains preserved through normal command auditing; the telemetry JSON is derived context and does not replace the underlying observation.
 
 ## 8. LabHealth
 
@@ -355,6 +375,12 @@ Searchable artifact metadata.
 GET /api/v1/artifacts/{artifact_id}
 
 Metadata and controlled download response.
+
+### Telemetry
+
+GET /api/v1/runs/{run_id}/telemetry
+
+Returns Run-scoped WiFi telemetry snapshots with explicit environment class. Virtual and physical measurements use the same schema and remain distinguishable to every consumer.
 
 ### Lab Health
 

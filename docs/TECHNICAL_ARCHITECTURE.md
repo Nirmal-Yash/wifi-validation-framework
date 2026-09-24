@@ -324,3 +324,20 @@ The Runner owns lab/device execution and raw evidence.
 The Runner maintains a semantic TestRegistry mapped 1:1 to stable pytest node IDs. Test definitions carry version, category, protocol, severity, criticality, equipment, direction, prerequisites, destructive flag, duration, capabilities, metric/threshold definitions and evidence requirements.
 
 Each pytest session exposes a RunContext carrying Run/Attempt identity, lab/device, resolved configuration, TestRegistry, ArtifactService, a typed CommandRunner and structured logger. The existing pytest CLI and node IDs remain unchanged.
+
+
+## 19C. WiFi telemetry
+
+`WifiTelemetryService` provides a read-only measurement seam over the secured `CommandRunner`.
+
+For a selected WiFi interface it observes:
+
+- `wpa_cli signal_poll` for RSSI, noise, link speed and frequency when available;
+- `iw dev <iface> link` for connection/frequency/signal and bitrate/PHY-mode details;
+- `iw dev <iface> station dump` for observed transmit retry/failure counters and peer bitrate.
+
+The service derives SNR only when both RSSI and noise are actually observed, and channel only from an observed frequency. Missing fields remain absent with warnings.
+
+Every `TelemetryPoint` carries `VIRTUAL_WIFI` or `PHYSICAL_WIFI` plus source, interface and timestamp. The current lab is configured as `VIRTUAL_WIFI`; the schema is intentionally identical for future physical adapters.
+
+Telemetry is contextual evidence and does not become an authoritative PASS metric unless a future TestRegistry definition explicitly opts into it. Virtual hwsim telemetry never represents RF certification.
