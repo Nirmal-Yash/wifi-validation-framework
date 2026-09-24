@@ -137,6 +137,7 @@ class Artifact:
     sensitivity_class: str = "INTERNAL"
     retain_until: datetime | None = None
     soft_deleted_at: datetime | None = None
+    provenance: str = "NATIVE"
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -158,6 +159,8 @@ class Artifact:
             object.__setattr__(
                 self, "display_name", self.path.rsplit("/", 1)[-1]
             )
+        if not self.provenance.strip():
+            raise DomainValidationError("artifact provenance must not be empty")
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,6 +213,7 @@ class TestResult:
     error_reason: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    provenance: str = "NATIVE"
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -219,9 +223,10 @@ class TestResult:
             ("test_id", self.test_id),
             ("node_id", self.node_id),
             ("test_version", self.test_version),
+            ("provenance", self.provenance),
         ):
             _require_text(name, value)
-        if self.status in {TestResultStatus.PASS, TestResultStatus.XPASS} and (
+        if self.status in {TestResultStatus.PASS, TestResultStatus.XPASS} and self.provenance != "LEGACY_IMPORTED" and (
             self.evidence_state in {EvidenceState.INCOMPLETE, EvidenceState.INVALID}
         ):
             raise DomainValidationError(
@@ -279,6 +284,7 @@ class Run:
     created_at: datetime | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    provenance: str = "NATIVE"
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -289,6 +295,7 @@ class Run:
             ("validation_profile", self.validation_profile),
             ("configuration_hash", self.configuration_hash),
             ("repository_commit", self.repository_commit),
+            ("provenance", self.provenance),
         ):
             _require_text(name, value)
         if not self.selected_tests:
@@ -339,6 +346,7 @@ class Baseline:
     test_suite_version: str = ""
     lab_class: str = ""
     superseded_by: str | None = None
+    provenance: str = "NATIVE"
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -347,6 +355,7 @@ class Baseline:
             ("baseline_run_id", self.baseline_run_id),
             ("status", self.status),
             ("promoted_by", self.promoted_by),
+            ("provenance", self.provenance),
         ):
             _require_text(name, value)
 

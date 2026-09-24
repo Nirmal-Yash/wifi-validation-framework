@@ -37,3 +37,18 @@ Verification:
 
 Next:
 - Iteration 6 — Historical database migration and legacy Run attribution.
+
+
+## Iteration 6 — Historical Database Migration + Legacy Run Attribution ✅
+- [x] Deterministic legacy-to-Run/Attempt/TestResult attribution.
+- [x] Explicit \`LEGACY_IMPORTED\` provenance on migrated Run/TestResult/Artifact/Baseline records.
+- [x] Raw legacy metrics preserved where units are available.
+- [x] Existing PCAP paths registered only when the file actually exists; unavailable paths produce explicit lifecycle evidence.
+- [x] Legacy baseline-table naming collision isolated from normalized \`run_baselines\`.
+- [x] Migration ledger makes repeated execution idempotent.
+- [x] Legacy source tables remain intact.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required; result persistence/schema changes require the gate and it is unavailable here.
+
+Next:
+- Iteration 7 — Test Registry + RunContext semantic execution metadata.

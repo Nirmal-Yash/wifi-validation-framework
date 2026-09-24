@@ -237,3 +237,44 @@ def test_legacy_artifact_schema_is_migrated(tmp_path):
     assert restored is not None
     assert restored.display_name == "setup.log"
     assert restored.sensitivity_class == "INTERNAL"
+
+
+def test_normalized_baseline_table_is_archived_for_legacy_compatibility(tmp_path):
+    database = SQLiteDatabase(tmp_path / "normalized.db")
+    with database.connection() as connection:
+        connection.executescript("""
+            CREATE TABLE runs (
+                run_id TEXT PRIMARY KEY
+            );
+            CREATE TABLE baselines (
+                baseline_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                baseline_run_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                device_scope TEXT NOT NULL,
+                firmware_major_scope TEXT NOT NULL,
+                test_suite_version TEXT NOT NULL,
+                lab_class TEXT NOT NULL,
+                promoted_by TEXT NOT NULL,
+                promoted_at TEXT NOT NULL,
+                superseded_by TEXT
+            );
+            INSERT INTO baselines VALUES (
+                'b-old', 'old', 'run-old', 'ACTIVE', '', '', '', '',
+                'tester', '2026-09-24T12:00:00+00:00', NULL
+            );
+        """)
+        connection.commit()
+
+    database.initialize()
+
+    with database.connection() as connection:
+        names = {
+            row["name"]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+    assert "run_baselines" in names
+    assert "legacy_baselines_archive" in names
+    assert SQLiteBaselineRepository(database).get("b-old") is not None

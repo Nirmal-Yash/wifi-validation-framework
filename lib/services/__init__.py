@@ -1,3 +1,4 @@
+from .legacy_migration import LegacyDatabaseMigrationService
 from .artifact_service import ArtifactService
 from .metric_collector import MetricCollector
 from .run_service import (
@@ -9,6 +10,7 @@ from .run_service import (
 )
 
 __all__ = [
+    "LegacyDatabaseMigrationService",
     "ArtifactService",
     "MetricCollector",
     "RunService",

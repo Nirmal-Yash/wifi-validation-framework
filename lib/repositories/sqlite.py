@@ -28,7 +28,7 @@ from lib.domain import (
 )
 from .interfaces import RepositoryConflictError
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS runs (
     config_snapshot_id TEXT REFERENCES config_snapshots(snapshot_id),
     created_at TEXT,
     started_at TEXT,
-    completed_at TEXT
+    completed_at TEXT,
+    provenance TEXT NOT NULL DEFAULT 'NATIVE'
 );
 
 CREATE TABLE IF NOT EXISTS attempts (
@@ -94,7 +95,8 @@ CREATE TABLE IF NOT EXISTS test_results (
     evidence_state TEXT NOT NULL,
     error_reason TEXT,
     started_at TEXT,
-    completed_at TEXT
+    completed_at TEXT,
+    provenance TEXT NOT NULL DEFAULT 'NATIVE'
 );
 
 CREATE TABLE IF NOT EXISTS metrics (
@@ -132,7 +134,8 @@ CREATE TABLE IF NOT EXISTS artifacts (
     created_at TEXT,
     sensitivity_class TEXT NOT NULL DEFAULT 'INTERNAL',
     retain_until TEXT,
-    soft_deleted_at TEXT
+    soft_deleted_at TEXT,
+    provenance TEXT NOT NULL DEFAULT 'NATIVE'
 );
 
 CREATE TABLE IF NOT EXISTS lifecycle_events (
@@ -145,7 +148,7 @@ CREATE TABLE IF NOT EXISTS lifecycle_events (
     details_json TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS baselines (
+CREATE TABLE IF NOT EXISTS run_baselines (
     baseline_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     baseline_run_id TEXT NOT NULL REFERENCES runs(run_id),
@@ -156,7 +159,17 @@ CREATE TABLE IF NOT EXISTS baselines (
     lab_class TEXT NOT NULL,
     promoted_by TEXT NOT NULL,
     promoted_at TEXT NOT NULL,
-    superseded_by TEXT
+    superseded_by TEXT,
+    provenance TEXT NOT NULL DEFAULT 'NATIVE'
+);
+
+CREATE TABLE IF NOT EXISTS legacy_migration_records (
+    source_table TEXT NOT NULL,
+    source_row_id INTEGER NOT NULL,
+    target_run_id TEXT NOT NULL,
+    target_result_id TEXT,
+    imported_at TEXT NOT NULL,
+    PRIMARY KEY(source_table, source_row_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_attempts_run ON attempts(run_id);
@@ -164,7 +177,7 @@ CREATE INDEX IF NOT EXISTS idx_results_attempt ON test_results(attempt_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts(run_id);
 CREATE INDEX IF NOT EXISTS idx_events_run ON lifecycle_events(run_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_active_baseline_name
-    ON baselines(name) WHERE superseded_by IS NULL;
+    ON run_baselines(name) WHERE superseded_by IS NULL;
 """
 
 
@@ -200,22 +213,77 @@ class SQLiteDatabase:
 
     @staticmethod
     def _migrate_schema(connection: sqlite3.Connection) -> None:
-        columns = {
+        table_additions = {
+            "runs": {"provenance": "TEXT NOT NULL DEFAULT 'NATIVE'"},
+            "test_results": {"provenance": "TEXT NOT NULL DEFAULT 'NATIVE'"},
+            "artifacts": {
+                "display_name": "TEXT NOT NULL DEFAULT ''",
+                "created_at": "TEXT",
+                "sensitivity_class": "TEXT NOT NULL DEFAULT 'INTERNAL'",
+                "retain_until": "TEXT",
+                "soft_deleted_at": "TEXT",
+                "provenance": "TEXT NOT NULL DEFAULT 'NATIVE'",
+            },
+        }
+        for table, additions in table_additions.items():
+            columns = {
+                row["name"]
+                for row in connection.execute(
+                    f"PRAGMA table_info({table})"
+                ).fetchall()
+            }
+            for name, declaration in additions.items():
+                if name not in columns:
+                    connection.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {name} {declaration}"
+                    )
+
+        baseline_columns = {
             row["name"]
-            for row in connection.execute("PRAGMA table_info(artifacts)").fetchall()
+            for row in connection.execute(
+                "PRAGMA table_info(baselines)"
+            ).fetchall()
         }
-        additions = {
-            "display_name": "TEXT NOT NULL DEFAULT ''",
-            "created_at": "TEXT",
-            "sensitivity_class": "TEXT NOT NULL DEFAULT 'INTERNAL'",
-            "retain_until": "TEXT",
-            "soft_deleted_at": "TEXT",
-        }
-        for name, declaration in additions.items():
-            if name not in columns:
+        if baseline_columns and "baseline_id" in baseline_columns:
+            if "provenance" in baseline_columns:
                 connection.execute(
-                    f"ALTER TABLE artifacts ADD COLUMN {name} {declaration}"
+                    """
+                    INSERT OR IGNORE INTO run_baselines(
+                        baseline_id, name, baseline_run_id, status, device_scope,
+                        firmware_major_scope, test_suite_version, lab_class,
+                        promoted_by, promoted_at, superseded_by, provenance
+                    )
+                    SELECT baseline_id, name, baseline_run_id, status, device_scope,
+                           firmware_major_scope, test_suite_version, lab_class,
+                           promoted_by, promoted_at, superseded_by, provenance
+                    FROM baselines
+                    """
                 )
+            else:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO run_baselines(
+                        baseline_id, name, baseline_run_id, status, device_scope,
+                        firmware_major_scope, test_suite_version, lab_class,
+                        promoted_by, promoted_at, superseded_by, provenance
+                    )
+                    SELECT baseline_id, name, baseline_run_id, status, device_scope,
+                           firmware_major_scope, test_suite_version, lab_class,
+                           promoted_by, promoted_at, superseded_by, 'NATIVE'
+                    FROM baselines
+                    """
+                )
+            archive_name = "legacy_baselines_archive"
+            suffix = 2
+            while connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (archive_name,),
+            ).fetchone():
+                archive_name = f"legacy_baselines_archive_{suffix}"
+                suffix += 1
+            connection.execute(
+                f'ALTER TABLE baselines RENAME TO "{archive_name}"'
+            )
 
     def initialize(self) -> None:
         with self.connection() as connection:
@@ -274,8 +342,8 @@ class SQLiteRunRepository:
                     test_definition_versions_json, resolved_config_json,
                     configuration_hash, repository_commit, lifecycle, outcome,
                     environment_snapshot_id, config_snapshot_id,
-                    created_at, started_at, completed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    created_at, started_at, completed_at, provenance
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     run.run_id,
                     run.display_id,
@@ -294,6 +362,7 @@ class SQLiteRunRepository:
                     _dt(run.created_at),
                     _dt(run.started_at),
                     _dt(run.completed_at),
+                    run.provenance,
                 ),
             )
             connection.commit()
@@ -380,6 +449,7 @@ class SQLiteRunRepository:
                 created_at=_parse_dt(row["created_at"]),
                 started_at=_parse_dt(row["started_at"]),
                 completed_at=_parse_dt(row["completed_at"]),
+                provenance=row["provenance"] or "NATIVE",
             )
 
 
@@ -443,6 +513,7 @@ class SQLiteAttemptRepository:
             number=row["number"],
             started_at=_parse_dt(row["started_at"]),
             completed_at=_parse_dt(row["completed_at"]),
+            provenance=row["provenance"] or "NATIVE",
         )
 
     def list_for_run(self, run_id: str) -> list[Attempt]:
@@ -481,8 +552,8 @@ class SQLiteTestResultRepository:
                 """INSERT INTO test_results(
                     test_result_id, run_id, attempt_id, test_id, node_id,
                     test_version, status, criticality, severity, evidence_state,
-                    error_reason, started_at, completed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    error_reason, started_at, completed_at, provenance
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     result.test_result_id,
                     result.run_id,
@@ -497,6 +568,7 @@ class SQLiteTestResultRepository:
                     result.error_reason,
                     _dt(result.started_at),
                     _dt(result.completed_at),
+                    result.provenance,
                 ),
             )
 
@@ -565,8 +637,8 @@ class SQLiteTestResultRepository:
             """INSERT INTO artifacts(
                 artifact_id, run_id, test_result_id, artifact_type, path,
                 sha256, size_bytes, evidence_state, display_name, created_at,
-                sensitivity_class, retain_until, soft_deleted_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                sensitivity_class, retain_until, soft_deleted_at, provenance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 artifact.artifact_id,
                 artifact.run_id,
@@ -581,6 +653,7 @@ class SQLiteTestResultRepository:
                 artifact.sensitivity_class,
                 _dt(artifact.retain_until),
                 _dt(artifact.soft_deleted_at),
+                artifact.provenance,
             ),
         )
 
@@ -762,18 +835,18 @@ class SQLiteBaselineRepository:
             )
         with self.database.connection() as connection:
             if connection.execute(
-                "SELECT 1 FROM baselines WHERE baseline_id = ?",
+                "SELECT 1 FROM run_baselines WHERE baseline_id = ?",
                 (baseline.baseline_id,),
             ).fetchone():
                 raise RepositoryConflictError(
                     f"baseline already exists: {baseline.baseline_id}"
                 )
             connection.execute(
-                """INSERT INTO baselines(
+                """INSERT INTO run_baselines(
                     baseline_id, name, baseline_run_id, status, device_scope,
                     firmware_major_scope, test_suite_version, lab_class,
-                    promoted_by, promoted_at, superseded_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)""",
+                    promoted_by, promoted_at, superseded_by, provenance
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)""",
                 (
                     baseline.baseline_id,
                     baseline.name,
@@ -785,6 +858,7 @@ class SQLiteBaselineRepository:
                     baseline.lab_class,
                     baseline.promoted_by,
                     _dt(baseline.promoted_at),
+                    baseline.provenance,
                 ),
             )
             connection.commit()
@@ -792,14 +866,14 @@ class SQLiteBaselineRepository:
     def get(self, baseline_id: str) -> Baseline | None:
         with self.database.connection() as connection:
             row = connection.execute(
-                "SELECT * FROM baselines WHERE baseline_id = ?", (baseline_id,)
+                "SELECT * FROM run_baselines WHERE baseline_id = ?", (baseline_id,)
             ).fetchone()
         return self._to_domain(row)
 
     def list_active(self) -> list[Baseline]:
         with self.database.connection() as connection:
             rows = connection.execute(
-                "SELECT * FROM baselines WHERE superseded_by IS NULL "
+                "SELECT * FROM run_baselines WHERE superseded_by IS NULL "
                 "ORDER BY promoted_at DESC"
             ).fetchall()
         return [self._to_domain(row) for row in rows]
@@ -820,4 +894,5 @@ class SQLiteBaselineRepository:
             test_suite_version=row["test_suite_version"],
             lab_class=row["lab_class"],
             superseded_by=row["superseded_by"],
+            provenance=row["provenance"] or "NATIVE",
         )

@@ -144,8 +144,12 @@ Runtime DBs, reports, PCAPs and logs remain gitignored.
 
 ## 13. Current next step
 
-Iteration 4 implementation is present on main, but its local/unit and real-lab verification gates remain pending because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
+Iteration 6 implementation is present on main, but its local/unit and real-lab verification gates remain pending because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
 
-After verification passes, the next code slice is Iteration 6: Historical database migration and legacy Run attribution.
+After verification passes, the next code slice is Iteration 7: Test Registry + RunContext semantic execution metadata.
 
 Legacy test result storage remains as compatibility storage until the migration is explicitly retired.
+
+## 14. Iteration 6 status
+
+Historical SQLite migration is implemented with deterministic legacy provenance and an idempotent migration ledger. Legacy source tables remain unchanged.

@@ -58,6 +58,7 @@ class ArtifactService:
         retain_until: datetime | None = None,
         expected_sha256: str | None = None,
         expected_size_bytes: int | None = None,
+        provenance: str = "NATIVE",
     ) -> Artifact:
         if self.run_repository.get(run_id) is None:
             raise ValueError(f"Run not found: {run_id}")
@@ -92,6 +93,7 @@ class ArtifactService:
             created_at=self.clock(),
             sensitivity_class=sensitivity_class,
             retain_until=retain_until,
+            provenance=provenance,
         )
         self.artifact_repository.save(artifact)
         self.event_repository.append(
