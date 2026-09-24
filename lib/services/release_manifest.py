@@ -4,7 +4,7 @@ from datetime import datetime,timezone
 import hashlib,json,os,subprocess
 from pathlib import Path
 from typing import Any
-DEFAULT_REQUIRED_PATHS=("README.md","requirements.txt","docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md","docs/02_SYSTEM_ARCHITECTURE_DATA_API.md","docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md","docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md","docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md","docs/openapi.yaml","scripts/ci_release_gate.py","scripts/netregress_security_audit.py","scripts/netregress_certification.py","scripts/netregress_release.py","scripts/netregress_doctor.py")
+DEFAULT_REQUIRED_PATHS=("README.md","requirements.txt","docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md","docs/02_SYSTEM_ARCHITECTURE_DATA_API.md","docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md","docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md","docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md","docs/openapi.yaml","frontend/package.json","frontend/index.html","frontend/vite.config.js","frontend/src/App.jsx","frontend/src/api.js","frontend/src/main.jsx","scripts/ci_release_gate.py","scripts/netregress_security_audit.py","scripts/netregress_certification.py","scripts/netregress_release.py","scripts/netregress_doctor.py")
 FORBIDDEN_TRACKED_SUFFIXES=(".db",".pcap",".log",".tmp",".pyc")
 FORBIDDEN_TRACKED_NAMES={".env",".env.local",".env.production"}
 @dataclass(frozen=True,slots=True)

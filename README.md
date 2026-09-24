@@ -22,7 +22,7 @@ That baseline protects the current network behavior while the application archit
 - fault injection and recovery;
 - SQLite persistence;
 - firmware-version comparison;
-- Flask dashboard;
+- Flask dashboard and production React/Vite UI;
 - automated GNS3 laboratory provisioning.
 
 ## Canonical documentation

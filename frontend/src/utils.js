@@ -1,0 +1,11 @@
+export const terminalStatuses=new Set(["COMPLETED","FAILED","LAB_FAILED","CANCELLED","ABORTED"]);
+export const canExecute=(role)=>["OWNER","ADMIN","OPERATOR"].includes(role);
+export const canAdmin=(role)=>["OWNER","ADMIN"].includes(role);
+export const canOwner=(role)=>role==="OWNER";
+export const formatDate=(value)=>{if(!value)return"—";const date=new Date(value);if(Number.isNaN(date.getTime()))return String(value);return date.toLocaleString(undefined,{dateStyle:"medium",timeStyle:"medium"});};
+export const formatDuration=(started,completed)=>{if(!started||!completed)return"—";const seconds=Math.max(0,Math.round((new Date(completed).getTime()-new Date(started).getTime())/1000));return seconds<60?seconds+"s":Math.floor(seconds/60)+"m "+(seconds%60)+"s";};
+export const formatBytes=(value)=>{const bytes=Number(value);if(!Number.isFinite(bytes)||bytes<0)return"—";if(bytes<1024)return bytes+" B";if(bytes<1024*1024)return(bytes/1024).toFixed(1)+" KiB";if(bytes<1024*1024*1024)return(bytes/1024/1024).toFixed(1)+" MiB";return(bytes/1024/1024/1024).toFixed(1)+" GiB";};
+export const validSamples=(samples=[])=>samples.filter(sample=>sample.status==="VALID"&&!sample.warmup&&Number.isFinite(Number(sample.value)));
+export const mean=(values=[])=>values.length?values.reduce((sum,value)=>sum+Number(value),0)/values.length:null;
+export const metricMean=(metric)=>mean(validSamples(metric?.samples||[]).map(sample=>Number(sample.value)));
+export const classifyTone=(value)=>{const text=String(value||"").toUpperCase();if(["PASS","COMPLETED","HEALTHY","COMPARABLE","IMPROVEMENT","FIXED","READY","OK"].includes(text))return"success";if(["FAIL","FAILED","LAB_FAILED","REGRESSION","PRODUCT_FAILED","WORKER_CRASHED","NOT_READY"].includes(text))return"danger";if(["UNVALIDATED","UNKNOWN","DEGRADED","NO_BASELINE","SOFT_REGRESSION","RUNNER_DISCONNECTED","TIMED_OUT"].includes(text))return"warning";return"neutral";};

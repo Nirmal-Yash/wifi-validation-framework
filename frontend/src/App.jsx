@@ -1,49 +1,41 @@
-import React,{useEffect,useState}from"react";
-import{api}from"./api";
-
-const canExecute=(role)=>role!=="VIEWER";
-const terminalStatuses=new Set(["COMPLETED","FAILED","LAB_FAILED","CANCELLED","ABORTED"]);
-
-function Login({onLogin}){
-  const[u,setU]=useState("admin"),[p,setP]=useState(""),[e,setE]=useState("");
-  return <div className="login"><form onSubmit={async x=>{x.preventDefault();try{await api.login(u,p);onLogin(await api.me())}catch(err){setE(err.message)}}}>
-    <h1>NetRegress Runner</h1><input value={u} onChange={e=>setU(e.target.value)} placeholder="Username"/>
-    <input type="password" value={p} onChange={e=>setP(e.target.value)} placeholder="Password"/>
-    <button>Sign in</button>{e&&<p className="error">{e}</p>}
-  </form></div>
+import React,{useEffect,useState} from "react";
+import {api} from "./api";
+import {navigate,routeFor} from "./router";
+import {useRoute} from "./hooks";
+import AppShell from "./components/layout";
+import {LoadingState} from "./components/ui";
+import LoginPage from "./pages/auth";
+import DashboardPage from "./pages/dashboard";
+import RunsPage from "./pages/runs";
+import RunDetailPage from "./pages/run";
+import TestDetailPage from "./pages/test";
+import {RegressionPage,PerformancePage,TelemetryPage} from "./pages/quality";
+import {ArtifactsPage,LabHealthPage,ReadinessPage,BaselinesPage,OperationsPage} from "./pages/system";
+import {canAdmin,canExecute} from "./utils";
+function NotFound(){return<div className="state-card"><strong>Page not found</strong><span>The requested NetRegress UI route does not exist.</span><button className="button secondary" onClick={()=>navigate("/")}>Return to dashboard</button></div>;}
+export default function App(){
+ const routeState=useRoute(),[user,setUser]=useState(undefined),[bootError,setBootError]=useState(null);
+ useEffect(()=>{api.me().then(setUser).catch(error=>{if(error.status===401)setUser(null);else{setBootError(error);setUser(null);}});},[]);
+ if(user===undefined)return<LoadingState label="Loading NetRegress…"/>;
+ if(!user)return<LoginPage onLogin={setUser}/>;
+ if(bootError)void bootError;
+ const route=routeFor(routeState.value);
+ let page;
+ switch(route.name){
+  case"dashboard":page=<DashboardPage/>;break;
+  case"runs":page=<RunsPage user={user}/>;break;
+  case"run":page=<RunDetailPage runId={route.runId} user={user}/>;break;
+  case"test":page=<TestDetailPage runId={route.runId} testResultId={route.testResultId}/>;break;
+  case"regressions":page=<RegressionPage/>;break;
+  case"performance":page=<PerformancePage/>;break;
+  case"telemetry":page=<TelemetryPage/>;break;
+  case"lab-health":page=<LabHealthPage/>;break;
+  case"artifacts":page=<ArtifactsPage/>;break;
+  case"baselines":page=canAdmin(user.role)?<BaselinesPage/>:<NotFound/>;break;
+  case"operations":page=canExecute(user.role)?<OperationsPage/>:<NotFound/>;break;
+  case"readiness":page=<ReadinessPage/>;break;
+  default:page=<NotFound/>;
+ }
+ const logout=async()=>{try{await api.logout();}finally{setUser(null);navigate("/");}};
+ return<AppShell user={user} routeName={route.name} onLogout={logout}>{page}</AppShell>;
 }
-
-function Runs({select,user}){
-  const[d,setD]=useState({items:[]}),[e,setE]=useState("");
-  const load=()=>api.runs().then(setD).catch(x=>setE(x.message));
-  useEffect(()=>{load();const timer=setInterval(load,5000);return()=>clearInterval(timer)},[]);
-  return <section><div className="toolbar"><h2>Runs</h2>{canExecute(user.role)&&<button onClick={()=>api.launch({firmware_version:"v1.0"}).then(load)}>Start Run</button>}</div>
-    {e&&<p className="error">{e}</p>}<table><thead><tr><th>Run</th><th>Firmware</th><th>Status</th><th>Health</th><th>Outcome</th></tr></thead>
-    <tbody>{(d.items||[]).map(r=><tr key={r.run_id} onClick={()=>select(r.run_id)}><td>{r.display_id}</td><td>{r.firmware_version}</td><td>{r.lifecycle_status}</td><td>{r.environment_health||"—"}</td><td>{r.business_outcome||"—"}</td></tr>)}</tbody></table>
-  </section>
-}
-
-function Detail({id,back,user}){
-  const[d,setD]=useState(null),[tab,setTab]=useState("summary"),[e,setE]=useState("");
-  const load=()=>api.run(id).then(setD).catch(x=>setE(x.message));
-  useEffect(()=>{load();const timer=setInterval(()=>{if(d&&!terminalStatuses.has(d.lifecycle_status))load()},2000);return()=>clearInterval(timer)},[id,d?.lifecycle_status]);
-  if(!d)return <section>{e?<p className="error">{e}</p>:"Loading…"}</section>;
-  const view=tab==="health"?d.health:tab==="tests"?d.test_counts:tab==="artifacts"?d.artifacts:d;
-  return <section><button onClick={back}>← Runs</button><h2>{d.display_id}</h2>
-    <div className="grid">{["lifecycle_status","business_outcome","environment_health","failure_class","configuration_hash"].map(k=><div className="card" key={k}><small>{k}</small><strong>{d[k]||"—"}</strong></div>)}</div>
-    <div className="tabs">{["summary","tests","health","telemetry","artifacts"].map(t=><button className={tab===t?"active":""} onClick={()=>setTab(t)} key={t}>{t}</button>)}</div>
-    <pre>{JSON.stringify(tab==="telemetry"?d.telemetry:view,null,2)}</pre>
-    {canExecute(user.role)&&<div className="toolbar"><button onClick={()=>api.cancel(id,"cancelled from UI").then(load)}>Cancel</button><button onClick={()=>api.retry(id).then(()=>load())}>Retry</button></div>}
-  </section>
-}
-
-function App(){
-  const[user,setUser]=useState(undefined),[selected,setSelected]=useState(null);
-  useEffect(()=>{api.me().then(setUser).catch(()=>setUser(null))},[]);
-  if(user===undefined)return <main>Loading…</main>;
-  if(!user)return <Login onLogin={setUser}/>;
-  return <main><header><h1>NetRegress Runner</h1><div>{user.username} · {user.role} <button onClick={()=>api.logout().then(()=>setUser(null))}>Logout</button></div></header>
-    {selected?<Detail id={selected} back={()=>setSelected(null)} user={user}/>:<Runs select={setSelected} user={user}/>}</main>
-}
-
-export default App;

@@ -20,9 +20,9 @@ This document shows where the completed discovery decisions are represented in t
 
 | Source section | Topics | Primary document | Secondary document |
 |---|---|---|---|
-| A | product/end-state | 05_ARCHITECTURE_DECISIONS_AND_05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md | PRD.md |
-| B | Cloud/Runner execution | 05_ARCHITECTURE_DECISIONS_AND_05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md | SECURITY_AND_SAAS.md |
-| C | pytest compatibility | 05_ARCHITECTURE_DECISIONS_AND_05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md | EXECUTION_AND_ADAPTERS.md |
+| A | product/end-state | 05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md | PRD.md |
+| B | Cloud/Runner execution | 05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md | SECURITY_AND_SAAS.md |
+| C | pytest compatibility | 05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md | EXECUTION_AND_ADAPTERS.md |
 | D | Run lifecycle | 02_SYSTEM_ARCHITECTURE_DATA_API.md | 05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md |
 | E | samples/statistics | 05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md | 01_DEVELOPMENT_PLAN_AND_ROADMAP.md |
 | F | baselines | 05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md | 02_SYSTEM_ARCHITECTURE_DATA_API.md |
@@ -185,7 +185,7 @@ Iterations 20–30 are source-implemented and the full core/release-readiness CI
 
 1. **Project-scoped authorization model:** RBAC currently has project identifiers as an authorization primitive, but the persisted domain does not yet model a first-class Project entity and propagate project ownership through Runs, Devices and Labs.
 2. **Protocol live wiring breadth:** DHCP evidence is live-wired into the protected real capture path; EAPOL, Beacon/RSN and DNS analyzers still require explicit execution-class integration evidence.
-3. **Advanced frontend operations:** firmware mutation, waiver administration, baseline administration and detailed regression/release workflows remain primarily API-driven rather than fully represented in the React shell.
+3. **Frontend operations:** firmware mutation, waiver administration, baseline administration, Run workflows, detailed regression analysis and Runner readiness are represented in the React shell. Backend authorization and release semantics remain authoritative.
 4. **Execution certification:** CI/source gates cannot replace GNS3/mac80211_hwsim, real device, browser and production-like runtime evidence.
 
 ## Protected behavioral baseline
@@ -222,7 +222,7 @@ The previous release wave was structurally strong but had several implementation
 | Release waivers | Gate matching ignored WaiverScope. | TEST/RUN/REGRESSION/RELEASE scopes are evaluated separately and run context is carried into the gate. |
 | Mutation idempotency | Only Run creation used durable API idempotency. | Operational POST mutations now require durable request-fingerprint-bound idempotency keys. |
 | Readiness | API readiness only initialized SQLite. | Readiness now reports structured RunnerDoctor checks and returns 503 on a failed readiness check. |
-| Frontend security | React mutations did not supply CSRF or idempotency headers. | API client now obtains CSRF tokens and automatically sends CSRF/idempotency headers for mutations. |
+| Frontend security | React mutations did not supply CSRF or idempotency headers. | API client now obtains CSRF/idempotency headers for mutations; role-aware UI remains presentation-only and backend authorization remains authoritative. |
 | API contract drift | CSRF/test-detail/metric-history routes and firmware metadata were incomplete in OpenAPI. | OpenAPI route and schema surface synchronized with the API implementation. |
 | Roadmap integrity | Iterations 6–27 were accidentally removed from the current roadmap. | Restored the complete historical roadmap and appended Iterations 28–30 plus the completeness audit. |
 

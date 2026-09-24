@@ -5,17 +5,15 @@
 This is the primary repository context for future engineers and coding agents.
 
 Read order:
-
-1. 05_ARCHITECTURE_DECISIONS_AND_05_ARCHITECTURE_DECISIONS_AND_05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
+1. 05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
 2. 01_DEVELOPMENT_PLAN_AND_ROADMAP.md
-3. 05_ARCHITECTURE_DECISIONS_AND_05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
-4. 02_SYSTEM_ARCHITECTURE_DATA_API.md
-5. 02_SYSTEM_ARCHITECTURE_DATA_API.md
-6. EXECUTION_AND_ADAPTERS.md
-7. SECURITY_AND_SAAS.md
-8. 04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md
-9. FRONTEND_DESIGN.md
-10. source files directly related to the change
+3. 02_SYSTEM_ARCHITECTURE_DATA_API.md
+4. EXECUTION_AND_ADAPTERS.md
+5. SECURITY_AND_SAAS.md
+6. 04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md
+7. FRONTEND_DESIGN.md
+8. 03_TRACEABILITY_AND_SYSTEM_READINESS.md
+9. source files directly related to the change
 
 ## 2. Protected baseline
 
@@ -143,6 +141,8 @@ Tag stable milestones.
 Runtime DBs, reports, PCAPs and logs remain gitignored.
 
 ## 13. Current next step
+
+The React/Vite frontend is now source-complete across the documented standalone Runner UI surface. Browser/runtime evidence and the protected REAL_LAB execution gate remain separate from source completion.
 
 Iterations 6 through 12 are implemented on main. Local/unit execution and the required real-lab gates remain pending where documented because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
 

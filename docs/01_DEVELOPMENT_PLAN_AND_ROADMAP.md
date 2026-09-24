@@ -9,7 +9,7 @@ Companion canonical documents:
 - docs/02_SYSTEM_ARCHITECTURE_DATA_API.md
 - docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md
 - docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md
-- docs/05_ARCHITECTURE_DECISIONS_AND_05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
+- docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
 
 ## 1. Authority and development rules
 
@@ -931,7 +931,7 @@ Hardware-free contract tests remain separate from real-lab execution.
 
 ## 24.4 React/Vite frontend
 
-Build the production local dashboard using React + Vite.
+The production local dashboard is implemented under `frontend/` using React + Vite. The React UI is the canonical modern presentation layer over `/api/v1`; the Jinja dashboard remains compatibility coverage during migration.
 
 Required product views:
 

@@ -6,11 +6,7 @@ Do not rewrite the current Flask/Jinja dashboard yet.
 
 Flask/Jinja plus plain JavaScript remains the presentation layer through Phase 8 because the Run, evidence, regression and telemetry contracts are still being stabilized.
 
-The eventual migration target is React + Vite only after:
-
-1. the versioned API is stable;
-2. authentication and RBAC exist;
-3. Cloud/Project semantics are implemented.
+The canonical modern UI is React + Vite over the versioned `/api/v1` contract. The Flask/Jinja dashboard remains as a compatibility presentation layer while the React client is validated in deployment. Cloud/Project semantics remain backend concerns and are not duplicated in the browser.
 
 ## 2. API-first principle
 
@@ -274,9 +270,9 @@ Later state-changing controls require role authorization and explicit confirmati
 
 Dangerous actions display device, firmware and target scope before confirmation.
 
-## 16. Future React component model
+## 16. React component model
 
-Potential components:
+Implemented components include:
 
 - RunSummary;
 - ReleaseDecision;
@@ -294,16 +290,9 @@ Potential components:
 
 These are conceptual components and do not justify an early SPA rewrite.
 
-## 17. Migration to React + Vite
+## 17. React + Vite implementation
 
-When API and Cloud auth are stable:
-
-1. preserve URL semantics;
-2. reuse API contracts;
-3. reproduce current workflows;
-4. migrate page-by-page;
-5. run old and new frontends against the same API during transition;
-6. retire Jinja only after feature parity and security validation.
+The React client now preserves the documented URL semantics for Dashboard, Runs, Run Detail, Test Detail, Regression, Performance, Telemetry, Lab Health, Artifacts, Baselines, Operations and Runner Readiness. It reuses the canonical `/api/v1` contracts and delegates authorization, CSRF, idempotency, artifact integrity and release semantics to the backend. The Jinja dashboard remains available for compatibility until browser/runtime parity is independently validated and the retirement decision is made.
 
 ## 18. Frontend invariants
 
@@ -314,15 +303,15 @@ When API and Cloud auth are stable:
 5. UI never claims virtual WiFi is physical RF certification.
 6. UI must always make the distinction between lifecycle status and business outcome visible.
 
-## 19. Iteration 16 implementation status
+## 19. React implementation status
 
-Phase 8 is now API-backed rather than documentation-only. Jinja pages consume the same /api/v1 contracts intended for a future React client. The dashboard remains read-only until an authentication/RBAC boundary is implemented for state-changing actions.
+The React UI is now API-backed rather than documentation-only. It covers authenticated Run operations, filtering and pagination, Run/Test inspection, regression analysis, performance trends, telemetry, Lab Health, artifact browsing, baseline administration, firmware operations, waiver administration and structured Runner readiness. State-changing controls remain RBAC-aware in the UI while API authorization remains authoritative.
 
-Telemetry and regression pages preserve environment/evidence semantics rather than presenting inferred values as facts.
+Telemetry, regression, evidence, lifecycle and environment semantics are rendered from persisted API facts and never inferred into PASS states.
 
 
 ## 8. React/Vite implementation
-The Runner now includes a React + Vite operational shell consuming /api/v1 for authenticated Run launch/list/detail, cancellation, retry, lifecycle/test inspection, health and artifact inspection. API authorization remains authoritative; UI visibility is not a security control.
+The Runner includes a React + Vite operational application consuming `/api/v1`. The implementation is componentized into routed pages, reusable tables/status cards/forms, semantic badges, accessible charts, confirmation dialogs, loading/error/empty states and role-aware navigation. API authorization remains authoritative; UI visibility is not a security control.
 
 ## 20. Iterations 26–27 security and certification UX
 The operational API remains the authority for mutation authorization, CSRF, idempotency and artifact boundaries. Browser state changes now require a session-bound CSRF token. The UI may surface the certification matrix and release/readiness status, but it must never infer certification from the presence of a generated matrix alone.
