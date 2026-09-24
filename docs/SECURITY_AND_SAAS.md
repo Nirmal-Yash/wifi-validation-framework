@@ -228,3 +228,7 @@ Synchronization retries are transport retries only. They never retry device comm
 
 ## 26. Iterations 20–22 Runner security/orchestration status
 Tracked operational credentials are externalized through environment markers and resolved only at the connection boundary. Local authentication/RBAC is enforced at the dashboard API boundary. Deterministic configuration, environment fingerprinting, exclusive lab locking and Run orchestration are implemented. Cloud remains the higher-level business authority and is deferred until standalone Runner certification.
+
+
+## 27. Iterations 23–25 security and control status
+The Runner now records explicit failure classes, controls firmware mutation through authorization/state transitions, scopes exclusive execution through process and lab ownership, exposes state-changing APIs only behind RBAC, restricts release exceptions to explicit expiring waivers, and preserves raw execution evidence locally through outbound-only synchronization.

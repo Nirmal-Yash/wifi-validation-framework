@@ -9,6 +9,9 @@ from typing import Iterator, Mapping
 
 from lib.domain import (
     Artifact,
+    FailureClass,
+    ReleaseWaiver,
+    WaiverScope,
     ArtifactType,
     Attempt,
     Baseline,
@@ -29,7 +32,7 @@ from lib.domain import (
 )
 from .interfaces import RepositoryConflictError
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "6"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -72,7 +75,10 @@ CREATE TABLE IF NOT EXISTS runs (
     created_at TEXT,
     started_at TEXT,
     completed_at TEXT,
-    provenance TEXT NOT NULL DEFAULT 'NATIVE'
+    provenance TEXT NOT NULL DEFAULT 'NATIVE',
+    failure_class TEXT,
+    failure_reason TEXT,
+    execution_pid INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS attempts (
@@ -203,6 +209,20 @@ CREATE INDEX IF NOT EXISTS idx_sync_queue_ready
     ON sync_queue(state, next_attempt_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_sync_queue_run
     ON sync_queue(run_id);
+
+CREATE TABLE IF NOT EXISTS release_waivers (
+    waiver_id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    issue_code TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    audit_reference TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_waivers_target ON release_waivers(target_id, active, expires_at);
 """
 
 
@@ -231,6 +251,8 @@ class SQLiteDatabase:
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 5000")
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA synchronous = NORMAL")
         try:
             yield connection
         finally:
@@ -242,6 +264,9 @@ class SQLiteDatabase:
             "runs": {
                 "provenance": "TEXT NOT NULL DEFAULT 'NATIVE'",
                 "environment_health": "TEXT",
+                "failure_class": "TEXT",
+                "failure_reason": "TEXT",
+                "execution_pid": "INTEGER",
             },
             "test_results": {"provenance": "TEXT NOT NULL DEFAULT 'NATIVE'"},
             "artifacts": {
@@ -370,8 +395,8 @@ class SQLiteRunRepository:
                     test_definition_versions_json, resolved_config_json,
                     configuration_hash, repository_commit, lifecycle, outcome,
                     environment_health, environment_snapshot_id, config_snapshot_id,
-                    created_at, started_at, completed_at, provenance
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    created_at, started_at, completed_at, provenance, failure_class, failure_reason, execution_pid
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     run.run_id,
                     run.display_id,
@@ -392,6 +417,9 @@ class SQLiteRunRepository:
                     _dt(run.started_at),
                     _dt(run.completed_at),
                     run.provenance,
+                    run.failure_class.value if run.failure_class else None,
+                    run.failure_reason,
+                    run.execution_pid,
                 ),
             )
             connection.commit()
@@ -404,7 +432,7 @@ class SQLiteRunRepository:
                 raise RepositoryConflictError(f"run does not exist: {run.run_id}")
             connection.execute(
                 """UPDATE runs
-                   SET lifecycle = ?, outcome = ?, environment_health = ?, started_at = ?, completed_at = ?
+                   SET lifecycle = ?, outcome = ?, environment_health = ?, started_at = ?, completed_at = ?, failure_class = ?, failure_reason = ?, execution_pid = ?
                    WHERE run_id = ?""",
                 (
                     run.lifecycle.value,
@@ -412,6 +440,9 @@ class SQLiteRunRepository:
                     run.environment_health.value if run.environment_health else None,
                     _dt(run.started_at),
                     _dt(run.completed_at),
+                    run.failure_class.value if run.failure_class else None,
+                    run.failure_reason,
+                    run.execution_pid,
                     run.run_id,
                 ),
             )
@@ -485,6 +516,9 @@ class SQLiteRunRepository:
                 started_at=_parse_dt(row["started_at"]),
                 completed_at=_parse_dt(row["completed_at"]),
                 provenance=row["provenance"] or "NATIVE",
+                failure_class=(FailureClass(row["failure_class"]) if row["failure_class"] else None),
+                failure_reason=row["failure_reason"],
+                execution_pid=row["execution_pid"],
             )
 
     
@@ -556,7 +590,6 @@ class SQLiteAttemptRepository:
             number=row["number"],
             started_at=_parse_dt(row["started_at"]),
             completed_at=_parse_dt(row["completed_at"]),
-            provenance=row["provenance"] or "NATIVE",
         )
 
     def list_for_run(self, run_id: str) -> list[Attempt]:
@@ -1085,6 +1118,24 @@ class SQLiteBaselineRepository:
             ).fetchall()
         return [self._to_domain(row) for row in rows]
 
+    def supersede(self, baseline_id: str, replacement_id: str) -> None:
+        with self.database.connection() as connection:
+            cursor = connection.execute(
+                "UPDATE run_baselines SET superseded_by = ?, status = 'SUPERSEDED' "
+                "WHERE baseline_id = ? AND superseded_by IS NULL",
+                (replacement_id, baseline_id),
+            )
+            if cursor.rowcount != 1:
+                raise RepositoryConflictError(f"baseline is not active: {baseline_id}")
+            connection.commit()
+
+    def list_all(self) -> list[Baseline]:
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM run_baselines ORDER BY promoted_at DESC"
+            ).fetchall()
+        return [self._to_domain(row) for row in rows]
+
     @staticmethod
     def _to_domain(row: sqlite3.Row | None) -> Baseline | None:
         if not row:
@@ -1103,3 +1154,51 @@ class SQLiteBaselineRepository:
             superseded_by=row["superseded_by"],
             provenance=row["provenance"] or "NATIVE",
         )
+
+class SQLiteWaiverRepository:
+    def __init__(self, database: SQLiteDatabase) -> None:
+        self.database = database
+
+    def save(self, waiver) -> None:
+        with self.database.connection() as connection:
+            connection.execute(
+                "INSERT INTO release_waivers(waiver_id,scope,target_id,issue_code,reason,created_by,created_at,expires_at,audit_reference,active) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    waiver.waiver_id,
+                    waiver.scope.value,
+                    waiver.target_id,
+                    waiver.issue_code,
+                    waiver.reason,
+                    waiver.created_by,
+                    _dt(waiver.created_at),
+                    _dt(waiver.expires_at),
+                    waiver.audit_reference,
+                    1 if waiver.active else 0,
+                ),
+            )
+            connection.commit()
+
+    def list_active(self, target_id: str | None = None):
+        query = "SELECT * FROM release_waivers WHERE active = 1"
+        params = []
+        if target_id is not None:
+            query += " AND target_id = ?"
+            params.append(target_id)
+        query += " ORDER BY created_at DESC"
+        with self.database.connection() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [
+            ReleaseWaiver(
+                waiver_id=row["waiver_id"],
+                scope=WaiverScope(row["scope"]),
+                target_id=row["target_id"],
+                issue_code=row["issue_code"],
+                reason=row["reason"],
+                created_by=row["created_by"],
+                created_at=_parse_dt(row["created_at"]),
+                expires_at=_parse_dt(row["expires_at"]),
+                audit_reference=row["audit_reference"],
+                active=bool(row["active"]),
+            )
+            for row in rows
+        ]

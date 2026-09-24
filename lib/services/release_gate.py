@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Mapping
+from lib.domain import ReleaseWaiver
 
 class ReleaseGateStatus(str, Enum):
     ACCEPT = 'ACCEPT'
@@ -33,6 +34,7 @@ class ReleaseGateInput:
     evidence_states: Mapping[str, str]
     regression_classifications: Mapping[str, str]
     policy: ReleaseGatePolicy = field(default_factory=ReleaseGatePolicy)
+    waivers: tuple[ReleaseWaiver, ...] = ()
 
 @dataclass(frozen=True, slots=True)
 class ReleaseGateDecision:
@@ -68,6 +70,15 @@ class ReleaseGateEvaluator:
                 state = data.evidence_states.get(test_id, 'MISSING')
                 if state in {'MISSING','INCOMPLETE','INVALID'}:
                     issues.append(ReleaseGateIssue('INVALID_REQUIRED_EVIDENCE', f'required evidence state is {state}', test_id))
-        status = ReleaseGateStatus.REJECT if issues else ReleaseGateStatus.ACCEPT
-        summary = 'release gate accepted' if status is ReleaseGateStatus.ACCEPT else f'release gate rejected with {len(issues)} issue(s)'
-        return ReleaseGateDecision(status, tuple(issues), summary)
+        active_waivers = [w for w in data.waivers if w.is_active()]
+        filtered = [
+            issue for issue in issues
+            if not any(
+                waiver.issue_code == issue.code
+                and waiver.target_id in {"*", issue.test_id or "", data.run_lifecycle}
+                for waiver in active_waivers
+            )
+        ]
+        status = ReleaseGateStatus.REJECT if filtered else ReleaseGateStatus.ACCEPT
+        summary = 'release gate accepted' if status is ReleaseGateStatus.ACCEPT else f'release gate rejected with {len(filtered)} issue(s)'
+        return ReleaseGateDecision(status, tuple(filtered), summary)

@@ -98,3 +98,9 @@ from .environment_fingerprint import EnvironmentFingerprint, EnvironmentFingerpr
 from .resource_lock import ResourceLockError, ResourceLease, ResourceLockManager
 from .lab_controller import LabController, LabControllerError
 from .run_orchestrator import RunExecutionSession, RunOrchestrator
+
+from .diagnostics import DiagnosticBundle, DiagnosticBundleService
+from .reproduction import ReproductionManifest, ReproductionManifestService
+from .waiver_service import WaiverService
+from .run_process import RunProcessHandle, RunProcessManager
+from .firmware_transports import FirmwareTransfer, FirmwareTransferError, TftpFirmwareTransport

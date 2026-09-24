@@ -19,6 +19,7 @@ from lib.adapters import DeviceProfile, OpenWrtDeviceAdapter, SSHFirmwareAdapter
 from lib.db_helper import init_db, insert_result
 from lib.domain import (
     EnvironmentHealthStatus,
+    EvidenceState,
     RunLifecycle,
     TelemetryEnvironmentClass,
     TestResultStatus,
@@ -132,13 +133,24 @@ def metric_logger(request):
 
 @pytest.fixture(autouse=True)
 def record_test_result(request, firmware_version):
-    start = time.time()
-    yield
-    duration_ms = int((time.time() - start) * 1000)
+    start_time = time.time()
+    context = getattr(request.config, "_netregress_run_context", None)
+    telemetry_before = None
+    if context is not None and context.telemetry_service is not None and os.getenv("NETREGRESS_AUTO_TELEMETRY", "1") not in {"0", "false", "no"}:
+        try:
+            telemetry_before = context.telemetry_service.capture_and_register(
+                run_id=context.run_id,
+                artifact_service=context.artifact_service,
+                interface=os.getenv("NETREGRESS_WIFI_INTERFACE", "wlan0"),
+            )
+        except Exception as exc:
+            request.node.user_properties.append(("telemetry_before_warning", str(exc)))
 
+    yield
+
+    duration_ms = int((time.time() - start_time) * 1000)
     rep_call = getattr(request.node, "rep_call", None)
     rep_setup = getattr(request.node, "rep_setup", None)
-
     if rep_call is not None:
         status = "PASS" if rep_call.passed else "FAIL"
         error_message = str(rep_call.longrepr) if rep_call.failed else None
@@ -146,10 +158,18 @@ def record_test_result(request, firmware_version):
         status = "FAIL"
         error_message = f"Setup failed: {rep_setup.longrepr}"
     else:
-        # Test skipped or undetermined
         return
 
-    # Extract metrics logged by test
+    if context is not None and context.telemetry_service is not None and os.getenv("NETREGRESS_AUTO_TELEMETRY", "1") not in {"0", "false", "no"}:
+        try:
+            context.telemetry_service.capture_and_register(
+                run_id=context.run_id,
+                artifact_service=context.artifact_service,
+                interface=os.getenv("NETREGRESS_WIFI_INTERFACE", "wlan0"),
+            )
+        except Exception as exc:
+            request.node.user_properties.append(("telemetry_after_warning", str(exc)))
+
     props = dict(request.node.user_properties)
     metric_val = props.get("metric_value")
     metric_unit = props.get("metric_unit")
@@ -165,19 +185,43 @@ def record_test_result(request, firmware_version):
             metric_unit=metric_unit,
         )
     except Exception as db_err:
-        # Prevent database insertion errors from failing the test suite
         sys.stderr.write(f"\n[WARN] Failed to insert test result to DB: {db_err}\n")
 
-    context = getattr(request.config, "_netregress_run_context", None)
     if context is not None:
         collector = getattr(request.node, "_metric_collector", None)
         metrics = collector.metrics() if collector is not None else ()
-        result_status = (
-            TestResultStatus.PASS
-            if rep_call is not None and rep_call.passed
-            else TestResultStatus.FAIL
-        )
         definition = context.definition_for(request.node.nodeid)
+
+        evidence_state = EvidenceState.NOT_REQUIRED
+        if definition.evidence_requirements:
+            evidence_state = EvidenceState.REQUIRED
+            artifacts = context.artifact_service.list_for_run(context.run_id) if context.artifact_service else []
+            by_type = {artifact.artifact_type for artifact in artifacts if artifact.test_result_id in {None, request.node.nodeid}}
+            missing = [kind for kind in definition.evidence_requirements if kind not in by_type]
+            invalid = False
+            for artifact in artifacts:
+                if artifact.artifact_type in definition.evidence_requirements and context.artifact_service is not None:
+                    try:
+                        if not context.artifact_service.verify(artifact.artifact_id):
+                            invalid = True
+                    except Exception:
+                        invalid = True
+            if invalid:
+                evidence_state = EvidenceState.INVALID
+            elif missing:
+                evidence_state = EvidenceState.INCOMPLETE
+            else:
+                evidence_state = EvidenceState.COMPLETE
+                if status == "PASS":
+                    status = "PASS"
+
+        result_status = (
+            TestResultStatus.PASS if status == "PASS" else TestResultStatus.FAIL
+        )
+        if definition.evidence_requirements and evidence_state in {EvidenceState.INCOMPLETE, EvidenceState.INVALID} and result_status is TestResultStatus.PASS:
+            result_status = TestResultStatus.UNVALIDATED
+            error_message = error_message or f"required evidence state: {evidence_state.value}"
+
         context.run_service.record_test_result(
             run_id=context.run_id,
             attempt_id=context.attempt_id,
@@ -187,6 +231,7 @@ def record_test_result(request, firmware_version):
             status=result_status,
             criticality=definition.criticality,
             severity=definition.severity,
+            evidence_state=evidence_state,
             metrics=metrics,
             error_reason=error_message,
         )
@@ -359,7 +404,9 @@ def pytest_collection_finish(session):
         pre_health.overall_status == EnvironmentHealthStatus.FAILED
     )
     if not session.config._netregress_health_blocked:
-        service.start_run_after_health(run.run_id)
+        started_run = service.start_run_after_health(run.run_id)
+        started_run.execution_pid = os.getpid()
+        service.run_repository.update(started_run)
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -432,6 +479,24 @@ def pytest_sessionfinish(session, exitstatus):
     if lease is not None:
         try: lease.release()
         except Exception as exc: sys.stderr.write(f"\n[WARN] Failed to release lab resource lock: {exc}\n")
+
+    terminal = context.run_service.run_repository.get(context.run_id)
+    if terminal is not None:
+        try:
+            from lib.services import DiagnosticBundleService, ReproductionManifestService
+            DiagnosticBundleService(
+                artifact_service=context.artifact_service,
+                results_root=ROOT / "results",
+            ).build(
+                run_id=context.run_id,
+                reason=(terminal.failure_reason or terminal.failure_class.value if terminal.failure_class else "terminal-run-record"),
+            ) if terminal.lifecycle is not RunLifecycle.COMPLETED else None
+            ReproductionManifestService(
+                test_registry=context.test_registry,
+                root=ROOT,
+            ).create(context.run_id, terminal)
+        except Exception as exc:
+            sys.stderr.write(f"\n[WARN] Failed to finalize diagnostic/reproduction evidence: {exc}\n")
 
     try:
         from lib.services import RunnerSyncService

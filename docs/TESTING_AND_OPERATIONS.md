@@ -446,3 +446,6 @@ At Run completion, the pytest session attempts to enqueue a local snapshot. Queu
 Synchronization is explicit through `python scripts/netregress_sync.py --url https://...`. Temporary connectivity failures remain retryable. Stale in-flight leases are recoverable. Repeated delivery uses the same idempotency key so the future Cloud can safely deduplicate accepted envelopes.
 
 The current environment has no configured Cloud endpoint, so no external synchronization was attempted.
+
+## Iterations 23–25 operational implementation
+Failure taxonomy, process cancellation, diagnostic bundle generation, reproduction manifests, explicit firmware lifecycle and release/baseline controls are implemented as Runner operational paths. The dedicated Debugging Phase is the validation stage for real execution, lab behavior and fault-injection scenarios; implementation work should not add alternate fake production paths to satisfy that phase.

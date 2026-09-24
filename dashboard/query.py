@@ -42,6 +42,7 @@ class DashboardQueryService:
             self.attempt_repository,
             self.event_repository,
             self.result_repository,
+            self.baseline_repository,
         )
         self.regression_service = RegressionIntelligenceService(
             run_service=self.run_service,
@@ -147,6 +148,9 @@ class DashboardQueryService:
             "created_at": self._iso(run.created_at),
             "configuration_hash": run.configuration_hash,
             "repository_commit": run.repository_commit,
+            "failure_class": run.failure_class.value if run.failure_class else None,
+            "failure_reason": run.failure_reason,
+            "execution_pid": run.execution_pid,
         }
         if summary:
             payload["environment_class"] = self.environment_class(run.run_id)
@@ -471,3 +475,25 @@ class DashboardQueryService:
             return json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return None
+
+
+    def active_baseline(self, baseline_id: str):
+        baseline = self.baseline_repository.get(baseline_id)
+        if baseline is None:
+            raise DashboardQueryError(f"Baseline not found: {baseline_id}")
+        return self.baselines_for([baseline])[0]
+
+    def baselines_for(self, items):
+        return [{
+            "baseline_id": item.baseline_id,
+            "name": item.name,
+            "baseline_run_id": item.baseline_run_id,
+            "status": item.status,
+            "device_scope": item.device_scope,
+            "firmware_major_scope": item.firmware_major_scope,
+            "test_suite_version": item.test_suite_version,
+            "lab_class": item.lab_class,
+            "promoted_by": item.promoted_by,
+            "promoted_at": self._iso(item.promoted_at),
+            "provenance": item.provenance,
+        } for item in items]

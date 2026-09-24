@@ -319,3 +319,7 @@ When API and Cloud auth are stable:
 Phase 8 is now API-backed rather than documentation-only. Jinja pages consume the same /api/v1 contracts intended for a future React client. The dashboard remains read-only until an authentication/RBAC boundary is implemented for state-changing actions.
 
 Telemetry and regression pages preserve environment/evidence semantics rather than presenting inferred values as facts.
+
+
+## 8. React/Vite implementation
+The Runner now includes a React + Vite operational shell consuming /api/v1 for authenticated Run launch/list/detail, cancellation, retry, lifecycle/test inspection, health and artifact inspection. API authorization remains authoritative; UI visibility is not a security control.

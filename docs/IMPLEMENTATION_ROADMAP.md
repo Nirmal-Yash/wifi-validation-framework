@@ -278,3 +278,33 @@ Next:
 - [ ] Protected 11-test GNS3/mac80211_hwsim verification.
 
 Next: Iteration 23 — Device/Firmware operations, failure semantics, cancellation and diagnostics.
+
+
+## Iterations 23–25 — Consolidated implementation pass
+
+### Iteration 23 — Device/Firmware Operations + Failure Semantics ✅
+- [x] Explicit firmware lifecycle state transitions and audit events.
+- [x] Image SHA-256/signature/model validation remains mandatory before mutation.
+- [x] SSH/SFTP and TFTP transport seams.
+- [x] Explicit cancellation, process-group termination and Run execution PID persistence.
+- [x] PRODUCT_FAILED/LAB_FAILED/RUNNER_DISCONNECTED/WORKER_CRASHED/TIMED_OUT/CANCELLED/ABORTED classification.
+- [x] Diagnostic ZIP/manifest generation.
+- [x] ReproductionManifest generation and CLI.
+
+### Iteration 24 — API/OpenAPI + Operational Frontend + Persistence Boundary ✅
+- [x] Authorized POST Run/cancel/retry/baseline/firmware operations.
+- [x] Scoped waiver creation boundary.
+- [x] Canonical OpenAPI 3 contract.
+- [x] React + Vite operational UI shell.
+- [x] Alembic/SQLAlchemy migration boundary added while retaining SQLite compatibility.
+
+### Iteration 25 — Baseline/Regression/Release + Offline Runner ✅
+- [x] Explicit baseline promotion with blocking-test/evidence/health requirements.
+- [x] Active-baseline supersession semantics.
+- [x] Scoped, expiring, audited waiver model.
+- [x] Release-gate waiver filtering remains fail-closed.
+- [x] Durable outbound sync/idempotency/lease retry path remains the Runner synchronization authority.
+- [x] Diagnostic/reproduction evidence remains locally authoritative.
+
+Next:
+- Iteration 26 — Full failure injection, multi-layer integration, security hardening and release readiness.

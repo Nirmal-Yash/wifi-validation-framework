@@ -11,6 +11,7 @@ class DomainValidationError(ValueError):
 
 
 from .health import EnvironmentHealthStatus
+from .operations import FailureClass
 
 
 class RunLifecycle(str, Enum):
@@ -218,6 +219,9 @@ class TestResult:
     error_reason: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    failure_class: FailureClass | None = None
+    failure_reason: str | None = None
+    execution_pid: int | None = None
     provenance: str = "NATIVE"
 
     def __post_init__(self) -> None:

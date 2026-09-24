@@ -241,3 +241,7 @@ No external Cloud endpoint is configured or contacted in this environment.
 
 ## 28. Iterations 20–22 consolidated pass
 Iterations 20–22 are source-implemented as the current Runner foundation: externalized credentials, local authentication/RBAC, deterministic configuration, environment fingerprinting, lab ownership, resource locking, Run orchestration, and mandatory evidence/protocol/telemetry/measurement boundaries. Runtime verification remains separate and is required before certification. Future implementation resumes at Iteration 23.
+
+
+## 29. Iterations 23–25 consolidated pass
+Iterations 20–25 are source-complete as the current Runner platform context. Iteration 23 owns failure semantics, firmware lifecycle control, cancellation, diagnostics and reproduction. Iteration 24 owns authorized state-changing API, OpenAPI, operational frontend and migration boundary. Iteration 25 owns baseline/release intelligence, scoped waivers and offline Runner continuity. Read FINAL_SYSTEM_DEVELOPMENT_PLAN.md before continuing with Iteration 26.

@@ -40,4 +40,7 @@ __all__ = [
     "SQLiteRunRepository",
     "SQLiteTestResultRepository",
     "SQLiteSyncQueueRepository",
+    "SQLiteWaiverRepository",
 ]
+
+from .sqlite import SQLiteWaiverRepository

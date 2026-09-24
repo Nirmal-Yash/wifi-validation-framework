@@ -5,7 +5,13 @@ from typing import Any,Callable
 from functools import wraps
 from flask import Blueprint,jsonify,request,session,send_file
 from lib.repositories import SQLiteDatabase
+from lib.services import RunProcessManager, WaiverService, FirmwareOperationService
+from lib.adapters import DeviceProfile, OpenWrtDeviceAdapter, SSHFirmwareAdapter, VirtualLinuxDeviceAdapter
+from lib.connector import load_devices, ConnectionPool
+from lib.services.command_security import CommandSecurityPolicy, SecureCommandRunner
+from lib.services.command_runner import NetmikoRunner
 from lib.security import AuthManager,AuthConfigurationError,AuthenticatedUser,Role
+from lib.domain import WaiverScope
 from .query import DashboardQueryError,DashboardQueryService
 
 def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|None=None)->Blueprint:
@@ -51,9 +57,43 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         def wrapper(*args,**kwargs):
             denied=require("view");return denied if denied is not None else fn(*args,**kwargs)
         return wrapper
+    @api.post("/runs")
+    def launch_run():
+        denied=require("execute")
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        firmware=str(payload.get("firmware_version","v1.0"))
+        tests=tuple(str(x) for x in (payload.get("tests") or ()))
+        manager=RunProcessManager(Path(__file__).resolve().parents[1])
+        handle=manager.start(tests=tests or None,firmware_version=firmware,env={"NETREGRESS_RUN_REQUESTED_BY":session.get("netregress_user",{}).get("username","local")})
+        return ok({"process_id":handle.pid,"command":list(handle.command),"status":"STARTED"}),202
+
     @api.get("/runs")
     @protected
     def runs():return guarded(lambda:ok(query.runs(firmware=request.args.get("firmware"),lab=request.args.get("lab"),profile=request.args.get("profile"),status=request.args.get("status"),outcome=request.args.get("outcome"),page=int(request.args.get("page","1")),limit=int(request.args.get("limit","50")))))
+    @api.post("/runs/<run_id>/cancel")
+    def cancel_run(run_id):
+        denied=require("execute")
+        if denied is not None: return denied
+        run=query.run_repository.get(run_id)
+        if run is None: return error("NOT_FOUND","Run not found",404)
+        actor=session.get("netregress_user",{}).get("username","operator")
+        query.run_service.cancel_run(run_id,actor=actor,reason=str((request.get_json(silent=True) or {}).get("reason","Cancelled by operator")))
+        if run.execution_pid:
+            try: RunProcessManager(Path(__file__).resolve().parents[1]).cancel(run.execution_pid)
+            except ProcessLookupError: pass
+        return ok({"run_id":run_id,"status":"CANCELLED"})
+
+    @api.post("/runs/<run_id>/retry")
+    def retry_run(run_id):
+        denied=require("execute")
+        if denied is not None: return denied
+        run=query.run_repository.get(run_id)
+        if run is None: return error("NOT_FOUND","Run not found",404)
+        manager=RunProcessManager(Path(__file__).resolve().parents[1])
+        handle=manager.start(tests=tuple(run.selected_tests),firmware_version=run.firmware_version)
+        return ok({"source_run_id":run_id,"process_id":handle.pid,"command":list(handle.command),"status":"STARTED"}),202
+
     @api.get("/runs/<run_id>")
     @protected
     def run_detail(run_id):return guarded(lambda:ok(query.get_run(run_id)))
@@ -110,6 +150,103 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             if path is None:return error("ARTIFACT_UNAVAILABLE","artifact is missing or failed integrity verification",404)
             return send_file(path,as_attachment=True,download_name=artifact.display_name)
         except DashboardQueryError as exc:return error("NOT_FOUND",str(exc),404)
+    @api.post("/baselines")
+    def create_baseline():
+        denied=require("admin")
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        try:
+            baseline=query.run_service.promote_baseline(str(payload["run_id"]),name=str(payload.get("name","Golden")),promoted_by=session.get("netregress_user",{}).get("username","admin"),device_scope=str(payload.get("device_scope","")),firmware_major_scope=str(payload.get("firmware_major_scope","")),test_suite_version=str(payload.get("test_suite_version","")),lab_class=str(payload.get("lab_class","")))
+        except (KeyError,ValueError,TypeError) as exc:
+            return error("INVALID_REQUEST",str(exc),400)
+        return ok({"baseline_id":baseline.baseline_id,"name":baseline.name,"baseline_run_id":baseline.baseline_run_id}),201
+
+    @api.post("/baselines/<baseline_id>/promote")
+    def promote_baseline(baseline_id):
+        denied=require("admin")
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        run_id=str(payload.get("run_id") or baseline_id)
+        try:
+            baseline=query.run_service.promote_baseline(run_id,name=str(payload.get("name","Golden")),promoted_by=session.get("netregress_user",{}).get("username","admin"))
+        except (ValueError,TypeError) as exc:
+            return error("INVALID_REQUEST",str(exc),400)
+        return ok({"baseline_id":baseline.baseline_id,"baseline_run_id":baseline.baseline_run_id}),201
+
+    @api.post("/firmware/operations")
+    def firmware_operation():
+        denied=require("execute")
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        run_id=str(payload["run_id"]);device_id=str(payload["device_id"]);image_path=str(payload["image_path"]);version=str(payload["version"]);reason=str(payload.get("reason","authorized firmware operation"))
+        devices=load_devices()
+        values=devices.get(device_id)
+        if values is None:return error("INVALID_REQUEST",f"device not configured: {device_id}",400)
+        profile=DeviceProfile.from_mapping(device_id,values)
+        command_runner=SecureCommandRunner(NetmikoRunner(ConnectionPool()),security_policy=CommandSecurityPolicy.compatibility())
+        adapter=OpenWrtDeviceAdapter.from_profile(profile,command_runner) if profile.device_type.lower()=="openwrt" else VirtualLinuxDeviceAdapter.from_profile(profile,command_runner)
+        firmware_adapter=SSHFirmwareAdapter(adapter)
+        artifact_service=__import__("lib.services",fromlist=["ArtifactService"]).ArtifactService.from_sqlite(query.run_service.run_repository.database)
+        from lib.adapters.firmware import FirmwareAuthorization,FirmwareImage
+        auth=FirmwareAuthorization(session.get("netregress_user",{}).get("username","operator"),reason,True,"FLASH")
+        try:
+            result=FirmwareOperationService(run_repository=query.run_service.run_repository,event_repository=query.event_repository,artifact_service=artifact_service).update(adapter=firmware_adapter,image=FirmwareImage.from_path(image_path,version=version),authorization=auth,run_id=run_id)
+        except (ValueError, RuntimeError) as exc:
+            return error("FIRMWARE_OPERATION_FAILED",str(exc),400)
+        return ok({"device_id":result.device_id,"image_version":result.image_version,"stage":result.stage,"verified_version":result.verified_version}),202
+
+    @api.post("/firmware/<device_id>/rollback")
+    def firmware_rollback(device_id):
+        denied=require("execute")
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {};run_id=str(payload["run_id"]);reason=str(payload.get("reason","authorized firmware rollback"))
+        values=load_devices().get(device_id)
+        if values is None:return error("INVALID_REQUEST",f"device not configured: {device_id}",400)
+        profile=DeviceProfile.from_mapping(device_id,values)
+        command_runner=SecureCommandRunner(NetmikoRunner(ConnectionPool()),security_policy=CommandSecurityPolicy.compatibility())
+        adapter=OpenWrtDeviceAdapter.from_profile(profile,command_runner) if profile.device_type.lower()=="openwrt" else VirtualLinuxDeviceAdapter.from_profile(profile,command_runner)
+        firmware_adapter=SSHFirmwareAdapter(adapter)
+        from lib.adapters.firmware import FirmwareAuthorization
+        auth=FirmwareAuthorization(session.get("netregress_user",{}).get("username","operator"),reason,True,"ROLLBACK")
+        try:
+            identity=FirmwareOperationService(run_repository=query.run_service.run_repository,event_repository=query.event_repository).rollback(adapter=firmware_adapter,authorization=auth,run_id=run_id)
+        except (ValueError, RuntimeError) as exc:
+            return error("FIRMWARE_ROLLBACK_FAILED",str(exc),400)
+        return ok({"device_id":identity.device_id,"firmware_version":identity.firmware_version})
+
+    @api.post("/waivers")
+    def create_waiver():
+        denied=require("admin")
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        try:
+            scope=WaiverScope(str(payload.get("scope","RELEASE")).upper())
+            target_id=str(payload["target_id"])
+            issue_code=str(payload["issue_code"])
+            reason=str(payload["reason"])
+            expires_at=None
+            if payload.get("expires_at"):
+                from datetime import datetime
+                expires_at=datetime.fromisoformat(str(payload["expires_at"]))
+            waiver=WaiverService.from_sqlite(query.database).create(
+                scope=scope,
+                target_id=target_id,
+                issue_code=issue_code,
+                reason=reason,
+                created_by=session.get("netregress_user",{}).get("username","admin"),
+                expires_at=expires_at,
+            )
+        except (KeyError,ValueError,TypeError) as exc:
+            return error("INVALID_REQUEST",str(exc),400)
+        return ok({
+            "waiver_id":waiver.waiver_id,
+            "scope":waiver.scope.value,
+            "target_id":waiver.target_id,
+            "issue_code":waiver.issue_code,
+            "created_by":waiver.created_by,
+            "expires_at":waiver.expires_at.isoformat() if waiver.expires_at else None,
+        }),201
+
     @api.get("/baselines")
     @protected
     def baselines():return guarded(lambda:ok({"items":query.baselines()}))

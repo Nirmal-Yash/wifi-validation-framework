@@ -1,0 +1,78 @@
+openapi: 3.0.3
+info:
+  title: NetRegress Runner API
+  version: 1.0.0
+servers:
+  - url: /api/v1
+security:
+  - sessionAuth: []
+paths:
+  /health: {get: {security: [], responses: {"200": {description: Healthy}}}}
+  /readiness: {get: {security: [], responses: {"200": {description: Ready}}}}
+  /auth/login:
+    post:
+      security: []
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LoginRequest'}}}}
+      responses: {"200": {description: Authenticated}, "401": {description: Invalid credentials}}
+  /auth/logout: {post: {responses: {"200": {description: Logged out}}}}
+  /auth/me: {get: {responses: {"200": {description: Current user}}}}
+  /runs:
+    get: {responses: {"200": {description: Runs}}}
+    post:
+      requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/RunLaunchRequest'}}}}
+      responses: {"202": {description: Process started}}
+  /runs/{run_id}: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Run detail}}}}
+  /runs/{run_id}/cancel: {post: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Cancelled}}}}
+  /runs/{run_id}/retry: {post: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"202": {description: Retry started}}}}
+  /runs/{run_id}/tests: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Tests}}}}
+  /runs/{run_id}/metrics: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Metrics}}}}
+  /runs/{run_id}/telemetry: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Telemetry}}}}
+  /runs/{run_id}/health: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Health}}}}
+  /runs/{run_id}/regressions: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {name: baseline_run_id, in: query, required: true, schema: {type: string}}], responses: {"200": {description: Regression report}}}}
+  /regressions: {get: {responses: {"200": {description: Regression report}}}}
+  /artifacts: {get: {responses: {"200": {description: Artifacts}}}}
+  /artifacts/{artifact_id}: {get: {parameters: [{name: artifact_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Artifact}}}}
+  /artifacts/{artifact_id}/download: {get: {parameters: [{name: artifact_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Artifact binary}}}}
+  /labs/{lab_id}/health: {get: {parameters: [{name: lab_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Lab health}}}}
+  /waivers:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_id, issue_code, reason]
+              properties:
+                scope: {type: string, enum: [TEST, RUN, REGRESSION, RELEASE]}
+                target_id: {type: string}
+                issue_code: {type: string}
+                reason: {type: string}
+                expires_at: {type: string, format: date-time}
+      responses:
+        "201": {description: Waiver created}
+  /baselines:
+    get: {responses: {"200": {description: Active baselines}}}
+    post: {requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/BaselinePromotionRequest'}}}}, responses: {"201": {description: Baseline promoted}}}
+  /baselines/{baseline_id}/promote: {post: {parameters: [{name: baseline_id, in: path, required: true, schema: {type: string}}], responses: {"201": {description: Baseline promoted}}}}
+  /firmware/operations: {post: {requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/FirmwareOperationRequest'}}}}, responses: {"202": {description: Firmware operation}}}}
+  /firmware/{device_id}/rollback: {post: {parameters: [{name: device_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Rollback verified}}}}
+components:
+  securitySchemes:
+    sessionAuth: {type: apiKey, in: cookie, name: session}
+  schemas:
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties: {username: {type: string}, password: {type: string, format: password}}
+    RunLaunchRequest:
+      type: object
+      properties: {firmware_version: {type: string, default: v1.0}, tests: {type: array, items: {type: string}}}
+    BaselinePromotionRequest:
+      type: object
+      required: [run_id]
+      properties: {run_id: {type: string}, name: {type: string}, device_scope: {type: string}, firmware_major_scope: {type: string}, test_suite_version: {type: string}, lab_class: {type: string}}
+    FirmwareOperationRequest:
+      type: object
+      required: [run_id, device_id, image_path, version]
+      properties: {run_id: {type: string}, device_id: {type: string}, image_path: {type: string}, version: {type: string}, reason: {type: string}}

@@ -9,6 +9,8 @@ from typing import Any, Callable, Mapping
 
 from lib.domain import (
     Attempt,
+    Baseline,
+    FailureClass,
     BusinessOutcome,
     DomainValidationError,
     Criticality,
@@ -32,6 +34,7 @@ from lib.repositories import (
     SQLiteEventRepository,
     SQLiteRunRepository,
     SQLiteTestResultRepository,
+    SQLiteBaselineRepository,
 )
 
 ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -151,6 +154,7 @@ class RunService:
         attempt_repository: AttemptRepository,
         event_repository: EventRepository,
         test_result_repository: TestResultRepository | None = None,
+        baseline_repository=None,
         *,
         clock: Clock | None = None,
         id_generator: IdGenerator | None = None,
@@ -159,6 +163,7 @@ class RunService:
         self.attempt_repository = attempt_repository
         self.event_repository = event_repository
         self.test_result_repository = test_result_repository
+        self.baseline_repository = baseline_repository
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.id_generator = id_generator or generate_ulid
 
@@ -172,6 +177,7 @@ class RunService:
             SQLiteAttemptRepository(database),
             SQLiteEventRepository(database),
             SQLiteTestResultRepository(database),
+            SQLiteBaselineRepository(database),
             **kwargs,
         )
 
@@ -338,19 +344,66 @@ class RunService:
         return self.start_run_after_health(run_id)
 
     def complete_run(self, run_id: str, outcome: BusinessOutcome | None = None) -> Run:
-        return self._finish(run_id, RunLifecycle.COMPLETED, outcome, "RUN_COMPLETED")
+        return self._finish(run_id, RunLifecycle.COMPLETED, outcome, "RUN_COMPLETED", None)
 
-    def fail_run(self, run_id: str) -> Run:
-        return self._finish(run_id, RunLifecycle.FAILED, None, "RUN_FAILED")
+    def fail_run(self, run_id: str, reason: str | None = None, failure_class: FailureClass = FailureClass.PRODUCT_FAILED) -> Run:
+        return self._finish(run_id, RunLifecycle.FAILED, None, "RUN_FAILED", failure_class, reason)
 
-    def lab_fail_run(self, run_id: str) -> Run:
-        return self._finish(run_id, RunLifecycle.LAB_FAILED, BusinessOutcome.UNVALIDATED, "RUN_LAB_FAILED")
+    def lab_fail_run(self, run_id: str, reason: str | None = None) -> Run:
+        return self._finish(run_id, RunLifecycle.LAB_FAILED, BusinessOutcome.UNVALIDATED, "RUN_LAB_FAILED", FailureClass.LAB_FAILED, reason)
 
-    def cancel_run(self, run_id: str) -> Run:
-        return self._finish(run_id, RunLifecycle.CANCELLED, BusinessOutcome.UNVALIDATED, "RUN_CANCELLED")
+    def cancel_run(self, run_id: str, actor: str = "operator", reason: str = "Run cancelled by operator") -> Run:
+        return self._finish(run_id, RunLifecycle.CANCELLED, BusinessOutcome.UNVALIDATED, "RUN_CANCELLED", FailureClass.CANCELLED, f"{actor}: {reason}")
 
-    def abort_run(self, run_id: str) -> Run:
-        return self._finish(run_id, RunLifecycle.ABORTED, BusinessOutcome.UNVALIDATED, "RUN_ABORTED")
+    def timeout_run(self, run_id: str, reason: str = "Run execution timeout") -> Run:
+        return self._finish(run_id, RunLifecycle.ABORTED, BusinessOutcome.UNVALIDATED, "RUN_TIMED_OUT", FailureClass.TIMED_OUT, reason)
+
+    def runner_disconnected(self, run_id: str, reason: str = "Runner connection lost") -> Run:
+        return self._finish(run_id, RunLifecycle.ABORTED, BusinessOutcome.UNVALIDATED, "RUN_RUNNER_DISCONNECTED", FailureClass.RUNNER_DISCONNECTED, reason)
+
+    def worker_crashed(self, run_id: str, reason: str = "Worker process terminated unexpectedly") -> Run:
+        return self._finish(run_id, RunLifecycle.ABORTED, BusinessOutcome.UNVALIDATED, "RUN_WORKER_CRASHED", FailureClass.WORKER_CRASHED, reason)
+
+    def abort_run(self, run_id: str, reason: str | None = None) -> Run:
+        return self._finish(run_id, RunLifecycle.ABORTED, BusinessOutcome.UNVALIDATED, "RUN_ABORTED", FailureClass.ABORTED, reason)
+
+    def promote_baseline(self, run_id: str, *, name: str, promoted_by: str, device_scope: str = "", firmware_major_scope: str = "", test_suite_version: str = "", lab_class: str = "") -> Baseline:
+        if self.baseline_repository is None:
+            raise DomainValidationError("baseline repository is not configured")
+        run = self._require_run(run_id)
+        if run.lifecycle is not RunLifecycle.COMPLETED or run.environment_health is not EnvironmentHealthStatus.HEALTHY:
+            raise DomainValidationError("only completed Runs with healthy lab state can become baselines")
+        results = self.test_result_repository.list_for_run(run_id) if self.test_result_repository else []
+        if not results:
+            raise DomainValidationError("baseline requires persisted TestResults")
+        for result in results:
+            if result.criticality is Criticality.BLOCKING:
+                if result.status is not TestResultStatus.PASS:
+                    raise DomainValidationError(f"blocking test is not PASS: {result.test_id}")
+                if result.evidence_state in {EvidenceState.INCOMPLETE, EvidenceState.INVALID, EvidenceState.REQUIRED}:
+                    raise DomainValidationError(f"blocking test evidence is not complete: {result.test_id}")
+                for metric in result.metrics:
+                    if metric.authoritative and not metric.samples:
+                        raise DomainValidationError(f"minimum authoritative samples not met: {result.test_id}:{metric.name}")
+        now = self.clock()
+        baseline = Baseline(
+            baseline_id=self.id_generator(),
+            name=name.strip(),
+            baseline_run_id=run_id,
+            status="ACTIVE",
+            promoted_by=promoted_by.strip(),
+            promoted_at=now,
+            device_scope=device_scope or str(run.resolved_config.get("device_id", "")),
+            firmware_major_scope=firmware_major_scope or run.firmware_version.split(".")[0],
+            test_suite_version=test_suite_version or configuration_hash(run.test_definition_versions),
+            lab_class=lab_class or run.lab_id,
+        )
+        for old in self.baseline_repository.list_active():
+            if old.name == baseline.name:
+                self.baseline_repository.supersede(old.baseline_id, baseline.baseline_id)
+        self.baseline_repository.save(baseline)
+        self._event(run_id, "BASELINE_PROMOTED", now, details={"baseline_id": baseline.baseline_id, "name": baseline.name, "promoted_by": baseline.promoted_by})
+        return baseline
 
     def transition(self, run_id: str, target: RunLifecycle) -> Run:
         run = self._require_run(run_id)
@@ -370,6 +423,8 @@ class RunService:
         target: RunLifecycle,
         outcome: BusinessOutcome | None,
         event_type: str,
+        failure_class: FailureClass | None,
+        failure_reason: str | None = None,
     ) -> Run:
         run = self._require_run(run_id)
         if target not in _ALLOWED_TRANSITIONS[run.lifecycle]:
@@ -379,6 +434,8 @@ class RunService:
         now = self.clock()
         run.lifecycle = target
         run.outcome = outcome
+        run.failure_class = failure_class
+        run.failure_reason = failure_reason
         run.completed_at = now
         self.run_repository.update(run)
         attempts = self.attempt_repository.list_for_run(run_id)
@@ -386,7 +443,7 @@ class RunService:
             if attempt.completed_at is None:
                 attempt.completed_at = now
                 self.attempt_repository.update(attempt)
-        self._event(run_id, event_type, now, attempt_id=attempts[-1].attempt_id if attempts else None)
+        self._event(run_id, event_type, now, attempt_id=attempts[-1].attempt_id if attempts else None, details={"failure_class": failure_class.value if failure_class else None, "failure_reason": failure_reason} if failure_class or failure_reason else {})
         return run
 
     def _require_run(self, run_id: str) -> Run:
@@ -402,6 +459,7 @@ class RunService:
         occurred_at: datetime,
         *,
         attempt_id: str | None = None,
+        details: Mapping[str, Any] | None = None,
     ) -> None:
         self.event_repository.append(
             LifecycleEvent(
@@ -410,6 +468,7 @@ class RunService:
                 event_type=event_type,
                 occurred_at=occurred_at,
                 attempt_id=attempt_id,
+                details=dict(details or {}),
             )
         )
 

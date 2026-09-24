@@ -492,3 +492,6 @@ Artifact metadata never exposes arbitrary filesystem content. Binary download is
 `SyncQueueItem` adds local delivery state: QUEUED, IN_FLIGHT, ACKED, FAILED or BLOCKED, attempt count, retry time, lease timestamp/expiry, and last error.
 
 The v1 Cloud endpoint for these envelopes is intentionally not fixed in Iteration 19; only the Runner-side transport protocol and deterministic payload contract are established.
+
+## 21. Iterations 23–25 additions
+Run now carries explicit failure classification, failure reason and execution process identity. Firmware operations emit lifecycle state transitions. Release waivers are scoped and expiring. Canonical state-changing endpoints include Run launch/cancel/retry, baseline promotion, firmware update/rollback and waiver creation. docs/openapi.yaml is the versioned API contract.

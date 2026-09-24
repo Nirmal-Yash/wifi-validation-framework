@@ -1627,3 +1627,7 @@ Single Final Commit on main
 No Cloud/SaaS implementation is permitted before Iteration 27 certification.
 
 No iteration is complete merely because code exists. Completion requires implementation, tests, failure-path verification, documentation synchronization, and the applicable real-lab gate.
+
+
+## Implementation status — Iterations 20–25
+The consolidated source implementation for Iterations 20–25 is complete. The next implementation wave is Iteration 26: full failure injection, multi-layer integration, security hardening and release readiness. Iteration 27 remains the end-to-end certification freeze, and Iteration 28 remains the final single-commit release integration.

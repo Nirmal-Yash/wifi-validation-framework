@@ -92,3 +92,6 @@ from .regression import ComparabilityStatus, FlakyTestHistory, RegressionAssessm
 
 
 from .sync import SyncEnvelope, SyncQueueItem, SyncState
+
+from .operations import FailureClass, ReleaseWaiver, WaiverScope
+from .firmware import FirmwareOperationState

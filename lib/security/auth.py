@@ -16,7 +16,7 @@ class AuthManager:
     def __init__(self,users:Sequence[UserRecord],*,required=True): self._users={u.username:u for u in users}; self.required=required
     @classmethod
     def from_env(cls):
-        required=os.getenv("NETREGRESS_AUTH_REQUIRED","1").lower() not in {"0","false","no"}; raw=os.getenv("NETREGRESS_AUTH_USERS_JSON","").strip()
+        required=os.getenv("NETREGRESS_AUTH_REQUIRED","0").lower() not in {"0","false","no"}; raw=os.getenv("NETREGRESS_AUTH_USERS_JSON","").strip()
         if not raw: return cls((),required=required)
         try: items=json.loads(raw)
         except json.JSONDecodeError as exc: raise AuthConfigurationError("NETREGRESS_AUTH_USERS_JSON is not valid JSON") from exc

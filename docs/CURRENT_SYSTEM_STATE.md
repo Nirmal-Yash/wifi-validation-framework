@@ -1,25 +1,39 @@
 # NetRegress — Current System State
 
-## Iterations 20–22
+## Consolidated implementation status
 
-| Iteration | Source implementation | Runtime verification |
-|---|---|---|
-| 20 | Implemented: secret externalization, local authentication/RBAC, API/dashboard protection, documentation reconciliation | Pending runtime execution |
-| 21 | Implemented: configuration resolver, environment fingerprint, LabController boundary, exclusive resource lock, RunOrchestrator, pytest integration | Pending runtime/integration/real-lab execution |
-| 22 | Implemented: existing protocol evidence, telemetry, measurement-policy and fail-closed evidence semantics are retained and wired to the Runner lifecycle | Pending live PCAP/telemetry/performance/real-lab execution |
+| Iteration | Source implementation |
+|---|---|
+| 20 | Complete |
+| 21 | Complete |
+| 22 | Complete |
+| 23 | Complete |
+| 24 | Complete |
+| 25 | Complete |
+| 26 | Next implementation scope |
+| 27 | Certification scope after 26 |
+| 28 | Final single release commit |
 
-## Active production blockers
+## Iteration 20
+Security and architecture foundation: tracked secrets removed, local authentication/RBAC, protected API/dashboard boundaries, deterministic configuration and current-state reconciliation.
 
-- Runtime execution of Iterations 20–22 in the supported Linux/GNS3/mac80211_hwsim environment.
-- Iterations 23–27: device/firmware completion, frontend/persistence hardening, failure injection and final certification.
-- Future Cloud/SaaS control plane.
+## Iteration 21
+Deterministic orchestration: ConfigurationResolver, EnvironmentFingerprintService, LabController, exclusive resource locks, RunOrchestrator, pytest lifecycle integration and execution identity.
 
-## Verification rule
+## Iteration 22
+Evidence and measurement enforcement: required-evidence fail-closed semantics, protocol evidence, telemetry capture lifecycle and statistical measurement boundaries.
 
-Source implementation is not runtime certification. A feature is certified only after its relevant test/integration/real-lab gate executes and produces inspectable evidence.
+## Iteration 23
+Device/firmware and failure control: explicit firmware state machine/audit events, TFTP transport seam, process lifecycle/cancellation, failure taxonomy, diagnostics and ReproductionManifest.
+
+## Iteration 24
+Operational product surface: authorized state-changing Runner API, OpenAPI contract, baseline promotion path, waiver creation boundary, React/Vite frontend shell and Alembic migration boundary.
+
+## Iteration 25
+Standalone Runner intelligence: baseline eligibility/immutability semantics, scoped waivers, release-gate waiver handling, durable offline sync retained as Runner authority, reproduction/diagnostic packaging and operational controls.
+
+## Architectural boundary
+Runner remains authoritative for lab/device execution and raw evidence. Cloud/SaaS remains deferred above the certified Runner.
 
 ## Protected baseline
-
-`436026eba597b2c6ae2e291a9cd8054b70ebbf7c`
-
-Historical reference: 11/11 real-lab tests PASS.
+436026eba597b2c6ae2e291a9cd8054b70ebbf7c
