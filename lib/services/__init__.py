@@ -12,7 +12,6 @@ from .command_security import (
 )
 from .command_runner import CommandResult, CommandRunner, LocalRunner, NetmikoRunner, ParamikoExecRunner, SSHConnectionSpec, redact_command
 from .test_registry import TestDefinition, TestRegistry
-from .run_context import RunContext
 from .legacy_migration import LegacyDatabaseMigrationService
 from .artifact_service import ArtifactService
 from .metric_collector import MetricCollector
@@ -115,3 +114,10 @@ from .operational_recovery import AuditIntegrityService, BackupResult, SQLiteBac
 from .api_security import CsrfService, IdempotencyRecord, IdempotencyStore, LoginRateLimiter, RequestSecurityError, apply_security_headers, resolve_confined_path, validate_https_endpoint
 from .release_manifest import ReleaseAudit, ReleaseManifestService
 from .doctor import DoctorCheck, DoctorReport, RunnerDoctor
+
+
+def __getattr__(name: str):
+    if name == "RunContext":
+        from .run_context import RunContext
+        return RunContext
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
