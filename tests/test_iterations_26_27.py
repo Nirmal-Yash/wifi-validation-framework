@@ -87,6 +87,7 @@ def test_run_recovery_classifies_dead_worker(tmp_path, monkeypatch):
     service,run=_running_service(tmp_path)
     run.execution_pid=2147483647;service.run_repository.update(run)
     monkeypatch.setattr(RunRecoveryService, "_pid_alive", staticmethod(lambda pid: False))
+    monkeypatch.setattr(service.run_repository, "list", lambda: (run,))
     recovered=RunRecoveryService().recover_orphaned_runs(service)
     assert recovered==(run.run_id,)
     assert service.run_repository.get(run.run_id).failure_class is FailureClass.WORKER_CRASHED
