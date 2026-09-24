@@ -57,3 +57,8 @@ This audit uses a transparent rubric rather than a binary claim:
 **Overall production readiness: 88%.**
 
 The system is therefore **source-complete enough for dedicated production certification**, but it should not be represented as fully runtime-certified until the protected execution gates are actually run and their evidence is persisted.
+
+
+## Dependency compatibility correction — Scapy
+
+The focused protocol-evidence gate exposed that the former `scapy==2.5.0` pin did not provide the `EAPOL_KEY` API required by the repository tests. The pin is now aligned to stable Scapy `2.7.0`, whose documented `scapy.layers.eap.EAPOL_KEY` interface matches the protocol-evidence implementation. citeturn625846search0turn625846search2
