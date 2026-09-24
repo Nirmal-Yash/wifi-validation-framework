@@ -94,7 +94,10 @@ class RegressionIntelligenceService:
         current_results = {
             item.test_id: item for item in self._latest_results(current)
         }
-        test_ids = sorted(set(baseline.selected_tests) | set(current.selected_tests))
+        test_ids = sorted(
+            set(self._selected_test_ids(baseline))
+            | set(self._selected_test_ids(current))
+        )
         assessments = []
 
         for test_id in test_ids:
@@ -149,6 +152,15 @@ class RegressionIntelligenceService:
             reason=reason,
             assessments=tuple(assessments),
         )
+
+    def _selected_test_ids(self, run: Run) -> tuple[str, ...]:
+        values: list[str] = []
+        for selected in run.selected_tests:
+            try:
+                values.append(self.test_registry.get(selected).test_id)
+            except KeyError:
+                values.append(self.test_registry.resolve_or_fallback(selected).test_id)
+        return tuple(dict.fromkeys(values))
 
     def _latest_results(self, run: Run | None) -> tuple[TestResult, ...]:
         if run is None or self.run_service.test_result_repository is None:

@@ -80,6 +80,7 @@ __all__ = [
     "RegressionIntelligenceError",
     "RegressionIntelligenceService",
     "FirmwareOperationService",
+    "ReleaseGateDecision", "ReleaseGateEvaluator", "ReleaseGateInput", "ReleaseGateIssue", "ReleaseGatePolicy", "ReleaseGateStatus",
 ]
 
 from .wifi_telemetry import TelemetryCollectionError, WifiTelemetryService
@@ -87,3 +88,4 @@ from .wifi_telemetry import TelemetryCollectionError, WifiTelemetryService
 from .regression_intelligence import RegressionIntelligenceError, RegressionIntelligenceService
 
 from .firmware_service import FirmwareOperationService
+from .release_gate import ReleaseGateDecision, ReleaseGateEvaluator, ReleaseGateInput, ReleaseGateIssue, ReleaseGatePolicy, ReleaseGateStatus

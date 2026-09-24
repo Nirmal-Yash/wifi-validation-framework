@@ -90,3 +90,14 @@ All other discovery questions have an implementation decision.
 | Explicit authorization | `FirmwareAuthorization` | authorization rejection test |
 | Fake adapter | `lib/adapters/fake.py` | nominal/failure lifecycle tests |
 | Run integration | `RunContext.device_adapter`, `RunContext.firmware_adapter` | session wiring audit |
+
+## Iteration 18 traceability
+
+| Requirement | Implementation | Verification |
+|---|---|---|
+| Fail-closed release policy | lib/services/release_gate.py | ci_tests/test_release_gate.py |
+| Required test/evidence checks | ReleaseGateEvaluator | CI policy tests |
+| Persisted Run evaluation | scripts/ci_release_gate.py | source audit |
+| GitHub-hosted core CI | .github/workflows/internal-release-gate.yml | workflow source audit |
+| Protected real-lab gate | dispatch-only self-hosted job | workflow source audit |
+| Pytest node/semantic ID normalization | RegressionIntelligenceService | regression contract test |

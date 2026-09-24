@@ -384,3 +384,10 @@ Every point is labeled `VIRTUAL_WIFI` or `PHYSICAL_WIFI`. The Runner does not em
 4. Firmware mutation requires explicit scoped authorization. Uncertain flash state is never automatically retried or rolled back.
 5. The fake adapter is the reference hardware-free implementation and covers both success and failure semantics.
 6. Multi-device/SKU orchestration remains deferred; one image targets one device in this phase.
+
+## 20B. Iteration 18 CI/release-gate decisions
+
+1. GitHub-hosted CI validates source integrity and hardware-free policy contracts on every push/PR.
+2. Real GNS3/mac80211_hwsim execution is dispatch-only on a self-hosted runner labeled netregress-lab; generic CI must not claim lab validation.
+3. The release gate defaults to fail-closed for NO_BASELINE, UNVALIDATED, REGRESSION, SOFT_REGRESSION, NEW_FAILURE, missing required tests, invalid required evidence, incomplete Runs and unhealthy labs.
+4. Existing pytest node IDs remain protected; regression comparison normalizes them to semantic TestRegistry IDs.

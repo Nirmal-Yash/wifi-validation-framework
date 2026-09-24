@@ -130,3 +130,7 @@ MIT — current repository remains suitable for academic and personal developmen
 ## Iteration 17
 
 Device and firmware control is now adapter-backed. The Runner supports profile-driven Linux/OpenWrt device access, SHA-256 firmware validation, optional signature verification, SFTP transfer, explicit firmware authorization, staged lifecycle auditing and deterministic fake adapters.
+
+### Internal CI release gate
+
+GitHub-hosted CI validates the hardware-free core and release-policy contracts on every push/PR. The protected GNS3/mac80211_hwsim suite is separated into an explicit self-hosted lab dispatch so generic CI never misrepresents lab availability as product validation.

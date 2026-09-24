@@ -710,3 +710,7 @@ Implemented:
 - deterministic fake Device/Firmware adapters for hardware-free lifecycle testing.
 
 Real firmware mutation is not invoked by the current WiFi pytest suite.
+
+## 21A. Iteration 18 implementation
+
+The internal release gate is now a fail-closed policy boundary. Core CI performs source parsing and hardware-free release-policy contract tests. A separate dispatchable self-hosted job runs the protected GNS3/mac80211_hwsim suite using the existing provisioning script and canonical pytest command. Persisted Run/regression evaluation is available through scripts/ci_release_gate.py.

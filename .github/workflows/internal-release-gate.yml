@@ -1,0 +1,67 @@
+name: Internal Release Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_real_lab:
+        description: 'Run protected GNS3/mac80211_hwsim validation on self-hosted lab runner'
+        required: true
+        default: false
+        type: boolean
+      firmware_version:
+        description: 'Firmware label passed to protected pytest suite'
+        required: true
+        default: 'v1.0'
+        type: string
+      baseline_run_id:
+        description: 'Comparable persisted baseline Run ID used by the release gate'
+        required: true
+        type: string
+      environment_class:
+        description: 'WiFi environment class for baseline/current comparability'
+        required: true
+        default: 'VIRTUAL_WIFI'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  core-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python scripts/ci_release_gate.py
+
+  real-lab-gate:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_real_lab == true
+    needs: core-gate
+    runs-on: [self-hosted, linux, netregress-lab]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: ./wifi_lab_reprovision_robust.sh --setup-only
+      - run: python -m pytest tests/ -v --firmware-version='${{ inputs.firmware_version }}'
+      - run: python scripts/ci_release_gate.py --skip-core-tests --db results/test_results.db --baseline-run-id '${{ inputs.baseline_run_id }}' --environment-class '${{ inputs.environment_class }}' --output results/release-gate.json
+      - name: Upload release gate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: netregress-release-gate
+          path: results/release-gate.json
+          if-no-files-found: ignore

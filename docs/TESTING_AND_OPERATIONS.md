@@ -434,3 +434,7 @@ Targeted verification must cover:
 Adapter tests cover capability declarations, Linux/OpenWrt profile behavior, version parsing, image hash/model validation, explicit authorization, nominal lifecycle, flash failure, reboot failure without implicit rollback and explicit rollback.
 
 Operational acceptance still requires real-hardware flash/reboot/rollback tests against the supported device family before production firmware control is enabled. Those physical operations were not executed in this environment.
+
+## 28. Iteration 18 CI gate
+
+The always-on GitHub-hosted job is hardware-free and runs ci_tests outside the real-lab pytest conftest. The protected lab job is explicitly dispatchable on a self-hosted netregress-lab runner. The persisted release evaluator rejects missing or invalid release evidence instead of treating unavailable infrastructure as a product PASS.

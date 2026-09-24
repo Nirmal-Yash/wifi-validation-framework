@@ -380,3 +380,7 @@ The legacy dashboard remains available; /api/v1 is the canonical contract for ne
 `FirmwareOperationService` translates adapter stages into immutable lifecycle events. It never assigns Run business outcomes and never performs implicit rollback.
 
 RunContext now exposes optional `device_adapter` and `firmware_adapter` instances. The current pytest session constructs them without performing firmware mutation.
+
+## 29. Internal CI / release gate
+
+The CI boundary has two execution classes: GitHub-hosted core CI for source and policy contracts, and self-hosted lab CI for the protected topology. ReleaseGateEvaluator consumes normalized Run/regression facts rather than raw output and never executes device commands.

@@ -228,3 +228,7 @@ Device/Firmware adapters are implemented under `lib/adapters`. The current GNS3/
 RunContext now carries optional DeviceAdapter and FirmwareAdapter instances. The pytest session constructs these adapters without performing firmware mutation.
 
 No real hardware firmware flash, reboot or rollback was executed in this environment.
+
+## 26. Iteration 18 status
+
+Internal CI/release gating is implemented. Core CI is hardware-free and cannot claim the 11/11 real-lab baseline. A separate dispatch-only self-hosted netregress-lab job runs the existing provisioning and pytest flow. Regression Intelligence now normalizes persisted pytest node IDs to semantic TestRegistry IDs.

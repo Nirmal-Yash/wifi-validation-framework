@@ -240,3 +240,17 @@ Next:
 
 Next:
 - Iteration 18 — Internal CI release gate.
+
+## Iteration 18 — Internal CI Release Gate ✅
+- [x] Added fail-closed ReleaseGateEvaluator.
+- [x] Rejects NO_BASELINE, UNVALIDATED, REGRESSION, SOFT_REGRESSION, NEW_FAILURE, missing required tests and invalid required evidence.
+- [x] Requires completed Run and healthy lab by default.
+- [x] Added persisted Run/regression evaluation CLI.
+- [x] Added GitHub Actions core gate on main/PR.
+- [x] Added dispatch-only protected real-lab gate for self-hosted netregress-lab runners.
+- [x] Fixed pytest-node-ID versus semantic-test-ID normalization in RegressionIntelligenceService.
+- [ ] GitHub Actions execution: unavailable in this environment.
+- [ ] Protected real-lab execution: unavailable in this environment.
+
+Next:
+- Iteration 19 — Runner/offline execution and synchronization seam.
