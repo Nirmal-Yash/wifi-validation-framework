@@ -19,7 +19,7 @@ Read order:
 
 Behavioral baseline: 436026eba597b2c6ae2e291a9cd8054b70ebbf7c
 
-Observed state: 11/11 real-lab tests pass.
+Historical protected state: 11/11 real-lab tests passed at the protected behavioral baseline. Current main has not re-certified that baseline in this environment.
 
 Do not alter the working GNS3/mac80211_hwsim contract while introducing the new architecture.
 
@@ -142,7 +142,7 @@ Runtime DBs, reports, PCAPs and logs remain gitignored.
 
 ## 13. Current next step
 
-The backend and React/Vite frontend are source-complete across the documented standalone Runner feature surface. The remaining source-level deferrals are the future Cloud/SaaS Project control plane and full protected live wiring for EAPOL/Beacon/DNS evidence. Browser/runtime evidence and the protected REAL_LAB execution gate remain separate from source completion.
+Source/CI verification is complete for the current standalone Runner slice. The immediate next step is protected REAL_LAB execution: re-establish the 11-test baseline, then verify the completeness-wave changes against the same lab. After the baseline is green, complete protected EAPOL/Beacon/DNS live-evidence wiring and authenticated browser/runtime verification. The future Cloud/SaaS Project control plane remains intentionally last.
 
 Iterations 6 through 12 are implemented on main. Local/unit execution and the required real-lab gates remain pending where documented because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
 
@@ -150,7 +150,7 @@ Iteration 13 implementation is present on main: typed protocol evidence, DHCP tr
 
 Iteration 14 implementation is present on main: typed WiFi telemetry points/snapshots, secured read-only collection through wpa_cli/iw, environment-class labeling, retry/failure counters where available and RunContext integration. Local/unit and real-lab verification remain pending because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
 
-The next architectural slice is Iteration 15: Regression Intelligence 2.0.
+The historical iteration sequence through Iteration 30 is implemented on main; future work must now follow the protected runtime-certification sequence documented in the canonical roadmap rather than treating another source iteration as the immediate priority.
 
 Legacy test result storage remains as compatibility storage until the migration is explicitly retired.
 

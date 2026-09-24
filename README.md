@@ -9,7 +9,7 @@ NetRegress is an evidence-driven WiFi/network validation and regression engine. 
 11 / 11 real-lab tests PASS
 ~~~
 
-That baseline protects the current network behavior while the application architecture is refactored around Run-scoped evidence.
+That historical baseline protects the network behavior contract while the application architecture is organized around Run-scoped evidence. It is a reference baseline, not a claim that the current main branch has re-certified the lab.
 
 ## Current capabilities
 
@@ -41,8 +41,6 @@ Supporting contracts remain separate:
 - docs/FRONTEND_DESIGN.md
 - docs/PRD.md
 - docs/AGENT_CONTEXT.md
-
-Legacy documentation paths remain as compatibility pointers to the canonical documents above.
 
 ## Current quick start
 
@@ -83,4 +81,4 @@ python scripts/netregress_release.py doctor
 python scripts/netregress_release.py manifest
 ~~~
 
-The release manifest is source-readiness evidence. It does not substitute for protected GNS3/mac80211_hwsim execution evidence.
+The release manifest and GitHub Actions gates are source/CI readiness evidence. They do not substitute for protected GNS3/mac80211_hwsim execution or authenticated browser/runtime certification.

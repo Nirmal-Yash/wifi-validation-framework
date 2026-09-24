@@ -931,7 +931,7 @@ Hardware-free contract tests remain separate from real-lab execution.
 
 ## 24.4 React/Vite frontend
 
-The production local dashboard is implemented under `frontend/` using React + Vite. The React UI is the canonical modern presentation layer over `/api/v1`; the Jinja dashboard remains compatibility coverage during migration.
+The production local dashboard is implemented under `frontend/` using React + Vite. The React UI is the canonical modern presentation layer over `/api/v1`. The Jinja dashboard remains as a compatibility presentation layer pending browser/runtime parity validation and retirement.
 
 Required product views:
 
@@ -1612,9 +1612,9 @@ No Cloud/SaaS implementation is introduced in this release wave.
 Iterations 20–27 are source-complete from the preceding consolidated passes. Iterations 28–30 are the final release wave: release integration, reproducible operational readiness and governance/architecture freeze. The final Git state is consolidated into one commit on main.
 
 
-## Completeness Audit Amendment — 2026-09-24
+## Current-State Amendment — 2026-09-24
 
-The post-release implementation audit traced the completion gates into the actual source and found gaps that were overstated by the earlier release documentation. The current completeness wave closes the identified source-level defects in DHCP T1/T2 evidence, firmware-operation locking, firmware API validation metadata, scoped release waivers, operational mutation idempotency, readiness depth, frontend CSRF integration and OpenAPI synchronization.
+The post-release implementation audit traced completion gates into source and closed the identified defects in DHCP T1/T2 evidence, firmware-operation locking, firmware API validation metadata, scoped release waivers, operational mutation idempotency, readiness depth, frontend CSRF integration and OpenAPI synchronization. The subsequent React/Vite completion slice brought the documented frontend surface to source-complete status and added a CI frontend build/test gate.
 
 The following remain deliberately execution-bound or deferred:
 - first-class multi-project domain ownership in the future Cloud/SaaS control plane;

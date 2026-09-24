@@ -153,7 +153,7 @@ All other discovery questions have an implementation decision.
 
 ## Audit basis
 
-Current source audit date: 2026-09-24. Repository baseline for this audit: `7ad58e0648fdb4eaa06b14c9c8d6db62358327fc` before the current completeness wave.
+Current source audit date: 2026-09-24. Historical audit baseline: `7ad58e0648fdb4eaa06b14c9c8d6db62358327fc`. Subsequent completeness and frontend implementation work is now on the current main tip.
 
 The prior release wave established the standalone Runner architecture, but this audit found several source-level contract gaps that had been overstated as complete. The completeness wave closes the identified implementation defects and separates **source implementation readiness** from **execution certification**.
 
@@ -171,7 +171,7 @@ The prior release wave established the standalone Runner architecture, but this 
 | API / security | Implemented | API authorization, CSRF, rate limiting, durable operational idempotency, SSRF/path confinement and structured readiness are present. |
 | RBAC project scoping | Partially operational | Role/project primitives exist, but a durable multi-project entity and end-to-end Run/Device/Lab project association are not yet modeled. |
 | Regression / release gate | Completed in source | Fail-closed release evaluation and scope-aware waivers are implemented. |
-| Frontend | Operational shell | Launch/cancel/retry/inspection, polling, health/tests/telemetry/artifact views and CSRF-aware mutations are present; advanced release/firmware/waiver workflows remain API-first. |
+| Frontend | Implemented source surface | React/Vite covers Dashboard, Runs, Run/Test detail, Regression, Performance, Telemetry, Lab Health, Artifacts, Readiness, Baselines, Firmware/rollback and Waivers. Browser/deployment runtime verification remains separate. |
 | Offline synchronization | Implemented | Durable local queue, lease/retry/idempotency semantics remain Runner-authoritative. |
 | Operational recovery | Implemented | Backup/restore, retention, stale-lock recovery, orphan Run recovery and audit-chain integrity services are present. |
 | Documentation / release tooling | Reconciled | Roadmap is restored through Iteration 30 and release/doctor tooling is source-addressed. |
@@ -181,11 +181,11 @@ The prior release wave established the standalone Runner architecture, but this 
 
 Iterations 20–30 are source-implemented and the full core/release-readiness CI gates now pass. “Implemented” does not mean “runtime certified”: the real-lab execution class remains the authoritative proof for execution-sensitive behavior.
 
-## Remaining production gaps
+## Remaining gaps
 
-1. **Project/Cloud control plane:** a durable first-class Project entity, organization model and end-to-end multi-project ownership remain intentionally deferred to the future Cloud/SaaS control plane; the standalone Runner keeps local role/project primitives without inventing Cloud persistence.
-2. **Protocol live wiring breadth:** DHCP evidence is live-wired into the protected real capture path; EAPOL, Beacon/RSN and DNS analyzers have typed implementations and unit coverage but still require protected execution-class integration evidence.
-3. **Execution certification:** CI/source gates cannot replace GNS3/mac80211_hwsim, real device, browser and production-like runtime evidence.
+1. **Future Cloud control plane:** a durable first-class Project entity, organization model and end-to-end multi-project ownership remain intentionally deferred to the future Cloud/SaaS control plane; the standalone Runner keeps local role/project primitives without inventing Cloud persistence.
+2. **Protected protocol execution evidence:** DHCP evidence is source-wired into the real capture path. EAPOL, Beacon/RSN and DNS analyzers have typed implementations and unit coverage but still require protected live execution evidence.
+3. **Runtime certification:** CI/source verification cannot replace GNS3/mac80211_hwsim, real-device firmware, authenticated browser/runtime, and production-like deployment evidence.
 
 ## Protected behavioral baseline
 
@@ -198,9 +198,7 @@ Runner remains authoritative for lab/device execution, evidence, regression anal
 
 ## Final verification — 2026-09-24
 
-Latest verified main: `e5e235f56b17a17ad1c87f9c1b728d0dfe02ed93`.
-
-Core gate and source release-readiness checks pass. Protected REAL_LAB certification remains a separate execution-class gate and is not inferred from CI/source evidence.
+The current main line includes the completed React/Vite frontend and subsequent backend test-fixture refinements. GitHub Actions Run #113 (`36002962762`) passed core, frontend build/test and release-readiness gates. The protected REAL_LAB job was intentionally skipped; therefore no current 11/11 real-lab certification is claimed.
 
 ## 4. Production completeness audit
 
@@ -250,22 +248,15 @@ The protocol evidence subsystem is implemented and tested, and DHCP is live-wire
 
 The React UI is an operational Runner shell with authenticated launch/inspection/cancellation/retry, polling, health, tests, telemetry and artifacts. Firmware mutation, waiver administration, baseline promotion and detailed release/regression workflows remain primarily API surfaces.
 
-## Production-readiness score
+## Readiness position
 
-This audit uses a transparent rubric rather than a binary claim:
+The repository is source-implemented across the documented standalone Runner surface and CI-verified for the hardware-free release gates. The remaining gaps are the intentionally deferred Cloud/SaaS control plane, protected live protocol execution evidence, and runtime certification.
 
-- **Source completeness: 97%** — implementation contracts are substantially represented and the audited defects are closed, with the residual gaps above.
-- **Operational/security readiness: 95%** — durable idempotency, CSRF, rate limiting, path confinement, release gates, recovery and readiness checks are present.
-- **Execution certification readiness: 70%** — source and simulated controls are in place, but protected REAL_LAB and runtime/browser evidence is not established by this source audit.
-
-**Overall production readiness: 90%.**
-
-The system is therefore **source-complete enough for dedicated production certification**, but it should not be represented as fully runtime-certified until the protected execution gates are actually run and their evidence is persisted.
-
+Do not describe the current state as fully production-certified until the protected REAL_LAB and authenticated runtime/browser evidence are actually executed and persisted.
 
 ## Dependency compatibility correction — Scapy
 
-The focused protocol-evidence gate exposed that the former `scapy==2.5.0` pin did not provide the `EAPOL_KEY` API required by the repository tests. The pin is now aligned to stable Scapy `2.7.0`, whose documented `scapy.layers.eap.EAPOL_KEY` interface matches the protocol-evidence implementation. citeturn625846search0turn625846search2
+The focused protocol-evidence gate exposed that the former `scapy==2.5.0` pin did not provide the `EAPOL_KEY` API required by the repository tests. The pin is now aligned to stable Scapy `2.7.0`, whose documented `scapy.layers.eap.EAPOL_KEY` interface matches the protocol-evidence implementation. 
 
 
 ## Final gate verification

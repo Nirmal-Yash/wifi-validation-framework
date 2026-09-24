@@ -16,7 +16,7 @@
 |---|---|
 | EXECUTION_AND_ADAPTERS.md | Pytest, CommandRunner, DeviceAdapter, FirmwareAdapter and capture execution contracts |
 | SECURITY_AND_SAAS.md | Identity, RBAC, secrets, tenant isolation, Cloud and Runner security |
-| FRONTEND_DESIGN.md | API-first UI and presentation architecture |
+| FRONTEND_DESIGN.md | React/Vite UI and presentation architecture |
 | PRD.md | Product requirements and product scope |
 | AGENT_CONTEXT.md | Working context and historical implementation state |
 
@@ -38,4 +38,4 @@ Lab Reproduction + Testing + Operations
 
 Executable source on main remains the current behavioral authority until the corresponding planned migration or contract is fully applied.
 
-Legacy merged-document paths remain as compatibility pointers. The canonical documents above are the locations to edit.
+Legacy consolidated-document files have been removed. The canonical documents above are the authoritative locations to edit.

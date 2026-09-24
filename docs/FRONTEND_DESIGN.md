@@ -292,7 +292,7 @@ These are conceptual components and do not justify an early SPA rewrite.
 
 ## 17. React + Vite implementation
 
-The React client now preserves the documented URL semantics for Dashboard, Runs, Run Detail, Test Detail, Regression, Performance, Telemetry, Lab Health, Artifacts, Baselines, Operations and Runner Readiness. It reuses the canonical `/api/v1` contracts and delegates authorization, CSRF, idempotency, artifact integrity and release semantics to the backend. The Jinja dashboard remains available for compatibility until browser/runtime parity is independently validated and the retirement decision is made.
+The React client now preserves the documented URL semantics for Dashboard, Runs, Run Detail, Test Detail, Regression, Performance, Telemetry, Lab Health, Artifacts, Baselines, Operations and Runner Readiness. It reuses the canonical `/api/v1` contracts and delegates authorization, CSRF, idempotency, artifact integrity and release semantics to the backend. The Jinja dashboard remains available as a compatibility presentation layer until browser/runtime parity is independently validated and the retirement decision is made.
 
 ## 18. Frontend invariants
 
@@ -305,7 +305,7 @@ The React client now preserves the documented URL semantics for Dashboard, Runs,
 
 ## 19. React implementation status
 
-The React UI is now API-backed rather than documentation-only. It covers authenticated Run operations, filtering and pagination, Run/Test inspection, regression analysis, performance trends, telemetry, Lab Health, artifact browsing, baseline administration, firmware operations, waiver administration and structured Runner readiness. State-changing controls remain RBAC-aware in the UI while API authorization remains authoritative.
+The React UI is now the implemented modern Runner presentation layer. It covers authenticated Run operations, filtering and pagination, Run/Test inspection, regression analysis, performance trends, telemetry, Lab Health, artifact browsing, baseline administration, firmware operations, waiver administration and structured Runner readiness. State-changing controls remain RBAC-aware in the UI while API authorization remains authoritative. Browser/runtime verification remains a separate acceptance gate.
 
 Telemetry, regression, evidence, lifecycle and environment semantics are rendered from persisted API facts and never inferred into PASS states.
 
