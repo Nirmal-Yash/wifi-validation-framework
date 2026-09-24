@@ -10,9 +10,13 @@ class DhcpTransactionEvidence:
     client_mac: str | None
     message_types: tuple[str, ...]
     has_dora: bool
+    is_renewal: bool = False
+    is_rebind: bool = False
     offered_ip: str | None = None
     acknowledged_ip: str | None = None
     server_identifier: str | None = None
+    renewal_time_seconds: int | None = None
+    rebinding_time_seconds: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -24,7 +28,11 @@ class DhcpEvidence:
     message_counts: Mapping[str, int]
     transactions: tuple[DhcpTransactionEvidence, ...]
     correlated_dora_count: int
+    correlated_renewal_count: int
+    correlated_rebind_count: int
     has_dora: bool
+    has_renewal: bool
+    has_rebind: bool
     has_lease_acquired: bool
 
     def as_dict(self) -> dict[str, Any]:

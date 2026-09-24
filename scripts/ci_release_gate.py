@@ -35,7 +35,7 @@ def evaluate_run(db_path, baseline_run_id, current_run_id, environment_class):
             required_list.append(registry.resolve_or_fallback(selected).test_id)
     required=tuple(dict.fromkeys(required_list))
     decision=ReleaseGateEvaluator().evaluate(ReleaseGateInput(
-        run_lifecycle=current.lifecycle.value,lab_health=current.environment_health.value if current.environment_health else None,
+        run_lifecycle=current.lifecycle.value,run_id=current.run_id,lab_health=current.environment_health.value if current.environment_health else None,
         baseline_available=not report.no_baseline,required_test_ids=required,observed_test_ids=tuple(x.test_id for x in results),
         test_statuses={x.test_id:x.status.value for x in results},evidence_states={x.test_id:x.evidence_state.value for x in results},
         regression_classifications={x.test_id:x.classification.value for x in report.assessments}))

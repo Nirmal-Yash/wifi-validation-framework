@@ -90,6 +90,13 @@ class ProtocolEvidenceService:
                     return True
         return False
 
+    @staticmethod
+    def _ciaddr(packet: Any) -> str | None:
+        if BOOTP not in packet:
+            return None
+        value = str(getattr(packet[BOOTP], "ciaddr", "") or "")
+        return value if value not in {"", "0.0.0.0"} else None
+
     def analyze_dhcp(self, pcap_path: str | Path) -> DhcpEvidence:
         packets = [
             packet
@@ -122,18 +129,47 @@ class ProtocolEvidenceService:
             message_types = [item[2] for item in entries]
             offer = next((item[1] for item in entries if item[2] == "OFFER"), None)
             ack = next((item[1] for item in entries if item[2] == "ACK"), None)
+            requests = [item[1] for item in entries if item[2] == "REQUEST"]
+            renewal_request = next(
+                (
+                    packet
+                    for packet in requests
+                    if self._ciaddr(packet) is not None
+                    and self._dhcp_option(packet, "server_id") is not None
+                ),
+                None,
+            )
+            rebind_request = next(
+                (
+                    packet
+                    for packet in requests
+                    if self._ciaddr(packet) is not None
+                    and self._dhcp_option(packet, "server_id") is None
+                ),
+                None,
+            )
             server_identifier = None
             if offer is not None:
                 server_identifier = self._dhcp_option(offer, "server_id")
             if server_identifier is None and ack is not None:
                 server_identifier = self._dhcp_option(ack, "server_id")
+            if server_identifier is None and renewal_request is not None:
+                server_identifier = self._dhcp_option(renewal_request, "server_id")
 
+            renewal_time = (
+                self._dhcp_option(ack, "renewal_time") if ack is not None else None
+            )
+            rebinding_time = (
+                self._dhcp_option(ack, "rebinding_time") if ack is not None else None
+            )
             transactions.append(
                 DhcpTransactionEvidence(
                     xid=xid,
                     client_mac=client_mac,
                     message_types=tuple(message_types),
                     has_dora=self._ordered_dora(message_types),
+                    is_renewal=renewal_request is not None and ack is not None,
+                    is_rebind=rebind_request is not None and ack is not None,
                     offered_ip=str(offer[BOOTP].yiaddr) if offer is not None else None,
                     acknowledged_ip=str(ack[BOOTP].yiaddr) if ack is not None else None,
                     server_identifier=(
@@ -141,16 +177,30 @@ class ProtocolEvidenceService:
                         if server_identifier is not None
                         else None
                     ),
+                    renewal_time_seconds=(
+                        int(renewal_time) if isinstance(renewal_time, int) else None
+                    ),
+                    rebinding_time_seconds=(
+                        int(rebinding_time)
+                        if isinstance(rebinding_time, int)
+                        else None
+                    ),
                 )
             )
 
         correlated = sum(item.has_dora for item in transactions)
+        renewal_count = sum(item.is_renewal for item in transactions)
+        rebind_count = sum(item.is_rebind for item in transactions)
         return DhcpEvidence(
             total_packets=len(packets),
             message_counts=counts,
             transactions=tuple(transactions),
             correlated_dora_count=correlated,
+            correlated_renewal_count=renewal_count,
+            correlated_rebind_count=rebind_count,
             has_dora=correlated > 0,
+            has_renewal=renewal_count > 0,
+            has_rebind=rebind_count > 0,
             has_lease_acquired=any(
                 item.has_dora and item.acknowledged_ip not in {None, "0.0.0.0"}
                 for item in transactions

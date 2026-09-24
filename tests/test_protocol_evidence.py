@@ -24,18 +24,33 @@ CLIENT_MAC = "02:00:00:00:00:30"
 AP_MAC = "02:00:00:00:00:20"
 
 
-def dhcp_packet(xid: int, message_type: int, *, yiaddr="0.0.0.0", include_server=False):
+def dhcp_packet(
+    xid: int,
+    message_type: int,
+    *,
+    yiaddr="0.0.0.0",
+    include_server=False,
+    ciaddr="0.0.0.0",
+    include_timers=False,
+):
     options = [("message-type", message_type)]
-    if message_type == 3:
+    if message_type == 3 and ciaddr == "0.0.0.0":
         options.append(("requested_addr", "192.168.122.30"))
     if include_server:
         options.append(("server_id", "192.168.122.10"))
+    if include_timers:
+        options.extend([("renewal_time", 60), ("rebinding_time", 105)])
     options.append("end")
     return (
         Ether(src=CLIENT_MAC)
-        / IP(src="0.0.0.0", dst="255.255.255.255")
+        / IP(src=ciaddr, dst="255.255.255.255")
         / UDP(sport=68, dport=67)
-        / BOOTP(xid=xid, chaddr=bytes.fromhex("020000000030"), yiaddr=yiaddr)
+        / BOOTP(
+            xid=xid,
+            chaddr=bytes.fromhex("020000000030"),
+            ciaddr=ciaddr,
+            yiaddr=yiaddr,
+        )
         / DHCP(options=options)
     )
 
@@ -191,3 +206,51 @@ def test_dns_correlates_transaction_id_and_question(tmp_path):
     assert evidence.unmatched_query_count == 0
     assert evidence.transactions[0].correlated is True
     assert "93.184.216.34" in evidence.resolved_ips
+
+def test_dhcp_correlates_t1_renewal_and_t2_rebind_transactions(tmp_path):
+    renewal_xid = 10
+    rebind_xid = 11
+    packets = [
+        dhcp_packet(
+            renewal_xid,
+            3,
+            ciaddr="192.168.122.30",
+            include_server=True,
+        ),
+        dhcp_packet(
+            renewal_xid,
+            5,
+            yiaddr="192.168.122.30",
+            include_server=True,
+            include_timers=True,
+        ),
+        dhcp_packet(
+            rebind_xid,
+            3,
+            ciaddr="192.168.122.30",
+            include_server=False,
+        ),
+        dhcp_packet(
+            rebind_xid,
+            5,
+            yiaddr="192.168.122.30",
+            include_server=False,
+            include_timers=True,
+        ),
+    ]
+    pcap = write_pcap(tmp_path / "dhcp-renew-rebind.pcap", packets)
+    evidence = ProtocolEvidenceService().analyze_dhcp(pcap)
+
+    assert evidence.correlated_renewal_count == 1
+    assert evidence.correlated_rebind_count == 1
+    assert evidence.has_renewal is True
+    assert evidence.has_rebind is True
+
+    renewal = next(item for item in evidence.transactions if item.is_renewal)
+    rebind = next(item for item in evidence.transactions if item.is_rebind)
+    assert renewal.renewal_time_seconds == 60
+    assert renewal.rebinding_time_seconds == 105
+    assert rebind.renewal_time_seconds == 60
+    assert rebind.rebinding_time_seconds == 105
+
+

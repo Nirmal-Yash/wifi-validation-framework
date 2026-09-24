@@ -2,56 +2,63 @@
 
 ## Purpose
 
-Final source-of-truth checklist for the standalone Runner release wave covering Iterations 28–30.
+This is the source-of-truth release checklist for the standalone Runner. It distinguishes **source/repository readiness** from **runtime certification readiness**.
 
-Iterations 28–30 are one coherent release slice committed to main exactly once.
+The current completeness audit was performed on 2026-09-24 against the pre-audit main release state `7ad58e0648fdb4eaa06b14c9c8d6db62358327fc`.
 
-## Iteration 28 — Final Single-Commit Release Integration
+## Source completeness result
 
-- clean main working tree;
-- no tracked runtime DB/PCAP/log/temp/local credential artifacts;
-- all tracked Python source parses successfully;
-- required release documentation and API contract exist;
-- security/readiness audit and certification matrix are reproducible;
-- release manifest records commit/tree/inventory/hashes;
-- core release policy remains fail-closed.
+**93% source implementation completeness.**
 
-Primary commands:
+The completeness wave closes the audited source-level defects in:
+- DHCP T1 renewal and T2 rebind transaction evidence;
+- firmware-operation exclusivity;
+- firmware API checksum/signature/model metadata propagation;
+- scoped waiver semantics;
+- operational mutation idempotency coverage;
+- structured API readiness;
+- frontend CSRF/idempotency integration;
+- OpenAPI route/schema synchronization;
+- roadmap/documentation reconciliation.
 
-~~~bash
-python scripts/netregress_security_audit.py --strict
-python scripts/netregress_certification.py --output results/certification-matrix.json
-python scripts/netregress_release.py verify
-~~~
+The remaining source-level deductions are limited to the first-class multi-project domain model, complete live wiring of all protocol analyzers into protected execution tests, and fuller frontend coverage of administrative operations.
 
-## Iteration 29 — Reproducible Operational Readiness
+## Production-readiness assessment
 
-- RunnerDoctor reports Python/tool/path/authentication/database readiness;
-- SQLite integrity is checked when a database exists;
-- release inventory is content-addressed by SHA-256;
-- branch/commit/tree/cleanliness are recorded;
-- release CLI exposes verify/manifest/doctor modes;
-- generated runtime output stays under ignored results/.
+### Overall
 
-Primary commands:
+**Estimated production readiness: 87%.**
 
-~~~bash
-python scripts/netregress_doctor.py
-python scripts/netregress_release.py doctor
-python scripts/netregress_release.py manifest
-~~~
+This percentage is an audit score, not a process exit code. It weights:
+- source completeness and architecture: 50%;
+- operational/security readiness: 25%;
+- execution/certification evidence: 25%.
 
-## Iteration 30 — Final Governance and Architecture Freeze
+| Dimension | Assessment |
+|---|---:|
+| Architecture and domain integrity | 94% |
+| Orchestration and failure handling | 94% |
+| Evidence and measurement | 90% |
+| Firmware/device lifecycle | 95% |
+| API/security/release controls | 93% |
+| Operations/recovery/synchronization | 92% |
+| Frontend operational surface | 82% |
+| Real execution certification evidence | 70% |
+| **Overall production readiness** | **87%** |
 
-- Runner remains authoritative for execution and raw evidence;
-- Cloud/SaaS remains outside the Runner release;
-- fake/simulated adapters remain verification seams only;
-- REAL_LAB remains an explicit certification evidence class;
-- /api/v1 and existing security/release invariants are frozen;
-- final architecture, roadmap, security, testing, data/API and release documents are synchronized;
-- no unrelated post-freeze feature work enters this commit.
+## Remaining release gates
 
-## Final release invariant
+The following are not source-completeness failures, but they prevent a claim of fully certified production deployment:
+
+1. Protected REAL_LAB execution must re-establish the behavioral baseline in the GNS3/mac80211_hwsim environment.
+2. The expanded DHCP renewal/rebind behavior requires real capture evidence from the lab.
+3. EAPOL, Beacon/RSN and DNS analyzer live integration requires execution evidence beyond unit fixtures.
+4. Browser runtime verification is required for the authenticated React UI and CSRF/mutation flow.
+5. CI execution of the full release pipeline must be observed in the target repository/environment rather than inferred from source.
+
+## Release invariant
+
+Source release tooling may report the repository structurally ready when:
 
 ~~~text
 branch = main
@@ -59,7 +66,14 @@ working_tree_clean = true
 required_paths_present = true
 forbidden_tracked_files = []
 syntax_errors = []
-release_ready = true
+source_release_ready = true
 ~~~
 
-The manifest is structural/source-readiness evidence and never substitutes for protected GNS3/mac80211_hwsim execution evidence.
+That invariant does not imply:
+
+~~~text
+REAL_LAB_CERTIFIED = true
+PRODUCTION_RUNTIME_CERTIFIED = true
+~~~
+
+The source manifest, simulated integrations and fake adapters never substitute for protected real-lab evidence.

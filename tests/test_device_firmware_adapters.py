@@ -5,6 +5,7 @@ import pytest
 from lib.adapters import DeviceProfile, FakeDeviceAdapter, FakeFirmwareAdapter, FirmwareAuthorization, FirmwareImage, FirmwareValidationError, FirmwareAuthorizationError, VirtualLinuxDeviceAdapter, OpenWrtDeviceAdapter
 from lib.services.command_runner import CommandResult
 from lib.services.firmware_service import FirmwareOperationService
+from lib.services.resource_lock import ResourceLockError, ResourceLockManager
 
 def auth(operation):
     return FirmwareAuthorization("test-operator","adapter contract test",True,operation)
@@ -79,3 +80,20 @@ def test_openwrt_version_parser_accepts_ubus_payload():
     profile=DeviceProfile.openwrt_defaults(device_id="router",host="127.0.0.1",username="root")
     adapter=OpenWrtDeviceAdapter.from_profile(profile,StubRunner('{"release":{"version":"23.05.5"}}'))
     assert adapter.version().firmware_version=="23.05.5"
+
+def test_firmware_mutation_respects_exclusive_device_lock(tmp_path):
+    manager = ResourceLockManager(tmp_path / "locks")
+    device = FakeDeviceAdapter()
+    held = manager.acquire("firmware:" + device.identify().device_id, "runner:999", timeout=0)
+    try:
+        service = FirmwareOperationService(resource_lock_manager=manager)
+        with pytest.raises(ResourceLockError):
+            service.update(
+                adapter=FakeFirmwareAdapter(device),
+                image=make_image(tmp_path),
+                authorization=auth("FLASH"),
+            )
+        assert device.firmware_version == "v1.0"
+    finally:
+        held.release()
+

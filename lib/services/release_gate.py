@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Mapping
-from lib.domain import ReleaseWaiver
+from lib.domain import ReleaseWaiver, WaiverScope
 
 class ReleaseGateStatus(str, Enum):
     ACCEPT = 'ACCEPT'
@@ -26,6 +26,7 @@ class ReleaseGateIssue:
 @dataclass(frozen=True, slots=True)
 class ReleaseGateInput:
     run_lifecycle: str
+    run_id: str | None = None
     lab_health: str | None
     baseline_available: bool
     required_test_ids: tuple[str, ...]
@@ -71,13 +72,25 @@ class ReleaseGateEvaluator:
                 if state in {'MISSING','INCOMPLETE','INVALID'}:
                     issues.append(ReleaseGateIssue('INVALID_REQUIRED_EVIDENCE', f'required evidence state is {state}', test_id))
         active_waivers = [w for w in data.waivers if w.is_active()]
+
+        def waiver_matches_issue(waiver: ReleaseWaiver, issue: ReleaseGateIssue) -> bool:
+            if waiver.issue_code != issue.code:
+                return False
+            target = waiver.target_id
+            if waiver.scope is WaiverScope.TEST:
+                return issue.test_id is not None and target in {"*", issue.test_id}
+            if waiver.scope is WaiverScope.RUN:
+                return data.run_id is not None and target in {"*", data.run_id}
+            if waiver.scope is WaiverScope.REGRESSION:
+                return issue.test_id is not None and target in {"*", issue.test_id}
+            if waiver.scope is WaiverScope.RELEASE:
+                return target == "*"
+            return False
+
         filtered = [
-            issue for issue in issues
-            if not any(
-                waiver.issue_code == issue.code
-                and waiver.target_id in {"*", issue.test_id or "", data.run_lifecycle}
-                for waiver in active_waivers
-            )
+            issue
+            for issue in issues
+            if not any(waiver_matches_issue(waiver, issue) for waiver in active_waivers)
         ]
         status = ReleaseGateStatus.REJECT if filtered else ReleaseGateStatus.ACCEPT
         summary = 'release gate accepted' if status is ReleaseGateStatus.ACCEPT else f'release gate rejected with {len(filtered)} issue(s)'

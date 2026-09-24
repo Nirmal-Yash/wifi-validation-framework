@@ -1,15 +1,52 @@
 from __future__ import annotations
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 from lib.domain import ArtifactType, LifecycleEvent, FirmwareOperationState
 from lib.repositories import EventRepository, RunRepository
 from .artifact_service import ArtifactService
 from .run_service import generate_ulid
+from .resource_lock import ResourceLockManager
 from lib.adapters.firmware import FirmwareAdapter, FirmwareAuthorization, FirmwareError, FirmwareImage, FirmwareOperationResult, FirmwareValidationError
 
 class FirmwareOperationService:
-    def __init__(self, *, run_repository: RunRepository | None = None, event_repository: EventRepository | None = None, artifact_service: ArtifactService | None = None, id_generator=generate_ulid):
-        self.run_repository=run_repository; self.event_repository=event_repository; self.artifact_service=artifact_service; self.id_generator=id_generator
+    def __init__(
+        self,
+        *,
+        run_repository: RunRepository | None = None,
+        event_repository: EventRepository | None = None,
+        artifact_service: ArtifactService | None = None,
+        resource_lock_manager: ResourceLockManager | None = None,
+        id_generator=generate_ulid,
+    ):
+        self.run_repository=run_repository
+        self.event_repository=event_repository
+        self.artifact_service=artifact_service
+        self.id_generator=id_generator
+        self.resource_lock_manager=resource_lock_manager
+        if self.resource_lock_manager is None and run_repository is not None:
+            database = getattr(run_repository, "database", None)
+            database_path = getattr(database, "path", None)
+            if database_path:
+                self.resource_lock_manager=ResourceLockManager(
+                    Path(database_path).resolve().parent / ".locks"
+                )
+
+    def _acquire_lock(self, device_id: str, run_id: str | None, actor: str):
+        if self.resource_lock_manager is None:
+            return None
+        owner=f"runner:{os.getpid()}:{run_id or actor}"
+        return self.resource_lock_manager.acquire(
+            f"firmware:{device_id}",
+            owner,
+            timeout=0.0,
+            lease_seconds=900.0,
+        )
+
+    @staticmethod
+    def _release_lock(lease) -> None:
+        if lease is not None:
+            lease.release()
 
     def update(self, *, adapter: FirmwareAdapter, image: FirmwareImage, authorization: FirmwareAuthorization, run_id: str | None = None):
         authorization.require('FLASH')
@@ -24,74 +61,84 @@ class FirmwareOperationService:
         if not validation.valid: raise FirmwareValidationError('; '.join(validation.reasons) or 'firmware image failed validation')
         if run_id and self.artifact_service is not None:
             self.artifact_service.register_file(run_id=run_id,path=image.path,artifact_type=ArtifactType.FIRMWARE_REFERENCE,display_name=f'firmware-{image.version}-{Path(image.path).name}',sensitivity_class='SENSITIVE',expected_sha256=validation.sha256)
-        state = FirmwareOperationState.AUTHORIZED
-        self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
-        auth=lambda op: FirmwareAuthorization(authorization.actor, authorization.reason, True, op)
+        lease = self._acquire_lock(identity.device_id, run_id, authorization.actor)
         try:
-            state = FirmwareOperationState.UPLOADING
+            state = FirmwareOperationState.AUTHORIZED
             self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
-            remote=adapter.upload(image,authorization=auth('UPLOAD'))
-            state = FirmwareOperationState.UPLOADED
-            self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
-            self._event(run_id,'FIRMWARE_UPLOADED',{'remote_path':remote})
-        except Exception as exc:
-            state = FirmwareOperationState.FAILED
-            self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE','error':str(exc)})
-            self._event(run_id,'FIRMWARE_UPLOAD_FAILED',{'error':str(exc)}); raise
-        try:
-            state = FirmwareOperationState.READY_TO_FLASH
-            self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
-            self._event(run_id,'FIRMWARE_PREPARING',{'remote_path':remote})
-            prepared=adapter.prepare(remote,image,authorization=auth('PREPARE'))
-            if prepared.transport_error or prepared.exit_code not in (None,0): raise FirmwareError('firmware preparation failed')
-            self._event(run_id,'FIRMWARE_PREPARED',{'remote_path':remote})
-        except Exception as exc:
-            state = FirmwareOperationState.FAILED
-            self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE','error':str(exc)})
-            self._event(run_id,'FIRMWARE_PREPARE_FAILED',{'error':str(exc)}); raise
-        try:
-            state = FirmwareOperationState.FLASHING
-            self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
-            self._event(run_id,'FIRMWARE_FLASHING',{'remote_path':remote})
-            flashed=adapter.flash(remote,image,authorization=auth('FLASH'))
-            if flashed.transport_error or flashed.exit_code not in (None,0): raise FirmwareError('firmware flash failed; automatic retry and rollback are disabled')
-            self._event(run_id,'FIRMWARE_FLASH_COMPLETED',{'remote_path':remote})
-        except Exception as exc:
-            state = FirmwareOperationState.FAILED
-            self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE','error':str(exc)})
-            self._event(run_id,'FIRMWARE_FLASH_FAILED',{'error':str(exc)}); raise
-        try:
-            state = FirmwareOperationState.REBOOTING
-            self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
-            self._event(run_id,'FIRMWARE_REBOOTING',{})
-            rebooted=adapter.reboot(authorization=auth('REBOOT'))
-            if rebooted.transport_error or rebooted.exit_code not in (None,0): raise FirmwareError('device reboot failed; rollback requires a separate explicit operation')
-            self._event(run_id,'FIRMWARE_REBOOT_COMPLETED',{})
-        except Exception as exc:
-            state = FirmwareOperationState.FAILED
-            self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE','error':str(exc)})
-            self._event(run_id,'FIRMWARE_REBOOT_FAILED',{'error':str(exc)}); raise
-        try:
-            state = FirmwareOperationState.VERIFYING
-            self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
-            ready=adapter.wait_ready(); self._event(run_id,'FIRMWARE_READY',{'version':ready.firmware_version})
-            verified=adapter.verify_version(image.version); state = FirmwareOperationState.VALIDATED_FINAL; self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'}); self._event(run_id,'FIRMWARE_VERSION_VERIFIED',{'version':verified.firmware_version})
-        except Exception as exc:
-            state = FirmwareOperationState.FAILED
-            self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE','error':str(exc)})
-            self._event(run_id,'FIRMWARE_VERSION_VERIFICATION_FAILED',{'error':str(exc)}); raise
-        return FirmwareOperationResult('UPDATE',verified.device_id,image.version,'VERSION_VERIFIED',verified.firmware_version,remote,validation)
+            auth=lambda op: FirmwareAuthorization(authorization.actor, authorization.reason, True, op)
+            try:
+                state = FirmwareOperationState.UPLOADING
+                self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
+                remote=adapter.upload(image,authorization=auth('UPLOAD'))
+                state = FirmwareOperationState.UPLOADED
+                self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
+                self._event(run_id,'FIRMWARE_UPLOADED',{'remote_path':remote})
+            except Exception as exc:
+                state = FirmwareOperationState.FAILED
+                self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE','error':str(exc)})
+                self._event(run_id,'FIRMWARE_UPLOAD_FAILED',{'error':str(exc)}); raise
+            try:
+                state = FirmwareOperationState.READY_TO_FLASH
+                self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
+                self._event(run_id,'FIRMWARE_PREPARING',{'remote_path':remote})
+                prepared=adapter.prepare(remote,image,authorization=auth('PREPARE'))
+                if prepared.transport_error or prepared.exit_code not in (None,0): raise FirmwareError('firmware preparation failed')
+                self._event(run_id,'FIRMWARE_PREPARED',{'remote_path':remote})
+            except Exception as exc:
+                state = FirmwareOperationState.FAILED
+                self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE','error':str(exc)})
+                self._event(run_id,'FIRMWARE_PREPARE_FAILED',{'error':str(exc)}); raise
+            try:
+                state = FirmwareOperationState.FLASHING
+                self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
+                self._event(run_id,'FIRMWARE_FLASHING',{'remote_path':remote})
+                flashed=adapter.flash(remote,image,authorization=auth('FLASH'))
+                if flashed.transport_error or flashed.exit_code not in (None,0): raise FirmwareError('firmware flash failed; automatic retry and rollback are disabled')
+                self._event(run_id,'FIRMWARE_FLASH_COMPLETED',{'remote_path':remote})
+            except Exception as exc:
+                state = FirmwareOperationState.FAILED
+                self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE','error':str(exc)})
+                self._event(run_id,'FIRMWARE_FLASH_FAILED',{'error':str(exc)}); raise
+            try:
+                state = FirmwareOperationState.REBOOTING
+                self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
+                self._event(run_id,'FIRMWARE_REBOOTING',{})
+                rebooted=adapter.reboot(authorization=auth('REBOOT'))
+                if rebooted.transport_error or rebooted.exit_code not in (None,0): raise FirmwareError('device reboot failed; rollback requires a separate explicit operation')
+                self._event(run_id,'FIRMWARE_REBOOT_COMPLETED',{})
+            except Exception as exc:
+                state = FirmwareOperationState.FAILED
+                self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE','error':str(exc)})
+                self._event(run_id,'FIRMWARE_REBOOT_FAILED',{'error':str(exc)}); raise
+            try:
+                state = FirmwareOperationState.VERIFYING
+                self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
+                ready=adapter.wait_ready(); self._event(run_id,'FIRMWARE_READY',{'version':ready.firmware_version})
+                verified=adapter.verify_version(image.version); state = FirmwareOperationState.VALIDATED_FINAL; self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'}); self._event(run_id,'FIRMWARE_VERSION_VERIFIED',{'version':verified.firmware_version})
+            except Exception as exc:
+                state = FirmwareOperationState.FAILED
+                self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE','error':str(exc)})
+                self._event(run_id,'FIRMWARE_VERSION_VERIFICATION_FAILED',{'error':str(exc)}); raise
+            return FirmwareOperationResult('UPDATE',verified.device_id,image.version,'VERSION_VERIFIED',verified.firmware_version,remote,validation)
+
+        finally:
+            self._release_lock(lease)
 
     def rollback(self, *, adapter: FirmwareAdapter, authorization: FirmwareAuthorization, run_id: str | None = None):
         authorization.require('ROLLBACK')
+        identity=adapter.identify()
+        lease=self._acquire_lock(identity.device_id, run_id, authorization.actor)
         try:
-            self._event(run_id,'FIRMWARE_ROLLBACK_STARTED',{})
+            self._event(run_id,'FIRMWARE_ROLLBACK_STARTED',{'device_id':identity.device_id})
             result=adapter.rollback(authorization=authorization)
-            if result.transport_error or result.exit_code not in (None,0): raise FirmwareError('explicit firmware rollback failed')
+            if result.transport_error or result.exit_code not in (None,0):
+                raise FirmwareError('explicit firmware rollback failed')
             self._event(run_id,'FIRMWARE_ROLLBACK_COMPLETED',{'target':result.target})
             return adapter.wait_ready()
         except Exception as exc:
             self._event(run_id,'FIRMWARE_ROLLBACK_FAILED',{'error':str(exc)}); raise
+        finally:
+            self._release_lock(lease)
 
     def _event(self, run_id, event_type, details):
         if not run_id or self.event_repository is None: return

@@ -1587,3 +1587,16 @@ No Cloud/SaaS implementation is introduced in this release wave.
 
 ## Final implementation status — Iterations 20–30
 Iterations 20–27 are source-complete from the preceding consolidated passes. Iterations 28–30 are the final release wave: release integration, reproducible operational readiness and governance/architecture freeze. The final Git state is consolidated into one commit on main.
+
+
+## Completeness Audit Amendment — 2026-09-24
+
+The post-release implementation audit traced the completion gates into the actual source and found gaps that were overstated by the earlier release documentation. The current completeness wave closes the identified source-level defects in DHCP T1/T2 evidence, firmware-operation locking, firmware API validation metadata, scoped release waivers, operational mutation idempotency, readiness depth, frontend CSRF integration and OpenAPI synchronization.
+
+The following remain deliberately execution-bound or deferred:
+- first-class multi-project domain ownership;
+- complete live wiring of EAPOL, Beacon/RSN and DNS analyzers into protected validation tests;
+- full administrative frontend coverage;
+- protected REAL_LAB and production-like runtime certification.
+
+Therefore, “source implemented” and “runtime certified” remain separate completion states. No source manifest, fake adapter, simulated integration or unit fixture can satisfy the protected REAL_LAB gate.

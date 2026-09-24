@@ -1,57 +1,46 @@
 # NetRegress — Current System State
 
+## Audit basis
+
+Current source audit date: 2026-09-24. Repository baseline for this audit: `7ad58e0648fdb4eaa06b14c9c8d6db62358327fc` before the current completeness wave.
+
+The prior release wave established the standalone Runner architecture, but this audit found several source-level contract gaps that had been overstated as complete. The completeness wave closes the identified implementation defects and separates **source implementation readiness** from **execution certification**.
+
 ## Consolidated implementation status
 
-| Iteration | Source implementation |
-|---|---|
-| 20 | Complete |
-| 21 | Complete |
-| 22 | Complete |
-| 23 | Complete |
-| 24 | Complete |
-| 25 | Complete |
-| 26 | Complete |
-| 27 | Complete |
-| 28 | Complete |
-| 29 | Complete |
-| 30 | Complete |
+| Area | State | Audit interpretation |
+|---|---|---|
+| Domain / persistence | Implemented | Stable normalized Run/Attempt/TestResult/Artifact model with additive SQLite migrations and integrity controls. |
+| Run orchestration | Implemented | Deterministic orchestration, resource ownership, process lifecycle and failure classification are present. |
+| Evidence | Implemented | Required evidence remains fail-closed; protocol evidence is persisted and integrity-checked. |
+| DHCP protocol evidence | Completed in source | DORA, T1 renewal and T2 rebind transaction classification are now correlated from captured DHCP traffic. |
+| EAPOL / Beacon / DNS evidence | Partially operational | Parsers and compatibility wrappers exist with unit coverage; complete production-test live wiring still requires execution-class validation. |
+| Telemetry / measurement | Implemented | Typed WiFi telemetry, raw samples and deterministic statistical evaluation are present; RF claims remain environment-class aware. |
+| Device / firmware | Completed in source | Hash/model/signature validation, explicit authorization, firmware-operation exclusivity and explicit rollback are enforced. |
+| API / security | Implemented | API authorization, CSRF, rate limiting, durable operational idempotency, SSRF/path confinement and structured readiness are present. |
+| RBAC project scoping | Partially operational | Role/project primitives exist, but a durable multi-project entity and end-to-end Run/Device/Lab project association are not yet modeled. |
+| Regression / release gate | Completed in source | Fail-closed release evaluation and scope-aware waivers are implemented. |
+| Frontend | Operational shell | Launch/cancel/retry/inspection, polling, health/tests/telemetry/artifact views and CSRF-aware mutations are present; advanced release/firmware/waiver workflows remain API-first. |
+| Offline synchronization | Implemented | Durable local queue, lease/retry/idempotency semantics remain Runner-authoritative. |
+| Operational recovery | Implemented | Backup/restore, retention, stale-lock recovery, orphan Run recovery and audit-chain integrity services are present. |
+| Documentation / release tooling | Reconciled | Roadmap is restored through Iteration 30 and release/doctor tooling is source-addressed. |
+| REAL_LAB certification | Unverified | Protected GNS3/mac80211_hwsim execution evidence must be run in the dedicated real-lab phase. |
 
-## Iteration 20
-Security and architecture foundation: tracked secrets removed, local authentication/RBAC, protected API/dashboard boundaries, deterministic configuration and current-state reconciliation.
+## Iterations 20–30
 
-## Iteration 21
-Deterministic orchestration: ConfigurationResolver, EnvironmentFingerprintService, LabController, exclusive resource locks, RunOrchestrator, pytest lifecycle integration and execution identity.
+Iterations 20–30 are source-implemented. “Implemented” does not mean “runtime certified”: the real-lab execution class remains the authoritative proof for execution-sensitive behavior.
 
-## Iteration 22
-Evidence and measurement enforcement: required-evidence fail-closed semantics, protocol evidence, telemetry capture lifecycle and statistical measurement boundaries.
+## Remaining production gaps
 
-## Iteration 23
-Device/firmware and failure control: explicit firmware state machine/audit events, TFTP transport seam, process lifecycle/cancellation, failure taxonomy, diagnostics and ReproductionManifest.
+1. **Project-scoped authorization model:** RBAC currently has project identifiers as an authorization primitive, but the persisted domain does not yet model a first-class Project entity and propagate project ownership through Runs, Devices and Labs.
+2. **Protocol live wiring breadth:** DHCP evidence is live-wired into the protected real capture path; EAPOL, Beacon/RSN and DNS analyzers still require explicit execution-class integration evidence.
+3. **Advanced frontend operations:** firmware mutation, waiver administration, baseline administration and detailed regression/release workflows remain primarily API-driven rather than fully represented in the React shell.
+4. **Execution certification:** CI/source gates cannot replace GNS3/mac80211_hwsim, real device, browser and production-like runtime evidence.
 
-## Iteration 24
-Operational product surface: authorized state-changing Runner API, OpenAPI contract, baseline promotion path, waiver creation boundary, React/Vite frontend shell and Alembic migration boundary.
+## Protected behavioral baseline
 
-## Iteration 25
-Standalone Runner intelligence: baseline eligibility/immutability semantics, scoped waivers, release-gate waiver handling, durable offline sync retained as Runner authority, reproduction/diagnostic packaging and operational controls.
+`436026eba597b2c6ae2e291a9cd8054b70ebbf7c`
 
 ## Architectural boundary
-Runner remains authoritative for lab/device execution and raw evidence. Cloud/SaaS remains deferred above the certified Runner.
 
-## Protected baseline
-436026eba597b2c6ae2e291a9cd8054b70ebbf7c
-
-
-## Iterations 26–27
-Iteration 26 is source-complete for the failure-injection catalog/harness, failure-class preservation, recovery controls, security hardening boundaries, durable API idempotency, CSRF, rate limiting, SSRF/path confinement, backup/restore, retention, stale-lock recovery, audit-chain integrity, security audit tooling and CI readiness controls.
-
-Iteration 27 is source-complete for the final 11-scenario certification matrix, evidence completeness rules, certification CLI, documentation freeze and repository-readiness checks. The protected real-lab scenario remains represented as an explicit certification class; its execution evidence belongs to the dedicated debugging/certification phase and is not replaced by simulation.
-
- 
-## Iteration 28
-Final single-commit release integration: deterministic release manifest, source inventory, working-tree audit, syntax/readiness checks, release CLI and final CI integration.
-
-## Iteration 29
-Reproducible operational readiness: RunnerDoctor, database integrity inspection, release manifest content addressing and controlled release/doctor commands.
-
-## Iteration 30
-Final governance and architecture freeze: synchronized release documentation, explicit Runner/Cloud boundary, certification execution-class integrity and final release invariants.
+Runner remains authoritative for lab/device execution, evidence, regression analysis and local release decisions. Cloud/SaaS remains deferred above the standalone certified Runner.

@@ -9,6 +9,8 @@ security:
 paths:
   /health: {get: {security: [], responses: {"200": {description: Healthy}}}}
   /readiness: {get: {security: [], responses: {"200": {description: Ready}}}}
+  /auth/csrf:
+    get: {responses: {"200": {description: CSRF token}}}
   /auth/login:
     post:
       security: []
@@ -19,12 +21,15 @@ paths:
   /runs:
     get: {responses: {"200": {description: Runs}}}
     post:
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
       requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/RunLaunchRequest'}}}}
       responses: {"202": {description: Process started}}
   /runs/{run_id}: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Run detail}}}}
-  /runs/{run_id}/cancel: {post: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Cancelled}}}}
-  /runs/{run_id}/retry: {post: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"202": {description: Retry started}}}}
+  /runs/{run_id}/cancel: {post: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {$ref: '#/components/parameters/IdempotencyKey'}], responses: {"200": {description: Cancelled}}}}
+  /runs/{run_id}/retry: {post: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {$ref: '#/components/parameters/IdempotencyKey'}], responses: {"202": {description: Retry started}}}}
   /runs/{run_id}/tests: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Tests}}}}
+  /runs/{run_id}/tests/{test_result_id}: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {name: test_result_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Test detail}}}}
+  /tests/{test_id}/metrics: {get: {parameters: [{name: test_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Metric history}}}}
   /runs/{run_id}/metrics: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Metrics}}}}
   /runs/{run_id}/telemetry: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Telemetry}}}}
   /runs/{run_id}/health: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Health}}}}
@@ -36,6 +41,7 @@ paths:
   /labs/{lab_id}/health: {get: {parameters: [{name: lab_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Lab health}}}}
   /waivers:
     post:
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
       requestBody:
         required: true
         content:
@@ -53,11 +59,20 @@ paths:
         "201": {description: Waiver created}
   /baselines:
     get: {responses: {"200": {description: Active baselines}}}
-    post: {requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/BaselinePromotionRequest'}}}}, responses: {"201": {description: Baseline promoted}}}
-  /baselines/{baseline_id}/promote: {post: {parameters: [{name: baseline_id, in: path, required: true, schema: {type: string}}], responses: {"201": {description: Baseline promoted}}}}
-  /firmware/operations: {post: {requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/FirmwareOperationRequest'}}}}, responses: {"202": {description: Firmware operation}}}}
-  /firmware/{device_id}/rollback: {post: {parameters: [{name: device_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Rollback verified}}}}
+    post: {parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/BaselinePromotionRequest'}}}}, responses: {"201": {description: Baseline promoted}}}
+  /baselines/{baseline_id}/promote: {post: {parameters: [{name: baseline_id, in: path, required: true, schema: {type: string}}, {$ref: '#/components/parameters/IdempotencyKey'}], responses: {"201": {description: Baseline promoted}}}}
+  /firmware/operations: {post: {parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/FirmwareOperationRequest'}}}}, responses: {"202": {description: Firmware operation}}}}
+  /firmware/{device_id}/rollback: {post: {parameters: [{name: device_id, in: path, required: true, schema: {type: string}}, {$ref: '#/components/parameters/IdempotencyKey'}], responses: {"200": {description: Rollback verified}}}}
 components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
   securitySchemes:
     sessionAuth: {type: apiKey, in: cookie, name: session}
   schemas:
@@ -75,4 +90,12 @@ components:
     FirmwareOperationRequest:
       type: object
       required: [run_id, device_id, image_path, version]
-      properties: {run_id: {type: string}, device_id: {type: string}, image_path: {type: string}, version: {type: string}, reason: {type: string}}
+      properties:
+        run_id: {type: string}
+        device_id: {type: string}
+        image_path: {type: string}
+        version: {type: string}
+        reason: {type: string}
+        compatible_models: {type: array, items: {type: string}}
+        expected_sha256: {type: string, pattern: '^[0-9a-fA-F]{64}}
+        signature_path: {type: string}

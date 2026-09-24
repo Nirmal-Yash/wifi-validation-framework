@@ -174,3 +174,20 @@ def test_legacy_api_surface_remains_available(tmp_path):
     app=create_app(tmp_path / "db.sqlite")
     response=app.test_client().get("/api/results")
     assert response.status_code == 200
+
+def test_operational_mutation_idempotency_is_durable_and_payload_bound(tmp_path):
+    app=create_app(tmp_path / "db.sqlite")
+    client=app.test_client()
+    payload={"scope":"RELEASE","target_id":"*","issue_code":"NON_PASSING_TEST","reason":"approved"}
+    first=client.post("/api/v1/waivers",json=payload,headers={"Idempotency-Key":"waiver-test-1"})
+    assert first.status_code == 201
+    first_id=first.get_json()["data"]["waiver_id"]
+
+    replay=client.post("/api/v1/waivers",json=payload,headers={"Idempotency-Key":"waiver-test-1"})
+    assert replay.status_code == 201
+    assert replay.get_json()["data"]["waiver_id"] == first_id
+
+    changed=dict(payload);changed["reason"]="different"
+    conflict=client.post("/api/v1/waivers",json=changed,headers={"Idempotency-Key":"waiver-test-1"})
+    assert conflict.status_code == 409
+
