@@ -1,123 +1,125 @@
-from .lab_health_service import LabHealthService
-from .command_security import (
-    CommandAuditError,
-    CommandAuditRecorder,
-    CommandSecurityError,
-    CommandSecurityPolicy,
-    LegacyConnectionPoolAdapter,
-    SecureCommandRunner,
-    legacy_pool_adapter,
-    redact_command,
-    redact_output,
-)
-from .command_runner import CommandResult, CommandRunner, LocalRunner, NetmikoRunner, ParamikoExecRunner, SSHConnectionSpec, redact_command
-from .test_registry import TestDefinition, TestRegistry
-from .legacy_migration import LegacyDatabaseMigrationService
-from .artifact_service import ArtifactService
-from .metric_collector import MetricCollector
-from .fault_service import FaultDefinition, FaultService
-from .protocol_evidence import ProtocolEvidenceError, ProtocolEvidenceService
-from .statistics import (
-    InsufficientSamplesError,
-    MeasurementEvaluationError,
-    MeasurementPolicy,
-    MeasurementPolicyEvaluator,
-    MetricDefinition,
-    StatisticKind,
-    StatisticSummary,
-)
-from .run_service import (
-    RunService,
-    configuration_hash,
-    generate_ulid,
-    redact_configuration,
-    repository_commit,
-)
+"""Public service exports.
 
-__all__ = [
-    "CommandResult",
-    "CommandRunner",
-    "LocalRunner",
-    "NetmikoRunner",
-    "ParamikoExecRunner",
-    "SSHConnectionSpec",
-    "redact_command",
-    "LabHealthService",
-    "CommandAuditError",
-    "CommandAuditRecorder",
-    "CommandSecurityError",
-    "CommandSecurityPolicy",
-    "LegacyConnectionPoolAdapter",
-    "SecureCommandRunner",
-    "legacy_pool_adapter",
-    "redact_command",
-    "redact_output",
-    "RunContext",
-    "TestDefinition",
-    "TestRegistry",
-    "LegacyDatabaseMigrationService",
-    "ArtifactService",
-    "MetricCollector",
-    "FaultDefinition",
-    "FaultService",
-    "ProtocolEvidenceError",
-    "ProtocolEvidenceService",
-    "RunService",
-    "configuration_hash",
-    "generate_ulid",
-    "redact_configuration",
-    "repository_commit",
-    "InsufficientSamplesError",
-    "MeasurementEvaluationError",
-    "MeasurementPolicy",
-    "MeasurementPolicyEvaluator",
-    "MetricDefinition",
-    "StatisticKind",
-    "StatisticSummary",
-    "TelemetryCollectionError",
-    "WifiTelemetryService",
-    "RegressionIntelligenceError",
-    "RegressionIntelligenceService",
-    "FirmwareOperationService",
-    "ReleaseGateDecision", "ReleaseGateEvaluator", "ReleaseGateInput", "ReleaseGateIssue", "ReleaseGatePolicy", "ReleaseGateStatus",
-    "HttpSyncTransport", "RunnerSyncService", "SyncAck", "SyncTransport", "SyncTransportError",
-    "FailureInjectionCase", "FailureInjectionCatalog", "FailureInjectionHarness", "FailureInjectionObservation", "InjectionResult",
-    "CertificationMatrix", "CertificationScenario", "CERTIFICATION_SCENARIOS",
-    "AuditIntegrityService", "BackupResult", "SQLiteBackupService", "RetentionResult", "RetentionService", "RunRecoveryService", "StaleLockRecovery",
-    "CsrfService", "IdempotencyRecord", "IdempotencyStore", "LoginRateLimiter", "RequestSecurityError", "apply_security_headers", "resolve_confined_path", "validate_https_endpoint",
-    "ReleaseAudit", "ReleaseManifestService", "DoctorCheck", "DoctorReport", "RunnerDoctor",
-]
+The package uses lazy PEP-562 exports so low-level adapters can depend on individual
+service modules without importing the entire service graph during package initialization.
+"""
 
-from .wifi_telemetry import TelemetryCollectionError, WifiTelemetryService
+from importlib import import_module
 
-from .regression_intelligence import RegressionIntelligenceError, RegressionIntelligenceService
+_EXPORTS = {
+    "CommandResult": (".command_runner", "CommandResult"),
+    "CommandRunner": (".command_runner", "CommandRunner"),
+    "LocalRunner": (".command_runner", "LocalRunner"),
+    "NetmikoRunner": (".command_runner", "NetmikoRunner"),
+    "ParamikoExecRunner": (".command_runner", "ParamikoExecRunner"),
+    "SSHConnectionSpec": (".command_runner", "SSHConnectionSpec"),
+    "redact_command": (".command_security", "redact_command"),
+    "redact_output": (".command_security", "redact_output"),
+    "CommandAuditError": (".command_security", "CommandAuditError"),
+    "CommandAuditRecorder": (".command_security", "CommandAuditRecorder"),
+    "CommandSecurityError": (".command_security", "CommandSecurityError"),
+    "CommandSecurityPolicy": (".command_security", "CommandSecurityPolicy"),
+    "LegacyConnectionPoolAdapter": (".command_security", "LegacyConnectionPoolAdapter"),
+    "SecureCommandRunner": (".command_security", "SecureCommandRunner"),
+    "legacy_pool_adapter": (".command_security", "legacy_pool_adapter"),
+    "LabHealthService": (".lab_health_service", "LabHealthService"),
+    "TestDefinition": (".test_registry", "TestDefinition"),
+    "TestRegistry": (".test_registry", "TestRegistry"),
+    "RunContext": (".run_context", "RunContext"),
+    "LegacyDatabaseMigrationService": (".legacy_migration", "LegacyDatabaseMigrationService"),
+    "ArtifactService": (".artifact_service", "ArtifactService"),
+    "MetricCollector": (".metric_collector", "MetricCollector"),
+    "FaultDefinition": (".fault_service", "FaultDefinition"),
+    "FaultService": (".fault_service", "FaultService"),
+    "ProtocolEvidenceError": (".protocol_evidence", "ProtocolEvidenceError"),
+    "ProtocolEvidenceService": (".protocol_evidence", "ProtocolEvidenceService"),
+    "InsufficientSamplesError": (".statistics", "InsufficientSamplesError"),
+    "MeasurementEvaluationError": (".statistics", "MeasurementEvaluationError"),
+    "MeasurementPolicy": (".statistics", "MeasurementPolicy"),
+    "MeasurementPolicyEvaluator": (".statistics", "MeasurementPolicyEvaluator"),
+    "MetricDefinition": (".statistics", "MetricDefinition"),
+    "StatisticKind": (".statistics", "StatisticKind"),
+    "StatisticSummary": (".statistics", "StatisticSummary"),
+    "RunService": (".run_service", "RunService"),
+    "configuration_hash": (".run_service", "configuration_hash"),
+    "generate_ulid": (".run_service", "generate_ulid"),
+    "redact_configuration": (".run_service", "redact_configuration"),
+    "repository_commit": (".run_service", "repository_commit"),
+    "TelemetryCollectionError": (".wifi_telemetry", "TelemetryCollectionError"),
+    "WifiTelemetryService": (".wifi_telemetry", "WifiTelemetryService"),
+    "RegressionIntelligenceError": (".regression_intelligence", "RegressionIntelligenceError"),
+    "RegressionIntelligenceService": (".regression_intelligence", "RegressionIntelligenceService"),
+    "FirmwareOperationService": (".firmware_service", "FirmwareOperationService"),
+    "ReleaseGateDecision": (".release_gate", "ReleaseGateDecision"),
+    "ReleaseGateEvaluator": (".release_gate", "ReleaseGateEvaluator"),
+    "ReleaseGateInput": (".release_gate", "ReleaseGateInput"),
+    "ReleaseGateIssue": (".release_gate", "ReleaseGateIssue"),
+    "ReleaseGatePolicy": (".release_gate", "ReleaseGatePolicy"),
+    "ReleaseGateStatus": (".release_gate", "ReleaseGateStatus"),
+    "HttpSyncTransport": (".sync_service", "HttpSyncTransport"),
+    "RunnerSyncService": (".sync_service", "RunnerSyncService"),
+    "SyncAck": (".sync_service", "SyncAck"),
+    "SyncTransport": (".sync_service", "SyncTransport"),
+    "SyncTransportError": (".sync_service", "SyncTransportError"),
+    "ConfigurationResolver": (".configuration", "ConfigurationResolver"),
+    "ResolvedConfiguration": (".configuration", "ResolvedConfiguration"),
+    "EnvironmentFingerprint": (".environment_fingerprint", "EnvironmentFingerprint"),
+    "EnvironmentFingerprintService": (".environment_fingerprint", "EnvironmentFingerprintService"),
+    "ResourceLockError": (".resource_lock", "ResourceLockError"),
+    "ResourceLease": (".resource_lock", "ResourceLease"),
+    "ResourceLockManager": (".resource_lock", "ResourceLockManager"),
+    "LabController": (".lab_controller", "LabController"),
+    "LabControllerError": (".lab_controller", "LabControllerError"),
+    "RunExecutionSession": (".run_orchestrator", "RunExecutionSession"),
+    "RunOrchestrator": (".run_orchestrator", "RunOrchestrator"),
+    "DiagnosticBundle": (".diagnostics", "DiagnosticBundle"),
+    "DiagnosticBundleService": (".diagnostics", "DiagnosticBundleService"),
+    "ReproductionManifest": (".reproduction", "ReproductionManifest"),
+    "ReproductionManifestService": (".reproduction", "ReproductionManifestService"),
+    "WaiverService": (".waiver_service", "WaiverService"),
+    "RunProcessHandle": (".run_process", "RunProcessHandle"),
+    "RunProcessManager": (".run_process", "RunProcessManager"),
+    "FirmwareTransfer": (".firmware_transports", "FirmwareTransfer"),
+    "FirmwareTransferError": (".firmware_transports", "FirmwareTransferError"),
+    "TftpFirmwareTransport": (".firmware_transports", "TftpFirmwareTransport"),
+    "FailureInjectionCase": (".failure_injection", "FailureInjectionCase"),
+    "FailureInjectionCatalog": (".failure_injection", "FailureInjectionCatalog"),
+    "FailureInjectionHarness": (".failure_injection", "FailureInjectionHarness"),
+    "FailureInjectionObservation": (".failure_injection", "FailureInjectionObservation"),
+    "InjectionResult": (".failure_injection", "InjectionResult"),
+    "CertificationMatrix": (".certification", "CertificationMatrix"),
+    "CertificationScenario": (".certification", "CertificationScenario"),
+    "CERTIFICATION_SCENARIOS": (".certification", "CERTIFICATION_SCENARIOS"),
+    "AuditIntegrityService": (".operational_recovery", "AuditIntegrityService"),
+    "BackupResult": (".operational_recovery", "BackupResult"),
+    "SQLiteBackupService": (".operational_recovery", "SQLiteBackupService"),
+    "RetentionResult": (".operational_recovery", "RetentionResult"),
+    "RetentionService": (".operational_recovery", "RetentionService"),
+    "RunRecoveryService": (".operational_recovery", "RunRecoveryService"),
+    "StaleLockRecovery": (".operational_recovery", "StaleLockRecovery"),
+    "CsrfService": (".api_security", "CsrfService"),
+    "IdempotencyRecord": (".api_security", "IdempotencyRecord"),
+    "IdempotencyStore": (".api_security", "IdempotencyStore"),
+    "LoginRateLimiter": (".api_security", "LoginRateLimiter"),
+    "RequestSecurityError": (".api_security", "RequestSecurityError"),
+    "apply_security_headers": (".api_security", "apply_security_headers"),
+    "resolve_confined_path": (".api_security", "resolve_confined_path"),
+    "validate_https_endpoint": (".api_security", "validate_https_endpoint"),
+    "ReleaseAudit": (".release_manifest", "ReleaseAudit"),
+    "ReleaseManifestService": (".release_manifest", "ReleaseManifestService"),
+    "DoctorCheck": (".doctor", "DoctorCheck"),
+    "DoctorReport": (".doctor", "DoctorReport"),
+    "RunnerDoctor": (".doctor", "RunnerDoctor"),
+}
 
-from .firmware_service import FirmwareOperationService
-from .release_gate import ReleaseGateDecision, ReleaseGateEvaluator, ReleaseGateInput, ReleaseGateIssue, ReleaseGatePolicy, ReleaseGateStatus
-
-from .sync_service import HttpSyncTransport, RunnerSyncService, SyncAck, SyncTransport, SyncTransportError
-
-from .configuration import ConfigurationResolver, ResolvedConfiguration
-from .environment_fingerprint import EnvironmentFingerprint, EnvironmentFingerprintService
-from .resource_lock import ResourceLockError, ResourceLease, ResourceLockManager
-from .lab_controller import LabController, LabControllerError
-from .run_orchestrator import RunExecutionSession, RunOrchestrator
-
-from .diagnostics import DiagnosticBundle, DiagnosticBundleService
-from .reproduction import ReproductionManifest, ReproductionManifestService
-from .waiver_service import WaiverService
-from .run_process import RunProcessHandle, RunProcessManager
-from .firmware_transports import FirmwareTransfer, FirmwareTransferError, TftpFirmwareTransport
-from .failure_injection import FailureInjectionCase, FailureInjectionCatalog, FailureInjectionHarness, FailureInjectionObservation, InjectionResult
-from .certification import CertificationMatrix, CertificationScenario, CERTIFICATION_SCENARIOS
-from .operational_recovery import AuditIntegrityService, BackupResult, SQLiteBackupService, RetentionResult, RetentionService, RunRecoveryService, StaleLockRecovery
-from .api_security import CsrfService, IdempotencyRecord, IdempotencyStore, LoginRateLimiter, RequestSecurityError, apply_security_headers, resolve_confined_path, validate_https_endpoint
-from .release_manifest import ReleaseAudit, ReleaseManifestService
-from .doctor import DoctorCheck, DoctorReport, RunnerDoctor
+__all__ = tuple(_EXPORTS)
 
 
 def __getattr__(name: str):
-    if name == "RunContext":
-        from .run_context import RunContext
-        return RunContext
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    try:
+        module_name, attribute_name = _EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    value = getattr(import_module(module_name, __name__), attribute_name)
+    globals()[name] = value
+    return value
