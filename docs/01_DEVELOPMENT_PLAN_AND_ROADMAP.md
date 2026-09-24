@@ -9,7 +9,7 @@ Companion canonical documents:
 - docs/02_SYSTEM_ARCHITECTURE_DATA_API.md
 - docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md
 - docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md
-- docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
+- docs/05_ARCHITECTURE_DECISIONS_AND_05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
 
 ## 1. Authority and development rules
 
@@ -136,7 +136,7 @@ This iteration is a prerequisite for every subsequent iteration.
 Create:
 
 ```
-docs/CURRENT_SYSTEM_STATE.md
+docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md
 ```
 
 It must classify every major subsystem as exactly one of:
@@ -173,14 +173,14 @@ The file must identify, at minimum:
 
 Audit and reconcile:
 
-- `ARCHITECTURE_DECISIONS.md`
-- `IMPLEMENTATION_PLAN.md`
-- `IMPLEMENTATION_ROADMAP.md`
-- `BUSINESS_LOGIC.md`
-- `DATA_MODEL_AND_APIS.md`
+- `05_ARCHITECTURE_DECISIONS_AND_05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md`
+- `01_DEVELOPMENT_PLAN_AND_ROADMAP.md`
+- `01_DEVELOPMENT_PLAN_AND_ROADMAP.md`
+- `05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md`
+- `02_SYSTEM_ARCHITECTURE_DATA_API.md`
 - `EXECUTION_AND_ADAPTERS.md`
 - `SECURITY_AND_SAAS.md`
-- `TESTING_AND_OPERATIONS.md`
+- `04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md`
 - `FRONTEND_DESIGN.md`
 - `AGENT_CONTEXT.md`
 - source tree;
@@ -252,7 +252,7 @@ State-changing operations must be authorization-gated, not merely hidden in UI.
 
 Iteration 20 is complete only when:
 
-- `CURRENT_SYSTEM_STATE.md` is accurate;
+- `03_TRACEABILITY_AND_SYSTEM_READINESS.md` is accurate;
 - documentation no longer contradicts the source tree;
 - tracked configuration contains no operational secrets;
 - protected routes have an authorization decision;
@@ -1453,7 +1453,7 @@ The protected baseline behavior must remain intact.
 
 Update and reconcile:
 
-- `CURRENT_SYSTEM_STATE.md`;
+- `03_TRACEABILITY_AND_SYSTEM_READINESS.md`;
 - `AGENT_CONTEXT.md`;
 - architecture documents;
 - implementation roadmap;
