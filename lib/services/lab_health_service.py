@@ -19,7 +19,8 @@ from lib.domain import (
     LabHealthSnapshot,
     LifecycleEvent,
 )
-from lib.services.command_runner import CommandRunner, CommandResult, redact_output
+from lib.services.command_runner import CommandRunner, CommandResult
+from lib.services.command_security import redact_text
 from lib.services.artifact_service import ArtifactService
 
 
@@ -103,7 +104,7 @@ class LabHealthService:
             except Exception as exc:
                 status = HealthObservationStatus.UNKNOWN
                 duration_ms = 0
-                safe_error, _ = redact_output(f"{type(exc).__name__}: {exc}")
+                safe_error, _ = redact_text(f"{type(exc).__name__}: {exc}")
                 summary = f"Health check could not be completed: {safe_error}"
                 details = {"exception": safe_error}
                 tool_metadata = {}
@@ -184,7 +185,7 @@ class LabHealthService:
             projects = self._http_json("/v2/projects")
         except Exception as exc:
             duration = int((time.monotonic() - started) * 1000)
-            safe_error, _ = redact_output(f"{type(exc).__name__}: {exc}")
+            safe_error, _ = redact_text(f"{type(exc).__name__}: {exc}")
             return (
                 HealthObservationStatus.FAILED,
                 duration,
