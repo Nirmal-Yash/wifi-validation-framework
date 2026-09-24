@@ -405,9 +405,6 @@ def pytest_collection_finish(session):
         service.lab_fail_run(run.run_id)
         health_failed = True
     session.config._netregress_health_blocked = health_failed
-    session.config._netregress_health_blocked = (
-        pre_health.overall_status == EnvironmentHealthStatus.FAILED
-    )
     if not session.config._netregress_health_blocked:
         started_run = service.start_run_after_health(run.run_id)
         started_run.execution_pid = os.getpid()

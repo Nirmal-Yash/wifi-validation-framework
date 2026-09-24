@@ -146,7 +146,10 @@ CREATE TABLE IF NOT EXISTS artifacts (
     sensitivity_class TEXT NOT NULL DEFAULT 'INTERNAL',
     retain_until TEXT,
     soft_deleted_at TEXT,
-    provenance TEXT NOT NULL DEFAULT 'NATIVE'
+    provenance TEXT NOT NULL DEFAULT 'NATIVE',
+    failure_class TEXT,
+    failure_reason TEXT,
+    execution_pid INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS lifecycle_events (
