@@ -29,5 +29,21 @@ Verification:
 - [x] Legacy-table preservation verified.
 - [ ] Real-lab 11/11 gate: not applicable; execution/network behavior unchanged.
 
+## Iteration 3 — Run/Attempt Lifecycle + Pytest Integration ✅
+
+Scope:
+- [x] Add ULID Run IDs and human-readable Run IDs.
+- [x] Add explicit Run lifecycle transitions and lifecycle events.
+- [x] Create a Run and initial Attempt before test execution.
+- [x] Preserve existing pytest CLI and node IDs.
+- [x] Redact credential-like configuration values before persistence.
+- [x] Preserve legacy test result writes.
+
+Verification:
+- [x] Python syntax compilation.
+- [x] RunService lifecycle/unit verification.
+- [x] Collection/session lifecycle integration verification.
+- [ ] Real-lab 11/11 gate: required for execution changes; not available in this environment.
+
 Next:
-- Iteration 3 — Run/Attempt lifecycle service and pytest session integration.
+- Iteration 4 — Metrics + raw Samples persistence and collection.

@@ -1,3 +1,6 @@
+import hashlib
+import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -12,6 +15,8 @@ import yaml
 
 from lib.connector import ConnectionPool, load_devices
 from lib.db_helper import init_db, insert_result
+from lib.repositories import SQLiteDatabase
+from lib.services import RunService, repository_commit, redact_configuration
 
 
 def pytest_addoption(parser):
@@ -113,3 +118,68 @@ def pytest_runtest_makereport(item, call):
     outcome = yield
     rep = outcome.get_result()
     setattr(item, f"rep_{rep.when}", rep)
+
+
+def _validation_profile(config) -> str:
+    markexpr = getattr(config.option, "markexpr", "") or ""
+    if "smoke" in markexpr.lower():
+        return "Smoke"
+    if "perf" in markexpr.lower():
+        return "Performance"
+    if "regression" in markexpr.lower():
+        return "Standard Regression"
+    return os.getenv("NETREGRESS_VALIDATION_PROFILE", "Full")
+
+
+def _create_run_service() -> RunService:
+    db_path = Path(
+        os.getenv("TEST_DB_PATH", str(ROOT / "results" / "test_results.db"))
+    )
+    return RunService.from_sqlite(SQLiteDatabase(db_path))
+
+
+def _run_repository_context(session):
+    return getattr(session.config, "_netregress_run_context", None)
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_collection_finish(session):
+    if not session.items:
+        return
+
+    params_path = ROOT / "configs" / "test_params.yaml"
+    with open(params_path, "r", encoding="utf-8") as handle:
+        params = yaml.safe_load(handle) or {}
+
+    firmware_version = session.config.getoption("--firmware-version")
+    selected_tests = [item.nodeid for item in session.items]
+    test_versions = {node_id: "1.0" for node_id in selected_tests}
+    persisted_config = redact_configuration(params)
+
+    service = _create_run_service()
+    run, attempt = service.create_run(
+        firmware_version=firmware_version,
+        lab_id=os.getenv("NETREGRESS_LAB_ID", "WiFi-Regression-Lab"),
+        validation_profile=_validation_profile(session.config),
+        selected_tests=selected_tests,
+        test_definition_versions=test_versions,
+        resolved_config=persisted_config,
+        repository_commit=os.getenv("NETREGRESS_REPOSITORY_COMMIT")
+        or repository_commit(str(ROOT)),
+    )
+    service.start_run(run.run_id)
+    session.config._netregress_run_context = (service, run.run_id, attempt.attempt_id)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    context = getattr(session.config, "_netregress_run_context", None)
+    if context is None:
+        return
+
+    service, run_id, _attempt_id = context
+    if exitstatus == 0:
+        service.complete_run(run_id)
+    elif exitstatus == 2:
+        service.abort_run(run_id)
+    else:
+        service.fail_run(run_id)

@@ -273,6 +273,26 @@ class SQLiteRunRepository:
             )
             connection.commit()
 
+    def update(self, run: Run) -> None:
+        with self.database.connection() as connection:
+            if not connection.execute(
+                "SELECT 1 FROM runs WHERE run_id = ?", (run.run_id,)
+            ).fetchone():
+                raise RepositoryConflictError(f"run does not exist: {run.run_id}")
+            connection.execute(
+                """UPDATE runs
+                   SET lifecycle = ?, outcome = ?, started_at = ?, completed_at = ?
+                   WHERE run_id = ?""",
+                (
+                    run.lifecycle.value,
+                    run.outcome.value if run.outcome else None,
+                    _dt(run.started_at),
+                    _dt(run.completed_at),
+                    run.run_id,
+                ),
+            )
+            connection.commit()
+
     def get(self, run_id: str) -> Run | None:
         with self.database.connection() as connection:
             row = connection.execute(
@@ -361,6 +381,26 @@ class SQLiteAttemptRepository:
                     attempt.number,
                     _dt(attempt.started_at),
                     _dt(attempt.completed_at),
+                ),
+            )
+            connection.commit()
+
+    def update(self, attempt: Attempt) -> None:
+        with self.database.connection() as connection:
+            if not connection.execute(
+                "SELECT 1 FROM attempts WHERE attempt_id = ?", (attempt.attempt_id,)
+            ).fetchone():
+                raise RepositoryConflictError(
+                    f"attempt does not exist: {attempt.attempt_id}"
+                )
+            connection.execute(
+                """UPDATE attempts
+                   SET started_at = ?, completed_at = ?
+                   WHERE attempt_id = ?""",
+                (
+                    _dt(attempt.started_at),
+                    _dt(attempt.completed_at),
+                    attempt.attempt_id,
                 ),
             )
             connection.commit()

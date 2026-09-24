@@ -1,0 +1,98 @@
+from datetime import datetime, timezone
+
+import pytest
+
+from lib.domain import RunLifecycle
+from lib.services import RunService, generate_ulid, redact_configuration
+from lib.repositories import (
+    RepositoryConflictError,
+    SQLiteAttemptRepository,
+    SQLiteDatabase,
+    SQLiteEventRepository,
+    SQLiteRunRepository,
+)
+
+def make_service(tmp_path, ids):
+    database = SQLiteDatabase(tmp_path / "run.db")
+    return RunService(
+        SQLiteRunRepository(database),
+        SQLiteAttemptRepository(database),
+        SQLiteEventRepository(database),
+        clock=lambda: datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc),
+        id_generator=iter(ids).__next__,
+    ), database
+
+def test_ulid_shape():
+    value = generate_ulid(datetime(2026, 9, 24, tzinfo=timezone.utc))
+    assert len(value) == 26
+    assert all(ch in "0123456789ABCDEFGHJKMNPQRSTVWXYZ" for ch in value)
+
+def test_configuration_redacts_secrets():
+    source = {"wifi": {"password": "secret"}, "nested": [{"api_token": "x"}]}
+    result = redact_configuration(source)
+    assert result["wifi"]["password"] == "<redacted>"
+    assert result["nested"][0]["api_token"] == "<redacted>"
+
+def test_create_start_complete_run_lifecycle(tmp_path):
+    service, database = make_service(
+        tmp_path,
+        [
+            "01RUN00000000000000000000",
+            "01ATTEMPT0000000000000000",
+            "01EVENT000000000000000001",
+            "01EVENT000000000000000002",
+            "01EVENT000000000000000003",
+            "01EVENT000000000000000004",
+            "01EVENT000000000000000005",
+        ],
+    )
+    database.initialize()
+    run, attempt = service.create_run(
+        firmware_version="v1.0",
+        lab_id="lab-1",
+        validation_profile="Smoke",
+        selected_tests=["wifi.test"],
+        test_definition_versions={"wifi.test": "1.0"},
+        resolved_config={"password": "secret", "threshold": 5},
+        repository_commit="abc",
+    )
+
+    assert run.lifecycle is RunLifecycle.QUEUED
+    assert attempt.number == 1
+    assert run.resolved_config["password"] == "<redacted>"
+
+    service.start_run(run.run_id)
+    started = SQLiteRunRepository(database).get(run.run_id)
+    assert started is not None
+    assert started.lifecycle is RunLifecycle.RUNNING
+
+    service.complete_run(run.run_id)
+    completed = SQLiteRunRepository(database).get(run.run_id)
+    assert completed is not None
+    assert completed.lifecycle is RunLifecycle.COMPLETED
+    assert completed.completed_at is not None
+
+def test_invalid_transition_is_rejected(tmp_path):
+    service, database = make_service(
+        tmp_path,
+        [
+            "01RUN00000000000000000000",
+            "01ATTEMPT0000000000000000",
+            "01EVENT000000000000000001",
+            "01EVENT000000000000000002",
+            "01EVENT000000000000000003",
+            "01EVENT000000000000000004",
+        ],
+    )
+    database.initialize()
+    run, _ = service.create_run(
+        firmware_version="v1.0",
+        lab_id="lab-1",
+        validation_profile="Full",
+        selected_tests=["wifi.test"],
+        test_definition_versions={"wifi.test": "1.0"},
+        resolved_config={},
+        repository_commit="abc",
+    )
+    with pytest.raises(Exception):
+        service.complete_run(run.run_id)

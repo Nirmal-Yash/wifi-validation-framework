@@ -144,6 +144,6 @@ Runtime DBs, reports, PCAPs and logs remain gitignored.
 
 ## 13. Current next step
 
-Iterations 1–2 are complete on main. The next code slice is Iteration 3: Run/Attempt lifecycle service and pytest session integration, while preserving the existing pytest command and real-lab behavior.
+Iterations 1–3 are complete on main. The next code slice is Iteration 4: Metrics + raw Samples persistence and collection, while preserving the existing pytest command and real-lab behavior.
 
-CommandRunner extraction remains coordinated with the persistence migration so the current connection singleton does not become a future concurrency blocker.
+The current pytest result recorder remains a compatibility path until Run-scoped TestResult persistence replaces it in later iterations.
