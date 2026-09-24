@@ -144,6 +144,6 @@ Runtime DBs, reports, PCAPs and logs remain gitignored.
 
 ## 13. Current next step
 
-Iteration 1 (typed domain models and invariants) is complete on main. The next code slice is Iteration 2: repository interfaces and SQLite persistence adapters, without changing the existing pytest execution path.
+Iterations 1–2 are complete on main. The next code slice is Iteration 3: Run/Attempt lifecycle service and pytest session integration, while preserving the existing pytest command and real-lab behavior.
 
 CommandRunner extraction remains coordinated with the persistence migration so the current connection singleton does not become a future concurrency blocker.

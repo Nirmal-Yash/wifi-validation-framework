@@ -64,10 +64,15 @@ class EvidenceState(str, Enum):
 class ArtifactType(str, Enum):
     PCAP = "PCAP"
     PYTEST_REPORT = "PYTEST_REPORT"
+    DIFF_REPORT = "DIFF_REPORT"
     SETUP_LOG = "SETUP_LOG"
+    AUDIT_LOG = "AUDIT_LOG"
+    COMMAND_OUTPUT = "COMMAND_OUTPUT"
+    CONFIG_SNAPSHOT = "CONFIG_SNAPSHOT"
     LAB_HEALTH_SNAPSHOT = "LAB_HEALTH_SNAPSHOT"
     ENV_FINGERPRINT = "ENV_FINGERPRINT"
     DIAGNOSTIC_BUNDLE = "DIAGNOSTIC_BUNDLE"
+    FIRMWARE_REFERENCE = "FIRMWARE_REFERENCE"
     OTHER = "OTHER"
 
 
@@ -290,6 +295,50 @@ class Run:
         if attempt.number != expected_number:
             raise DomainValidationError(f"attempt number must be {expected_number}")
         self.attempts.append(attempt)
+
+
+@dataclass(frozen=True, slots=True)
+class LifecycleEvent:
+    event_id: str
+    run_id: str
+    event_type: str
+    occurred_at: datetime
+    attempt_id: str | None = None
+    test_result_id: str | None = None
+    details: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("event_id", self.event_id),
+            ("run_id", self.run_id),
+            ("event_type", self.event_type),
+        ):
+            _require_text(name, value)
+
+
+@dataclass(frozen=True, slots=True)
+class Baseline:
+    baseline_id: str
+    name: str
+    baseline_run_id: str
+    status: str
+    promoted_by: str
+    promoted_at: datetime
+    device_scope: str = ""
+    firmware_major_scope: str = ""
+    test_suite_version: str = ""
+    lab_class: str = ""
+    superseded_by: str | None = None
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("baseline_id", self.baseline_id),
+            ("name", self.name),
+            ("baseline_run_id", self.baseline_run_id),
+            ("status", self.status),
+            ("promoted_by", self.promoted_by),
+        ):
+            _require_text(name, value)
 
 
 def _require_text(name: str, value: str) -> None:

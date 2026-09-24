@@ -14,5 +14,20 @@ Verification:
 - [x] Domain unit tests: 8/8 passed.
 - [ ] Real-lab 11/11 gate: not applicable; Iteration 1 does not modify execution/network behavior.
 
+## Iteration 2 — Repository + SQLite Persistence ✅
+
+Scope:
+- [x] Add repository Protocol interfaces for Run, Attempt, TestResult, Artifact, Event and Baseline.
+- [x] Add normalized SQLite persistence for run-scoped evidence, metrics/samples and snapshots.
+- [x] Add additive schema bootstrap with a version marker.
+- [x] Preserve legacy SQLite tables/data; no legacy callers modified.
+- [x] Add repository round-trip and conflict tests.
+
+Verification:
+- [x] Python syntax compilation.
+- [x] Repository tests: 6/6 passed.
+- [x] Legacy-table preservation verified.
+- [ ] Real-lab 11/11 gate: not applicable; execution/network behavior unchanged.
+
 Next:
-- Iteration 2 — Repository interfaces and SQLite persistence adapters.
+- Iteration 3 — Run/Attempt lifecycle service and pytest session integration.
