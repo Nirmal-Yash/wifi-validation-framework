@@ -82,6 +82,10 @@ __all__ = [
     "FirmwareOperationService",
     "ReleaseGateDecision", "ReleaseGateEvaluator", "ReleaseGateInput", "ReleaseGateIssue", "ReleaseGatePolicy", "ReleaseGateStatus",
     "HttpSyncTransport", "RunnerSyncService", "SyncAck", "SyncTransport", "SyncTransportError",
+    "FailureInjectionCase", "FailureInjectionCatalog", "FailureInjectionHarness", "FailureInjectionObservation", "InjectionResult",
+    "CertificationMatrix", "CertificationScenario", "CERTIFICATION_SCENARIOS",
+    "AuditIntegrityService", "BackupResult", "SQLiteBackupService", "RetentionResult", "RetentionService", "RunRecoveryService", "StaleLockRecovery",
+    "CsrfService", "IdempotencyRecord", "IdempotencyStore", "LoginRateLimiter", "RequestSecurityError", "apply_security_headers", "resolve_confined_path", "validate_https_endpoint",
 ]
 
 from .wifi_telemetry import TelemetryCollectionError, WifiTelemetryService
@@ -104,3 +108,7 @@ from .reproduction import ReproductionManifest, ReproductionManifestService
 from .waiver_service import WaiverService
 from .run_process import RunProcessHandle, RunProcessManager
 from .firmware_transports import FirmwareTransfer, FirmwareTransferError, TftpFirmwareTransport
+from .failure_injection import FailureInjectionCase, FailureInjectionCatalog, FailureInjectionHarness, FailureInjectionObservation, InjectionResult
+from .certification import CertificationMatrix, CertificationScenario, CERTIFICATION_SCENARIOS
+from .operational_recovery import AuditIntegrityService, BackupResult, SQLiteBackupService, RetentionResult, RetentionService, RunRecoveryService, StaleLockRecovery
+from .api_security import CsrfService, IdempotencyRecord, IdempotencyStore, LoginRateLimiter, RequestSecurityError, apply_security_headers, resolve_confined_path, validate_https_endpoint

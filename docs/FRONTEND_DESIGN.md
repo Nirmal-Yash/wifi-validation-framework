@@ -323,3 +323,8 @@ Telemetry and regression pages preserve environment/evidence semantics rather th
 
 ## 8. React/Vite implementation
 The Runner now includes a React + Vite operational shell consuming /api/v1 for authenticated Run launch/list/detail, cancellation, retry, lifecycle/test inspection, health and artifact inspection. API authorization remains authoritative; UI visibility is not a security control.
+
+## 20. Iterations 26–27 security and certification UX
+The operational API remains the authority for mutation authorization, CSRF, idempotency and artifact boundaries. Browser state changes now require a session-bound CSRF token. The UI may surface the certification matrix and release/readiness status, but it must never infer certification from the presence of a generated matrix alone.
+
+Certification scenario records must distinguish execution class, especially REAL_LAB, from hardware-free and simulated evidence. The frontend must preserve lifecycle/failure classification and must not convert LAB_FAILED, UNVALIDATED or Runner failures into product PASS states.

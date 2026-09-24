@@ -308,3 +308,25 @@ Next: Iteration 23 — Device/Firmware operations, failure semantics, cancellati
 
 Next:
 - Iteration 26 — Full failure injection, multi-layer integration, security hardening and release readiness.
+
+
+## Iteration 26 — Full Failure Injection, Multi-Layer Integration, Security Hardening & Release Readiness ✅
+- [x] Added a 27-case typed failure-injection matrix covering device, lab, network, runner, persistence, evidence, firmware, concurrency, API and synchronization failure classes.
+- [x] Added a failure-injection harness with unconditional cleanup semantics and explicit product-statistics isolation expectations.
+- [x] Added restart/orphan Run recovery, stale-lock inspection/recovery, SQLite backup/restore and retention controls.
+- [x] Added durable API idempotency/replay protection with request-fingerprint binding.
+- [x] Added CSRF enforcement for authenticated state-changing API calls, login rate limiting and secure response headers.
+- [x] Added outbound HTTPS SSRF/IP-range validation and firmware-path confinement.
+- [x] Added audit event chain integrity digesting into diagnostic evidence.
+- [x] Added source security/readiness audit and CI integration.
+- [x] Preserved the existing fake-adapter boundary for hardware-free integration; no synthetic path replaces real validation.
+
+## Iteration 27 — Final Runner Certification & Documentation Freeze ✅
+- [x] Added the canonical 11-scenario certification matrix.
+- [x] Added evidence-completeness evaluation and certification report CLI.
+- [x] Added certification contract tests covering healthy, failure, evidence, lab, Runner, concurrency, firmware, offline and recovery semantics.
+- [x] Reconciled current-state, roadmap, security, testing, data/API, frontend, installation, traceability and README documentation.
+- [x] Added final source/readiness CI checks without claiming real-lab execution from source-only gates.
+
+Next:
+- Dedicated debugging/certification execution phase for the protected real-lab evidence set.

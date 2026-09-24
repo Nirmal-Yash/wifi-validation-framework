@@ -245,3 +245,9 @@ Iterations 20–22 are source-implemented as the current Runner foundation: exte
 
 ## 29. Iterations 23–25 consolidated pass
 Iterations 20–25 are source-complete as the current Runner platform context. Iteration 23 owns failure semantics, firmware lifecycle control, cancellation, diagnostics and reproduction. Iteration 24 owns authorized state-changing API, OpenAPI, operational frontend and migration boundary. Iteration 25 owns baseline/release intelligence, scoped waivers and offline Runner continuity. Read FINAL_SYSTEM_DEVELOPMENT_PLAN.md before continuing with Iteration 26.
+
+
+## Iterations 26–27 status
+Iteration 26 source implementation is complete: typed failure-injection coverage, recovery services, API replay/CSRF controls, SSRF/path confinement, audit-chain integrity, backup/restore, retention, stale-lock recovery and source security/readiness tooling are integrated with the existing Runner boundaries.
+
+Iteration 27 source implementation is complete: the 11-scenario certification matrix, evidence completeness evaluator, certification CLI and documentation/repository freeze controls are integrated. Certification evidence must come from the appropriate execution class; the real-lab scenario is not satisfied by fake adapters.

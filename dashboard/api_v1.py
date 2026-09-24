@@ -1,11 +1,13 @@
 from __future__ import annotations
+import hashlib
+import json
 import os
 from pathlib import Path
 from typing import Any,Callable
 from functools import wraps
 from flask import Blueprint,jsonify,request,session,send_file
 from lib.repositories import SQLiteDatabase
-from lib.services import RunProcessManager, WaiverService, FirmwareOperationService
+from lib.services import RunProcessManager, WaiverService, FirmwareOperationService, IdempotencyStore, CsrfService, LoginRateLimiter, RequestSecurityError, resolve_confined_path
 from lib.adapters import DeviceProfile, OpenWrtDeviceAdapter, SSHFirmwareAdapter, VirtualLinuxDeviceAdapter
 from lib.connector import load_devices, ConnectionPool
 from lib.services.command_security import CommandSecurityPolicy, SecureCommandRunner
@@ -16,6 +18,8 @@ from .query import DashboardQueryError,DashboardQueryService
 
 def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|None=None)->Blueprint:
     api=Blueprint("api_v1",__name__,url_prefix="/api/v1"); auth=auth_manager or AuthManager.from_env()
+    idempotency_store=IdempotencyStore(query.database)
+    login_limiter=LoginRateLimiter()
     def ok(data:Any): return jsonify({"data":data})
     def error(code,message,status,details=None): return jsonify({"error":{"code":code,"message":message,"details":details or {}}}),status
     def guarded(fn):
@@ -31,6 +35,8 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         else:
             try:actor=AuthenticatedUser(raw["username"],Role(raw["role"]),tuple(raw.get("projects") or ("*",)))
             except (KeyError,ValueError):session.clear();return error("UNAUTHENTICATED","invalid session",401)
+            if request.method in {"POST","PUT","PATCH","DELETE"} and request.path != "/api/v1/auth/login" and not CsrfService.validate(session,request.headers.get("X-CSRF-Token")):
+                return error("CSRF_REQUIRED","valid X-CSRF-Token header required for browser state changes",403)
         return None if auth.authorize(actor,action,project_id) else error("FORBIDDEN","authorization denied",403)
     @api.get("/health")
     def health():return ok({"status":"ok"})
@@ -41,14 +47,25 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     @api.post("/auth/login")
     def login():
         payload=request.get_json(silent=True) or {}
+        username=str(payload.get("username","")).strip()
+        if not login_limiter.allow(f"{request.remote_addr or 'unknown'}:{username}"):
+            return error("RATE_LIMITED","too many login attempts",429)
         try:auth.require_configured()
         except AuthConfigurationError as exc:return error("AUTH_NOT_CONFIGURED",str(exc),503)
-        user=auth.authenticate(str(payload.get("username","")).strip(),str(payload.get("password","")))
+        user=auth.authenticate(username,str(payload.get("password","")))
         if user is None:return error("INVALID_CREDENTIALS","invalid credentials",401)
         session.clear();session["netregress_user"]={"username":user.username,"role":user.role.value,"projects":list(user.projects)};session.permanent=True
-        return ok(session["netregress_user"])
+        return ok({**session["netregress_user"],"csrf_token":CsrfService.token(session)})
+    @api.get("/auth/csrf")
+    def csrf():
+        denied=require("view")
+        if denied is not None:return denied
+        return ok({"csrf_token":CsrfService.token(session)})
     @api.post("/auth/logout")
-    def logout():session.clear();return ok({"logged_out":True})
+    def logout():
+        denied=require("view")
+        if denied is not None:return denied
+        session.clear();return ok({"logged_out":True})
     @api.get("/auth/me")
     def me():
         raw=session.get("netregress_user");return ok(raw) if raw else error("UNAUTHENTICATED","authentication required",401)
@@ -64,9 +81,18 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         payload=request.get_json(silent=True) or {}
         firmware=str(payload.get("firmware_version","v1.0"))
         tests=tuple(str(x) for x in (payload.get("tests") or ()))
+        try:key=IdempotencyStore.validate_key(request.headers.get("Idempotency-Key",""))
+        except RequestSecurityError as exc:return error("INVALID_IDEMPOTENCY_KEY",str(exc),400)
+        request_hash=hashlib.sha256(json.dumps({"firmware_version":firmware,"tests":list(tests)},sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        try:
+            cached=idempotency_store.get("/api/v1/runs",key,request_hash)
+        except RequestSecurityError as exc:return error("IDEMPOTENCY_KEY_REUSE",str(exc),409)
+        if cached is not None:return jsonify(cached.response),cached.status_code
         manager=RunProcessManager(Path(__file__).resolve().parents[1])
         handle=manager.start(tests=tests or None,firmware_version=firmware,env={"NETREGRESS_RUN_REQUESTED_BY":session.get("netregress_user",{}).get("username","local")})
-        return ok({"process_id":handle.pid,"command":list(handle.command),"status":"STARTED"}),202
+        response={"data":{"process_id":handle.pid,"command":list(handle.command),"status":"STARTED"}}
+        idempotency_store.put("/api/v1/runs",key,request_hash,response,202)
+        return jsonify(response),202
 
     @api.get("/runs")
     @protected
@@ -179,6 +205,9 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         if denied is not None: return denied
         payload=request.get_json(silent=True) or {}
         run_id=str(payload["run_id"]);device_id=str(payload["device_id"]);image_path=str(payload["image_path"]);version=str(payload["version"]);reason=str(payload.get("reason","authorized firmware operation"))
+        firmware_root=Path(os.getenv("NETREGRESS_FIRMWARE_ROOT",Path(__file__).resolve().parents[1]/"firmware"))
+        try:image_path=str(resolve_confined_path(image_path,firmware_root))
+        except RequestSecurityError as exc:return error("PATH_TRAVERSAL_DENIED",str(exc),400)
         devices=load_devices()
         values=devices.get(device_id)
         if values is None:return error("INVALID_REQUEST",f"device not configured: {device_id}",400)

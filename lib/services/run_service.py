@@ -52,6 +52,7 @@ _ALLOWED_TRANSITIONS: dict[RunLifecycle, frozenset[RunLifecycle]] = {
             RunLifecycle.FAILED,
             RunLifecycle.LAB_FAILED,
             RunLifecycle.CANCELLED,
+            RunLifecycle.ABORTED,
         }
     ),
     RunLifecycle.LAB_HEALTH_CHECK: frozenset(

@@ -10,6 +10,8 @@ import uuid
 
 import requests
 
+from .api_security import validate_https_endpoint
+
 from lib.domain import Artifact, Run, SyncEnvelope, SyncQueueItem, SyncState
 from lib.repositories import (
     ArtifactRepository,
@@ -47,9 +49,7 @@ class HttpSyncTransport:
     """Minimal outbound transport; Cloud-specific authorization remains external."""
 
     def __init__(self, url: str, *, bearer_token: str | None = None, timeout_sec: float = 20.0):
-        if not url.startswith("https://"):
-            raise ValueError("sync URL must use HTTPS")
-        self.url = url
+        self.url = validate_https_endpoint(url)
         self.bearer_token = bearer_token
         self.timeout_sec = timeout_sec
 

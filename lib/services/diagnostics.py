@@ -7,6 +7,7 @@ from typing import Any,Iterable,Mapping
 from lib.domain import ArtifactType
 from .artifact_service import ArtifactService
 from .run_service import generate_ulid,redact_configuration
+from .operational_recovery import AuditIntegrityService
 
 @dataclass(frozen=True,slots=True)
 class DiagnosticBundle:
@@ -32,6 +33,7 @@ class DiagnosticBundleService:
             "run":{"display_id":run.display_id,"lifecycle":run.lifecycle.value,"outcome":run.outcome.value if run.outcome else None,"failure_class":getattr(run,"failure_class",None).value if getattr(run,"failure_class",None) else None,"failure_reason":getattr(run,"failure_reason",None),"configuration_hash":run.configuration_hash,"repository_commit":run.repository_commit,"resolved_config":redact_configuration(run.resolved_config)},
             "artifacts":[{"artifact_id":a.artifact_id,"type":a.artifact_type.value,"path":a.path,"size_bytes":a.size_bytes,"sha256":a.sha256,"evidence_state":a.evidence_state.value,"display_name":a.display_name} for a in artifacts if a.soft_deleted_at is None],
             "events":[{"event_id":e.event_id,"event_type":e.event_type,"occurred_at":e.occurred_at.isoformat(),"details":dict(e.details)} for e in events],
+            "audit_chain_sha256": AuditIntegrityService.digest(events),
             "extra":dict(extra or {}),
         }
         out_dir=self.results_root/"diagnostics"/run_id;out_dir.mkdir(parents=True,exist_ok=True)

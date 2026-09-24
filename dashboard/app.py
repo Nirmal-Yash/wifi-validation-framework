@@ -20,6 +20,7 @@ from dashboard.api_v1 import create_api_blueprint
 from dashboard.query import DashboardQueryService
 from lib.repositories import SQLiteDatabase
 from lib.security import AuthManager
+from lib.services import apply_security_headers
 
 ROOT = Path(__file__).resolve().parent.parent
 DATABASE_PATH = Path(os.getenv("NETREGRESS_DATABASE_PATH", ROOT / "results" / "test_results.db"))
@@ -69,7 +70,15 @@ def create_app(database_path: str | Path = DATABASE_PATH):
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=os.getenv("NETREGRESS_SESSION_COOKIE_SECURE","0").lower() in {"1","true","yes"},
         PERMANENT_SESSION_LIFETIME=3600,
+        MAX_CONTENT_LENGTH=int(os.getenv("NETREGRESS_MAX_REQUEST_BYTES","4194304")),
     )
+    @flask_app.after_request
+    def harden_response(response):
+        return apply_security_headers(
+            response,
+            no_store=request.path.startswith("/api/v1/"),
+            hsts=bool(flask_app.config["SESSION_COOKIE_SECURE"]),
+        )
     query = DashboardQueryService(SQLiteDatabase(database_path))
     auth_manager = AuthManager.from_env()
     flask_app.config["NETREGRESS_QUERY"] = query

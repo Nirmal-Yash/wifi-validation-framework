@@ -526,3 +526,10 @@ python dashboard/app.py
 ---
 
 *After completing this guide, refer to [README.md](../README.md) for daily usage and regression workflow.*
+
+## Iterations 26–27 operational controls
+The source installation now includes the certification/security helper CLIs:
+- python scripts/netregress_security_audit.py --strict
+- python scripts/netregress_certification.py --output results/certification-matrix.json
+
+The canonical development workflow remains on main. Runtime lab execution and protected certification evidence are executed through the dedicated debugging/certification workflow rather than treated as source-install steps.

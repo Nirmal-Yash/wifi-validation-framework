@@ -232,3 +232,11 @@ Tracked operational credentials are externalized through environment markers and
 
 ## 27. Iterations 23–25 security and control status
 The Runner now records explicit failure classes, controls firmware mutation through authorization/state transitions, scopes exclusive execution through process and lab ownership, exposes state-changing APIs only behind RBAC, restricts release exceptions to explicit expiring waivers, and preserves raw execution evidence locally through outbound-only synchronization.
+
+
+## 28. Iterations 26–27 security hardening
+The Runner now has a durable idempotency store for state-changing API requests, bound to a request fingerprint to reject replayed keys with different payloads. Authenticated browser state changes require a session-bound CSRF token, login attempts are rate-limited, response security headers are applied centrally, and request bodies have a configured size limit.
+
+Outbound synchronization requires HTTPS and rejects endpoints resolving to loopback/private/link-local/multicast/unspecified addresses. Firmware operation paths are confined to an explicit firmware root. Diagnostic bundles carry a deterministic audit-event chain digest. Operational recovery includes SQLite backup/restore, stale-lock recovery and retention controls.
+
+Security audit tooling performs Python syntax, tracked-secret-pattern, shell-invocation and production TODO/FIXME checks, while CI also runs dependency consistency validation before the release policy gate.

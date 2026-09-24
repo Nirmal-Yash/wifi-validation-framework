@@ -138,3 +138,7 @@ GitHub-hosted CI validates the hardware-free core and release-policy contracts o
 ## Iteration 19
 
 The Runner now survives Cloud outages with a durable local synchronization queue. Terminal Runs are snapshotted locally and can be synchronized later through an outbound HTTPS transport using deterministic idempotency keys.
+## Iterations 26–27
+The Runner now includes the final source-level failure/recovery and certification controls before dedicated debugging/certification execution: typed failure-injection coverage, durable API idempotency, CSRF/rate limiting/security headers, SSRF/path confinement, operational backup/restore and stale-lock recovery, audit-chain integrity, security/readiness CLI checks, and an 11-scenario certification matrix.
+
+The implementation is consolidated directly on main with the repository single-commit release discipline. Real GNS3/mac80211_hwsim certification remains an explicit execution-class boundary and is not replaced by synthetic test fixtures.

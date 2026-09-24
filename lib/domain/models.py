@@ -144,6 +144,9 @@ class Artifact:
     retain_until: datetime | None = None
     soft_deleted_at: datetime | None = None
     provenance: str = "NATIVE"
+    failure_class: FailureClass | None = None
+    failure_reason: str | None = None
+    execution_pid: int | None = None
 
     def __post_init__(self) -> None:
         for name, value in (

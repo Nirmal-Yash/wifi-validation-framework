@@ -10,8 +10,8 @@
 | 23 | Complete |
 | 24 | Complete |
 | 25 | Complete |
-| 26 | Next implementation scope |
-| 27 | Certification scope after 26 |
+| 26 | Complete |
+| 27 | Complete |
 | 28 | Final single release commit |
 
 ## Iteration 20
@@ -37,3 +37,9 @@ Runner remains authoritative for lab/device execution and raw evidence. Cloud/Sa
 
 ## Protected baseline
 436026eba597b2c6ae2e291a9cd8054b70ebbf7c
+
+
+## Iterations 26–27
+Iteration 26 is source-complete for the failure-injection catalog/harness, failure-class preservation, recovery controls, security hardening boundaries, durable API idempotency, CSRF, rate limiting, SSRF/path confinement, backup/restore, retention, stale-lock recovery, audit-chain integrity, security audit tooling and CI readiness controls.
+
+Iteration 27 is source-complete for the final 11-scenario certification matrix, evidence completeness rules, certification CLI, documentation freeze and repository-readiness checks. The protected real-lab scenario remains represented as an explicit certification class; its execution evidence belongs to the dedicated debugging/certification phase and is not replaced by simulation.

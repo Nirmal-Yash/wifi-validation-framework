@@ -495,3 +495,10 @@ The v1 Cloud endpoint for these envelopes is intentionally not fixed in Iteratio
 
 ## 21. Iterations 23–25 additions
 Run now carries explicit failure classification, failure reason and execution process identity. Firmware operations emit lifecycle state transitions. Release waivers are scoped and expiring. Canonical state-changing endpoints include Run launch/cancel/retry, baseline promotion, firmware update/rollback and waiver creation. docs/openapi.yaml is the versioned API contract.
+
+## 25. Iterations 26–27 additions
+State-changing v1 Run creation is now durable-idempotent: an Idempotency-Key is bound to a request fingerprint and cannot be replayed against a different payload. Authenticated browser mutations require CSRF protection. API responses expose security headers and constrained request sizes through the Flask boundary.
+
+Runner operational controls now include SQLite backup/restore, stale-lock recovery, retention support and audit-chain integrity metadata in diagnostic bundles. Outbound synchronization applies HTTPS plus destination-address restrictions, and firmware mutation paths are confined to an explicit firmware root.
+
+Iteration 27 adds a versioned certification matrix for the 11 final scenarios. The matrix records the execution class and required evidence controls without treating hardware-free fixtures as real-lab evidence.

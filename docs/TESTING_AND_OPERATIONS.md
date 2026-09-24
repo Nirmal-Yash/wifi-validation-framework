@@ -449,3 +449,14 @@ The current environment has no configured Cloud endpoint, so no external synchro
 
 ## Iterations 23–25 operational implementation
 Failure taxonomy, process cancellation, diagnostic bundle generation, reproduction manifests, explicit firmware lifecycle and release/baseline controls are implemented as Runner operational paths. The dedicated Debugging Phase is the validation stage for real execution, lab behavior and fault-injection scenarios; implementation work should not add alternate fake production paths to satisfy that phase.
+
+
+## 30. Iterations 26–27 verification contracts
+Iteration 26 introduces a typed 27-case failure-injection catalog and harness. Hardware-free tests validate Run failure-class persistence, cleanup contracts, idempotency durability, CSRF/SSRF controls, restart recovery, stale-lock recovery, audit-chain integrity and backup/restore.
+
+The integration boundary remains three-layered:
+1. hardware-free domain/service/repository/API/security tests;
+2. simulated integration through deterministic fake adapters and controlled failures;
+3. protected real-lab execution through the existing GNS3/mac80211_hwsim topology.
+
+Iteration 27 introduces the final 11-scenario certification matrix. A scenario is evidence-complete only when every required control is present. Source-only CI generates the matrix and validates its contract but does not substitute synthetic evidence for the protected real-lab baseline.

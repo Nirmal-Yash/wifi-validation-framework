@@ -112,3 +112,27 @@ All other discovery questions have an implementation decision.
 | Retry semantics | `RunnerSyncService.sync_pending` | offline transport test |
 | Outbound transport | `HttpSyncTransport` | source contract audit |
 | Terminal Run queueing | `tests/conftest.py` | session wiring audit |
+## Iteration 26 traceability
+
+| Requirement | Implementation | Verification contract |
+|---|---|---|
+| Failure injection coverage | lib/services/failure_injection.py | tests/test_iterations_26_27.py |
+| Restart/orphan recovery | lib/services/operational_recovery.py | recovery contract test |
+| Stale-lock recovery | StaleLockRecovery | stale lock test |
+| Backup/restore | SQLiteBackupService | SQLite integrity/restore test |
+| API idempotency/replay binding | lib/services/api_security.py, dashboard/api_v1.py | durable idempotency test |
+| CSRF | CsrfService, v1 mutation guard | CSRF contract + authenticated mutation test |
+| SSRF boundary | validate_https_endpoint | private-address rejection test |
+| Path confinement | resolve_confined_path | firmware API boundary |
+| Audit integrity | AuditIntegrityService | tamper-detection contract |
+| Security audit | scripts/netregress_security_audit.py | CI source-readiness gate |
+
+## Iteration 27 traceability
+
+| Requirement | Implementation | Verification contract |
+|---|---|---|
+| Final certification matrix | lib/services/certification.py | 11-scenario matrix test |
+| Evidence completeness | CertificationMatrix.validate_evidence | all-control completeness test |
+| Certification report CLI | scripts/netregress_certification.py | CLI source contract |
+| Documentation freeze | current/roadmap/security/testing/data/API/frontend/install docs | repository audit |
+| Protected real-lab distinction | certification execution_class=REAL_LAB | matrix semantics test |
