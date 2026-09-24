@@ -290,6 +290,9 @@ class Run:
     repository_commit: str
     lifecycle: RunLifecycle = RunLifecycle.QUEUED
     outcome: BusinessOutcome | None = None
+    failure_class: FailureClass | None = None
+    failure_reason: str | None = None
+    execution_pid: int | None = None
     environment_health: EnvironmentHealthStatus | None = None
     attempts: list[Attempt] = field(default_factory=list)
     environment: EnvironmentSnapshot | None = None
