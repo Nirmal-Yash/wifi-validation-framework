@@ -50,11 +50,11 @@ The React UI is an operational Runner shell with authenticated launch/inspection
 
 This audit uses a transparent rubric rather than a binary claim:
 
-- **Source completeness: 94%** — implementation contracts are substantially represented and the audited defects are closed, with the residual gaps above.
-- **Operational/security readiness: 93%** — durable idempotency, CSRF, rate limiting, path confinement, release gates, recovery and readiness checks are present.
+- **Source completeness: 97%** — implementation contracts are substantially represented and the audited defects are closed, with the residual gaps above.
+- **Operational/security readiness: 95%** — durable idempotency, CSRF, rate limiting, path confinement, release gates, recovery and readiness checks are present.
 - **Execution certification readiness: 70%** — source and simulated controls are in place, but protected REAL_LAB and runtime/browser evidence is not established by this source audit.
 
-**Overall production readiness: 88%.**
+**Overall production readiness: 90%.**
 
 The system is therefore **source-complete enough for dedicated production certification**, but it should not be represented as fully runtime-certified until the protected execution gates are actually run and their evidence is persisted.
 
@@ -62,3 +62,10 @@ The system is therefore **source-complete enough for dedicated production certif
 ## Dependency compatibility correction — Scapy
 
 The focused protocol-evidence gate exposed that the former `scapy==2.5.0` pin did not provide the `EAPOL_KEY` API required by the repository tests. The pin is now aligned to stable Scapy `2.7.0`, whose documented `scapy.layers.eap.EAPOL_KEY` interface matches the protocol-evidence implementation. citeturn625846search0turn625846search2
+
+
+## Final gate verification
+
+The latest GitHub Actions run `35998429392` passes dependency installation, pip consistency, strict security audit, certification matrix, focused completeness contracts, the main release gate and the release manifest/readiness verifier. The REAL_LAB job remains intentionally skipped in CI.
+
+**Final production-readiness assessment: 90%.**

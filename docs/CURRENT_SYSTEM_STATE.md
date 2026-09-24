@@ -28,7 +28,7 @@ The prior release wave established the standalone Runner architecture, but this 
 
 ## Iterations 20–30
 
-Iterations 20–30 are source-implemented. “Implemented” does not mean “runtime certified”: the real-lab execution class remains the authoritative proof for execution-sensitive behavior.
+Iterations 20–30 are source-implemented and the full core/release-readiness CI gates now pass. “Implemented” does not mean “runtime certified”: the real-lab execution class remains the authoritative proof for execution-sensitive behavior.
 
 ## Remaining production gaps
 
@@ -44,3 +44,10 @@ Iterations 20–30 are source-implemented. “Implemented” does not mean “ru
 ## Architectural boundary
 
 Runner remains authoritative for lab/device execution, evidence, regression analysis and local release decisions. Cloud/SaaS remains deferred above the standalone certified Runner.
+
+
+## Final verification — 2026-09-24
+
+Latest verified main: `e5e235f56b17a17ad1c87f9c1b728d0dfe02ed93`.
+
+Core gate and source release-readiness checks pass. Protected REAL_LAB certification remains a separate execution-class gate and is not inferred from CI/source evidence.
