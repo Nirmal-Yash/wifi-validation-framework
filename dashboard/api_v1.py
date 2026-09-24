@@ -173,6 +173,14 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         b=request.args.get("baseline_run_id");c=request.args.get("current_run_id")
         if not b or not c:return error("MISSING_PARAMETER","baseline_run_id and current_run_id are required",400)
         return guarded(lambda:ok(query.regression(b,c)))
+    @api.get("/runs/<run_id>/release-gate")
+    @protected
+    def run_release_gate(run_id):
+        baseline_run_id=request.args.get("baseline_run_id")
+        if not baseline_run_id:
+            return error("MISSING_PARAMETER","baseline_run_id is required",400)
+        return guarded(lambda:ok(query.release_gate(run_id,baseline_run_id)))
+
     @api.get("/runs/<run_id>/regressions")
     @protected
     def run_regressions(run_id):

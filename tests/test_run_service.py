@@ -84,6 +84,7 @@ def test_invalid_transition_is_rejected(tmp_path):
             "01EVENT000000000000000002",
             "01EVENT000000000000000003",
             "01EVENT000000000000000004",
+            "01EVENT000000000000000005",
         ],
     )
     database.initialize()

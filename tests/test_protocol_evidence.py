@@ -11,6 +11,8 @@ from scapy.all import (
     Dot11Elt,
     EAPOL,
     Ether,
+    LLC,
+    SNAP,
     IP,
     UDP,
     wrpcap,
@@ -122,6 +124,8 @@ def test_eapol_requires_ordered_four_way_handshake(tmp_path):
                 addr2=AP_MAC,
                 addr3=AP_MAC,
             )
+            / LLC(dsap=0xAA, ssap=0xAA, ctrl=3)
+            / SNAP(OUI=0x000000, code=0x888E)
             / EAPOL(version=2, type=3)
             / EAPOL_KEY(
                 key_descriptor_type=2,

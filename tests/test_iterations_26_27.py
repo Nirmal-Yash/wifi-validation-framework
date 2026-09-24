@@ -85,7 +85,7 @@ def test_stale_lock_recovery(tmp_path):
 
 def test_run_recovery_classifies_dead_worker(tmp_path):
     service,run=_running_service(tmp_path)
-    run.execution_pid=999999;service.run_repository.update(run)
+    run.execution_pid=2147483647;service.run_repository.update(run)
     recovered=RunRecoveryService().recover_orphaned_runs(service)
     assert recovered==(run.run_id,)
     assert service.run_repository.get(run.run_id).failure_class is FailureClass.WORKER_CRASHED

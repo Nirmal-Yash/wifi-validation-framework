@@ -280,13 +280,13 @@ class ProtocolEvidenceService:
     @staticmethod
     def _iter_elements(packet: Any) -> list[Any]:
         values: list[Any] = []
-        element = packet.getlayer(Dot11Elt)
-        while element is not None:
-            values.append(element)
-            next_layer = element.payload.getlayer(Dot11Elt) if element.payload else None
-            if next_layer is element:
-                break
-            element = next_layer
+        element = packet.payload
+        seen: set[int] = set()
+        while element is not None and id(element) not in seen:
+            seen.add(id(element))
+            if isinstance(element, Dot11Elt):
+                values.append(element)
+            element = getattr(element, "payload", None)
         return values
 
     @staticmethod
@@ -380,6 +380,13 @@ class ProtocolEvidenceService:
                 has_rsn = True
                 raw_rsn = bytes(rsn_element)
                 group_cipher, pairwise, akms = self._parse_rsn(raw_rsn[2:])
+        if not has_rsn:
+            for element in self._iter_elements(beacon):
+                if getattr(element, "ID", None) == 48:
+                    has_rsn = True
+                    info = getattr(element, "info", b"")
+                    group_cipher, pairwise, akms = self._parse_rsn(bytes(info))
+                    break
 
         return BeaconEvidence(
             beacon_count=len(packets),

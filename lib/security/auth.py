@@ -11,7 +11,11 @@ class UserRecord:
     username:str; password_hash:str; role:Role; projects:tuple[str,...]=("*",)
     def can_access_project(self,project_id): return project_id is None or "*" in self.projects or project_id in self.projects
 @dataclass(frozen=True,slots=True)
-class AuthenticatedUser: username:str; role:Role; projects:tuple[str,...]
+class AuthenticatedUser:
+    username:str
+    role:Role
+    projects:tuple[str,...]
+    def can_access_project(self,project_id): return project_id is None or "*" in self.projects or project_id in self.projects
 class AuthManager:
     def __init__(self,users:Sequence[UserRecord],*,required=True): self._users={u.username:u for u in users}; self.required=required
     @classmethod

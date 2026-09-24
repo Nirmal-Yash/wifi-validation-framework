@@ -35,6 +35,7 @@ paths:
   /runs/{run_id}/health: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Health}}}}
   /runs/{run_id}/regressions: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {name: baseline_run_id, in: query, required: true, schema: {type: string}}], responses: {"200": {description: Regression report}}}}
   /runs/{run_id}/release-gate: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {name: baseline_run_id, in: query, required: true, schema: {type: string}}], responses: {"200": {description: Release gate decision}}}}
+  /runs/{run_id}/release-gate: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {name: baseline_run_id, in: query, required: true, schema: {type: string}}], responses: {"200": {description: Release gate decision}}}}
   /regressions: {get: {responses: {"200": {description: Regression report}}}}
   /artifacts: {get: {responses: {"200": {description: Artifacts}}}}
   /artifacts/{artifact_id}: {get: {parameters: [{name: artifact_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Artifact}}}}

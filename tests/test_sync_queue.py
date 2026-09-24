@@ -50,6 +50,7 @@ def test_queue_is_idempotent(tmp_path):
 
 def test_claim_ack_persists_across_repository_instances(tmp_path):
     db=SQLiteDatabase(tmp_path/"sync.db"); db.initialize()
+    create_run(db)
     repo=SQLiteSyncQueueRepository(db)
     item=repo.enqueue(envelope())
     now=datetime.now(timezone.utc)
@@ -62,6 +63,7 @@ def test_claim_ack_persists_across_repository_instances(tmp_path):
 
 def test_expired_lease_becomes_retryable(tmp_path):
     db=SQLiteDatabase(tmp_path/"sync.db"); db.initialize()
+    create_run(db)
     repo=SQLiteSyncQueueRepository(db)
     item=repo.enqueue(envelope())
     old=datetime(2020,1,1,tzinfo=timezone.utc)
@@ -72,6 +74,7 @@ def test_expired_lease_becomes_retryable(tmp_path):
 
 def test_failure_can_become_blocked(tmp_path):
     db=SQLiteDatabase(tmp_path/"sync.db"); db.initialize()
+    create_run(db)
     repo=SQLiteSyncQueueRepository(db)
     item=repo.enqueue(envelope())
     now=datetime.now(timezone.utc)

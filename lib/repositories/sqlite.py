@@ -848,6 +848,10 @@ class SQLiteTestResultRepository:
                 sensitivity_class=artifact_row["sensitivity_class"] or "INTERNAL",
                 retain_until=_parse_dt(artifact_row["retain_until"]),
                 soft_deleted_at=_parse_dt(artifact_row["soft_deleted_at"]),
+                failure_class=(FailureClass(artifact_row["failure_class"]) if artifact_row["failure_class"] else None),
+                failure_reason=artifact_row["failure_reason"],
+                execution_pid=artifact_row["execution_pid"],
+                provenance=artifact_row["provenance"] or "NATIVE",
             )
             for artifact_row in connection.execute(
                 "SELECT * FROM artifacts WHERE test_result_id = ? "
@@ -872,6 +876,10 @@ class SQLiteTestResultRepository:
             error_reason=row["error_reason"],
             started_at=_parse_dt(row["started_at"]),
             completed_at=_parse_dt(row["completed_at"]),
+            failure_class=(FailureClass(row["failure_class"]) if row["failure_class"] else None),
+            failure_reason=row["failure_reason"],
+            execution_pid=row["execution_pid"],
+            provenance=row["provenance"] or "NATIVE",
         )
 
 
