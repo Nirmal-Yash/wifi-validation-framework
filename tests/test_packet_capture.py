@@ -202,12 +202,11 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
     local_sha256 = hashlib.sha256(data).hexdigest()
     run_context = getattr(request.config, "_netregress_run_context", None)
     if run_context is not None:
-        run_service, run_id, _attempt_id = run_context
-        artifact_service = ArtifactService.from_sqlite(
-            run_service.run_repository.database
+        artifact_service = run_context.artifact_service or ArtifactService.from_sqlite(
+            run_context.run_service.run_repository.database
         )
         artifact_service.register_file(
-            run_id=run_id,
+            run_id=run_context.run_id,
             path=local_pcap,
             artifact_type=ArtifactType.PCAP,
             display_name="dhcp_test.pcap",

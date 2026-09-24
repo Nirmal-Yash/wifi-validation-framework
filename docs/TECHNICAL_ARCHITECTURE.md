@@ -263,3 +263,8 @@ This repository remains the Runner/Core validation engine.
 The future Cloud backend owns Organization, Project, identity, release policy, baseline promotion workflow, waivers and Cloud history.
 
 The Runner owns lab/device execution and raw evidence.
+
+### Test Registry and RunContext
+The Runner maintains a semantic TestRegistry mapped 1:1 to stable pytest node IDs. Test definitions carry version, category, protocol, severity, criticality, equipment, direction, prerequisites, destructive flag, duration, capabilities, metric/threshold definitions and evidence requirements.
+
+Each pytest session exposes a RunContext carrying Run/Attempt identity, lab/device, resolved configuration, TestRegistry, ArtifactService, a future CommandRunner slot and structured logger. The existing pytest CLI and node IDs remain unchanged.

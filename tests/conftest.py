@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 import sys
 import time
@@ -17,7 +18,15 @@ from lib.connector import ConnectionPool, load_devices
 from lib.db_helper import init_db, insert_result
 from lib.domain import TestResultStatus
 from lib.repositories import SQLiteDatabase
-from lib.services import MetricCollector, RunService, repository_commit, redact_configuration
+from lib.services import (
+    ArtifactService,
+    MetricCollector,
+    RunContext,
+    RunService,
+    TestRegistry,
+    repository_commit,
+    redact_configuration,
+)
 
 
 def pytest_addoption(parser):
@@ -119,7 +128,6 @@ def record_test_result(request, firmware_version):
 
     context = getattr(request.config, "_netregress_run_context", None)
     if context is not None:
-        service, run_id, attempt_id = context
         collector = getattr(request.node, "_metric_collector", None)
         metrics = collector.metrics() if collector is not None else ()
         result_status = (
@@ -127,12 +135,16 @@ def record_test_result(request, firmware_version):
             if rep_call is not None and rep_call.passed
             else TestResultStatus.FAIL
         )
-        service.record_test_result(
-            run_id=run_id,
-            attempt_id=attempt_id,
-            test_id=request.node.nodeid,
+        definition = context.definition_for(request.node.nodeid)
+        context.run_service.record_test_result(
+            run_id=context.run_id,
+            attempt_id=context.attempt_id,
+            test_id=definition.test_id,
             node_id=request.node.nodeid,
+            test_version=definition.version,
             status=result_status,
+            criticality=definition.criticality,
+            severity=definition.severity,
             metrics=metrics,
             error_reason=error_message,
         )
@@ -178,7 +190,8 @@ def pytest_collection_finish(session):
 
     firmware_version = session.config.getoption("--firmware-version")
     selected_tests = [item.nodeid for item in session.items]
-    test_versions = {node_id: "1.0" for node_id in selected_tests}
+    registry = TestRegistry.default()
+    test_versions = registry.version_map(selected_tests)
     persisted_config = redact_configuration(params)
 
     service = _create_run_service()
@@ -193,7 +206,18 @@ def pytest_collection_finish(session):
         or repository_commit(str(ROOT)),
     )
     service.start_run(run.run_id)
-    session.config._netregress_run_context = (service, run.run_id, attempt.attempt_id)
+    session.config._netregress_run_context = RunContext(
+        run_service=service,
+        run_id=run.run_id,
+        attempt_id=attempt.attempt_id,
+        lab_id=run.lab_id,
+        device_id=os.getenv("NETREGRESS_DEVICE_ID", "client_vm"),
+        resolved_config=persisted_config,
+        test_registry=registry,
+        artifact_service=ArtifactService.from_sqlite(service.run_repository.database),
+        command_runner=None,
+        logger=logging.getLogger("netregress"),
+    )
 
 
 def pytest_sessionfinish(session, exitstatus):
@@ -201,10 +225,14 @@ def pytest_sessionfinish(session, exitstatus):
     if context is None:
         return
 
-    service, run_id, _attempt_id = context
     if exitstatus == 0:
-        service.complete_run(run_id)
+        context.run_service.complete_run(context.run_id)
     elif exitstatus == 2:
-        service.abort_run(run_id)
+        context.run_service.abort_run(context.run_id)
     else:
-        service.fail_run(run_id)
+        context.run_service.fail_run(context.run_id)
+
+
+@pytest.fixture(scope="session")
+def run_context(request):
+    return getattr(request.config, "_netregress_run_context", None)

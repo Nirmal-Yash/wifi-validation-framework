@@ -1,3 +1,5 @@
+from .test_registry import TestDefinition, TestRegistry
+from .run_context import RunContext
 from .legacy_migration import LegacyDatabaseMigrationService
 from .artifact_service import ArtifactService
 from .metric_collector import MetricCollector
@@ -10,6 +12,9 @@ from .run_service import (
 )
 
 __all__ = [
+    "RunContext",
+    "TestDefinition",
+    "TestRegistry",
     "LegacyDatabaseMigrationService",
     "ArtifactService",
     "MetricCollector",
