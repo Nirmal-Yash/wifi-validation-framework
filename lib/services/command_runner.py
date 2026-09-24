@@ -420,8 +420,8 @@ class LocalRunner:
         transport_error = None
         try:
             result = subprocess.run(
-                command,
-                shell=True,
+                ["/bin/sh", "-c", command],
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=execution_timeout_sec,

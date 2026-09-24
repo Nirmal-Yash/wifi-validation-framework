@@ -37,8 +37,7 @@ class DiagnosticBundleService:
             "extra":dict(extra or {}),
         }
         out_dir=self.results_root/"diagnostics"/run_id;out_dir.mkdir(parents=True,exist_ok=True)
-        manifest_path=out_dir/"manifest.json";manifest_path.write_text(json.dumps(manifest,sort_keys=True,indent=2)+"
-",encoding="utf-8")
+        manifest_path=out_dir/"manifest.json";manifest_path.write_text(json.dumps(manifest,sort_keys=True,indent=2)+"\n",encoding="utf-8")
         archive_path=out_dir/f"{manifest['bundle_id']}.zip"
         with zipfile.ZipFile(archive_path,"w",compression=zipfile.ZIP_DEFLATED) as z:
             z.write(manifest_path,arcname="manifest.json")

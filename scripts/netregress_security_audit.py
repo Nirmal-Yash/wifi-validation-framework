@@ -34,9 +34,10 @@ def main()->int:
             for pattern in SECRET_PATTERNS:
                 if pattern.search(text):
                     findings.append({"severity":"HIGH","code":"TRACKED_SECRET_PATTERN","path":rel})
-            for line_no,line in enumerate(text.splitlines(),1):
-                if re.search(r"\b(TODO|FIXME)\b",line):
-                    findings.append({"severity":"MEDIUM","code":"TODO_IN_PRODUCTION_PATH","path":rel,"line":line_no})
+            if rel != "scripts/netregress_security_audit.py":
+                for line_no,line in enumerate(text.splitlines(),1):
+                    if re.search(r"\b(TODO|FIXME)\b",line):
+                        findings.append({"severity":"MEDIUM","code":"TODO_IN_PRODUCTION_PATH","path":rel,"line":line_no})
     tools={tool:bool(shutil.which(tool)) for tool in ("bandit","semgrep","pip-audit")}
     report={"schema_version":"netregress-security-audit.v1","tools":tools,"finding_count":len(findings),"findings":findings}
     print(json.dumps(report,indent=2,sort_keys=True))

@@ -26,7 +26,6 @@ class ReleaseGateIssue:
 @dataclass(frozen=True, slots=True)
 class ReleaseGateInput:
     run_lifecycle: str
-    run_id: str | None = None
     lab_health: str | None
     baseline_available: bool
     required_test_ids: tuple[str, ...]
@@ -36,6 +35,7 @@ class ReleaseGateInput:
     regression_classifications: Mapping[str, str]
     policy: ReleaseGatePolicy = field(default_factory=ReleaseGatePolicy)
     waivers: tuple[ReleaseWaiver, ...] = ()
+    run_id: str | None = None
 
 @dataclass(frozen=True, slots=True)
 class ReleaseGateDecision:

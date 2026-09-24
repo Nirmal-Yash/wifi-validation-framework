@@ -27,6 +27,5 @@ class ReproductionManifestService:
         versions=dict(run.test_definition_versions)
         payload={"manifest_version":"netregress-reproduction.v1","run_id":run_id,"firmware_version":run.firmware_version,"lab_id":run.lab_id,"repository_commit":run.repository_commit or repository_commit(str(self.root)),"configuration_hash":run.configuration_hash,"selected_tests":list(run.selected_tests),"test_definition_versions":versions,"validation_profile":run.validation_profile,"environment_fingerprint":getattr(run.environment,"tools",{}).get("fingerprint") if run.environment else None,"resolved_config":dict(run.resolved_config)}
         out=Path(output_dir or self.root/"results"/"reproduction");out.mkdir(parents=True,exist_ok=True)
-        path=out/f"{run_id}.json";path.write_text(json.dumps(payload,sort_keys=True,indent=2)+"
-",encoding="utf-8")
+        path=out/f"{run_id}.json";path.write_text(json.dumps(payload,sort_keys=True,indent=2)+"\n",encoding="utf-8")
         return ReproductionManifest("netregress-reproduction.v1",run_id,run.firmware_version,run.lab_id,payload["repository_commit"],run.configuration_hash,tuple(run.selected_tests),versions,run.validation_profile,payload["environment_fingerprint"],path)
