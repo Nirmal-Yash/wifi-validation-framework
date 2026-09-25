@@ -11,6 +11,13 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$SCRIPT_DIR}"
 cd "$REPO_ROOT"
 
+if [[ -f "$REPO_ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.env"
+  set +a
+fi
+
 # Lab addressing (must stay consistent with configs/*.yaml and the reproduction guide)
 LAB_GW="192.168.122.1"
 LAB_MASK="255.255.255.0"
@@ -22,7 +29,13 @@ CLIENT_WIFI_IP="192.168.122.30"
 CLIENT_MGMT_IP="10.10.10.30"
 MONITOR_IP="192.168.122.40"
 SSID="TestNet_5G"
-WIFI_PSK="Test@12345"
+WIFI_PSK="${WIFI_TEST_PSK:-Test@12345}"
+WIFI_ROUTER1_PASSWORD="${WIFI_ROUTER1_PASSWORD:-admin}"
+WIFI_ROUTER2_PASSWORD="${WIFI_ROUTER2_PASSWORD:-admin}"
+WIFI_AP_HOST_PASSWORD="${WIFI_AP_HOST_PASSWORD:-admin}"
+WIFI_CLIENT_VM_PASSWORD="${WIFI_CLIENT_VM_PASSWORD:-admin}"
+WIFI_MONITOR_VM_PASSWORD="${WIFI_MONITOR_VM_PASSWORD:-admin}"
+export WIFI_TEST_PSK="$WIFI_PSK" WIFI_ROUTER1_PASSWORD WIFI_ROUTER2_PASSWORD WIFI_AP_HOST_PASSWORD WIFI_CLIENT_VM_PASSWORD WIFI_MONITOR_VM_PASSWORD
 GNS3_API="${GNS3_API:-http://127.0.0.1:3080}"
 GNS3_PROJECT_NAME="${GNS3_PROJECT_NAME:-WiFi-Regression-Lab}"
 
@@ -529,15 +542,15 @@ repro_reset_runtime() {
 }
 
 set_admin_and_sshd() {
-  local c="$1"
+  local c="$1" password="${2:-admin}"
   dexec "$c" sh -c '\
     useradd -m -s /bin/bash admin 2>/dev/null || true; \
-    echo "admin:admin" | chpasswd; \
+    echo "admin:$1" | chpasswd; \
     usermod -aG sudo admin 2>/dev/null || true; \
     printf "%s\\n" "admin ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/admin; \
     chmod 440 /etc/sudoers.d/admin; \
     mkdir -p /run/sshd; \
-    /usr/sbin/sshd 2>/dev/null || true'
+    /usr/sbin/sshd 2>/dev/null || true' sh "$password"
 }
 
 validate_default_network() {
@@ -754,39 +767,11 @@ echo "Management gateway ${MGMT_GW}/24 present on ${LAB_BRIDGE}."
 # ---------------------------------------------------------------------------
 step "Repair Python dependencies and required local repository configuration"
 "$PYTHON" -m pip install --upgrade pip setuptools wheel
-"$PYTHON" -m pip install 'netmiko==4.7.0' 'pytest==8.1.0' 'pytest-html==4.1.1' 'PyYAML>=6.0' 'scapy==2.5.0' 'python-dotenv>=1.0.0'
+[[ -f "$REPO_ROOT/requirements.txt" ]] || die "requirements.txt is missing."
+"$PYTHON" -m pip install -r "$REPO_ROOT/requirements.txt"
+"$PYTHON" -m pip check
 
-for f in requirements.txt configs/devices.yaml configs/test_params.yaml configs/topology.yaml pytest.ini; do backup_once "$REPO_ROOT/$f"; done
-
-# Merge required pins into requirements.txt without dropping dashboard deps
-"$PYTHON" - <<'PY'
-from pathlib import Path
-req=Path('requirements.txt')
-lines=req.read_text().splitlines() if req.exists() else []
-required={
- 'netmiko':'netmiko==4.7.0',
- 'pytest':'pytest==8.1.0',
- 'pytest-html':'pytest-html==4.1.1',
- 'pyyaml':'PyYAML>=6.0',
- 'scapy':'scapy==2.5.0',
- 'python-dotenv':'python-dotenv>=1.0.0',
-}
-out=[]; seen=set()
-for line in lines:
-    raw=line.strip()
-    if not raw or raw.startswith('#'):
-        out.append(line); continue
-    name=raw.split('==')[0].split('>=')[0].split('<=')[0].strip().lower().replace('_','-')
-    if name in required:
-        out.append(required[name]); seen.add(name)
-    else:
-        out.append(line)
-for k,v in required.items():
-    if k not in seen:
-        out.append(v)
-req.write_text('\n'.join(out).rstrip()+'\n')
-print('requirements.txt normalized')
-PY
+for f in configs/devices.yaml configs/test_params.yaml configs/topology.yaml pytest.ini; do backup_once "$REPO_ROOT/$f"; done
 
 mkdir -p configs results/captures results/setup-logs
 if [[ ! -f pytest.ini ]]; then
@@ -859,7 +844,7 @@ dexec "$AP" sh -c "
   printf 'nameserver 8.8.8.8\\n' >/etc/resolv.conf
 "
 apt_install_container "$AP" hostapd openssh-server bridge-utils iw wpasupplicant sudo iproute2 iputils-ping
-set_admin_and_sshd "$AP"
+set_admin_and_sshd "$AP" "$WIFI_AP_HOST_PASSWORD"
 
 dexec "$AP" sh -c "
   ip link add br0 type bridge 2>/dev/null || true
@@ -911,7 +896,7 @@ dexec "$MONITOR" sh -c "
   printf 'nameserver 8.8.8.8\\n' >/etc/resolv.conf
 "
 apt_install_container "$MONITOR" openssh-server sudo tcpdump iproute2 iputils-ping
-set_admin_and_sshd "$MONITOR"
+set_admin_and_sshd "$MONITOR" "$WIFI_MONITOR_VM_PASSWORD"
 dexec "$MONITOR" rm -f /etc/profile.d/80-systemd-osc-context.sh
 
 MONITOR_MAC="$(dexec "$MONITOR" cat /sys/class/net/eth0/address | tr -d '\r\n')"
@@ -929,7 +914,7 @@ dexec "$CLIENT" sh -c "
   printf 'nameserver 8.8.8.8\\n' >/etc/resolv.conf
 "
 apt_install_container "$CLIENT" iw wpasupplicant openssh-server iperf3 bind9-dnsutils isc-dhcp-client sudo iproute2 iputils-ping
-set_admin_and_sshd "$CLIENT"
+set_admin_and_sshd "$CLIENT" "$WIFI_CLIENT_VM_PASSWORD"
 dexec "$CLIENT" rm -f /etc/profile.d/80-systemd-osc-context.sh
 
 dexec "$CLIENT" sh -c "
