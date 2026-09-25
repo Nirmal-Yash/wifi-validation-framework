@@ -314,7 +314,9 @@ class WifiTelemetryService:
         snapshot = self.capture(run_id=run_id, interface=interface)
         self.output_directory.mkdir(parents=True, exist_ok=True)
         safe_interface = re.sub(r"[^A-Za-z0-9_.:-]+", "_", interface)
-        path = self.output_directory / f"{run_id}-{safe_interface}.json"
+        path = self.output_directory / (
+            f"{run_id}-{safe_interface}-{snapshot.snapshot_id}.json"
+        )
         self.write_json(snapshot, path)
         artifact = artifact_service.register_file(
             run_id=run_id,
