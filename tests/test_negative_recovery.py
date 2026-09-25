@@ -7,6 +7,7 @@ import pytest
 
 pytestmark = pytest.mark.real_lab
 
+from lib.services.wifi_state import assess_wifi_association
 from lib.traffic import run_dns_lookup
 
 
@@ -26,15 +27,35 @@ def _client_output(run_context, command: str) -> str:
     ).stdout
 
 
-def _wifi_state(run_context) -> str:
-    return _client_output(
+def _wifi_observation(run_context) -> tuple[str, str]:
+    status = _client_output(
         run_context,
         "sudo wpa_cli -i wlan0 status 2>/dev/null || true",
     )
+    link = _client_output(
+        run_context,
+        "sudo iw dev wlan0 link 2>/dev/null || true",
+    )
+    return status, link
+
+
+def _wifi_state(run_context) -> str:
+    status, link = _wifi_observation(run_context)
+    return f"{status}\n--- iw link ---\n{link}"
 
 
 def _wifi_connected(run_context) -> bool:
-    return "wpa_state=COMPLETED" in _wifi_state(run_context)
+    status, link = _wifi_observation(run_context)
+    expected_ssid = (
+        run_context.resolved_config.get("wifi", {}).get("ssid")
+        if run_context is not None
+        else None
+    )
+    return assess_wifi_association(
+        wpa_status=status,
+        iw_link=link,
+        expected_ssid=expected_ssid,
+    ).connected
 
 
 def _wait_for_wifi(run_context, *, connected: bool, timeout_sec: float) -> bool:
