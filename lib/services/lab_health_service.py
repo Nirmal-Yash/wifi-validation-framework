@@ -495,7 +495,7 @@ class LabHealthService:
             idempotent=True,
         )
         duration = int((time.monotonic() - started) * 1000)
-        if result.transport_error or result.exit_code != 0 or not result.stdout.strip():
+        if result.transport_error or result.exit_code not in {None, 0} or not result.stdout.strip():
             return (
                 HealthObservationStatus.FAILED,
                 duration,
