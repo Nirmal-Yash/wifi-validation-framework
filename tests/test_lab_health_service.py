@@ -10,15 +10,7 @@ class FakeRunner:
         if target == "lab_host":
             if command_text.startswith("df "):
                 output = "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/sda 10000000 1000 9000000 1% /"
-                return CommandResult(
-            "cmd",
-            target,
-            "lab_health",
-            command_text,
-            stdout=output,
-            exit_code=None if command_text.startswith("pgrep") else 0,
-            transport="fake",
-        )
+                return CommandResult("cmd", target, "lab_health", command_text, stdout=output, exit_code=0, transport="fake")
             if command_text.startswith("timedatectl "):
                 return CommandResult("cmd", target, "lab_health", command_text, stdout="yes\n", exit_code=0, transport="fake")
             return CommandResult("cmd", target, "lab_health", command_text, stdout="healthy\n", exit_code=0, transport="fake")
@@ -35,7 +27,15 @@ class FakeRunner:
             output = "2: wlan0: <BROADCAST,UP,LOWER_UP>\n"
         else:
             output = "NETREGRESS_HEALTH_OK\n"
-        return CommandResult("cmd", target, "lab_health", command_text, stdout=output, exit_code=0, transport="fake")
+        return CommandResult(
+            "cmd",
+            target,
+            "lab_health",
+            command_text,
+            stdout=output,
+            exit_code=None if command_text.startswith("pgrep") else 0,
+            transport="fake",
+        )
 
 
 class FakeArtifactService:
