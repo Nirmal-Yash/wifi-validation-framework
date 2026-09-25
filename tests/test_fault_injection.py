@@ -12,6 +12,7 @@ import pytest
 pytestmark = pytest.mark.real_lab
 
 from lib.fault_injector import clear_conditions, fault_context, link_down, link_up
+from lib.services.wifi_state import assess_wifi_association
 
 
 def client_ping(connection_pool, router_ip, count=3):
@@ -61,11 +62,20 @@ def test_fault_injection_link_down_up(params, connection_pool, metric_logger):
             "client_vm",
             "wpa_cli -i wlan0 status 2>/dev/null || true",
         )
+        link = connection_pool.send_command(
+            "client_vm",
+            "iw dev wlan0 link 2>/dev/null || true",
+        )
         addr = connection_pool.send_command(
             "client_vm",
             f"ip -4 addr show {iface} 2>/dev/null || true",
         )
-        if "wpa_state=COMPLETED" in state and f"inet {expected_ip}/" in addr:
+        association = assess_wifi_association(
+            wpa_status=state,
+            iw_link=link,
+            expected_ssid=params["wifi"]["ssid"],
+        )
+        if association.connected and f"inet {expected_ip}/" in addr:
             recovered = client_ping(connection_pool, router_ip, 3)
             if recovered["success"]:
                 break
