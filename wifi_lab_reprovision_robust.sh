@@ -553,6 +553,23 @@ set_admin_and_sshd() {
     /usr/sbin/sshd 2>/dev/null || true' sh "$password"
 }
 
+client_wifi_ready() {
+  dexec "$CLIENT" sh -c '
+    expected="$1"
+    status="$(wpa_cli -i wlan0 status 2>/dev/null || true)"
+    link="$(iw dev wlan0 link 2>/dev/null || true)"
+
+    if printf "%s\n" "$status" | grep -q "^wpa_state="; then
+      printf "%s\n" "$status" | grep -q "^wpa_state=COMPLETED$" || exit 1
+    else
+      printf "%s\n" "$link" | grep -q "^Connected to " || exit 1
+    fi
+
+    printf "%s\n" "$link" | grep -Fq "SSID: $expected" || exit 1
+    printf "%s\n" "$status" | grep -Eq "^key_mgmt=(WPA2-PSK|WPA-PSK)$"
+  ' sh "$SSID"
+}
+
 validate_default_network() {
   local xml bridge ipaddr netmask
   xml="$("${VIRSH[@]}" net-dumpxml default)"
@@ -959,7 +976,7 @@ done
 dexec "$CLIENT" sh -c 'test -S /run/wpa_supplicant/wlan0' || die "wpa_supplicant control socket missing on client wlan0."
 
 for _try in {1..30}; do
-  if dexec "$CLIENT" sh -c 'wpa_cli -i wlan0 status | grep -q "wpa_state=COMPLETED"'; then
+  if client_wifi_ready; then
     break
   fi
   # Nudge association if stuck
@@ -968,9 +985,9 @@ for _try in {1..30}; do
   fi
   sleep 1
 done
-dexec "$CLIENT" sh -c 'wpa_cli -i wlan0 status | grep -q "wpa_state=COMPLETED"' || {
+client_wifi_ready || {
   dexec "$CLIENT" sh -c 'wpa_cli -i wlan0 status; iw dev wlan0 link' || true
-  die "Client failed to complete WPA2 association to ${SSID}."
+  die "Client failed to complete a verified WPA2 association to ${SSID}."
 }
 
 WIFI_MAC="$(dexec "$CLIENT" cat /sys/class/net/wlan0/address | tr -d '\r\n')"
@@ -1009,8 +1026,10 @@ fi
 step "Validate isolated management and real WiFi data path"
 wait_for_management
 
-dexec "$CLIENT" sh -c "wpa_cli -i wlan0 status | grep -q 'ssid=${SSID}'"
-dexec "$CLIENT" sh -c 'wpa_cli -i wlan0 status | grep -q "wpa_state=COMPLETED"'
+client_wifi_ready || {
+  dexec "$CLIENT" sh -c 'wpa_cli -i wlan0 status; iw dev wlan0 link' || true
+  die "Final WiFi association verification failed for ${SSID}."
+}
 # Non-destructive SSID check (iw scan can break hwsim association mid-validation).
 dexec "$CLIENT" sh -c "iw dev wlan0 link | grep -q 'SSID: ${SSID}'"
 dexec "$CLIENT" sh -c "ping -c 3 -W 3 ${FRR_IP} >/dev/null"
@@ -1047,7 +1066,8 @@ step "Run the complete real regression suite"
 step "Final service and DHCP verification"
 "${VIRSH[@]}" net-dhcp-leases default || true
 dexec "$FRR" sh -c 'ss -lnt 2>/dev/null | grep -q "\\*:5201"'
-dexec "$CLIENT" sh -c "ss -lnt 2>/dev/null | grep -q ':22'; wpa_cli -i wlan0 status | grep -q 'wpa_state=COMPLETED'; ip -4 addr show wlan0 | grep -q '${CLIENT_WIFI_IP}/24'"
+client_wifi_ready
+dexec "$CLIENT" sh -c "ip -4 addr show wlan0 | grep -q '${CLIENT_WIFI_IP}/24'"
 dexec "$MONITOR" sh -c 'command -v tcpdump >/dev/null'
 
 echo
