@@ -108,6 +108,43 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger, run_
             read_timeout=30,
         )
 
+        def wait_for_capture_data(timeout_sec=8):
+            deadline = time.time() + timeout_sec
+            while time.time() < deadline:
+                size_output, _, _ = ap_exec(
+                    f"sudo -n stat -c%s {shlex.quote(remote_pcap)} 2>/dev/null || echo 0",
+                    timeout=10,
+                )
+                size = size_output.strip()
+                if size.isdigit() and int(size) > 64:
+                    return True
+                time.sleep(0.5)
+            return False
+
+        # Give libpcap/kernel buffers time to drain before terminating tcpdump.
+        captured = wait_for_capture_data()
+        if not captured:
+            # A DHCP client may retain a valid lease and emit no useful renewal
+            # frames on the first invocation. Force one additional transaction
+            # while the capture process is still alive.
+            connection_pool.send_command(
+                "client_vm",
+                f"sudo dhclient -r {client_iface} 2>/dev/null || true; "
+                f"sudo dhclient {client_iface}",
+                read_timeout=30,
+            )
+            captured = wait_for_capture_data()
+
+        if not captured:
+            log, _, _ = ap_exec(
+                "cat /tmp/dhcp_capture.log 2>/dev/null || true",
+                timeout=10,
+                check=False,
+            )
+            raise AssertionError(
+                f"tcpdump observed no persisted DHCP frames on {capture_device}: {log!r}"
+            )
+
         # SIGINT lets tcpdump finish normally and flush the pcap cleanly.
         ap_exec(
             f"sudo -n kill -INT {pid}",
