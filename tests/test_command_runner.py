@@ -109,6 +109,15 @@ def test_default_policy_blocks_shell_and_destructive_operations():
         policy.validate("client_vm", ["ip", "link", "set", "wlan0", "down"], shell=False)
 
 
+def test_default_policy_allows_dnsmasq_for_router_dhcp_recovery():
+    policy = CommandSecurityPolicy.default()
+    policy.validate(
+        "router1",
+        "sudo dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf 2>/dev/null || true",
+        shell=True,
+    )
+
+
 def test_compatibility_policy_allows_known_lab_commands_only():
     policy = CommandSecurityPolicy.compatibility()
 
