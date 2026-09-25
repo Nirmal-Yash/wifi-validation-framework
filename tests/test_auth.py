@@ -14,7 +14,7 @@ pytestmark = pytest.mark.real_lab
 
 @pytest.mark.regression
 def test_wpa2_authentication(connection_pool, params, metric_logger):
-    """Client should be authenticated to the AP with WPA2-PSK and state COMPLETED."""
+    """Client should be authenticated to the AP with verified WPA2-PSK association."""
     ssid = params["wifi"]["ssid"]
     status = connection_pool.send_command(
         "client_vm",
