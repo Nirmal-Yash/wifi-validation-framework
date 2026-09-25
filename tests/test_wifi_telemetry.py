@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import json
+from pathlib import Path
 import pytest
 
 from lib.domain.telemetry import TelemetryEnvironmentClass, TelemetryMetric
@@ -136,3 +137,37 @@ def test_json_serialization_repeats_environment_class_on_every_point(tmp_path):
     assert payload["environment_class"] == "VIRTUAL_WIFI"
     assert payload["points"]
     assert all(point["environment_class"] == "VIRTUAL_WIFI" for point in payload["points"])
+
+
+class FakeArtifactService:
+    def __init__(self):
+        self.calls = []
+
+    def register_file(self, **kwargs):
+        self.calls.append(kwargs)
+        return kwargs
+
+
+def test_capture_and_register_creates_immutable_paths(tmp_path):
+    service = WifiTelemetryService(
+        command_runner=FakeRunner(),
+        target="client_vm",
+        environment_class=TelemetryEnvironmentClass.VIRTUAL_WIFI,
+        output_directory=tmp_path,
+    )
+    artifacts = FakeArtifactService()
+
+    first = service.capture_and_register(
+        run_id="run-repeat",
+        artifact_service=artifacts,
+        interface="wlan0",
+    )
+    second = service.capture_and_register(
+        run_id="run-repeat",
+        artifact_service=artifacts,
+        interface="wlan0",
+    )
+
+    assert first[1]["path"] != second[1]["path"]
+    assert Path(first[1]["path"]).is_file()
+    assert Path(second[1]["path"]).is_file()
