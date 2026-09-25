@@ -5,11 +5,26 @@ NetRegress is an evidence-driven WiFi/network validation and regression engine. 
 ## Protected behavioral baseline
 
 ~~~text
-436026eba597b2c6ae2e291a9cd8054b70ebbf7c
-11 / 11 real-lab tests PASS
+commit: 436026eba597b2c6ae2e291a9cd8054b70ebbf7c
+historical result: 11 / 11 real-lab tests PASS
 ~~~
 
-That historical baseline protects the network behavior contract while the application architecture is organized around Run-scoped evidence. It is a reference baseline, not a claim that the current main branch has re-certified the lab.
+That is the historical network-behavior baseline. The current test suite is much larger because it now includes hardware-free Runner, persistence, security, evidence, recovery, API and release-contract tests.
+
+Use these scopes explicitly:
+
+~~~bash
+# Full repository verification suite
+pytest tests/ -v --firmware-version=v1.0
+
+# Protected GNS3/mac80211_hwsim tests only
+pytest -m real_lab tests/ -v --firmware-version=v1.0
+
+# See the current REAL_LAB test count without executing
+pytest -m real_lab tests/ --collect-only -q
+~~~
+
+The historical 11/11 result must not be interpreted as the expected collection count of the current full suite.
 
 ## Current capabilities
 
