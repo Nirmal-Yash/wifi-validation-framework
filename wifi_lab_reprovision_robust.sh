@@ -793,11 +793,18 @@ export FORCE_NORMALIZE_CONFIG="${FORCE_NORMALIZE_CONFIG}"
 "$PYTHON" - <<'PY'
 from pathlib import Path
 import netmiko
+import scapy
 from scapy.all import BOOTP,DHCP,DNS,EAPOL,IP,UDP,Dot11,Dot11Beacon,Dot11Elt,Ether,rdpcap,wrpcap
+from scapy.layers.eap import EAPOL_KEY
 for p in ('lib/connector.py','lib/traffic.py','lib/wifi_analyzer.py'):
     compile(Path(p).read_text(),p,'exec')
+if tuple(int(part) for part in scapy.__version__.split('.')[:2]) < (2, 7):
+    raise SystemExit(f'Scapy {scapy.__version__} is too old; requirements.txt requires scapy==2.7.0')
+if EAPOL_KEY is None:
+    raise SystemExit('Scapy EAPOL_KEY API is unavailable; protocol-evidence tests cannot run')
 print('Netmiko:',netmiko.__version__)
-print('Scapy BOOTP/DHCP/WiFi imports: OK')
+print('Scapy:',scapy.__version__)
+print('Scapy BOOTP/DHCP/WiFi/EAPOL_KEY imports: OK')
 PY
 
 # ---------------------------------------------------------------------------
