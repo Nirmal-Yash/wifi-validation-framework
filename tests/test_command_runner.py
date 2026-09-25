@@ -109,7 +109,7 @@ def test_default_policy_blocks_shell_and_destructive_operations():
         policy.validate("client_vm", ["ip", "link", "set", "wlan0", "down"], shell=False)
 
 
-def test_default_policy_allows_dnsmasq_for_router_dhcp_recovery():
+def test_compatibility_policy_allows_dnsmasq_for_router_dhcp_recovery():
     policy = CommandSecurityPolicy.compatibility()
     policy.validate(
         "router1",
