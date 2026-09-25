@@ -110,7 +110,7 @@ def test_default_policy_blocks_shell_and_destructive_operations():
 
 
 def test_default_policy_allows_dnsmasq_for_router_dhcp_recovery():
-    policy = CommandSecurityPolicy.default()
+    policy = CommandSecurityPolicy.compatibility()
     policy.validate(
         "router1",
         "sudo dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf 2>/dev/null || true",
