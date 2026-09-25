@@ -675,13 +675,27 @@ The framework must prove real system behavior, while the refactor must prove it 
 
 The current GNS3/mac80211_hwsim suite remains mandatory for any change affecting execution, networking, provisioning, capture, adapters or orchestration.
 
-Command:
+The current repository has two relevant test scopes.
+
+**Full verification suite** (hardware-free contracts plus protected real-lab tests):
 
 ~~~bash
 pytest tests/ -v --firmware-version=v1.0
 ~~~
 
-Expected baseline: 11/11 PASS.
+**Protected GNS3/mac80211_hwsim suite only:**
+
+~~~bash
+pytest -m real_lab tests/ -v --firmware-version=v1.0
+~~~
+
+To inspect the current protected-suite collection count without executing:
+
+~~~bash
+pytest -m real_lab tests/ --collect-only -q
+~~~
+
+The documented **11/11 PASS** result belongs specifically to the historical protected baseline commit `436026eba597b2c6ae2e291a9cd8054b70ebbf7c`; it is not the expected collection count of the expanded current repository suite.
 
 ## 3. Test layers
 
