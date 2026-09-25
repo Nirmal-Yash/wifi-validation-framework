@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -65,13 +66,32 @@ def firmware_version(request):
     return request.config.getoption("--firmware-version")
 
 
+_ENV_MARKER = re.compile(r"^__ENV__:([A-Z0-9_]+)$")
+
+
+def _resolve_env_markers(value):
+    if isinstance(value, dict):
+        return {k: _resolve_env_markers(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve_env_markers(v) for v in value]
+    if isinstance(value, str):
+        match = _ENV_MARKER.match(value)
+        if match:
+            variable = match.group(1)
+            resolved = os.getenv(variable)
+            if not resolved:
+                raise RuntimeError(f"Required environment secret is not configured: {variable}")
+            return resolved
+    return value
+
+
 @pytest.fixture(scope="session")
 def params():
     params_path = ROOT / "configs" / "test_params.yaml"
     if not params_path.exists():
         raise FileNotFoundError(f"Configuration file missing: {params_path}")
     with open(params_path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return _resolve_env_markers(yaml.safe_load(f) or {})
 
 
 @pytest.fixture(scope="session")
