@@ -31,8 +31,7 @@ def test_explicit_wpa_completed_is_accepted():
 
 
 def test_driver_link_is_fallback_when_wpa_state_is_missing():
-    status = COMPLETED_STATUS.replace("wpa_state=COMPLETED
-", "")
+    status = COMPLETED_STATUS.replace("wpa_state=COMPLETED\n", "")
     state = assess_wifi_association(
         wpa_status=status,
         iw_link=CONNECTED_LINK,
