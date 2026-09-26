@@ -177,13 +177,13 @@ apt_install_container() {
     echo "Container $c already has required packages: $*"
     return 0
   fi
-  dexec "$c" sh -c 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y "$@"' sh "$@"
+  dexec "$c" sh -c 'export DEBIAN_FRONTEND=noninteractive; apt-get -qq update && apt-get -qq install -y "$@"' sh "$@"
 }
 
 apk_install_container() {
   local c="$1"; shift
   container_os_is "$c" alpine || die "Container $c must be Alpine for this step."
-  dexec "$c" sh -c 'apk update && apk add "$@"' sh "$@"
+  dexec "$c" sh -c 'apk -q update && apk -q add "$@"' sh "$@"
 }
 
 find_gns3_container() {
@@ -680,8 +680,8 @@ for p in docker.io libvirt-clients libvirt-daemon-system iproute2 iputils-ping i
 done
 if ((${#missing[@]})); then
   if ((HAVE_SUDO_N)); then
-    sudo -n apt-get update
-    DEBIAN_FRONTEND=noninteractive sudo -n apt-get install -y "${missing[@]}"
+    sudo -n apt-get -qq update
+    DEBIAN_FRONTEND=noninteractive sudo -n apt-get -qq install -y "${missing[@]}"
   else
     die "Missing host packages: ${missing[*]}. Install them (sudo apt-get install ...) then rerun."
   fi
@@ -783,9 +783,9 @@ echo "Management gateway ${MGMT_GW}/24 present on ${LAB_BRIDGE}."
 # 3. PYTHON + LOCAL REPOSITORY BASELINE
 # ---------------------------------------------------------------------------
 step "Repair Python dependencies and required local repository configuration"
-"$PYTHON" -m pip install --upgrade pip setuptools wheel
+"$PYTHON" -m pip -q install --upgrade pip setuptools wheel
 [[ -f "$REPO_ROOT/requirements.txt" ]] || die "requirements.txt is missing."
-"$PYTHON" -m pip install -r "$REPO_ROOT/requirements.txt"
+"$PYTHON" -m pip -q install -r "$REPO_ROOT/requirements.txt"
 "$PYTHON" -m pip check
 
 for f in configs/devices.yaml configs/test_params.yaml configs/topology.yaml pytest.ini; do backup_once "$REPO_ROOT/$f"; done
