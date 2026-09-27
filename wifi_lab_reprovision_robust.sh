@@ -583,23 +583,63 @@ client_wifi_ready() {
   ' sh "$SSID"
 }
 
+disable_libvirt_dhcp() {
+  local xml
+  xml="$("${VIRSH[@]}" net-dumpxml default)"
+
+  while IFS= read -r range; do
+    [[ -n "$range" ]] || continue
+    "${VIRSH[@]}" net-update default delete ip-dhcp-range "$range" --live --config >/dev/null 2>&1 || true
+  done < <(
+    "$PYTHON" - "$xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.fromstring(sys.argv[1])
+for item in root.findall(".//dhcp/range"):
+    start, end = item.get("start"), item.get("end")
+    if start and end:
+        print("<range start='{}' end='{}'/ >".format(start, end).replace('/ >','/>'))
+PY
+  )
+
+  xml="$("${VIRSH[@]}" net-dumpxml default)"
+  while IFS= read -r host; do
+    [[ -n "$host" ]] || continue
+    "${VIRSH[@]}" net-update default delete ip-dhcp-host "$host" --live --config >/dev/null 2>&1 || true
+  done < <(
+    "$PYTHON" - "$xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.fromstring(sys.argv[1])
+for item in root.findall(".//dhcp/host"):
+    attrs = [("mac", item.get("mac")), ("name", item.get("name")), ("ip", item.get("ip"))]
+    rendered = ["{}='{}'".format(key, value) for key, value in attrs if value]
+    if rendered:
+        print("<host " + " ".join(rendered) + "/>")
+PY
+  )
+
+  xml="$("${VIRSH[@]}" net-dumpxml default)"
+  if grep -q '<range ' <<<"$xml" || grep -q '<host ' <<<"$xml"; then
+    die "Libvirt default network still contains DHCP ranges/hosts; FRR dnsmasq requires exclusive DHCP ownership."
+  fi
+  echo "Libvirt default network DHCP disabled; FRR dnsmasq is the sole lab DHCP server."
+}
+
 validate_default_network() {
   local xml bridge ipaddr netmask
   xml="$("${VIRSH[@]}" net-dumpxml default)"
 
-  bridge="$(printf '%s\n' "$xml" | sed -n "s/.*<bridge[^>]*name=['\"]\\([^'\"]*\\)['\"].*/\\1/p" | head -n1)"
-  ipaddr="$(printf '%s\n' "$xml" | sed -n "s/.*<ip[^>]*address=['\"]\\([^'\"]*\\)['\"].*/\\1/p" | head -n1)"
-  netmask="$(printf '%s\n' "$xml" | sed -n "s/.*<ip[^>]*netmask=['\"]\\([^'\"]*\\)['\"].*/\\1/p" | head -n1)"
+  bridge="$(printf '%s\n' "$xml" | sed -n "s/.*<bridge[^>]*name=['\"]\([^'\"]*\)['\"].*/\1/p" | head -n1)"
+  ipaddr="$(printf '%s\n' "$xml" | sed -n "s/.*<ip[^>]*address=['\"]\([^'\"]*\)['\"].*/\1/p" | head -n1)"
+  netmask="$(printf '%s\n' "$xml" | sed -n "s/.*<ip[^>]*netmask=['\"]\([^'\"]*\)['\"].*/\1/p" | head -n1)"
 
   [[ "$bridge" == "$LAB_BRIDGE" ]] || die "Libvirt default bridge is '$bridge' (expected $LAB_BRIDGE)."
   [[ "$ipaddr" == "$LAB_GW" ]] || die "Libvirt default gateway is '$ipaddr' (expected $LAB_GW)."
   [[ "$netmask" == "$LAB_MASK" ]] || die "Libvirt default netmask is '$netmask' (expected $LAB_MASK)."
   echo "Libvirt default network OK: $bridge $ipaddr/$netmask"
-
-  if ! grep -q '<dhcp>' <<<"$xml" || ! grep -q '<range ' <<<"$xml"; then
-    echo "Default network DHCP range is missing; adding the standard 192.168.122.2-254 range."
-    "${VIRSH[@]}" net-update default add-last ip-dhcp-range "<range start='192.168.122.2' end='192.168.122.254'/>" --live --config
-  fi
 }
 
 ensure_libvirt_reservation() {
@@ -710,8 +750,7 @@ if ! "${VIRSH[@]}" net-info default >/dev/null 2>&1; then
   <forward mode='nat'/>
   <bridge name='${LAB_BRIDGE}' stp='on' delay='0'/>
   <ip address='${LAB_GW}' netmask='${LAB_MASK}'>
-    <dhcp><range start='192.168.122.2' end='192.168.122.254'/></dhcp>
-  </ip>
+  <ip address='${LAB_GW}' netmask='${LAB_MASK}'/>
 </network>
 XML
   "${VIRSH[@]}" net-define /tmp/wifi-default.xml
@@ -729,6 +768,7 @@ VENV="$REPO_ROOT/wifi-venv"
 if [[ ! -x "$VENV/bin/python" ]]; then python3 -m venv "$VENV"; fi
 PYTHON="$VENV/bin/python"
 export PYTHON GNS3_API GNS3_PROJECT_NAME
+disable_libvirt_dhcp
 validate_default_network
 
 # GNS3 API: open project, ensure management link, start nodes properly
@@ -869,7 +909,6 @@ fi
 
 dexec "$FRR" sh -c "ping -c 2 -W 3 ${LAB_GW} >/dev/null"
 FRR_MAC="$(dexec "$FRR" cat /sys/class/net/eth1/address | tr -d '\r\n')"
-ensure_libvirt_reservation "$FRR_MAC" "$FRR_IP"
 
 # ---------------------------------------------------------------------------
 # 7. AP
@@ -921,7 +960,6 @@ EOF
 dexec "$AP" iw dev wlan0 info | grep -q "ssid ${SSID}"
 dexec "$AP" sh -c 'bridge link | grep -q "master br0"'
 AP_MAC="$(dexec "$AP" cat /sys/class/net/eth0/address | tr -d '\r\n')"
-ensure_libvirt_reservation "$AP_MAC" "$AP_IP"
 dexec "$AP" sh -c "ping -c 2 -W 3 ${FRR_IP} >/dev/null"
 
 # ---------------------------------------------------------------------------
@@ -939,7 +977,6 @@ set_admin_and_sshd "$MONITOR" "$WIFI_MONITOR_VM_PASSWORD"
 dexec "$MONITOR" rm -f /etc/profile.d/80-systemd-osc-context.sh
 
 MONITOR_MAC="$(dexec "$MONITOR" cat /sys/class/net/eth0/address | tr -d '\r\n')"
-ensure_libvirt_reservation "$MONITOR_MAC" "$MONITOR_IP"
 dexec "$MONITOR" sh -c "ping -c 2 -W 3 ${FRR_IP} >/dev/null"
 
 # ---------------------------------------------------------------------------
@@ -1011,8 +1048,6 @@ CLIENT_ETH1_MAC="$(dexec "$CLIENT" cat /sys/class/net/eth1/address | tr -d '\r\n
 [[ "$WIFI_MAC" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] || die "Invalid wlan0 MAC: $WIFI_MAC"
 configure_frr_dhcp "$WIFI_MAC"
 # Keep virbr0 DHCP from handing 192.168.122.30 to eth0 before wlan0 claims the reservation.
-ensure_libvirt_reservation "$WIFI_MAC" "$CLIENT_WIFI_IP" "${CLIENT_ETH0_MAC},02:00:00:00:00:00"
-ensure_libvirt_reservation "$CLIENT_ETH1_MAC" "$CLIENT_MGMT_IP" "${CLIENT_ETH0_MAC}"
 
 dexec "$CLIENT" sh -c "
   dhclient -r wlan0 2>/dev/null || true
