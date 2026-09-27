@@ -495,7 +495,7 @@ provision_hwsim_radios() {
 configure_frr_dhcp() {
   local client_mac="${1:-}"
   dexec "$FRR" sh -c "
-    apk add --no-cache dnsmasq iperf3 2>/dev/null || true
+    apk -q add --no-cache dnsmasq iperf3 openssh-server sudo
     mkdir -p /etc/dnsmasq.d
     cat >/etc/dnsmasq.d/lab.conf <<EOF
 interface=eth1
@@ -551,6 +551,19 @@ set_admin_and_sshd() {
     chmod 440 /etc/sudoers.d/admin; \
     mkdir -p /run/sshd; \
     /usr/sbin/sshd 2>/dev/null || true' sh "$password"
+}
+
+set_alpine_admin_and_sshd() {
+  local c="$1" password="${2:-admin}"
+  dexec "$c" sh -c '\
+    adduser -D -s /bin/sh admin 2>/dev/null || true; \
+    echo "admin:$1" | chpasswd; \
+    mkdir -p /etc/sudoers.d /run/sshd; \
+    printf "%s\\n" "admin ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/admin; \
+    chmod 440 /etc/sudoers.d/admin; \
+    ssh-keygen -A >/dev/null 2>&1; \
+    /usr/sbin/sshd 2>/dev/null' sh "$password"
+  dexec "$c" pgrep sshd >/dev/null || die "sshd failed to start on $c."
 }
 
 client_wifi_ready() {
@@ -849,6 +862,7 @@ dexec "$FRR" sh -c "
   printf 'nameserver 8.8.8.8\\n' >/etc/resolv.conf
 "
 configure_frr_dhcp ""
+set_alpine_admin_and_sshd "$FRR" "$WIFI_ROUTER1_PASSWORD"
 if ! dexec "$FRR" sh -c 'ss -lnt 2>/dev/null | grep -q "\\*:5201"'; then
   dexec "$FRR" iperf3 -s -D
 fi
@@ -869,6 +883,7 @@ dexec "$AP" sh -c "
 "
 apt_install_container "$AP" hostapd openssh-server bridge-utils iw wpasupplicant sudo iproute2 iputils-ping
 set_admin_and_sshd "$AP" "$WIFI_AP_HOST_PASSWORD"
+dexec "$AP" rm -f /etc/profile.d/80-systemd-osc-context.sh
 
 dexec "$AP" sh -c "
   ip link add br0 type bridge 2>/dev/null || true
