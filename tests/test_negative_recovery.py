@@ -202,7 +202,7 @@ def test_dhcp_renewal_preserves_reserved_address(
     started = time.monotonic()
     _client_output(
         run_context,
-        f"sudo dhclient -1 -timeout {timeout} {iface} 2>&1 || true",
+        f"sudo dhclient -1 {iface} 2>&1 || true",
     )
     elapsed = time.monotonic() - started
     after = _client_ip(run_context, iface)
@@ -233,7 +233,7 @@ def test_dhcp_server_failure_and_recovery(
             )
             _client_output(
                 run_context,
-                f"sudo dhclient -1 -timeout 3 {iface} 2>&1 || true",
+                f"sudo dhclient -1 {iface} 2>&1 || true",
             )
             disrupted = _client_ip(run_context, iface) != expected
             metric_logger.log(1.0 if disrupted else 0.0, "bool", name="fault_observed")
@@ -241,7 +241,7 @@ def test_dhcp_server_failure_and_recovery(
     finally:
         _client_output(
             run_context,
-            f"sudo dhclient -1 -timeout {timeout} {iface} 2>&1 || true",
+            f"sudo dhclient -1 {iface} 2>&1 || true",
         )
 
     recovery_seconds = time.monotonic() - fault_applied_at
@@ -344,7 +344,7 @@ def test_client_wifi_restart_recovers(
     )
     _client_output(
         run_context,
-        f"sudo dhclient -1 -timeout {int(params['thresholds']['dhcp_timeout_sec'])} "
+        f"sudo dhclient -1 "
         f"{params['network']['client_interface']} 2>&1 || true",
     )
     recovery_seconds = time.monotonic() - fault_applied_at
