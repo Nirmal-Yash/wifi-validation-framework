@@ -988,8 +988,9 @@ dexec "$CLIENT" sh -c "
   ip route replace default via ${LAB_GW} dev eth0
   printf 'nameserver 8.8.8.8\\n' >/etc/resolv.conf
 "
-apt_install_container "$CLIENT" iw wpasupplicant openssh-server iperf3 bind9-dnsutils isc-dhcp-client sudo iproute2 iputils-ping
+apt_install_container "$CLIENT" iw wpasupplicant openssh-server iperf3 bind9-dnsutils isc-dhcp-client iptables sudo iproute2 iputils-ping
 set_admin_and_sshd "$CLIENT" "$WIFI_CLIENT_VM_PASSWORD"
+dexec "$CLIENT" sh -c 'command -v iptables >/dev/null || exit 1' || die "Client iptables is required for DNS fault injection."
 dexec "$CLIENT" rm -f /etc/profile.d/80-systemd-osc-context.sh
 
 dexec "$CLIENT" sh -c "
