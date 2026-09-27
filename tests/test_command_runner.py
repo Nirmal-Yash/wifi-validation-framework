@@ -118,6 +118,12 @@ def test_compatibility_policy_allows_dnsmasq_for_router_dhcp_recovery():
     )
 
 
+def test_default_policy_allows_host_health_executables():
+    policy = CommandSecurityPolicy.default()
+    policy.validate("lab_host", ["docker", "info"])
+    policy.validate("lab_host", ["virsh", "net-info", "default"])
+
+
 def test_compatibility_policy_allows_known_lab_commands_only():
     policy = CommandSecurityPolicy.compatibility()
 
