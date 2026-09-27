@@ -749,7 +749,6 @@ if ! "${VIRSH[@]}" net-info default >/dev/null 2>&1; then
   <name>default</name>
   <forward mode='nat'/>
   <bridge name='${LAB_BRIDGE}' stp='on' delay='0'/>
-  <ip address='${LAB_GW}' netmask='${LAB_MASK}'>
   <ip address='${LAB_GW}' netmask='${LAB_MASK}'/>
 </network>
 XML
