@@ -124,6 +124,11 @@ def test_default_policy_allows_host_health_executables():
     policy.validate("lab_host", ["virsh", "net-info", "default"])
 
 
+def test_compatibility_policy_allows_ap_restart_executable():
+    policy = CommandSecurityPolicy.compatibility()
+    policy.validate("ap_host", "sudo hostapd -B /etc/hostapd/hostapd.conf", shell=True)
+
+
 def test_compatibility_policy_allows_known_lab_commands_only():
     policy = CommandSecurityPolicy.compatibility()
 
