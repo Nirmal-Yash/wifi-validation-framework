@@ -98,7 +98,7 @@ class FaultService:
             apply_commands=(f"sudo ip link set {interface} down",),
             restore_commands=(
                 f"sudo ip link set {interface} up",
-                "sudo dhclient -1 -timeout 10 wlan0 2>/dev/null || true",
+                "sudo dhclient -1 wlan0 2>/dev/null || true",
             ),
             description="Disable the client WiFi interface and restore it with DHCP.",
         )
