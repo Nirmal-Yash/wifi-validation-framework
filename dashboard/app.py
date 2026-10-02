@@ -62,7 +62,7 @@ def render_svg_chart(pass_rates):
     )
 
 
-def create_app(database_path: str | Path = DATABASE_PATH):
+def create_app(database_path: str | Path = DATABASE_PATH, *, auth_manager: AuthManager | None = None):
     flask_app = Flask(__name__)
     flask_app.secret_key = os.getenv("NETREGRESS_SESSION_SECRET") or os.urandom(32)
     flask_app.config.update(
@@ -80,7 +80,7 @@ def create_app(database_path: str | Path = DATABASE_PATH):
             hsts=bool(flask_app.config["SESSION_COOKIE_SECURE"]),
         )
     query = DashboardQueryService(SQLiteDatabase(database_path))
-    auth_manager = AuthManager.from_env()
+    auth_manager = auth_manager or AuthManager.from_env()
     flask_app.config["NETREGRESS_QUERY"] = query
     flask_app.config["NETREGRESS_AUTH"] = auth_manager
     flask_app.register_blueprint(create_api_blueprint(query, auth_manager=auth_manager))
