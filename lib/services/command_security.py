@@ -32,10 +32,10 @@ _CHAIN_SPLIT_RE = re.compile(r"\s*(?:;|\|\|)\s*")
 DEFAULT_ALLOWED_EXECUTABLES = frozenset(
     {
         "cat", "chmod", "cp", "chronyc", "date", "df", "dhclient", "dnsmasq", "docker", "echo", "getent",
-        "grep", "hostname", "id", "iperf3", "ip", "iptables", "iw", "nslookup",
+        "grep", "hostname", "hostapd", "id", "iperf3", "ip", "iptables", "iw", "nslookup",
         "pgrep", "ping", "pkill", "printf", "sed", "sha256sum", "stat", "sudo",
         "systemctl", "tc", "test", "timedatectl", "true",
-        "uname", "ubus", "virsh", "whoami", "wpa_cli",
+        "uname", "ubus", "virsh", "whoami", "wpa_cli", "wpa_supplicant",
     }
 )
 
@@ -139,7 +139,7 @@ class CommandSecurityPolicy:
         tokens = [str(item) for item in command]
         return [tokens] if tokens else []
 
-    def validate(self, target: str, command: str | Sequence[str], *, shell: bool) -> None:
+    def validate(self, target: str, command: str | Sequence[str], *, shell: bool = False) -> None:
         if shell and not self.allow_shell:
             raise CommandSecurityError("shell execution is disabled by this policy")
 
