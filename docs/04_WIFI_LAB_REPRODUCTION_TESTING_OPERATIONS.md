@@ -241,7 +241,7 @@ sudo apt install -y dnsmasq
 sudo tee /etc/dnsmasq.d/lan.conf <<EOF
 interface=eth0
 dhcp-range=192.168.122.100,192.168.122.200,255.255.255.0,12h
-dhcp-option=3,192.168.122.10
+dhcp-option=3,192.168.122.1
 dhcp-option=6,8.8.8.8
 EOF
 sudo systemctl restart dnsmasq
@@ -283,7 +283,7 @@ SSH or console into AP VM (`192.168.122.20`):
 # Set static IP on ethernet (to router)
 sudo ip addr add 192.168.122.20/24 dev eth0
 sudo ip link set eth0 up
-sudo ip route add default via 192.168.122.10
+sudo ip route add default via 192.168.122.1
 
 # Install hostapd
 sudo apt install -y hostapd bridge-utils
@@ -359,7 +359,7 @@ SSH or console into Monitor VM (`192.168.122.40`):
 ```bash
 sudo ip addr add 192.168.122.40/24 dev eth0
 sudo ip link set eth0 up
-sudo ip route add default via 192.168.122.10
+sudo ip route add default via 192.168.122.1
 
 sudo apt install -y tcpdump wireshark openssh-server
 sudo useradd -m admin 2>/dev/null || true
@@ -664,6 +664,10 @@ Re-run `./wifi_lab_reprovision_robust.sh` from a normal user shell (not `sudo`).
 If GNS3 topology is missing nodes or client eth1 is not linked to Cloud/Switch, the script **exits with an explicit error** — fix cabling in GNS3, then rerun.
 
 ## 4. Testing and operations
+
+## Authoritative runtime contract
+
+The executable source of truth for the current GNS3/mac80211_hwsim lab is `wifi_lab_reprovision_robust.sh`. The lab uses **FRR dnsmasq as the sole DHCP server** on `192.168.122.10`, while libvirt `virbr0` remains the **L3/NAT gateway at `192.168.122.1` with libvirt DHCP disabled**. The client WiFi lease is deterministically reserved to `192.168.122.30` from the discovered `wlan0` MAC. Any older manual setup snippets in this document are reference-only and must not be used as a competing runtime configuration.
 
 ## 1. Purpose
 
