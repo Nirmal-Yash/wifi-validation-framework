@@ -494,6 +494,8 @@ provision_hwsim_radios() {
 
 configure_frr_dhcp() {
   local client_mac="${1:-}"
+  [[ -n "$client_mac" ]] || die "configure_frr_dhcp requires the client WiFi MAC so the lab DHCP reservation is deterministic."
+
   dexec "$FRR" sh -c "
     apk -q add --no-cache dnsmasq iperf3 openssh-server sudo
     mkdir -p /etc/dnsmasq.d
@@ -504,21 +506,16 @@ except-interface=lo
 dhcp-range=192.168.122.100,192.168.122.200,255.255.255.0,12h
 dhcp-option=3,${FRR_IP}
 dhcp-option=6,8.8.8.8
+dhcp-host=${client_mac},${CLIENT_WIFI_IP}
 EOF
-    if [ -n '${client_mac}' ]; then
-      echo \"dhcp-host=${client_mac},${CLIENT_WIFI_IP}\" >>/etc/dnsmasq.d/lab.conf
-    fi
-    if pidof dnsmasq >/dev/null 2>&1; then
-      kill -HUP \"\$(pidof dnsmasq)\" 2>/dev/null || true
-      sleep 1
-    else
-      dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf
-    fi
-    if ! pidof dnsmasq >/dev/null 2>&1; then
+    dnsmasq --test --conf-file=/etc/dnsmasq.d/lab.conf
+    pkill -TERM dnsmasq 2>/dev/null || true
+    sleep 1
+    if pgrep dnsmasq >/dev/null 2>&1; then
       pkill -9 dnsmasq 2>/dev/null || true
       sleep 1
-      dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf
     fi
+    dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf
   "
   dexec "$FRR" sh -c 'pgrep dnsmasq >/dev/null' || die "FRR dnsmasq failed to start on eth1."
 }
@@ -900,7 +897,7 @@ dexec "$FRR" sh -c "
   ip route replace default via ${LAB_GW} dev eth1
   printf 'nameserver 8.8.8.8\\n' >/etc/resolv.conf
 "
-configure_frr_dhcp ""
+# DHCP is configured after the client WiFi MAC is known; this prevents an unreserved dynamic lease from being issued.
 set_alpine_admin_and_sshd "$FRR" "$WIFI_ROUTER1_PASSWORD"
 if ! dexec "$FRR" sh -c 'ss -lnt 2>/dev/null | grep -q "\\*:5201"'; then
   dexec "$FRR" iperf3 -s -D
