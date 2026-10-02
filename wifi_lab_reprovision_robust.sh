@@ -504,10 +504,11 @@ interface=eth1
 bind-interfaces
 except-interface=lo
 dhcp-range=192.168.122.100,192.168.122.200,255.255.255.0,12h
-dhcp-option=3,${FRR_IP}
+dhcp-option=3,${LAB_GW}
 dhcp-option=6,8.8.8.8
 dhcp-host=${client_mac},${CLIENT_WIFI_IP}
 EOF
+    grep -Fq "dhcp-host=${client_mac},${CLIENT_WIFI_IP}" /etc/dnsmasq.d/lab.conf
     dnsmasq --test --conf-file=/etc/dnsmasq.d/lab.conf
     pkill -TERM dnsmasq 2>/dev/null || true
     sleep 1
