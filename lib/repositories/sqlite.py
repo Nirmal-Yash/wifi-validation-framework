@@ -996,7 +996,7 @@ class SQLiteSyncQueueRepository:
         self.database = database
 
     def enqueue(self, envelope):
-        now = datetime.now().astimezone()
+        now = datetime.now(timezone.utc)
         with self.database.connection() as connection:
             existing = connection.execute(
                 "SELECT * FROM sync_queue WHERE idempotency_key = ?",
@@ -1037,7 +1037,7 @@ class SQLiteSyncQueueRepository:
             rows = connection.execute(
                 """SELECT * FROM sync_queue
                    WHERE state IN ('QUEUED','FAILED')
-                     AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                     AND (next_attempt_at IS NULL OR datetime(next_attempt_at) <= datetime(?))
                    ORDER BY created_at, envelope_id
                    LIMIT ?""",
                 (_dt(now), limit),
@@ -1094,7 +1094,7 @@ class SQLiteSyncQueueRepository:
                    SET state = 'FAILED', leased_at = NULL,
                        next_attempt_at = ?, last_error = COALESCE(last_error, 'lease expired'),
                        updated_at = ?
-                   WHERE state = 'IN_FLIGHT' AND leased_at IS NOT NULL AND leased_at <= ?""",
+                   WHERE state = 'IN_FLIGHT' AND leased_at IS NOT NULL AND datetime(leased_at) <= datetime(?)""",
                 (_dt(now), _dt(now), _dt(now)),
             )
             connection.commit()
