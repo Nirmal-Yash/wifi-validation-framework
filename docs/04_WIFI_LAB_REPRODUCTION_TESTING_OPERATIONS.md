@@ -654,7 +654,7 @@ chmod +x wifi_lab_reprovision_robust.sh scripts/audit_gns3_lab.sh
 - GNS3 node run/stop, Docker container PIDs  
 - `mac80211_hwsim` module and PHY netns placement  
 - hostapd / wpa_supplicant / dnsmasq processes  
-- libvirt DHCP host reservations (updated idempotently)  
+- libvirt DHCP configuration is intentionally absent; FRR dnsmasq owns the WiFi reservation  
 - `results/` logs, pcaps, SQLite DB (gitignored)
 
 ## Recovery
