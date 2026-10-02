@@ -22,9 +22,13 @@ from lib.repositories import (
 )
 from lib.services import ArtifactService, RunService
 from dashboard.app import create_app
+from lib.security import AuthManager
 
 
 TEST_ID = "wifi.latency.threshold"
+
+def make_app(db_path):
+    return create_app(db_path, auth_manager=AuthManager((), required=False))
 
 
 def make_service(db):
@@ -107,7 +111,7 @@ def test_v1_api_reads_persisted_run_and_uses_error_envelope(tmp_path):
     service=make_service(db)
     run, attempt=create_run(service, "v1.0")
     record(service, run, attempt, TestResultStatus.PASS, 10)
-    app=create_app(tmp_path / "db.sqlite")
+    app=make_app(tmp_path / "db.sqlite")
     client=app.test_client()
 
     response=client.get("/api/v1/runs")
