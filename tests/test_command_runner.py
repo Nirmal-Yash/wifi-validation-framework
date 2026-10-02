@@ -122,6 +122,8 @@ def test_default_policy_allows_host_health_executables():
     policy = CommandSecurityPolicy.default()
     policy.validate("lab_host", ["docker", "info"])
     policy.validate("lab_host", ["virsh", "net-info", "default"])
+    policy.validate("ap_host", ["hostapd", "-B", "/etc/hostapd/hostapd.conf"])
+    policy.validate("client_vm", ["wpa_supplicant", "-B", "-i", "wlan0"])
 
 
 def test_compatibility_policy_allows_ap_restart_executable():
