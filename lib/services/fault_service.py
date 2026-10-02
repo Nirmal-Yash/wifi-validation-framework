@@ -248,8 +248,6 @@ class FaultService:
             ),
             restore_commands=(
                 "sudo pkill -9 wpa_supplicant 2>/dev/null || true",
-                "sudo rm -rf /run/wpa_supplicant",
-                "sudo mkdir -p /run/wpa_supplicant",
                 "sudo ip link set wlan0 down 2>/dev/null || true",
                 "sudo ip link set wlan0 up",
                 "sudo wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf -D nl80211",
