@@ -22,6 +22,7 @@ from lib.domain import (
 from lib.services.command_runner import CommandRunner, CommandResult
 from lib.services.command_security import redact_text
 from lib.services.artifact_service import ArtifactService
+from lib.services.wifi_state import assess_wifi_association
 
 
 class LabHealthService:
@@ -437,7 +438,32 @@ class LabHealthService:
                 or f"inet {expected} " in result.stdout
             )
         )
-        if result.transport_error or result.exit_code not in {None, 0} or not matched:
+        wpa_result = self.remote_runner.execute(
+            self.REMOTE_TARGETS["client"],
+            ["wpa_cli", "-i", iface, "status"],
+            command_category="lab_health",
+            idempotent=True,
+        )
+        link_result = self.remote_runner.execute(
+            self.REMOTE_TARGETS["client"],
+            ["iw", "dev", iface, "link"],
+            command_category="lab_health",
+            idempotent=True,
+        )
+        association = assess_wifi_association(
+            wpa_status=wpa_result.stdout,
+            iw_link=link_result.stdout,
+            expected_ssid=self.resolved_config.get("wifi", {}).get("ssid"),
+            require_wpa2=True,
+        )
+        if (
+            result.transport_error
+            or result.exit_code not in {None, 0}
+            or wpa_result.transport_error
+            or link_result.transport_error
+            or not matched
+            or not association.connected
+        ):
             return (
                 HealthObservationStatus.FAILED,
                 duration,
@@ -446,7 +472,10 @@ class LabHealthService:
                     "interface": iface,
                     "expected_ip": expected,
                     "output": result.stdout,
-                    "error": result.transport_error,
+                    "wpa_status": wpa_result.stdout,
+                    "iw_link": link_result.stdout,
+                    "association": asdict(association),
+                    "error": result.transport_error or wpa_result.transport_error or link_result.transport_error,
                 },
                 {"transport": result.transport},
             )
