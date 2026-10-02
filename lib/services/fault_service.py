@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+import time
 from typing import Iterator
 
 from .command_runner import CommandRunner
@@ -14,6 +15,7 @@ class FaultDefinition:
     apply_commands: tuple[str, ...]
     restore_commands: tuple[str, ...]
     description: str
+    restore_checks: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -27,6 +29,11 @@ class FaultDefinition:
             raise ValueError("apply_commands must not be empty")
         if not self.restore_commands:
             raise ValueError("restore_commands must not be empty")
+        for command, required_tokens in self.restore_checks:
+            if not isinstance(command, str) or not command.strip():
+                raise ValueError("restore check command must not be empty")
+            if not isinstance(required_tokens, tuple):
+                raise ValueError("restore check tokens must be a tuple")
 
 
 class FaultService:
@@ -56,6 +63,38 @@ class FaultService:
                     )
             except Exception as exc:
                 first_error = first_error or exc
+        for check_command, required_tokens in fault.restore_checks:
+            check_error: Exception | None = None
+            for _attempt in range(15):
+                try:
+                    result = self.command_runner.execute_shell(
+                        fault.target,
+                        check_command,
+                        command_category=f"fault.verify.{fault.fault_id}",
+                        idempotent=True,
+                        privilege_mode="SUDO",
+                    )
+                    if not result.transport_succeeded:
+                        raise RuntimeError(
+                            f"fault restore verification transport failed for {fault.fault_id}: "
+                            f"{result.safe_display_command}: {result.transport_error}"
+                        )
+                    output = result.stdout.strip()
+                    if (not required_tokens and output) or (
+                        required_tokens and all(token in output for token in required_tokens)
+                    ):
+                        check_error = None
+                        break
+                    check_error = RuntimeError(
+                        f"fault restore verification failed for {fault.fault_id}: "
+                        f"{result.safe_display_command}: expected {required_tokens!r}, got {output!r}"
+                    )
+                except Exception as exc:
+                    check_error = exc
+                time.sleep(1)
+            if check_error is not None:
+                first_error = first_error or check_error
+
         if first_error is not None:
             raise first_error
 
@@ -101,6 +140,7 @@ class FaultService:
                 "sudo dhclient -1 wlan0 2>/dev/null || true",
             ),
             description="Disable the client WiFi interface and restore it with DHCP.",
+            restore_checks=(("sudo wpa_cli -i wlan0 status", ("wpa_state=COMPLETED",)),),
         )
 
     @staticmethod
@@ -117,6 +157,7 @@ class FaultService:
                 f"sudo wpa_cli -i {interface} reconnect",
             ),
             description="Disable the configured WiFi network and restore association.",
+            restore_checks=((f"sudo wpa_cli -i {interface} status", ("wpa_state=COMPLETED",)),),
         )
 
     @staticmethod
@@ -146,6 +187,7 @@ class FaultService:
                 f"sudo wpa_cli -i {interface} reconnect",
             ),
             description="Replace the active WPA2-PSK at runtime, prove authentication failure, then restore it.",
+            restore_checks=((f"sudo wpa_cli -i {interface} status", ("wpa_state=COMPLETED",)),),
         )
 
     @staticmethod
@@ -176,6 +218,7 @@ class FaultService:
                 "sudo systemctl start dnsmasq 2>/dev/null || sudo dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf 2>/dev/null || true",
             ),
             description="Stop the real FRR dnsmasq DHCP service and restore it.",
+            restore_checks=(("sudo pgrep dnsmasq", ()),),
         )
 
     @staticmethod
@@ -187,9 +230,12 @@ class FaultService:
                 "sudo pkill -TERM hostapd 2>/dev/null || true",
             ),
             restore_commands=(
+                "sudo pkill -TERM hostapd 2>/dev/null || true",
+                "sudo ip link set wlan0 up",
                 "sudo hostapd -B /etc/hostapd/hostapd.conf",
             ),
             description="Stop the real AP hostapd service/process and restore the configured AP.",
+            restore_checks=(("sudo pgrep hostapd", ()),),
         )
 
     @staticmethod
@@ -201,8 +247,17 @@ class FaultService:
                 "sudo wpa_cli -i wlan0 terminate 2>/dev/null || sudo pkill -TERM wpa_supplicant 2>/dev/null || true",
             ),
             restore_commands=(
+                "sudo pkill -9 wpa_supplicant 2>/dev/null || true",
+                "sudo rm -rf /run/wpa_supplicant",
+                "sudo mkdir -p /run/wpa_supplicant",
+                "sudo ip link set wlan0 down 2>/dev/null || true",
+                "sudo ip link set wlan0 up",
                 "sudo wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf -D nl80211",
                 "sudo wpa_cli -i wlan0 reconnect 2>/dev/null || true",
             ),
             description="Restart the client WiFi supplicant while preserving the management path.",
+            restore_checks=(
+                ("sudo pgrep wpa_supplicant", ()),
+                ("sudo wpa_cli -i wlan0 status", ("wpa_state=COMPLETED",)),
+            ),
         )
