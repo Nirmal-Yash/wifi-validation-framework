@@ -640,55 +640,6 @@ validate_default_network() {
   echo "Libvirt default network OK: $bridge $ipaddr/$netmask"
 }
 
-ensure_libvirt_reservation() {
-  local mac="$1" ipaddr="$2" allow_replace="${3:-}" xml current current_owner oldxml
-  local owner_ok=0 cand
-  [[ -n "$mac" && -n "$ipaddr" ]] || die "ensure_libvirt_reservation requires MAC and IP."
-  xml="$("${VIRSH[@]}" net-dumpxml default)"
-  current=$("$PYTHON" - "$xml" "$mac" <<'PY'
-import sys, xml.etree.ElementTree as ET
-root=ET.fromstring(sys.argv[1]); want=sys.argv[2].lower(); found=''
-for h in root.findall('.//dhcp/host'):
-    if h.get('mac','').lower()==want:
-        found=h.get('ip',''); break
-print(found)
-PY
-)
-  current_owner=$("$PYTHON" - "$xml" "$ipaddr" <<'PY'
-import sys, xml.etree.ElementTree as ET
-root=ET.fromstring(sys.argv[1]); want=sys.argv[2]; found=''
-for h in root.findall('.//dhcp/host'):
-    if h.get('ip','')==want:
-        found=h.get('mac',''); break
-print(found)
-PY
-)
-  if [[ "$current" == "$ipaddr" ]]; then
-    echo "DHCP reservation already correct: $mac -> $ipaddr"
-    return 0
-  fi
-  if [[ -n "$current_owner" && "${current_owner,,}" != "${mac,,}" ]]; then
-    owner_ok=0
-    IFS=',' read -r -a _allow <<<"$allow_replace"
-    for cand in "${_allow[@]}"; do
-      [[ -n "$cand" && "${cand,,}" == "${current_owner,,}" ]] && owner_ok=1 && break
-    done
-    if ((owner_ok)); then
-      echo "Replacing same-node DHCP reservation for $ipaddr ($current_owner -> $mac)."
-      oldxml="<host mac='$current_owner' ip='$ipaddr'/>"
-      "${VIRSH[@]}" net-update default delete ip-dhcp-host "$oldxml" --live --config
-    else
-      die "DHCP IP $ipaddr is already reserved to MAC $current_owner; refusing to take over an existing reservation."
-    fi
-  fi
-  if [[ -n "$current" ]]; then
-    echo "Replacing conflicting DHCP reservation for $mac ($current -> $ipaddr)."
-    oldxml="<host mac='$mac' ip='$current'/>"
-    "${VIRSH[@]}" net-update default delete ip-dhcp-host "$oldxml" --live --config
-  fi
-  "${VIRSH[@]}" net-update default add-last ip-dhcp-host "<host mac='$mac' ip='$ipaddr'/>" --live --config
-}
-
 wait_for_management() {
   "$PYTHON" - <<PY
 from netmiko import ConnectHandler
@@ -1045,7 +996,7 @@ CLIENT_ETH0_MAC="$(dexec "$CLIENT" cat /sys/class/net/eth0/address | tr -d '\r\n
 CLIENT_ETH1_MAC="$(dexec "$CLIENT" cat /sys/class/net/eth1/address | tr -d '\r\n')"
 [[ "$WIFI_MAC" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] || die "Invalid wlan0 MAC: $WIFI_MAC"
 configure_frr_dhcp "$WIFI_MAC"
-# Keep virbr0 DHCP from handing 192.168.122.30 to eth0 before wlan0 claims the reservation.
+# libvirt DHCP is disabled; FRR dnsmasq is the sole WiFi DHCP authority.
 
 dexec "$CLIENT" sh -c "
   dhclient -r wlan0 2>/dev/null || true
