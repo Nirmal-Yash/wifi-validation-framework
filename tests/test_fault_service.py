@@ -18,7 +18,7 @@ class FakeRunner:
             target=target,
             command_category=kwargs["command_category"],
             safe_display_command=command,
-            stdout="",
+            stdout="ok" if "echo ok" in command else "",
             exit_code=None,
             transport="fake",
         )
@@ -101,3 +101,21 @@ def test_fault_service_restore_runs_all_commands():
         "sudo systemctl start dnsmasq",
         "sudo pgrep dnsmasq",
     ]
+
+
+def test_fault_service_restore_verification_is_enforced():
+    runner = FakeRunner()
+    service = FaultService(runner)
+    fault = FaultDefinition(
+        fault_id="test.verify",
+        target="client_vm",
+        apply_commands=("sudo ip link set wlan0 down",),
+        restore_commands=("sudo echo ok",),
+        restore_checks=(("sudo echo ok", ("ok",)),),
+        description="restore verification",
+    )
+
+    with service.context(fault):
+        pass
+
+    assert any(category == "fault.verify.test.verify" for _, _, category in runner.commands)
