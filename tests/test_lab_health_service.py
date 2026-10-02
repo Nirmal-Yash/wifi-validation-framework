@@ -19,6 +19,10 @@ class FakeRunner:
             output = "Server: 8.8.8.8\nAddress: 8.8.8.8\nName: google.com\nAddress: 142.250.0.1\n"
         elif command_text.startswith("ip -4 addr"):
             output = "2: wlan0: state UP\n    inet 192.168.122.30/24"
+        elif command_text.startswith("wpa_cli"):
+            output = "wpa_state=COMPLETED\nssid=TestNet_5G\nkey_mgmt=WPA2-PSK\npairwise_cipher=CCMP\ngroup_cipher=CCMP\n"
+        elif command_text.startswith("iw dev wlan0 link"):
+            output = "Connected to 02:00:00:00:00:00 (on wlan0)\n\tSSID: TestNet_5G\n"
         elif command_text.startswith("pgrep"):
             output = "1234\n"
         elif command_text.startswith("iw phy"):
@@ -84,6 +88,7 @@ def make_service(tmp_path, runner=None):
         output_directory=tmp_path,
         resolved_config={
             "network": {"client_interface": "wlan0", "client_wifi_ip": "192.168.122.30"},
+            "wifi": {"ssid": "TestNet_5G"},
             "dns": {"test_hostname": "google.com"},
             "thresholds": {"min_free_disk_gib": 1},
         },
