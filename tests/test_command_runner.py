@@ -122,6 +122,10 @@ def test_default_policy_allows_host_health_executables():
     policy = CommandSecurityPolicy.default()
     policy.validate("lab_host", ["docker", "info"])
     policy.validate("lab_host", ["virsh", "net-info", "default"])
+
+
+def test_compatibility_policy_allows_wifi_recovery_executables():
+    policy = CommandSecurityPolicy.compatibility()
     policy.validate("ap_host", ["hostapd", "-B", "/etc/hostapd/hostapd.conf"])
     policy.validate("client_vm", ["wpa_supplicant", "-B", "-i", "wlan0"])
 
