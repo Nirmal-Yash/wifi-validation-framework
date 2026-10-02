@@ -322,7 +322,7 @@ class WifiTelemetryService:
             run_id=run_id,
             path=path,
             artifact_type=ArtifactType.TELEMETRY,
-            display_name=f"wifi-telemetry-{run_id}-{safe_interface}.json",
+            display_name=f"wifi-telemetry-{run_id}-{safe_interface}-{snapshot.snapshot_id}.json",
             sensitivity_class="INTERNAL",
         )
         return snapshot, artifact
