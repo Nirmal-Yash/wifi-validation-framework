@@ -18,10 +18,16 @@ MGMT_GW = "10.10.10.1"
 LAB_GW = "192.168.122.1"
 
 REQUIRED_DEVICES = {
-    "router1": {"host": FRR_IP, "username": "admin", "password": "admin", "device_type": "linux", "port": 22},
-    "ap_host": {"host": AP_IP, "username": "admin", "password": "admin", "device_type": "linux", "port": 22},
-    "client_vm": {"host": CLIENT_MGMT_IP, "username": "admin", "password": "admin", "device_type": "linux", "port": 22},
-    "monitor_vm": {"host": MONITOR_IP, "username": "admin", "password": "admin", "device_type": "linux", "port": 22},
+    "router1": {"host": FRR_IP, "username": "admin", "device_type": "linux", "port": 22},
+    "ap_host": {"host": AP_IP, "username": "admin", "device_type": "linux", "port": 22},
+    "client_vm": {"host": CLIENT_MGMT_IP, "username": "admin", "device_type": "linux", "port": 22},
+    "monitor_vm": {"host": MONITOR_IP, "username": "admin", "device_type": "linux", "port": 22},
+}
+SECRET_VARS = {
+    "router1": "WIFI_ROUTER1_PASSWORD",
+    "ap_host": "WIFI_AP_HOST_PASSWORD",
+    "client_vm": "WIFI_CLIENT_VM_PASSWORD",
+    "monitor_vm": "WIFI_MONITOR_VM_PASSWORD",
 }
 REQUIRED_NETWORK = {
     "router_ip": FRR_IP,
@@ -51,6 +57,12 @@ def validate():
         for k, v in req.items():
             if str(cur.get(k)) != str(v):
                 errs.append(f"devices.{name}.{k}: have {cur.get(k)!r} want {v!r}")
+        secret_var = SECRET_VARS[name]
+        expected_marker = f"__ENV__:{secret_var}"
+        if cur.get("password") != expected_marker:
+            errs.append(f"devices.{name}.password: must use {expected_marker!r} (no plaintext secret in tracked config)")
+        elif not os.getenv(secret_var):
+            errs.append(f"devices.{name}.password: environment variable {secret_var} is not set")
 
     p = load_yaml(ROOT / "configs/test_params.yaml") or {}
     net = p.get("network") or {}
@@ -60,8 +72,11 @@ def validate():
             errs.append(f"network.{k}: have {net.get(k)!r} want {v!r}")
     if wifi.get("ssid") != SSID:
         errs.append("wifi.ssid mismatch")
-    if wifi.get("password") != WIFI_PSK:
-        errs.append("wifi.password mismatch")
+    expected_psk_marker = "__ENV__:WIFI_TEST_PSK"
+    if wifi.get("password") != expected_psk_marker:
+        errs.append("wifi.password must use __ENV__:WIFI_TEST_PSK (no plaintext secret in tracked config)")
+    elif not os.getenv("WIFI_TEST_PSK"):
+        errs.append("wifi.password: environment variable WIFI_TEST_PSK is not set")
     return errs
 
 
@@ -71,11 +86,12 @@ def normalize():
     dev = d.setdefault("devices", {})
     for k, v in REQUIRED_DEVICES.items():
         dev.setdefault(k, {}).update(v)
+        dev.setdefault(k, {})["password"] = f"__ENV__:{SECRET_VARS[k]}"
     p.write_text(yaml.safe_dump(d, sort_keys=False), encoding="utf-8")
 
     p = ROOT / "configs/test_params.yaml"
     d = load_yaml(p) or {}
-    d.setdefault("wifi", {}).update({"ssid": SSID, "password": WIFI_PSK, "security": "WPA2"})
+    d.setdefault("wifi", {}).update({"ssid": SSID, "password": "__ENV__:WIFI_TEST_PSK", "security": "WPA2"})
     d.setdefault("network", {}).update(REQUIRED_NETWORK)
     p.write_text(yaml.safe_dump(d, sort_keys=False), encoding="utf-8")
     print("configs normalized")

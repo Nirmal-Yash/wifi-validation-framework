@@ -8,6 +8,8 @@ if str(ROOT) not in sys.path:
 
 import pytest
 
+pytestmark = pytest.mark.real_lab
+
 
 def client_ping(connection_pool, router_ip, count):
     output = connection_pool.send_command(

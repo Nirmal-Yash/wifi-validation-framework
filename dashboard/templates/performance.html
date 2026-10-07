@@ -1,0 +1,10 @@
+{% extends "layout.html" %}
+{% block title %}Performance — NetRegress{% endblock %}
+{% block content %}<div class="card"><h2>Performance Trends</h2><p class="small">Raw samples are preserved; this page is a readable representation of those samples.</p></div>
+<div class="card"><div class="controls"><div class="control"><label>Test</label><select id="test"><option>wifi.latency.threshold</option><option>wifi.packet_loss.threshold</option><option>wifi.throughput.minimum</option><option>wifi.ping.success</option></select></div><button onclick="load()">Load</button></div></div>
+<div class="card"><div style="overflow:auto"><table><thead><tr><th>Run</th><th>Firmware</th><th>Metric</th><th>Unit</th><th>Valid samples</th><th>Values</th></tr></thead><tbody id="rows"></tbody></table></div></div>
+<script>
+async function load(){var test=document.getElementById("test").value,res=await fetch("/api/v1/tests/"+encodeURIComponent(test)+"/metrics"),body=await res.json();if(!res.ok)return;var html="";body.data.items.forEach(function(x){var valid=x.samples.filter(function(s){return s.status==="VALID"&&!s.warmup});var values=valid.map(function(s){return s.value}).join(", ");html+="<tr><td>"+x.run_id+"</td><td>"+x.firmware_version+"</td><td>"+x.metric_name+"</td><td>"+x.unit+"</td><td>"+valid.length+"</td><td>"+(values||"—")+"</td></tr>"});document.getElementById("rows").innerHTML=html}
+load();
+</script>
+{% endblock %}

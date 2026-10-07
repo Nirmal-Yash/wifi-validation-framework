@@ -1,0 +1,3 @@
+import {describe,expect,it} from "vitest";
+import {routeFor} from "../router";
+describe("routeFor",()=>{it("maps run detail routes",()=>{expect(routeFor("/runs/run-123")).toEqual({name:"run",runId:"run-123"});});it("maps test detail routes",()=>{expect(routeFor("/runs/run-123/tests/result-7")).toEqual({name:"test",runId:"run-123",testResultId:"result-7"});});it("maps administrative pages",()=>{expect(routeFor("/baselines")).toEqual({name:"baselines"});expect(routeFor("/operations")).toEqual({name:"operations"});expect(routeFor("/readiness")).toEqual({name:"readiness"});});});

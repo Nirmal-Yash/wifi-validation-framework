@@ -1,6 +1,6 @@
 wifi:
   ssid: TestNet_5G
-  password: Test@12345
+  password: "__ENV__:WIFI_TEST_PSK"
   security: WPA2
 thresholds:
   min_throughput_mbps: 20

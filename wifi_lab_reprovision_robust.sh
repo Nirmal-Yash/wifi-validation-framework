@@ -11,6 +11,13 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$SCRIPT_DIR}"
 cd "$REPO_ROOT"
 
+if [[ -f "$REPO_ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.env"
+  set +a
+fi
+
 # Lab addressing (must stay consistent with configs/*.yaml and the reproduction guide)
 LAB_GW="192.168.122.1"
 LAB_MASK="255.255.255.0"
@@ -22,7 +29,13 @@ CLIENT_WIFI_IP="192.168.122.30"
 CLIENT_MGMT_IP="10.10.10.30"
 MONITOR_IP="192.168.122.40"
 SSID="TestNet_5G"
-WIFI_PSK="Test@12345"
+WIFI_PSK="${WIFI_TEST_PSK:-Test@12345}"
+WIFI_ROUTER1_PASSWORD="${WIFI_ROUTER1_PASSWORD:-admin}"
+WIFI_ROUTER2_PASSWORD="${WIFI_ROUTER2_PASSWORD:-admin}"
+WIFI_AP_HOST_PASSWORD="${WIFI_AP_HOST_PASSWORD:-admin}"
+WIFI_CLIENT_VM_PASSWORD="${WIFI_CLIENT_VM_PASSWORD:-admin}"
+WIFI_MONITOR_VM_PASSWORD="${WIFI_MONITOR_VM_PASSWORD:-admin}"
+export WIFI_TEST_PSK="$WIFI_PSK" WIFI_ROUTER1_PASSWORD WIFI_ROUTER2_PASSWORD WIFI_AP_HOST_PASSWORD WIFI_CLIENT_VM_PASSWORD WIFI_MONITOR_VM_PASSWORD
 GNS3_API="${GNS3_API:-http://127.0.0.1:3080}"
 GNS3_PROJECT_NAME="${GNS3_PROJECT_NAME:-WiFi-Regression-Lab}"
 
@@ -69,7 +82,7 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 STEP=0
 CURRENT_STEP="initialization"
-trap 'rc=$?; echo; echo "ERROR: Step ${STEP} failed: ${CURRENT_STEP} (exit ${rc})" >&2; echo "Log: ${LOG_FILE}" >&2; exit "$rc"' ERR
+trap 'rc=$?; echo; echo "ERROR: Step ${STEP} failed: ${CURRENT_STEP} (exit ${rc})" >&2; echo "Command: ${BASH_COMMAND}" >&2; echo "Log: ${LOG_FILE}" >&2; exit "$rc"' ERR
 
 step() {
   STEP=$((STEP + 1))
@@ -164,13 +177,13 @@ apt_install_container() {
     echo "Container $c already has required packages: $*"
     return 0
   fi
-  dexec "$c" sh -c 'export DEBIAN_FRONTEND=noninteractive; apt-get update && apt-get install -y "$@"' sh "$@"
+  dexec "$c" sh -c 'export DEBIAN_FRONTEND=noninteractive; apt-get -qq update && apt-get -qq install -y "$@"' sh "$@"
 }
 
 apk_install_container() {
   local c="$1"; shift
   container_os_is "$c" alpine || die "Container $c must be Alpine for this step."
-  dexec "$c" sh -c 'apk update && apk add "$@"' sh "$@"
+  dexec "$c" sh -c 'apk -q update && apk -q add "$@"' sh "$@"
 }
 
 find_gns3_container() {
@@ -479,33 +492,139 @@ provision_hwsim_radios() {
   ensure_hwsim_iface "$CLIENT" "Client" "${PHYS[1]}"
 }
 
+configure_frr_apk_repositories() {
+  local alpine_version repo_file="/tmp/netregress-apk-repositories"
+
+  alpine_version="$(dexec "$FRR" sh -c 'cat /etc/alpine-release 2>/dev/null | cut -d. -f1-2')"
+  [[ "$alpine_version" =~ ^[0-9]+\.[0-9]+$ ]] \
+    || die "Cannot determine FRR Alpine release from /etc/alpine-release."
+
+  if dexec "$FRR" sh -c '
+      base="$1"
+      version="$2"
+      file="$3"
+      printf "%s\\n%s\\n" \
+        "$base/alpine/v$version/main" \
+        "$base/alpine/v$version/community" >"$file"
+      apk --repositories-file "$file" update >/dev/null 2>&1
+    ' sh "https://dl-cdn.alpinelinux.org" "$alpine_version" "$repo_file"; then
+    :
+  elif dexec "$FRR" sh -c '
+      base="$1"
+      version="$2"
+      file="$3"
+      printf "%s\\n%s\\n" \
+        "$base/alpine/v$version/main" \
+        "$base/alpine/v$version/community" >"$file"
+      apk --repositories-file "$file" update >/dev/null 2>&1
+    ' sh "https://archive.alpinelinux.org" "$alpine_version" "$repo_file"; then
+    :
+  else
+    die "No usable Alpine package repositories for FRR release $alpine_version."
+  fi
+
+  FRR_APK_REPOSITORIES_FILE="$repo_file"
+  export FRR_APK_REPOSITORIES_FILE
+  echo "FRR Alpine repositories validated for release $alpine_version."
+}
+
+frr_apk_add() {
+  [[ -n "${FRR_APK_REPOSITORIES_FILE:-}" ]] || die "FRR Alpine repositories were not initialized."
+  local pkg repo1 repo2
+  repo1="$(dexec "$FRR" sed -n '1p' "$FRR_APK_REPOSITORIES_FILE")"
+  repo2="$(dexec "$FRR" sed -n '2p' "$FRR_APK_REPOSITORIES_FILE")"
+  [[ -n "$repo1" && -n "$repo2" ]] || die "FRR Alpine repository file is incomplete: $FRR_APK_REPOSITORIES_FILE"
+
+  for pkg in "$@"; do
+    if dexec "$FRR" apk -q add --no-cache \
+        --repository "$repo1" \
+        --repository "$repo2" \
+        "$pkg" >/dev/null 2>&1; then
+      echo "FRR package installed/resolved: $pkg"
+    else
+      die "FRR Alpine package '$pkg' is unavailable from $repo1 / $repo2."
+    fi
+  done
+}
+
+install_frr_runtime_packages() {
+  local missing_cmds=()
+
+  # A fully provisioned FRR container must not depend on external Alpine
+  # repositories merely to re-run setup. Only resolve packages when a required
+  # executable is genuinely absent.
+  for cmd in ip ss dnsmasq iperf3 sshd sudo ssh-keygen ping; do
+    dexec "$FRR" sh -c 'command -v "$1" >/dev/null 2>&1' sh "$cmd" || missing_cmds+=( "$cmd" )
+  done
+  if dexec "$FRR" sh -c 'command -v pgrep >/dev/null 2>&1 && command -v pkill >/dev/null 2>&1'; then
+    :
+  else
+    missing_cmds+=( "pgrep/pkill" )
+  fi
+
+  if ((${#missing_cmds[@]} == 0)); then
+    echo "FRR runtime toolchain already provisioned; no package installation required."
+    return 0
+  fi
+
+  configure_frr_apk_repositories
+
+  install_frr_pkg_if_missing() {
+    local cmd="$1" pkg="$2"
+    if ! dexec "$FRR" sh -c 'command -v "$1" >/dev/null 2>&1' sh "$cmd"; then
+      echo "Installing FRR runtime package $pkg for command $cmd"
+      frr_apk_add "$pkg"
+    fi
+  }
+
+  install_frr_pkg_if_missing ip iproute2
+  install_frr_pkg_if_missing ss iproute2
+  install_frr_pkg_if_missing dnsmasq dnsmasq
+  install_frr_pkg_if_missing iperf3 iperf3
+  install_frr_pkg_if_missing sshd openssh-server
+  install_frr_pkg_if_missing sudo sudo
+
+  if ! dexec "$FRR" sh -c 'command -v pgrep >/dev/null 2>&1 && command -v pkill >/dev/null 2>&1'; then
+    echo "Installing FRR process utilities"
+    if ! dexec "$FRR" apk --repositories-file "$FRR_APK_REPOSITORIES_FILE" -q add --no-cache procps-ng >/dev/null 2>&1; then
+      dexec "$FRR" apk --repositories-file "$FRR_APK_REPOSITORIES_FILE" -q add --no-cache procps \
+        || die "FRR requires pgrep/pkill; neither procps-ng nor procps is available for the FRR Alpine release."
+    fi
+  fi
+
+  for cmd in ip ss pgrep pkill ping ssh-keygen sshd iperf3 dnsmasq; do
+    dexec "$FRR" sh -c 'command -v "$1" >/dev/null 2>&1' sh "$cmd" \
+      || die "FRR runtime command is missing after package provisioning: $cmd"
+  done
+}
+
 configure_frr_dhcp() {
   local client_mac="${1:-}"
+  [[ -n "$client_mac" ]] || die "configure_frr_dhcp requires the client WiFi MAC so the lab DHCP reservation is deterministic."
+
+  for cmd in ip ss pgrep pkill ping ssh-keygen sshd iperf3 dnsmasq; do
+    dexec "$FRR" sh -c 'command -v "$1" >/dev/null 2>&1' sh "$cmd"       || die "FRR runtime command is missing: $cmd"
+  done
   dexec "$FRR" sh -c "
-    apk add --no-cache dnsmasq iperf3 2>/dev/null || true
     mkdir -p /etc/dnsmasq.d
     cat >/etc/dnsmasq.d/lab.conf <<EOF
 interface=eth1
 bind-interfaces
 except-interface=lo
 dhcp-range=192.168.122.100,192.168.122.200,255.255.255.0,12h
-dhcp-option=3,${FRR_IP}
+dhcp-option=3,${LAB_GW}
 dhcp-option=6,8.8.8.8
+dhcp-host=${client_mac},${CLIENT_WIFI_IP}
 EOF
-    if [ -n '${client_mac}' ]; then
-      echo \"dhcp-host=${client_mac},${CLIENT_WIFI_IP}\" >>/etc/dnsmasq.d/lab.conf
-    fi
-    if pidof dnsmasq >/dev/null 2>&1; then
-      kill -HUP \"\$(pidof dnsmasq)\" 2>/dev/null || true
-      sleep 1
-    else
-      dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf
-    fi
-    if ! pidof dnsmasq >/dev/null 2>&1; then
+    grep -Fq "dhcp-host=${client_mac},${CLIENT_WIFI_IP}" /etc/dnsmasq.d/lab.conf
+    dnsmasq --test --conf-file=/etc/dnsmasq.d/lab.conf
+    pkill -TERM dnsmasq 2>/dev/null || true
+    sleep 1
+    if pgrep dnsmasq >/dev/null 2>&1; then
       pkill -9 dnsmasq 2>/dev/null || true
       sleep 1
-      dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf
     fi
+    dnsmasq --conf-file=/etc/dnsmasq.d/lab.conf
   "
   dexec "$FRR" sh -c 'pgrep dnsmasq >/dev/null' || die "FRR dnsmasq failed to start on eth1."
 }
@@ -529,83 +648,108 @@ repro_reset_runtime() {
 }
 
 set_admin_and_sshd() {
-  local c="$1"
+  local c="$1" password="${2:-admin}"
   dexec "$c" sh -c '\
     useradd -m -s /bin/bash admin 2>/dev/null || true; \
-    echo "admin:admin" | chpasswd; \
+    echo "admin:$1" | chpasswd; \
     usermod -aG sudo admin 2>/dev/null || true; \
     printf "%s\\n" "admin ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/admin; \
     chmod 440 /etc/sudoers.d/admin; \
     mkdir -p /run/sshd; \
-    /usr/sbin/sshd 2>/dev/null || true'
+    /usr/sbin/sshd 2>/dev/null || true' sh "$password"
+}
+
+set_alpine_admin_and_sshd() {
+  local c="$1" password="${2:-admin}"
+  dexec "$c" sh -c '\
+    set -eu; \
+    command -v chpasswd >/dev/null 2>&1; \
+    command -v ssh-keygen >/dev/null 2>&1; \
+    command -v sshd >/dev/null 2>&1; \
+    adduser -D -s /bin/sh admin 2>/dev/null || true; \
+    echo "admin:$1" | chpasswd; \
+    mkdir -p /etc/sudoers.d /run/sshd; \
+    printf "%s\\n" "admin ALL=(ALL) NOPASSWD: ALL" >/etc/sudoers.d/admin; \
+    chmod 440 /etc/sudoers.d/admin; \
+    ssh-keygen -A >/dev/null 2>&1; \
+    /usr/sbin/sshd 2>/dev/null' sh "$password"
+  dexec "$c" pgrep -x sshd >/dev/null || die "sshd failed to start on $c."
+}
+
+client_wifi_ready() {
+  dexec "$CLIENT" sh -c '
+    expected="$1"
+    status="$(wpa_cli -i wlan0 status 2>/dev/null || true)"
+    link="$(iw dev wlan0 link 2>/dev/null || true)"
+
+    if printf "%s\n" "$status" | grep -q "^wpa_state="; then
+      printf "%s\n" "$status" | grep -q "^wpa_state=COMPLETED$" || exit 1
+    else
+      printf "%s\n" "$link" | grep -q "^Connected to " || exit 1
+    fi
+
+    printf "%s\n" "$link" | grep -Fq "SSID: $expected" || exit 1
+    printf "%s\n" "$status" | grep -Eq "^key_mgmt=(WPA2-PSK|WPA-PSK)$"
+  ' sh "$SSID"
+}
+
+disable_libvirt_dhcp() {
+  local xml
+  xml="$("${VIRSH[@]}" net-dumpxml default)"
+
+  while IFS= read -r range; do
+    [[ -n "$range" ]] || continue
+    "${VIRSH[@]}" net-update default delete ip-dhcp-range "$range" --live --config >/dev/null 2>&1 || true
+  done < <(
+    "$PYTHON" - "$xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.fromstring(sys.argv[1])
+for item in root.findall(".//dhcp/range"):
+    start, end = item.get("start"), item.get("end")
+    if start and end:
+        print("<range start='{}' end='{}'/ >".format(start, end).replace('/ >','/>'))
+PY
+  )
+
+  xml="$("${VIRSH[@]}" net-dumpxml default)"
+  while IFS= read -r host; do
+    [[ -n "$host" ]] || continue
+    "${VIRSH[@]}" net-update default delete ip-dhcp-host "$host" --live --config >/dev/null 2>&1 || true
+  done < <(
+    "$PYTHON" - "$xml" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.fromstring(sys.argv[1])
+for item in root.findall(".//dhcp/host"):
+    attrs = [("mac", item.get("mac")), ("name", item.get("name")), ("ip", item.get("ip"))]
+    rendered = ["{}='{}'".format(key, value) for key, value in attrs if value]
+    if rendered:
+        print("<host " + " ".join(rendered) + "/>")
+PY
+  )
+
+  xml="$("${VIRSH[@]}" net-dumpxml default)"
+  if grep -q '<range ' <<<"$xml" || grep -q '<host ' <<<"$xml"; then
+    die "Libvirt default network still contains DHCP ranges/hosts; FRR dnsmasq requires exclusive DHCP ownership."
+  fi
+  echo "Libvirt default network DHCP disabled; FRR dnsmasq is the sole lab DHCP server."
 }
 
 validate_default_network() {
   local xml bridge ipaddr netmask
   xml="$("${VIRSH[@]}" net-dumpxml default)"
 
-  bridge="$(printf '%s\n' "$xml" | sed -n "s/.*<bridge[^>]*name=['\"]\\([^'\"]*\\)['\"].*/\\1/p" | head -n1)"
-  ipaddr="$(printf '%s\n' "$xml" | sed -n "s/.*<ip[^>]*address=['\"]\\([^'\"]*\\)['\"].*/\\1/p" | head -n1)"
-  netmask="$(printf '%s\n' "$xml" | sed -n "s/.*<ip[^>]*netmask=['\"]\\([^'\"]*\\)['\"].*/\\1/p" | head -n1)"
+  bridge="$(printf '%s\n' "$xml" | sed -n "s/.*<bridge[^>]*name=['\"]\([^'\"]*\)['\"].*/\1/p" | head -n1)"
+  ipaddr="$(printf '%s\n' "$xml" | sed -n "s/.*<ip[^>]*address=['\"]\([^'\"]*\)['\"].*/\1/p" | head -n1)"
+  netmask="$(printf '%s\n' "$xml" | sed -n "s/.*<ip[^>]*netmask=['\"]\([^'\"]*\)['\"].*/\1/p" | head -n1)"
 
   [[ "$bridge" == "$LAB_BRIDGE" ]] || die "Libvirt default bridge is '$bridge' (expected $LAB_BRIDGE)."
   [[ "$ipaddr" == "$LAB_GW" ]] || die "Libvirt default gateway is '$ipaddr' (expected $LAB_GW)."
   [[ "$netmask" == "$LAB_MASK" ]] || die "Libvirt default netmask is '$netmask' (expected $LAB_MASK)."
   echo "Libvirt default network OK: $bridge $ipaddr/$netmask"
-
-  if ! grep -q '<dhcp>' <<<"$xml" || ! grep -q '<range ' <<<"$xml"; then
-    echo "Default network DHCP range is missing; adding the standard 192.168.122.2-254 range."
-    "${VIRSH[@]}" net-update default add-last ip-dhcp-range "<range start='192.168.122.2' end='192.168.122.254'/>" --live --config
-  fi
-}
-
-ensure_libvirt_reservation() {
-  local mac="$1" ipaddr="$2" allow_replace="${3:-}" xml current current_owner oldxml
-  local owner_ok=0 cand
-  [[ -n "$mac" && -n "$ipaddr" ]] || die "ensure_libvirt_reservation requires MAC and IP."
-  xml="$("${VIRSH[@]}" net-dumpxml default)"
-  current=$("$PYTHON" - "$xml" "$mac" <<'PY'
-import sys, xml.etree.ElementTree as ET
-root=ET.fromstring(sys.argv[1]); want=sys.argv[2].lower(); found=''
-for h in root.findall('.//dhcp/host'):
-    if h.get('mac','').lower()==want:
-        found=h.get('ip',''); break
-print(found)
-PY
-)
-  current_owner=$("$PYTHON" - "$xml" "$ipaddr" <<'PY'
-import sys, xml.etree.ElementTree as ET
-root=ET.fromstring(sys.argv[1]); want=sys.argv[2]; found=''
-for h in root.findall('.//dhcp/host'):
-    if h.get('ip','')==want:
-        found=h.get('mac',''); break
-print(found)
-PY
-)
-  if [[ "$current" == "$ipaddr" ]]; then
-    echo "DHCP reservation already correct: $mac -> $ipaddr"
-    return 0
-  fi
-  if [[ -n "$current_owner" && "${current_owner,,}" != "${mac,,}" ]]; then
-    owner_ok=0
-    IFS=',' read -r -a _allow <<<"$allow_replace"
-    for cand in "${_allow[@]}"; do
-      [[ -n "$cand" && "${cand,,}" == "${current_owner,,}" ]] && owner_ok=1 && break
-    done
-    if ((owner_ok)); then
-      echo "Replacing same-node DHCP reservation for $ipaddr ($current_owner -> $mac)."
-      oldxml="<host mac='$current_owner' ip='$ipaddr'/>"
-      "${VIRSH[@]}" net-update default delete ip-dhcp-host "$oldxml" --live --config
-    else
-      die "DHCP IP $ipaddr is already reserved to MAC $current_owner; refusing to take over an existing reservation."
-    fi
-  fi
-  if [[ -n "$current" ]]; then
-    echo "Replacing conflicting DHCP reservation for $mac ($current -> $ipaddr)."
-    oldxml="<host mac='$mac' ip='$current'/>"
-    "${VIRSH[@]}" net-update default delete ip-dhcp-host "$oldxml" --live --config
-  fi
-  "${VIRSH[@]}" net-update default add-last ip-dhcp-host "<host mac='$mac' ip='$ipaddr'/>" --live --config
 }
 
 wait_for_management() {
@@ -650,8 +794,8 @@ for p in docker.io libvirt-clients libvirt-daemon-system iproute2 iputils-ping i
 done
 if ((${#missing[@]})); then
   if ((HAVE_SUDO_N)); then
-    sudo -n apt-get update
-    DEBIAN_FRONTEND=noninteractive sudo -n apt-get install -y "${missing[@]}"
+    sudo -n apt-get -qq update
+    DEBIAN_FRONTEND=noninteractive sudo -n apt-get -qq install -y "${missing[@]}"
   else
     die "Missing host packages: ${missing[*]}. Install them (sudo apt-get install ...) then rerun."
   fi
@@ -666,9 +810,7 @@ if ! "${VIRSH[@]}" net-info default >/dev/null 2>&1; then
   <name>default</name>
   <forward mode='nat'/>
   <bridge name='${LAB_BRIDGE}' stp='on' delay='0'/>
-  <ip address='${LAB_GW}' netmask='${LAB_MASK}'>
-    <dhcp><range start='192.168.122.2' end='192.168.122.254'/></dhcp>
-  </ip>
+  <ip address='${LAB_GW}' netmask='${LAB_MASK}'/>
 </network>
 XML
   "${VIRSH[@]}" net-define /tmp/wifi-default.xml
@@ -686,6 +828,7 @@ VENV="$REPO_ROOT/wifi-venv"
 if [[ ! -x "$VENV/bin/python" ]]; then python3 -m venv "$VENV"; fi
 PYTHON="$VENV/bin/python"
 export PYTHON GNS3_API GNS3_PROJECT_NAME
+disable_libvirt_dhcp
 validate_default_network
 
 # GNS3 API: open project, ensure management link, start nodes properly
@@ -753,40 +896,12 @@ echo "Management gateway ${MGMT_GW}/24 present on ${LAB_BRIDGE}."
 # 3. PYTHON + LOCAL REPOSITORY BASELINE
 # ---------------------------------------------------------------------------
 step "Repair Python dependencies and required local repository configuration"
-"$PYTHON" -m pip install --upgrade pip setuptools wheel
-"$PYTHON" -m pip install 'netmiko==4.7.0' 'pytest==8.1.0' 'pytest-html==4.1.1' 'PyYAML>=6.0' 'scapy==2.5.0' 'python-dotenv>=1.0.0'
+"$PYTHON" -m pip -q install --upgrade pip setuptools wheel
+[[ -f "$REPO_ROOT/requirements.txt" ]] || die "requirements.txt is missing."
+"$PYTHON" -m pip -q install -r "$REPO_ROOT/requirements.txt"
+"$PYTHON" -m pip check
 
-for f in requirements.txt configs/devices.yaml configs/test_params.yaml configs/topology.yaml pytest.ini; do backup_once "$REPO_ROOT/$f"; done
-
-# Merge required pins into requirements.txt without dropping dashboard deps
-"$PYTHON" - <<'PY'
-from pathlib import Path
-req=Path('requirements.txt')
-lines=req.read_text().splitlines() if req.exists() else []
-required={
- 'netmiko':'netmiko==4.7.0',
- 'pytest':'pytest==8.1.0',
- 'pytest-html':'pytest-html==4.1.1',
- 'pyyaml':'PyYAML>=6.0',
- 'scapy':'scapy==2.5.0',
- 'python-dotenv':'python-dotenv>=1.0.0',
-}
-out=[]; seen=set()
-for line in lines:
-    raw=line.strip()
-    if not raw or raw.startswith('#'):
-        out.append(line); continue
-    name=raw.split('==')[0].split('>=')[0].split('<=')[0].strip().lower().replace('_','-')
-    if name in required:
-        out.append(required[name]); seen.add(name)
-    else:
-        out.append(line)
-for k,v in required.items():
-    if k not in seen:
-        out.append(v)
-req.write_text('\n'.join(out).rstrip()+'\n')
-print('requirements.txt normalized')
-PY
+for f in configs/devices.yaml configs/test_params.yaml configs/topology.yaml pytest.ini; do backup_once "$REPO_ROOT/$f"; done
 
 mkdir -p configs results/captures results/setup-logs
 if [[ ! -f pytest.ini ]]; then
@@ -808,11 +923,18 @@ export FORCE_NORMALIZE_CONFIG="${FORCE_NORMALIZE_CONFIG}"
 "$PYTHON" - <<'PY'
 from pathlib import Path
 import netmiko
+import scapy
 from scapy.all import BOOTP,DHCP,DNS,EAPOL,IP,UDP,Dot11,Dot11Beacon,Dot11Elt,Ether,rdpcap,wrpcap
+from scapy.layers.eap import EAPOL_KEY
 for p in ('lib/connector.py','lib/traffic.py','lib/wifi_analyzer.py'):
     compile(Path(p).read_text(),p,'exec')
+if tuple(int(part) for part in scapy.__version__.split('.')[:2]) < (2, 7):
+    raise SystemExit(f'Scapy {scapy.__version__} is too old; requirements.txt requires scapy==2.7.0')
+if EAPOL_KEY is None:
+    raise SystemExit('Scapy EAPOL_KEY API is unavailable; protocol-evidence tests cannot run')
 print('Netmiko:',netmiko.__version__)
-print('Scapy BOOTP/DHCP/WiFi imports: OK')
+print('Scapy:',scapy.__version__)
+print('Scapy BOOTP/DHCP/WiFi/EAPOL_KEY imports: OK')
 PY
 
 # ---------------------------------------------------------------------------
@@ -833,20 +955,22 @@ provision_hwsim_radios
 # 6. FRR ROUTER
 # ---------------------------------------------------------------------------
 step "Configure FRR router, real DHCP (dnsmasq), and iperf3 server"
+install_frr_runtime_packages
+set_alpine_admin_and_sshd "$FRR" "$WIFI_ROUTER1_PASSWORD"
 dexec "$FRR" sh -c "
   ip link set eth1 up
   ip addr replace ${FRR_IP}/24 dev eth1
   ip route replace default via ${LAB_GW} dev eth1
   printf 'nameserver 8.8.8.8\\n' >/etc/resolv.conf
 "
-configure_frr_dhcp ""
-if ! dexec "$FRR" sh -c 'ss -lnt 2>/dev/null | grep -q "\\*:5201"'; then
+# DHCP is configured after the client WiFi MAC is known; this prevents an unreserved dynamic lease from being issued.
+if ! dexec "$FRR" sh -c 'pgrep -x iperf3 >/dev/null 2>&1'; then
   dexec "$FRR" iperf3 -s -D
 fi
+dexec "$FRR" sh -c 'pgrep -x iperf3 >/dev/null 2>&1' || die "iperf3 server failed to start on FRR."
 
 dexec "$FRR" sh -c "ping -c 2 -W 3 ${LAB_GW} >/dev/null"
 FRR_MAC="$(dexec "$FRR" cat /sys/class/net/eth1/address | tr -d '\r\n')"
-ensure_libvirt_reservation "$FRR_MAC" "$FRR_IP"
 
 # ---------------------------------------------------------------------------
 # 7. AP
@@ -859,7 +983,8 @@ dexec "$AP" sh -c "
   printf 'nameserver 8.8.8.8\\n' >/etc/resolv.conf
 "
 apt_install_container "$AP" hostapd openssh-server bridge-utils iw wpasupplicant sudo iproute2 iputils-ping
-set_admin_and_sshd "$AP"
+set_admin_and_sshd "$AP" "$WIFI_AP_HOST_PASSWORD"
+dexec "$AP" rm -f /etc/profile.d/80-systemd-osc-context.sh
 
 dexec "$AP" sh -c "
   ip link add br0 type bridge 2>/dev/null || true
@@ -897,7 +1022,6 @@ EOF
 dexec "$AP" iw dev wlan0 info | grep -q "ssid ${SSID}"
 dexec "$AP" sh -c 'bridge link | grep -q "master br0"'
 AP_MAC="$(dexec "$AP" cat /sys/class/net/eth0/address | tr -d '\r\n')"
-ensure_libvirt_reservation "$AP_MAC" "$AP_IP"
 dexec "$AP" sh -c "ping -c 2 -W 3 ${FRR_IP} >/dev/null"
 
 # ---------------------------------------------------------------------------
@@ -911,11 +1035,10 @@ dexec "$MONITOR" sh -c "
   printf 'nameserver 8.8.8.8\\n' >/etc/resolv.conf
 "
 apt_install_container "$MONITOR" openssh-server sudo tcpdump iproute2 iputils-ping
-set_admin_and_sshd "$MONITOR"
+set_admin_and_sshd "$MONITOR" "$WIFI_MONITOR_VM_PASSWORD"
 dexec "$MONITOR" rm -f /etc/profile.d/80-systemd-osc-context.sh
 
 MONITOR_MAC="$(dexec "$MONITOR" cat /sys/class/net/eth0/address | tr -d '\r\n')"
-ensure_libvirt_reservation "$MONITOR_MAC" "$MONITOR_IP"
 dexec "$MONITOR" sh -c "ping -c 2 -W 3 ${FRR_IP} >/dev/null"
 
 # ---------------------------------------------------------------------------
@@ -928,8 +1051,9 @@ dexec "$CLIENT" sh -c "
   ip route replace default via ${LAB_GW} dev eth0
   printf 'nameserver 8.8.8.8\\n' >/etc/resolv.conf
 "
-apt_install_container "$CLIENT" iw wpasupplicant openssh-server iperf3 bind9-dnsutils isc-dhcp-client sudo iproute2 iputils-ping
-set_admin_and_sshd "$CLIENT"
+apt_install_container "$CLIENT" iw wpasupplicant openssh-server iperf3 bind9-dnsutils isc-dhcp-client iptables sudo iproute2 iputils-ping
+set_admin_and_sshd "$CLIENT" "$WIFI_CLIENT_VM_PASSWORD"
+dexec "$CLIENT" sh -c 'command -v iptables >/dev/null || exit 1' || die "Client iptables is required for DNS fault injection."
 dexec "$CLIENT" rm -f /etc/profile.d/80-systemd-osc-context.sh
 
 dexec "$CLIENT" sh -c "
@@ -967,7 +1091,7 @@ done
 dexec "$CLIENT" sh -c 'test -S /run/wpa_supplicant/wlan0' || die "wpa_supplicant control socket missing on client wlan0."
 
 for _try in {1..30}; do
-  if dexec "$CLIENT" sh -c 'wpa_cli -i wlan0 status | grep -q "wpa_state=COMPLETED"'; then
+  if client_wifi_ready; then
     break
   fi
   # Nudge association if stuck
@@ -976,9 +1100,9 @@ for _try in {1..30}; do
   fi
   sleep 1
 done
-dexec "$CLIENT" sh -c 'wpa_cli -i wlan0 status | grep -q "wpa_state=COMPLETED"' || {
+client_wifi_ready || {
   dexec "$CLIENT" sh -c 'wpa_cli -i wlan0 status; iw dev wlan0 link' || true
-  die "Client failed to complete WPA2 association to ${SSID}."
+  die "Client failed to complete a verified WPA2 association to ${SSID}."
 }
 
 WIFI_MAC="$(dexec "$CLIENT" cat /sys/class/net/wlan0/address | tr -d '\r\n')"
@@ -986,9 +1110,7 @@ CLIENT_ETH0_MAC="$(dexec "$CLIENT" cat /sys/class/net/eth0/address | tr -d '\r\n
 CLIENT_ETH1_MAC="$(dexec "$CLIENT" cat /sys/class/net/eth1/address | tr -d '\r\n')"
 [[ "$WIFI_MAC" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] || die "Invalid wlan0 MAC: $WIFI_MAC"
 configure_frr_dhcp "$WIFI_MAC"
-# Keep virbr0 DHCP from handing 192.168.122.30 to eth0 before wlan0 claims the reservation.
-ensure_libvirt_reservation "$WIFI_MAC" "$CLIENT_WIFI_IP" "${CLIENT_ETH0_MAC},02:00:00:00:00:00"
-ensure_libvirt_reservation "$CLIENT_ETH1_MAC" "$CLIENT_MGMT_IP" "${CLIENT_ETH0_MAC}"
+# libvirt DHCP is disabled; FRR dnsmasq is the sole WiFi DHCP authority.
 
 dexec "$CLIENT" sh -c "
   dhclient -r wlan0 2>/dev/null || true
@@ -1017,8 +1139,10 @@ fi
 step "Validate isolated management and real WiFi data path"
 wait_for_management
 
-dexec "$CLIENT" sh -c "wpa_cli -i wlan0 status | grep -q 'ssid=${SSID}'"
-dexec "$CLIENT" sh -c 'wpa_cli -i wlan0 status | grep -q "wpa_state=COMPLETED"'
+client_wifi_ready || {
+  dexec "$CLIENT" sh -c 'wpa_cli -i wlan0 status; iw dev wlan0 link' || true
+  die "Final WiFi association verification failed for ${SSID}."
+}
 # Non-destructive SSID check (iw scan can break hwsim association mid-validation).
 dexec "$CLIENT" sh -c "iw dev wlan0 link | grep -q 'SSID: ${SSID}'"
 dexec "$CLIENT" sh -c "ping -c 3 -W 3 ${FRR_IP} >/dev/null"
@@ -1055,7 +1179,8 @@ step "Run the complete real regression suite"
 step "Final service and DHCP verification"
 "${VIRSH[@]}" net-dhcp-leases default || true
 dexec "$FRR" sh -c 'ss -lnt 2>/dev/null | grep -q "\\*:5201"'
-dexec "$CLIENT" sh -c "ss -lnt 2>/dev/null | grep -q ':22'; wpa_cli -i wlan0 status | grep -q 'wpa_state=COMPLETED'; ip -4 addr show wlan0 | grep -q '${CLIENT_WIFI_IP}/24'"
+client_wifi_ready
+dexec "$CLIENT" sh -c "ip -4 addr show wlan0 | grep -q '${CLIENT_WIFI_IP}/24'"
 dexec "$MONITOR" sh -c 'command -v tcpdump >/dev/null'
 
 echo

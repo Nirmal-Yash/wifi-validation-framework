@@ -1,0 +1,10 @@
+{% extends "layout.html" %}
+{% block title %}Artifacts — NetRegress{% endblock %}
+{% block content %}<div class="card"><h2>Artifact Browser</h2><p class="small">Artifact interpretation verifies SHA-256. Remote binary downloads require NETREGRESS_DASHBOARD_TOKEN.</p></div>
+<div class="card"><div class="controls"><div class="control"><label>Run ID</label><input id="run"></div><div class="control"><label>Type</label><select id="type"><option value="">all</option><option>PCAP</option><option>TELEMETRY</option><option>LAB_HEALTH_SNAPSHOT</option><option>PROTOCOL_EVIDENCE</option><option>COMMAND_OUTPUT</option></select></div><button onclick="load()">Load</button></div></div>
+<div class="card"><div style="overflow:auto"><table><thead><tr><th>Name</th><th>Type</th><th>Run</th><th>Size</th><th>SHA-256</th><th>Evidence</th><th>Action</th></tr></thead><tbody id="rows"></tbody></table></div></div>
+<script>
+async function load(){var q=new URLSearchParams(),run=document.getElementById("run").value.trim(),type=document.getElementById("type").value;if(run)q.set("run_id",run);if(type)q.set("artifact_type",type);var res=await fetch("/api/v1/artifacts?"+q),body=await res.json();if(!res.ok)return;var html="";body.data.items.forEach(function(a){html+="<tr><td>"+a.display_name+"</td><td>"+a.artifact_type+"</td><td>"+a.run_id+"</td><td>"+a.size_bytes+"</td><td><code>"+a.sha256+"</code></td><td>"+a.evidence_state+"</td><td>"+(a.downloadable?"<a href='/api/v1/artifacts/"+encodeURIComponent(a.artifact_id)+"/download'>Download</a>":"unavailable")+"</td></tr>"});document.getElementById("rows").innerHTML=html}
+load();
+</script>
+{% endblock %}

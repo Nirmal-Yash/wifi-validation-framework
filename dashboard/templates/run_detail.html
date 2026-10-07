@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+{% block title %}Run Detail — NetRegress{% endblock %}
+{% block content %}<div id="app"><div class="card">Loading…</div></div>
+<script>
+var runId={{ run_id|tojson }};
+function renderRun(run,tests){var c=run.test_counts||{},html="<div class=\"card\"><h2>"+run.display_id+"</h2><p class=\"small\">"+run.run_id+"</p><div class=\"grid\">";
+html+="<div class=\"stat\"><strong>"+(run.lifecycle_status||"—")+"</strong><span class=\"small\">Lifecycle</span></div>";
+html+="<div class=\"stat\"><strong>"+(run.business_outcome||"—")+"</strong><span class=\"small\">Business outcome</span></div>";
+html+="<div class=\"stat\"><strong>"+run.firmware_version+"</strong><span class=\"small\">Firmware</span></div>";
+html+="<div class=\"stat\"><strong>"+run.lab_id+"</strong><span class=\"small\">Lab</span></div>";
+html+="<div class=\"stat\"><strong>"+(run.environment_class||"—")+"</strong><span class=\"small\">Environment</span></div>";
+html+="<div class=\"stat\"><strong>"+(c.pass||0)+"/"+(c.total||0)+"</strong><span class=\"small\">Passed tests</span></div></div></div>";
+html+="<div class=\"card\"><h2>Tests</h2><div style=\"overflow:auto\"><table><thead><tr><th>Test</th><th>Status</th><th>Evidence</th><th>Metrics</th><th>Reason</th></tr></thead><tbody>";
+tests.forEach(function(t){html+="<tr><td><a href=\"/runs/"+encodeURIComponent(runId)+"/tests/"+encodeURIComponent(t.test_result_id)+"\">"+t.test_id+"</a><div class=\"small\">"+t.node_id+"</div></td><td>"+t.status+"</td><td>"+t.evidence_state+"</td><td>"+t.metrics.length+"</td><td>"+(t.error_reason||"—")+"</td></tr>"});html+="</tbody></table></div></div>";
+html+="<div class=\"card\"><h2>Health</h2>";(run.health||[]).forEach(function(h){html+="<p><strong>"+h.snapshot.phase+"</strong> — "+h.snapshot.overall_status+" <span class=\"small\">"+h.snapshot.completed_at+"</span></p>"});if(!(run.health||[]).length)html+="<p class=\"small\">No health snapshot artifact found.</p>";html+="</div>";
+html+="<div class=\"card\"><h2>Evidence</h2><ul>";(run.artifacts||[]).forEach(function(a){html+="<li>"+a.display_name+" — "+a.artifact_type+" — "+a.size_bytes+" bytes — <a href=\"/api/v1/artifacts/"+encodeURIComponent(a.artifact_id)+"/download\">download</a></li>"});html+="</ul></div>";
+html+="<div class=\"card\"><h2>Configuration</h2><pre>"+JSON.stringify((run.config_snapshot||{}).resolved_config||{},null,2)+"</pre></div>";
+document.getElementById("app").innerHTML=html}
+async function load(){var a=await fetch("/api/v1/runs/"+encodeURIComponent(runId));var b=await fetch("/api/v1/runs/"+encodeURIComponent(runId)+"/tests");if(!a.ok){document.getElementById("app").textContent="Run not found";return}var run=(await a.json()).data;var tests=b.ok?(await b.json()).data.items:[];renderRun(run,tests)}
+load();setInterval(load,10000);
+</script>
+{% endblock %}
