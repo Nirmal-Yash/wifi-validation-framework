@@ -9,6 +9,8 @@ if str(ROOT) not in sys.path:
 
 import pytest
 
+pytestmark = pytest.mark.real_lab
+
 
 @pytest.mark.smoke
 def test_dhcp_lease_assigned(connection_pool, params, metric_logger):

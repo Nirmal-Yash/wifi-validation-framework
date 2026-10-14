@@ -1,0 +1,8 @@
+{% extends "layout.html" %}
+{% block title %}Lab Health — NetRegress{% endblock %}
+{% block content %}<div class="card"><h2>Lab Health</h2><p class="small">The dashboard displays persisted health evidence and never triggers repair.</p></div>
+<div class="card"><div class="controls"><div class="control"><label>Run ID</label><input id="run"></div><button onclick="load()">Load</button></div></div><div id="app"></div>
+<script>
+async function load(){var run=document.getElementById("run").value.trim();if(!run){document.getElementById("app").innerHTML="<div class='card'>Enter a Run ID.</div>";return}var res=await fetch("/api/v1/runs/"+encodeURIComponent(run)+"/health"),body=await res.json();if(!res.ok)return;var html="";body.data.items.forEach(function(item){html+="<div class='card'><h3>"+item.snapshot.phase+" — "+item.snapshot.overall_status+"</h3><p class='small'>"+item.snapshot.completed_at+"</p><table><thead><tr><th>Component</th><th>Status</th><th>Required</th><th>Summary</th><th>Observed</th></tr></thead><tbody>";(item.snapshot.observations||[]).forEach(function(o){html+="<tr><td>"+o.component+"</td><td>"+o.status+"</td><td>"+o.required+"</td><td>"+o.summary+"</td><td>"+o.observed_at+"</td></tr>"});html+="</tbody></table></div>"});document.getElementById("app").innerHTML=html||"<div class='card'>No health snapshots.</div>"}
+</script>
+{% endblock %}

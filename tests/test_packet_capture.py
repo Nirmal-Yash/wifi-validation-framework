@@ -10,11 +10,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import pytest
-from lib.wifi_analyzer import analyze_dhcp_sequence
+from lib.domain import ArtifactType
+from lib.services import ArtifactService, ProtocolEvidenceService
 
 
 @pytest.mark.regression
-def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
+@pytest.mark.real_lab
+def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger, run_context, request):
     """Validate real DHCP traffic at the AP bridge; no synthetic PCAP fallback."""
     capture_device = params["network"].get("capture_device", "ap_host")
     capture_iface = params["network"].get("capture_interface", "br0")
@@ -105,6 +107,43 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
             f"sudo dhclient {client_iface}",
             read_timeout=30,
         )
+
+        def wait_for_capture_data(timeout_sec=8):
+            deadline = time.time() + timeout_sec
+            while time.time() < deadline:
+                size_output, _, _ = ap_exec(
+                    f"sudo -n stat -c%s {shlex.quote(remote_pcap)} 2>/dev/null || echo 0",
+                    timeout=10,
+                )
+                size = size_output.strip()
+                if size.isdigit() and int(size) > 64:
+                    return True
+                time.sleep(0.5)
+            return False
+
+        # Give libpcap/kernel buffers time to drain before terminating tcpdump.
+        captured = wait_for_capture_data()
+        if not captured:
+            # A DHCP client may retain a valid lease and emit no useful renewal
+            # frames on the first invocation. Force one additional transaction
+            # while the capture process is still alive.
+            connection_pool.send_command(
+                "client_vm",
+                f"sudo dhclient -r {client_iface} 2>/dev/null || true; "
+                f"sudo dhclient {client_iface}",
+                read_timeout=30,
+            )
+            captured = wait_for_capture_data()
+
+        if not captured:
+            log, _, _ = ap_exec(
+                "cat /tmp/dhcp_capture.log 2>/dev/null || true",
+                timeout=10,
+                check=False,
+            )
+            raise AssertionError(
+                f"tcpdump observed no persisted DHCP frames on {capture_device}: {log!r}"
+            )
 
         # SIGINT lets tcpdump finish normally and flush the pcap cleanly.
         ap_exec(
@@ -198,13 +237,64 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger):
     assert len(data) > 64, "Downloaded monitor PCAP is too small to be real traffic"
 
     local_sha256 = hashlib.sha256(data).hexdigest()
+    run_context = getattr(request.config, "_netregress_run_context", None)
+    if run_context is not None:
+        artifact_service = run_context.artifact_service or ArtifactService.from_sqlite(
+            run_context.run_service.run_repository.database
+        )
+        artifact_service.register_file(
+            run_id=run_context.run_id,
+            path=local_pcap,
+            artifact_type=ArtifactType.PCAP,
+            display_name="dhcp_test.pcap",
+            expected_sha256=local_sha256,
+            expected_size_bytes=len(data),
+        )
     remote_match = re.match(r"^([0-9a-fA-F]{64})\s+", remote_sha256)
     assert remote_match, f"Could not read remote PCAP checksum: {remote_sha256!r}"
     assert local_sha256.lower() == remote_match.group(1).lower(), (
         "Downloaded PCAP checksum does not match the monitor copy"
     )
 
-    analysis = analyze_dhcp_sequence(str(local_pcap))
-    metric_logger.log(analysis["total_packets"], "packets")
-    assert analysis["total_packets"] > 0, f"No DHCP frames in real PCAP: {analysis}"
-    assert analysis["has_lease_acquired"], f"Real DHCP capture has no ACK: {analysis['message_counts']}"
+    protocol_service = (
+        run_context.protocol_evidence_service
+        if run_context is not None and run_context.protocol_evidence_service is not None
+        else ProtocolEvidenceService()
+    )
+    evidence = protocol_service.analyze_dhcp(local_pcap)
+    metric_logger.log(evidence.total_packets, "packets", name="dhcp_packets")
+    metric_logger.log(
+        evidence.correlated_dora_count,
+        "transactions",
+        name="dora_transactions",
+    )
+
+    evidence_path = (
+        ROOT / "results" / "evidence" / (
+            (run_context.run_id if run_context is not None else "adhoc")
+            + "-dhcp-protocol.json"
+        )
+    )
+    protocol_service.write_json(evidence, evidence_path)
+    if run_context is not None:
+        artifact_service = run_context.artifact_service or ArtifactService.from_sqlite(
+            run_context.run_service.run_repository.database
+        )
+        artifact_service.register_file(
+            run_id=run_context.run_id,
+            path=evidence_path,
+            artifact_type=ArtifactType.PROTOCOL_EVIDENCE,
+            display_name="dhcp_protocol_evidence.json",
+        )
+
+    assert evidence.total_packets > 0, (
+        f"No DHCP frames in real PCAP: {evidence.as_dict()}"
+    )
+    assert evidence.has_dora, (
+        "Real DHCP capture did not contain a correlated DORA transaction: "
+        f"{evidence.as_dict()}"
+    )
+    assert evidence.has_lease_acquired, (
+        "Correlated DHCP evidence has no ACK with an assigned address: "
+        f"{evidence.as_dict()}"
+    )

@@ -1,0 +1,8 @@
+{% extends "layout.html" %}
+{% block title %}Telemetry — NetRegress{% endblock %}
+{% block content %}<div class="card"><h2>WiFi Telemetry</h2><div class="notice warn">Virtual WiFi telemetry is diagnostic network-behavior evidence. It is not RF certification.</div></div>
+<div class="card"><div class="controls"><div class="control"><label>Run ID</label><input id="run"></div><button onclick="load()">Load</button></div></div><div id="app"></div>
+<script>
+async function load(){var run=document.getElementById("run").value.trim();if(!run){document.getElementById("app").innerHTML="<div class='card'>Enter a Run ID.</div>";return}var res=await fetch("/api/v1/runs/"+encodeURIComponent(run)+"/telemetry"),body=await res.json();if(!res.ok){document.getElementById("app").innerHTML="<div class='card'>"+body.error.message+"</div>";return}var html="";body.data.items.forEach(function(item){html+="<div class='card'><h3>"+item.snapshot.environment_class+"</h3><p class='small'>"+item.snapshot.captured_at+" — "+item.snapshot.interface+"</p><table><thead><tr><th>Metric</th><th>Value</th><th>Unit</th><th>Source</th><th>Captured</th></tr></thead><tbody>";(item.snapshot.points||[]).forEach(function(p){html+="<tr><td>"+p.metric+"</td><td>"+p.value+"</td><td>"+p.unit+"</td><td>"+p.source+"</td><td>"+p.captured_at+"</td></tr>"});html+="</tbody></table></div>"});document.getElementById("app").innerHTML=html||"<div class='card'>No telemetry artifacts are persisted for this Run.</div>"}
+</script>
+{% endblock %}
