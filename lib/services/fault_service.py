@@ -6,6 +6,7 @@ import time
 from typing import Iterator
 
 from .command_runner import CommandRunner
+from .wifi_state import assess_wifi_association
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +17,8 @@ class FaultDefinition:
     restore_commands: tuple[str, ...]
     description: str
     restore_checks: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    restore_association_interface: str | None = None
+    restore_association_ssid: str | None = None
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -34,6 +37,20 @@ class FaultDefinition:
                 raise ValueError("restore check command must not be empty")
             if not isinstance(required_tokens, tuple):
                 raise ValueError("restore check tokens must be a tuple")
+
+        interface = self.restore_association_interface
+        if interface is not None and (
+            not isinstance(interface, str)
+            or not interface
+            or len(interface) > 15
+            or not all(char.isalnum() or char in "_.:-" for char in interface)
+        ):
+            raise ValueError("restore association interface must be a valid interface name")
+        if self.restore_association_ssid is not None and (
+            not isinstance(self.restore_association_ssid, str)
+            or not self.restore_association_ssid.strip()
+        ):
+            raise ValueError("restore association SSID must not be empty")
 
 
 class FaultService:
@@ -95,8 +112,91 @@ class FaultService:
             if check_error is not None:
                 first_error = first_error or check_error
 
+        if fault.restore_association_interface is not None:
+            check_error: Exception | None = None
+            for _attempt in range(15):
+                try:
+                    self._verify_wifi_association(fault)
+                    check_error = None
+                    break
+                except Exception as exc:
+                    check_error = exc
+                time.sleep(1)
+            if check_error is not None:
+                first_error = first_error or check_error
+
         if first_error is not None:
             raise first_error
+
+    def _verify_wifi_association(self, fault: FaultDefinition) -> None:
+        interface = fault.restore_association_interface
+        if interface is None:
+            return
+        category = f"fault.verify.{fault.fault_id}"
+        status_result = self.command_runner.execute_shell(
+            fault.target,
+            f"sudo wpa_cli -i {interface} status",
+            command_category=category,
+            idempotent=True,
+            privilege_mode="SUDO",
+        )
+        link_result = self.command_runner.execute_shell(
+            fault.target,
+            f"sudo iw dev {interface} link",
+            command_category=category,
+            idempotent=True,
+            privilege_mode="SUDO",
+        )
+        for result in (status_result, link_result):
+            if not result.transport_succeeded:
+                raise RuntimeError(
+                    f"fault restore association transport failed for {fault.fault_id}: "
+                    f"{result.safe_display_command}: {result.transport_error}"
+                )
+
+        def field(output: str, key: str) -> str | None:
+            for line in output.splitlines():
+                name, separator, value = line.partition("=")
+                if separator and name.strip().lower() == key:
+                    return value.strip()
+            return None
+
+        status_ssid = field(status_result.stdout, "ssid")
+        link_ssid = next(
+            (
+                line.split(":", 1)[1].strip()
+                for line in link_result.stdout.splitlines()
+                if line.strip().startswith("SSID:")
+            ),
+            None,
+        )
+        expected_ssid = fault.restore_association_ssid or status_ssid
+        if (
+            not expected_ssid
+            or status_ssid != expected_ssid
+            or link_ssid != expected_ssid
+        ):
+            raise RuntimeError(
+                f"fault restore association verification failed for {fault.fault_id}: "
+                f"expected SSID {expected_ssid!r}, "
+                f"wpa_cli SSID {status_ssid!r}, driver SSID {link_ssid!r}"
+            )
+
+        association = assess_wifi_association(
+            wpa_status=status_result.stdout,
+            iw_link=link_result.stdout,
+            expected_ssid=expected_ssid,
+            require_wpa2=True,
+        )
+        if not association.connected or not association.bssid:
+            raise RuntimeError(
+                f"fault restore association verification failed for {fault.fault_id}: "
+                f"wpa_state={association.wpa_state!r}, "
+                f"key_mgmt={association.key_mgmt!r}, "
+                f"pairwise_cipher={association.pairwise_cipher!r}, "
+                f"group_cipher={association.group_cipher!r}, "
+                f"driver_link={link_result.stdout.strip()!r}"
+            )
 
     @contextmanager
     def context(self, fault: FaultDefinition) -> Iterator[None]:
@@ -130,7 +230,9 @@ class FaultService:
                 )
 
     @staticmethod
-    def wifi_link_flap(interface: str = "wlan0") -> FaultDefinition:
+    def wifi_link_flap(
+        interface: str = "wlan0", *, expected_ssid: str | None = None
+    ) -> FaultDefinition:
         return FaultDefinition(
             fault_id="wifi.link_flap",
             target="client_vm",
@@ -140,11 +242,17 @@ class FaultService:
                 "sudo dhclient -1 wlan0 2>/dev/null || true",
             ),
             description="Disable the client WiFi interface and restore it with DHCP.",
-            restore_checks=(("sudo wpa_cli -i wlan0 status", ("wpa_state=COMPLETED",)),),
+            restore_association_interface=interface,
+            restore_association_ssid=expected_ssid,
         )
 
     @staticmethod
-    def wifi_disconnect(interface: str = "wlan0", network_id: str = "0") -> FaultDefinition:
+    def wifi_disconnect(
+        interface: str = "wlan0",
+        network_id: str = "0",
+        *,
+        expected_ssid: str | None = None,
+    ) -> FaultDefinition:
         return FaultDefinition(
             fault_id="wifi.disconnect",
             target="client_vm",
@@ -157,7 +265,8 @@ class FaultService:
                 f"sudo wpa_cli -i {interface} reconnect",
             ),
             description="Disable the configured WiFi network and restore association.",
-            restore_checks=((f"sudo wpa_cli -i {interface} status", ("wpa_state=COMPLETED",)),),
+            restore_association_interface=interface,
+            restore_association_ssid=expected_ssid,
         )
 
     @staticmethod
@@ -167,6 +276,7 @@ class FaultService:
         network_id: str,
         wrong_psk: str,
         correct_psk: str,
+        expected_ssid: str | None = None,
     ) -> FaultDefinition:
         import shlex
 
@@ -187,7 +297,8 @@ class FaultService:
                 f"sudo wpa_cli -i {interface} reconnect",
             ),
             description="Replace the active WPA2-PSK at runtime, prove authentication failure, then restore it.",
-            restore_checks=((f"sudo wpa_cli -i {interface} status", ("wpa_state=COMPLETED",)),),
+            restore_association_interface=interface,
+            restore_association_ssid=expected_ssid,
         )
 
     @staticmethod
@@ -239,7 +350,7 @@ class FaultService:
         )
 
     @staticmethod
-    def client_wifi_restart() -> FaultDefinition:
+    def client_wifi_restart(*, expected_ssid: str | None = None) -> FaultDefinition:
         return FaultDefinition(
             fault_id="wifi.client_restart",
             target="client_vm",
@@ -254,8 +365,7 @@ class FaultService:
                 "sudo wpa_cli -i wlan0 reconnect 2>/dev/null || true",
             ),
             description="Restart the client WiFi supplicant while preserving the management path.",
-            restore_checks=(
-                ("sudo pgrep wpa_supplicant", ()),
-                ("sudo wpa_cli -i wlan0 status", ("wpa_state=COMPLETED",)),
-            ),
+            restore_checks=(("sudo pgrep wpa_supplicant", ()),),
+            restore_association_interface="wlan0",
+            restore_association_ssid=expected_ssid,
         )

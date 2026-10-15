@@ -1044,6 +1044,8 @@ The expanded functional suite contains explicit disruption/recovery cases for:
 
 Each destructive case preserves the management path and must prove both the fault and the restored data/control path. Fault application and restoration are audited through CommandRunner, and FaultService restores state in a finalization boundary.
 
+Wi-Fi restoration verifies the configured SSID against both `wpa_cli status` and `iw dev <interface> link`, requires WPA2 key management and CCMP ciphers, and rejects an explicit non-`COMPLETED` state or a missing driver association. If the supplicant omits `wpa_state`, the live driver association is used as the state fallback.
+
 The original 11 validation tests remain the protected behavioral subset. Because Iteration 12 adds real network-mutating tests, both the protected subset and the expanded recovery suite require execution on the GNS3/mac80211_hwsim lab before this iteration can be considered runtime-verified.
 
 Protocol-accurate DHCP T2 rebind is not inferred from a generic lease reacquisition. That assertion is reserved for the later transaction-aware DHCP evidence phase.
@@ -1125,6 +1127,8 @@ The always-on GitHub-hosted job is hardware-free and runs ci_tests outside the r
 ## 29. Iteration 19 offline operation
 
 At Run completion, the pytest session attempts to enqueue a local snapshot. Queue failure emits a warning and does not change the Run outcome.
+
+The SQLite sync queue timestamps use timezone-aware UTC values (`timezone.utc`) so terminal Run enqueueing does not fail during session finalization.
 
 Synchronization is explicit through `python scripts/netregress_sync.py --url https://...`. Temporary connectivity failures remain retryable. Stale in-flight leases are recoverable. Repeated delivery uses the same idempotency key so the future Cloud can safely deduplicate accepted envelopes.
 

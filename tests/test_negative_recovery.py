@@ -124,6 +124,7 @@ def test_wrong_psk_rejected_and_recovers(
         network_id=network_id,
         wrong_psk=wrong_psk,
         correct_psk=correct_psk,
+        expected_ssid=ssid,
     )
 
     fault_applied_at = time.monotonic()
@@ -162,7 +163,7 @@ def test_wifi_disconnect_reconnect_recovers(
     network_id = _network_id(run_context, ssid)
 
     _assert_baseline(run_context, connection_pool, router_ip)
-    fault = fault_service.wifi_disconnect(network_id=network_id)
+    fault = fault_service.wifi_disconnect(network_id=network_id, expected_ssid=ssid)
 
     fault_applied_at = time.monotonic()
     with fault_service.context(fault):
@@ -326,7 +327,7 @@ def test_client_wifi_restart_recovers(
     router_ip = params["network"]["router_ip"]
     _assert_baseline(run_context, connection_pool, router_ip)
 
-    fault = fault_service.client_wifi_restart()
+    fault = fault_service.client_wifi_restart(expected_ssid=params["wifi"]["ssid"])
     fault_applied_at = time.monotonic()
     with fault_service.context(fault):
         disrupted = _wait_for_wifi(
