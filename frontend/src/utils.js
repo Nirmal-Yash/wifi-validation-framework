@@ -1,4 +1,9 @@
 export const terminalStatuses=new Set(["COMPLETED","FAILED","LAB_FAILED","CANCELLED","ABORTED"]);
+export const summarizeRunOutcomes=(items=[])=>({
+  active:items.filter(item=>item?.lifecycle_status&&!terminalStatuses.has(String(item.lifecycle_status).toUpperCase())).length,
+  validated:items.filter(item=>["VALIDATED","VALIDATED_WITH_WARNINGS"].includes(String(item?.business_outcome||"").toUpperCase())).length,
+  needsReview:items.filter(item=>["REJECTED","UNVALIDATED"].includes(String(item?.business_outcome||"").toUpperCase())).length
+});
 export const canExecute=(role)=>["OWNER","ADMIN","OPERATOR"].includes(role);
 export const canAdmin=(role)=>["OWNER","ADMIN"].includes(role);
 export const canOwner=(role)=>role==="OWNER";

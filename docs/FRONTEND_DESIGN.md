@@ -317,3 +317,12 @@ The Runner includes a React + Vite operational application consuming `/api/v1`. 
 The operational API remains the authority for mutation authorization, CSRF, idempotency and artifact boundaries. Browser state changes now require a session-bound CSRF token. The UI may surface the certification matrix and release/readiness status, but it must never infer certification from the presence of a generated matrix alone.
 
 Certification scenario records must distinguish execution class, especially REAL_LAB, from hardware-free and simulated evidence. The frontend must preserve lifecycle/failure classification and must not convert LAB_FAILED, UNVALIDATED or Runner failures into product PASS states.
+
+
+## 21. Local development and presentation update
+
+The modern local development flow runs Flask on 127.0.0.1:5000 and React/Vite on 127.0.0.1:5173. Vite proxies /api/* to Flask so the browser uses one origin for the API session and CSRF workflow. Configure a local OWNER using NETREGRESS_AUTH_REQUIRED=1, NETREGRESS_SESSION_SECRET, and NETREGRESS_AUTH_USERS_JSON as shown in frontend/README.md; do not add a default password to the repository. The Vite development host is loopback-only by default.
+
+The dashboard presentation now uses an operational hero, explicit refresh context, consistent action links, refined spacing/surface hierarchy, responsive layouts, reduced-motion support, and a skip-to-main-content link. KPI labels are domain-aware: total Runs are separated from latest-eight activity, and validated outcomes are counted from VALIDATED and VALIDATED_WITH_WARNINGS; REJECTED and UNVALIDATED remain visible as items needing review. No frontend number maps pytest PASS directly to business release validation.
+
+The API remains authoritative for authorization, CSRF, idempotency, artifact containment and release-policy semantics. The browser must be exercised against the live Flask API before the React client is considered runtime-verified or the Jinja compatibility pages are retired.
