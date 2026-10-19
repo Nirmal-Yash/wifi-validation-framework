@@ -6,9 +6,24 @@ export class ApiError extends Error{
 const newKey=()=>globalThis.crypto?.randomUUID?globalThis.crypto.randomUUID():"ui-"+Date.now()+"-"+Math.random().toString(36).slice(2);
 const encode=(value)=>encodeURIComponent(String(value));
 async function rawRequest(path,options={}){
-  const response=await fetch(base+path,{credentials:"include",...options,headers:{Accept:"application/json","Content-Type":"application/json",...(options.headers||{})}});
-  const body=await response.json().catch(()=>({}));
-  if(!response.ok){const error=body?.error||{};throw new ApiError(error.message||"Request failed",response.status,error.code||"REQUEST_FAILED",error.details||{});}
+  let response;
+  try {
+    response=await fetch(base+path,{credentials:"include",...options,headers:{Accept:"application/json","Content-Type":"application/json",...(options.headers||{})}});
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new ApiError("Cannot reach the Runner API. Start it with ./scripts/start_dashboard.sh from the repository root.",0,"API_UNREACHABLE");
+    }
+    throw error;
+  }
+  const contentType=response.headers.get("content-type")||"";
+  const body=await response.json().catch(()=>null);
+  if(!body||typeof body!=="object"||!contentType.toLowerCase().includes("application/json")){
+    throw new ApiError("The Runner returned a non-JSON response. Check the backend port and Vite proxy, then restart with ./scripts/start_dashboard.sh.",response.status,"INVALID_API_RESPONSE");
+  }
+  if(!response.ok){const error=body?.error||{};throw new ApiError(error.message||`Runner API request failed (HTTP ${response.status})`,response.status,error.code||"REQUEST_FAILED",error.details||{});}
+  if(!Object.prototype.hasOwnProperty.call(body,"data")){
+    throw new ApiError("The Runner API response is missing its data envelope. Check that Vite is proxying to the NetRegress backend.",response.status,"INVALID_API_RESPONSE");
+  }
   return body.data;
 }
 async function ensureCsrf(){if(csrfToken)return csrfToken;const data=await rawRequest("/auth/csrf",{method:"GET"});csrfToken=data?.csrf_token||"";return csrfToken;}

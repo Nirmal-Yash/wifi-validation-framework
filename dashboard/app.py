@@ -24,6 +24,13 @@ from lib.services import apply_security_headers
 
 ROOT = Path(__file__).resolve().parent.parent
 DATABASE_PATH = Path(os.getenv("NETREGRESS_DATABASE_PATH", ROOT / "results" / "test_results.db"))
+RUNNER_HOST = "127.0.0.1"
+try:
+    RUNNER_PORT = int(os.getenv("NETREGRESS_PORT", "5000"))
+except ValueError as exc:
+    raise RuntimeError("NETREGRESS_PORT must be an integer") from exc
+if not 1 <= RUNNER_PORT <= 65535:
+    raise RuntimeError("NETREGRESS_PORT must be between 1 and 65535")
 
 
 def render_svg_chart(pass_rates):
@@ -204,5 +211,5 @@ app = create_app()
 
 if __name__ == "__main__":
     init_db()
-    print("WiFi Validation Dashboard running at http://localhost:5000")
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    print(f"NetRegress Runner API listening at http://{RUNNER_HOST}:{RUNNER_PORT}")
+    app.run(host=RUNNER_HOST, port=RUNNER_PORT, debug=False)

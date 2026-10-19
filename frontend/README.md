@@ -1,40 +1,43 @@
 # NetRegress Runner UI
 
-The modern operational UI is a React + Vite client over the canonical /api/v1 contract. Flask remains the API/session host and the older Flask/Jinja page remains available as a compatibility dashboard.
+The modern operational UI is a React + Vite client over the canonical `/api/v1` contract. Flask remains the API/session host and the older Flask/Jinja page remains available as a compatibility dashboard.
 
-## Start the dashboard locally
+## One-command setup and startup
 
-Use two terminals from the repository root. Node.js 20.19+ (or 22.12+) is required.
-
-### Terminal 1 — authenticated Flask API
+From the repository root on Ubuntu:
 
 ```bash
-source wifi-venv/bin/activate
-
-export NETREGRESS_AUTH_REQUIRED=1
-export NETREGRESS_SESSION_SECRET="$(python -c 'import secrets; print(secrets.token_hex(32))')"
-
-read -r -s -p "Dashboard password for owner: " DASHBOARD_PASSWORD
-printf '\n'
-export NETREGRESS_AUTH_USERS_JSON="$(DASHBOARD_PASSWORD="$DASHBOARD_PASSWORD" python -c 'import json,os; from lib.security import AuthManager; print(json.dumps([{"username":"owner","password_hash":AuthManager.password_hash(os.environ["DASHBOARD_PASSWORD"]),"role":"OWNER","projects":["*"]}]))')"
-unset DASHBOARD_PASSWORD
-
-python dashboard/app.py
+git status --short
+git pull --ff-only origin main
+./scripts/start_dashboard.sh
 ```
 
-The API stays bound to 127.0.0.1:5000. Keep this terminal open.
+Stop any old backend and Vite terminals first with **Ctrl+C**. Check `git status --short` before pulling; do not discard local modifications to force an update.
 
-### Terminal 2 — React/Vite UI
+The launcher uses `wifi-venv/bin/python` (or `.venv/bin/python` when available), checks for port conflicts, installs frontend dependencies only if Vite is missing, creates the local OWNER credential on first run, verifies the Flask health endpoint, and starts the Vite UI. Press **Ctrl+C** to stop both services.
+
+On first run, create and confirm an owner password of at least 12 characters. The username is **`owner`**. The password hash and Flask session secret are stored under the Git-ignored `.local/` directory with restricted file permissions; the plaintext password is never written to disk. Later starts reuse this account, so you keep the same login password. To reset it (and invalidate existing sessions), stop the running services and run:
 
 ```bash
-cd frontend
-npm install
-npm run start
+./scripts/start_dashboard.sh --reset-owner
+./scripts/start_dashboard.sh
 ```
 
-Open **http://127.0.0.1:5173** and sign in with username **owner** and the password entered in Terminal 1. Both `npm run start` and `npm run dev` launch the Vite development server, which proxies /api/* to the local Flask server. The frontend dev server binds to loopback by default.
+Open **http://127.0.0.1:5173** for the React UI. By default, Flask listens on **127.0.0.1:5000** and Vite proxies `/api/*` to that same port. A shared `NETREGRESS_PORT` setting keeps the backend and frontend aligned. If port 5000 is already occupied, stop the conflicting service or use a free port for both, for example:
 
-Legacy Flask/Jinja compatibility UI: **http://127.0.0.1:5000**.
+```bash
+NETREGRESS_PORT=5050 ./scripts/start_dashboard.sh
+```
+
+The launcher refuses to start if the chosen backend port or Vite port 5173 is already occupied, instead of silently attaching to the wrong service. Do not open Flask's root page to sign in to the React UI; use the Vite URL above. Flask's root route is the legacy compatibility UI.
+
+## Authentication behavior
+
+- A successful login creates an HTTP-only Flask session cookie.
+- A CSRF token is returned on login and attached to browser state-changing API requests.
+- Invalid credentials remain on the login page with an explicit error.
+- A stopped backend, proxy mismatch or non-JSON response shows a separate connection/setup screen and a retry action; it is not reported as a bad password.
+- The launcher requires authentication. Do not disable authentication to work around a connection problem.
 
 ## UI surface
 
@@ -64,6 +67,7 @@ The backend remains authoritative for authorization, CSRF, idempotency, evidence
 ## Frontend commands
 
 ```bash
+cd frontend
 npm install
 npm run start
 npm run dev
@@ -72,8 +76,10 @@ npm run build
 npm run preview
 ```
 
-Vite builds a static bundle into frontend/dist. Production hosting must serve that bundle from a host/path that proxies /api/v1 to the Runner. Runtime browser verification is still required before retiring the Flask/Jinja compatibility layer.
+Use `./scripts/start_dashboard.sh` for normal local development because it configures authentication and keeps the backend/proxy ports aligned. Standalone Vite commands are intended for frontend-only work when the backend is already running on the configured port.
+
+Vite builds a static bundle into `frontend/dist`. Production hosting must serve that bundle from a host/path that proxies `/api/v1` to the Runner. Runtime browser verification is still required before retiring the Flask/Jinja compatibility layer.
 
 ## npm install compatibility
 
-This frontend pins its direct build/test toolchain in `package.json`. The project-local `.npmrc` enables `legacy-peer-deps` as a workaround for npm Arborist's `Cannot read properties of null (reading 'edgesOut')` crash observed with the Vite/Vitest optional peer graph on older distro-provided npm. This setting is scoped to `frontend/`; it is not a global npm setting. `@testing-library/react` v16 also requires `@testing-library/dom`, so both are explicitly pinned in the frontend's development dependencies rather than relying on npm's peer-dependency auto-install. When updating Vite, the React plugin, Testing Library, or Vitest, run `npm test` and `npm run build` and review dependency compatibility explicitly.
+This frontend pins its direct build/test toolchain in `package.json`. The project-local `.npmrc` enables `legacy-peer-deps` as a workaround for npm Arborist's `Cannot read properties of null (reading 'edgesOut')` crash observed with the Vite/Vitest optional peer graph on older distro-provided npm. This setting is scoped to `frontend/`; it is not a global npm setting. `@testing-library/react` v16 also requires `@testing-library/dom`, so both are explicitly pinned in the frontend's development dependencies. When updating Vite, the React plugin, Testing Library, or Vitest, run `npm test` and `npm run build` and review dependency compatibility explicitly.

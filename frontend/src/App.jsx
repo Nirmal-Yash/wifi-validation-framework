@@ -3,7 +3,7 @@ import {api} from "./api";
 import {navigate,routeFor} from "./router";
 import {useRoute} from "./hooks";
 import AppShell from "./components/layout";
-import {LoadingState} from "./components/ui";
+import {Button,LoadingState} from "./components/ui";
 import LoginPage from "./pages/auth";
 import DashboardPage from "./pages/dashboard";
 import RunsPage from "./pages/runs";
@@ -13,12 +13,35 @@ import {RegressionPage,PerformancePage,TelemetryPage} from "./pages/quality";
 import {ArtifactsPage,LabHealthPage,ReadinessPage,BaselinesPage,OperationsPage} from "./pages/system";
 import {canAdmin,canExecute} from "./utils";
 function NotFound(){return<div className="state-card"><strong>Page not found</strong><span>The requested NetRegress UI route does not exist.</span><button className="button secondary" onClick={()=>navigate("/")}>Return to dashboard</button></div>;}
+function RunnerConnectionError({error,onRetry}){
+ return <div className="login-shell"><section className="login-panel" role="alert" aria-labelledby="runner-connection-heading">
+  <div className="brand brand-centered"><div className="brand-mark" aria-hidden="true">NR</div><div><strong>NetRegress</strong><span>Validation Runner</span></div></div>
+  <h1 id="runner-connection-heading">Runner connection problem</h1>
+  <p className="muted">The web UI cannot reach the Flask Runner API. This is a service/proxy connection issue, not a bad username or password.</p>
+  <p>{error?.message || "The Runner API did not respond."}</p>
+  <p className="muted">Start the backend and UI together from the repository root:</p>
+  <p><code>./scripts/start_dashboard.sh</code></p>
+  <Button onClick={onRetry}>Retry connection</Button>
+ </section></div>;
+}
+
 export default function App(){
  const routeState=useRoute(),[user,setUser]=useState(undefined),[bootError,setBootError]=useState(null);
- useEffect(()=>{api.me().then(setUser).catch(error=>{if(error.status===401)setUser(null);else{setBootError(error);setUser(null);}});},[]);
+ const restoreSession=async()=>{
+  setBootError(null);
+  try{
+   const profile=await api.me();
+   if(!profile||!profile.username)throw new Error("The Runner returned an invalid session profile. Check that the backend and proxy use the same port.");
+   setUser(profile);
+  }catch(error){
+   setUser(null);
+   if(error.status!==401)setBootError(error);
+  }
+ };
+ useEffect(()=>{void restoreSession();},[]);
  if(user===undefined)return<LoadingState label="Loading NetRegress…"/>;
+ if(bootError)return<RunnerConnectionError error={bootError} onRetry={()=>{setUser(undefined);void restoreSession();}}/>;
  if(!user)return<LoginPage onLogin={setUser}/>;
- if(bootError)void bootError;
  const route=routeFor(routeState.value);
  let page;
  switch(route.name){
