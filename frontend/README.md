@@ -29,10 +29,10 @@ The API stays bound to 127.0.0.1:5000. Keep this terminal open.
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run start
 ```
 
-Open **http://127.0.0.1:5173** and sign in with username **owner** and the password entered in Terminal 1. Vite proxies /api/* to the local Flask server. The frontend dev server also binds to loopback by default.
+Open **http://127.0.0.1:5173** and sign in with username **owner** and the password entered in Terminal 1. Both `npm run start` and `npm run dev` launch the Vite development server, which proxies /api/* to the local Flask server. The frontend dev server binds to loopback by default.
 
 Legacy Flask/Jinja compatibility UI: **http://127.0.0.1:5000**.
 
@@ -65,8 +65,9 @@ The backend remains authoritative for authorization, CSRF, idempotency, evidence
 
 ```bash
 npm install
+npm run start
 npm run dev
-npm run test
+npm test
 npm run build
 npm run preview
 ```
@@ -75,4 +76,4 @@ Vite builds a static bundle into frontend/dist. Production hosting must serve th
 
 ## npm install compatibility
 
-This frontend pins its direct build/test toolchain in `package.json`. The project-local `.npmrc` enables `legacy-peer-deps` as a workaround for npm Arborist's `Cannot read properties of null (reading 'edgesOut')` crash observed with the Vite/Vitest optional peer graph on older distro-provided npm. This setting is scoped to `frontend/`; it is not a global npm setting. When updating Vite, the React plugin, or Vitest, run `npm test` and `npm run build` and review dependency compatibility explicitly.
+This frontend pins its direct build/test toolchain in `package.json`. The project-local `.npmrc` enables `legacy-peer-deps` as a workaround for npm Arborist's `Cannot read properties of null (reading 'edgesOut')` crash observed with the Vite/Vitest optional peer graph on older distro-provided npm. This setting is scoped to `frontend/`; it is not a global npm setting. `@testing-library/react` v16 also requires `@testing-library/dom`, so both are explicitly pinned in the frontend's development dependencies rather than relying on npm's peer-dependency auto-install. When updating Vite, the React plugin, Testing Library, or Vitest, run `npm test` and `npm run build` and review dependency compatibility explicitly.
