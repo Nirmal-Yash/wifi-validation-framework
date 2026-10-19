@@ -72,3 +72,7 @@ npm run preview
 ```
 
 Vite builds a static bundle into frontend/dist. Production hosting must serve that bundle from a host/path that proxies /api/v1 to the Runner. Runtime browser verification is still required before retiring the Flask/Jinja compatibility layer.
+
+## npm install compatibility
+
+This frontend pins its direct build/test toolchain in `package.json`. The project-local `.npmrc` enables `legacy-peer-deps` as a workaround for npm Arborist's `Cannot read properties of null (reading 'edgesOut')` crash observed with the Vite/Vitest optional peer graph on older distro-provided npm. This setting is scoped to `frontend/`; it is not a global npm setting. When updating Vite, the React plugin, or Vitest, run `npm test` and `npm run build` and review dependency compatibility explicitly.
