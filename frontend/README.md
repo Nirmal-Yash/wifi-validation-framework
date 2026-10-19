@@ -14,7 +14,7 @@ git pull --ff-only origin main
 
 Stop any old backend and Vite terminals first with **Ctrl+C**. Check `git status --short` before pulling; do not discard local modifications to force an update.
 
-The launcher uses `wifi-venv/bin/python` (or `.venv/bin/python` when available), checks for port conflicts, installs frontend dependencies only if Vite is missing, creates the local OWNER credential on first run, verifies the Flask health endpoint, and starts the Vite UI. Press **Ctrl+C** to stop both services.
+The launcher uses `wifi-venv/bin/python` (or `.venv/bin/python` when available), checks for port conflicts, installs frontend dependencies when missing or when the package/toolchain files have changed, creates the local OWNER credential on first run, verifies the Flask health endpoint, and starts the Vite UI. Press **Ctrl+C** to stop both services.
 
 On first run, create and confirm an owner password of at least 12 characters. The username is **`owner`**. The password hash and Flask session secret are stored under the Git-ignored `.local/` directory with restricted file permissions; the plaintext password is never written to disk. Later starts reuse this account, so you keep the same login password. To reset it (and invalidate existing sessions), stop the running services and run:
 

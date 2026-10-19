@@ -227,6 +227,6 @@ echo "Use your saved owner password; reset it with ./scripts/start_dashboard.sh 
 echo "Press Ctrl+C to stop both services."
 echo
 
-(cd "$ROOT_DIR/frontend" && npm run start) &
+(cd "$ROOT_DIR/frontend" && exec npm run start) &
 FRONTEND_PID=$!
 wait "$FRONTEND_PID"
