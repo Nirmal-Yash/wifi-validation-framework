@@ -1,10 +1,18 @@
-import React,{useEffect,useMemo,useState} from "react";
+import React,{useEffect,useState} from "react";
+import {Activity,CheckCircle2,ClipboardList,FileText,LayoutDashboard,Settings,ShieldCheck,Wifi,XCircle} from "lucide-react";
 import {api} from "../api";
 import {navigate} from "../router";
 import {useAsyncLoader,useMutation} from "../hooks";
-import {canExecute,formatDate,formatDuration,terminalStatuses} from "../utils";
-import {ArtifactLink,Button,ConfirmDialog,DataTable,EmptyState,ErrorState,InlineNotice,JsonPanel,KeyValueGrid,LoadingState,Section,StatusBadge} from "../components/ui";
-const tabs=["summary","tests","health","telemetry","artifacts","configuration"];
+import {canExecute,formatBytes,formatDate,formatDuration,terminalStatuses} from "../utils";
+import {ArtifactLink,Button,ConfirmDialog,DataTable,EmptyState,ErrorState,InlineNotice,JsonPanel,KeyValueGrid,LoadingState,Section,StatCard,StatusBadge} from "../components/ui";
+const tabs=[
+ {id:"summary",label:"Summary",Icon:LayoutDashboard},
+ {id:"tests",label:"Tests",Icon:ClipboardList},
+ {id:"health",label:"Health",Icon:ShieldCheck},
+ {id:"telemetry",label:"Telemetry",Icon:Wifi},
+ {id:"artifacts",label:"Evidence",Icon:FileText},
+ {id:"configuration",label:"Configuration",Icon:Settings},
+];
 export default function RunDetailPage({runId,user}){
  const[tab,setTab]=useState("summary"),[confirm,setConfirm]=useState(null);
  const runLoader=useAsyncLoader(()=>api.run(runId),[runId],{refreshMs:3000});
@@ -17,21 +25,25 @@ export default function RunDetailPage({runId,user}){
  if(runLoader.loading&&!runLoader.data)return<LoadingState label="Loading Run…"/>;
  if(runLoader.error&&!runLoader.data)return<ErrorState error={runLoader.error} onRetry={runLoader.reload}/>;
  const run=runLoader.data,tests=testsLoader.data?.items||[],health=healthLoader.data?.items||run.health||[],telemetry=telemetryLoader.data?.items||[],artifacts=artifactsLoader.data?.items||run.artifacts||[],counts=run.test_counts||{},canOperate=canExecute(user.role),isActive=!terminalStatuses.has(run.lifecycle_status);
- const summaryItems=useMemo(()=>[
+ const statusCounts=tests.reduce((acc,test)=>{const status=String(test.status||"UNKNOWN").toUpperCase();acc[status]=(acc[status]||0)+1;return acc;},{});
+ const passed=counts.pass??statusCounts.PASS??0,totalTests=counts.total??tests.length,blocked=counts.blocked??statusCounts.BLOCKED??0,unvalidated=counts.unvalidated??statusCounts.UNVALIDATED??0;
+ const passPercent=totalTests?Math.min(100,(passed/totalTests)*100):0;
+ const summaryItems=[
   {label:"Lifecycle",value:<StatusBadge value={run.lifecycle_status}/>},{label:"Business outcome",value:<StatusBadge value={run.business_outcome}/>},
   {label:"Firmware",value:run.firmware_version},{label:"Device",value:run.device_id},{label:"Lab",value:run.lab_id},{label:"Profile",value:run.validation_profile},
   {label:"Environment",value:run.environment_class},{label:"Environment health",value:<StatusBadge value={run.environment_health}/>},{label:"Failure class",value:<StatusBadge value={run.failure_class}/>},
   {label:"Created",value:formatDate(run.created_at)},{label:"Started",value:formatDate(run.started_at)},{label:"Completed",value:formatDate(run.completed_at)},
   {label:"Duration",value:formatDuration(run.started_at,run.completed_at)},{label:"Configuration hash",value:run.configuration_hash||"—"}
- ],[run]);
+ ];
  const performAction=async action=>{try{if(action==="cancel")await mutation.run(()=>api.cancel(runId,"Cancelled from NetRegress UI"));if(action==="retry")await mutation.run(()=>api.retry(runId));setConfirm(null);await runLoader.reload();await testsLoader.reload();}catch{}};
  return<div className="page-stack">
   <div className="breadcrumb"><a href="/runs" onClick={e=>{e.preventDefault();navigate("/runs");}}>Runs</a><span>/</span><span>{run.display_id}</span></div>
   <div className="page-title-row"><div><div className="eyebrow">Run detail</div><h2>{run.display_id}</h2><p className="muted mono">{run.run_id}</p></div><div className="button-row">{canOperate&&isActive?<Button variant="danger" onClick={()=>setConfirm("cancel")}>Cancel Run</Button>:null}{canOperate&&!isActive&&run.lifecycle_status!=="COMPLETED"?<Button onClick={()=>setConfirm("retry")}>Retry Run</Button>:null}</div></div>
   {mutation.error?<InlineNotice tone="danger">{mutation.error.message}</InlineNotice>:mutation.success?<InlineNotice tone="success">Operation accepted by the Runner API.</InlineNotice>:null}
-  <div className="stat-grid"><div className="stat-card"><div className="stat-label">Tests</div><div className="stat-value">{counts.pass||0}/{counts.total||0}</div><div className="stat-hint">Passed / observed</div></div><div className="stat-card"><div className="stat-label">Blocked</div><div className="stat-value">{counts.blocked||0}</div><div className="stat-hint">Required tests blocked</div></div><div className="stat-card"><div className="stat-label">Unvalidated</div><div className="stat-value">{counts.unvalidated||0}</div><div className="stat-hint">Evidence/comparability incomplete</div></div><div className="stat-card"><div className="stat-label">Artifacts</div><div className="stat-value">{artifacts.length}</div><div className="stat-hint">Persisted evidence records</div></div></div>
+  <div className="stat-grid"><StatCard label="Passed tests" value={passed+"/"+totalTests} hint="PASS outcomes / observed TestResults" icon={<CheckCircle2 size={17}/>} tone="success"/><StatCard label="Blocked" value={blocked} hint="Required tests blocked" icon={<XCircle size={17}/>} tone={blocked?"warning":"default"}/><StatCard label="Unvalidated" value={unvalidated} hint="Evidence or comparability incomplete" icon={<ShieldCheck size={17}/>} tone={unvalidated?"warning":"default"}/><StatCard label="Evidence artifacts" value={artifacts.length} hint="Registered records available in this view" icon={<FileText size={17}/>}/></div>
+  <div className="run-progress-panel"><div className="row-between"><span>Observed test pass ratio</span><strong>{totalTests?Math.round(passPercent)+"%":"Not available"}</strong></div><div className="progress-track" role="progressbar" aria-label="Observed test pass ratio" aria-valuemin={0} aria-valuemax={100} aria-valuenow={passPercent}><span className="progress-fill success" style={{width:passPercent+"%"}}/></div><p>Test pass ratio is descriptive only; it does not replace the persisted business outcome or release gate.</p></div>
   <Section title="Run context"><KeyValueGrid items={summaryItems}/></Section>
-  <div className="tab-bar" role="tablist" aria-label="Run detail sections">{tabs.map(value=><button key={value} className={"tab-button "+(tab===value?"active":"")} onClick={()=>setTab(value)} role="tab" aria-selected={tab===value}>{value}</button>)}</div>
+  <div className="tab-bar" role="tablist" aria-label="Run detail sections">{tabs.map(({id,label,Icon})=><button key={id} className={"tab-button "+(tab===id?"active":"")} onClick={()=>setTab(id)} role="tab" aria-selected={tab===id}><Icon size={15} aria-hidden="true"/>{label}</button>)}</div>
 
   {tab==="summary"?<div className="two-column"><Section title="Test summary"><DataTable rows={tests} rowKey={row=>row.test_result_id} onRowClick={row=>navigate("/runs/"+encodeURIComponent(runId)+"/tests/"+encodeURIComponent(row.test_result_id))} columns={[
    {key:"test_id",label:"Test",render:row=><><strong>{row.test_id}</strong><div className="muted mono">{row.node_id}</div></>},{key:"status",label:"Status",render:row=><StatusBadge value={row.status}/>},
@@ -51,7 +63,7 @@ export default function RunDetailPage({runId,user}){
   ]} emptyTitle="No telemetry points" emptyMessage="This snapshot did not persist telemetry points."/></div>)}</Section>:null}
 
   {tab==="artifacts"?<Section title="Evidence artifacts" subtitle="Only registered, integrity-verified artifacts can be interpreted or downloaded."><DataTable rows={artifacts} rowKey={row=>row.artifact_id} columns={[
-   {key:"display_name",label:"Artifact",render:row=><><strong>{row.display_name}</strong><div className="muted mono">{row.artifact_id}</div></>},{key:"artifact_type",label:"Type"},{key:"size_bytes",label:"Size",render:row=>row.size_bytes+" bytes"},{key:"sha256",label:"SHA-256",render:row=><code className="hash">{row.sha256}</code>},{key:"evidence_state",label:"Evidence",render:row=><StatusBadge value={row.evidence_state}/>},{key:"downloadable",label:"Action",render:row=><ArtifactLink artifact={row}/>}
+   {key:"display_name",label:"Artifact",render:row=><><strong>{row.display_name}</strong><div className="muted mono">{row.artifact_id}</div></>},{key:"artifact_type",label:"Type"},{key:"size_bytes",label:"Size",render:row=>formatBytes(row.size_bytes)},{key:"sha256",label:"SHA-256",render:row=><code className="hash">{row.sha256}</code>},{key:"evidence_state",label:"Evidence",render:row=><StatusBadge value={row.evidence_state}/>},{key:"downloadable",label:"Action",render:row=><ArtifactLink artifact={row}/>}
   ]} emptyTitle="No artifacts" emptyMessage="No evidence artifacts are currently associated with this Run."/></Section>:null}
   {tab==="configuration"?<div className="two-column"><Section title="Resolved configuration"><JsonPanel value={run.config_snapshot?.resolved_config||{}}/></Section><Section title="Environment snapshot"><JsonPanel value={run.environment||{}}/></Section></div>:null}
   <ConfirmDialog open={Boolean(confirm)} title={confirm==="cancel"?"Cancel this Run?":"Retry this Run?"} message={confirm==="cancel"?"Cancellation is persisted as an operator action and the Runner process is asked to stop. Do not cancel a Run unless you intend to terminate the current execution.":"Retry creates a new Runner process using the source Run selection. Review the new Run after it is accepted."} confirmLabel={confirm==="cancel"?"Cancel Run":"Retry Run"} danger={confirm==="cancel"} loading={mutation.loading} onCancel={()=>setConfirm(null)} onConfirm={()=>performAction(confirm)}/>

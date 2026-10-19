@@ -39,6 +39,20 @@ The launcher refuses to start if the chosen backend port or Vite port 5173 is al
 - A stopped backend, proxy mismatch or non-JSON response shows a separate connection/setup screen and a retry action; it is not reported as a bad password.
 - The launcher requires authentication. Do not disable authentication to work around a connection problem.
 
+## UI system and data representation
+
+The React client uses a consistent **shadcn-inspired component system** with Lucide icons: responsive sidebar navigation, button variants/sizes, semantic status badges, cards/sections, structured tables, dialogs, and shared loading/empty/error states. The components live in `src/components` and intentionally keep the existing CSS/Vite stack rather than adding a second styling framework. Shared tokens give forms, tables, badges, charts and navigation consistent spacing, contrast, focus states and responsive behavior.
+
+Data is presented according to the Runner's persisted contracts:
+
+- Business outcomes are shown separately from lifecycle status; a pytest `PASS` is never promoted to a release validation outcome.
+- Dashboard activity and outcome distributions state their denominator (latest eight Runs); the all-time total comes from the API total.
+- Trend lines never mix different metric names or units. Only samples marked `VALID` that are numeric, finite and not warm-up contribute to means; raw samples are still shown in the sample table.
+- No values, test results, readiness states, or trend points are inferred when the API did not record them. Missing and unrecognized outcomes remain explicitly visible.
+- Charts have accessible text alternatives and supporting value tables. A performance pass ratio is descriptive and does not replace the Runner's business outcome or release gate.
+
+Run `npm test` and `npm run build` after UI or dependency changes. Runtime/browser verification remains required before retiring the Flask/Jinja compatibility layer.
+
 ## UI surface
 
 - authenticated login/session bootstrap/logout;
