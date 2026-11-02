@@ -65,6 +65,7 @@ jobs:
     name: Backend session and RBAC contract
     runs-on: ubuntu-latest
     env:
+      NETREGRESS_CI_MODE: "1"
       NETREGRESS_SESSION_SECRET: netregress-ci-session-secret
       NETREGRESS_SESSION_COOKIE_SECURE: "0"
     steps:
