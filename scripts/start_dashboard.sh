@@ -119,7 +119,7 @@ fi
 
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
   log_event FAIL "Node.js or npm is unavailable."
-  echo "ERROR: Node.js and npm are required (Node.js 22.12.0+, 24.x, or 26+)." >&2
+  echo "ERROR: Node.js and npm are required (Node.js 22.22.2+, 24.15+, or 26+)." >&2
   exit 1
 fi
 
