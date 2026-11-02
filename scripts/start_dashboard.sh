@@ -132,9 +132,9 @@ if [[ ! "$NODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 IFS=. read -r NODE_MAJOR NODE_MINOR NODE_PATCH <<< "$NODE_VERSION"
 NODE_SUPPORTED=0
-if (( NODE_MAJOR == 22 && NODE_MINOR >= 12 )); then
+if (( NODE_MAJOR == 22 && ( NODE_MINOR > 22 || ( NODE_MINOR == 22 && NODE_PATCH >= 2 ) ) )); then
   NODE_SUPPORTED=1
-elif (( NODE_MAJOR == 24 )); then
+elif (( NODE_MAJOR == 24 && NODE_MINOR >= 15 )); then
   NODE_SUPPORTED=1
 elif (( NODE_MAJOR >= 26 )); then
   NODE_SUPPORTED=1
@@ -142,7 +142,7 @@ fi
 log_event INFO "Node.js version=$NODE_VERSION; npm version=$NPM_VERSION."
 if (( NODE_SUPPORTED == 0 )); then
   log_event FAIL "Node.js $NODE_VERSION is outside the package engine range."
-  echo "ERROR: Frontend toolchain requires Node.js ^22.12.0, ^24.0.0, or >=26.0.0; detected $NODE_VERSION." >&2
+  echo "ERROR: Frontend toolchain requires Node.js 22.22.2+, 24.15+, or 26+; detected $NODE_VERSION." >&2
   exit 1
 fi
 log_event PASS "Node.js engine compatibility verified for Vite 8 and Vitest 5."
@@ -314,7 +314,7 @@ fi
 log_event PASS "Direct Flask GET /api/v1/health returned HTTP 200 and the expected JSON data envelope."
 
 log_event INFO "Starting Vite React frontend."
-(cd "$ROOT_DIR/frontend" && exec npm run start) &
+(cd "$ROOT_DIR/frontend" && exec ./node_modules/.bin/vite --host 127.0.0.1 --port "$NETREGRESS_FRONTEND_PORT" --strictPort) &
 FRONTEND_PID=$!
 FRONTEND_READY=0
 for attempt in $(seq 1 40); do

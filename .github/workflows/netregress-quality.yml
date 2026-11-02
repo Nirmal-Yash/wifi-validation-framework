@@ -50,7 +50,7 @@ jobs:
       - name: Set up supported Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22.22.1"
+          node-version: "22.22.2"
       - name: Install pinned frontend dependencies
         working-directory: frontend
         run: npm install --no-audit --no-fund
@@ -88,7 +88,7 @@ jobs:
           tests/test_dashboard_port_contract.py
 
   dashboard-startup-smoke:
-    name: Dashboard startup, proxy and session smoke test (Node 22.22.1)
+    name: Dashboard startup, proxy and session smoke test (Node 22.22.2)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -97,10 +97,10 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-      - name: Set up Node.js 22.22.1 (reported local runtime)
+      - name: Set up Node.js 22.22.2 (reported local runtime)
         uses: actions/setup-node@v4
         with:
-          node-version: "22.22.1"
+          node-version: "22.22.2"
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

@@ -84,7 +84,7 @@ npm run build
 npm run start
 ```
 
-Node.js **22.12.0+ on 22.x**, **any 24.x**, or **26+** is required by the pinned Vite 8 / Vitest 5 toolchain. For normal use, prefer `./scripts/start_dashboard.sh`, which aligns the authenticated Flask backend and Vite proxy. Keep Flask and Vite processes on the same local host/port configuration. Production deployment must serve the built assets over HTTPS, set Secure cookies and retain the same-origin `/api/v1` proxy boundary.
+Node.js **22.22.2+**, **24.15+**, or **26+** is required by the resolved Vite 8 / Vitest 5 development dependency graph. For normal use, prefer `./scripts/start_dashboard.sh`, which aligns the authenticated Flask backend and Vite proxy. Keep Flask and Vite processes on the same local host/port configuration. Production deployment must serve the built assets over HTTPS, set Secure cookies and retain the same-origin `/api/v1` proxy boundary.
 
 Run the backend security contract tests after changes to session configuration:
 

@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "$BASH_SOURCE")/.." && pwd)"
 cd "$ROOT_DIR"
+umask 077
 
 PYTHON_BIN="python3"
 if [[ -x "$ROOT_DIR/wifi-venv/bin/python" ]]; then
@@ -24,8 +25,13 @@ else
 fi
 
 LOCAL_DIR="$SMOKE_ROOT/local"
-mkdir -p "$LOCAL_DIR"
-chmod 700 "$SMOKE_ROOT" "$LOCAL_DIR"
+mkdir -p "$LOCAL_DIR/logs"
+chmod 700 "$SMOKE_ROOT" "$LOCAL_DIR" "$LOCAL_DIR/logs"
+VERIFY_LOG="$LOCAL_DIR/logs/dashboard-e2e-smoke-$(date -u +%Y%m%dT%H%M%SZ)-$.log"
+: > "$VERIFY_LOG"
+chmod 600 "$VERIFY_LOG"
+exec > >(tee -a "$VERIFY_LOG") 2>&1
+echo "[INFO] End-to-end dashboard smoke verification log: $VERIFY_LOG"
 export NETREGRESS_LOCAL_DIR="$LOCAL_DIR"
 export NETREGRESS_DATABASE_PATH="$SMOKE_ROOT/test-results.sqlite"
 unset NETREGRESS_PORT NETREGRESS_FRONTEND_PORT NETREGRESS_API_TARGET
@@ -65,6 +71,30 @@ finish() {
     kill -TERM "$LAUNCHER_PID" 2>/dev/null || true
     wait "$LAUNCHER_PID" 2>/dev/null || true
   fi
+  for port in 5050 5173; do
+    if "$PYTHON_BIN" - "$port" <<'PY'
+import socket
+import sys
+import time
+port = int(sys.argv[1])
+deadline = time.monotonic() + 5
+while True:
+    with socket.socket() as sock:
+        sock.settimeout(0.1)
+        listening = sock.connect_ex(("127.0.0.1", port)) == 0
+    if not listening:
+        sys.exit(0)
+    if time.monotonic() >= deadline:
+        sys.exit(1)
+    time.sleep(0.1)
+PY
+    then
+      echo "[PASS] Dashboard port $port is released after launcher shutdown."
+    else
+      echo "[FAIL] Dashboard child process is still listening on port $port after shutdown."
+      status=1
+    fi
+  done
   if (( status != 0 )); then
     echo "Dashboard startup smoke test FAILED. Launcher output follows:"
     [[ -f "$CONSOLE_LOG" ]] && cat "$CONSOLE_LOG"
@@ -121,7 +151,7 @@ client = build_opener(HTTPCookieProcessor(cookies))
 
 def request(path, payload=None, headers=None):
     data = None if payload is None else json.dumps(payload).encode("utf-8")
-    request_headers = {"Accept": "application/json"}
+    request_headers = {"Accept": "*/*"}
     if data is not None:
         request_headers["Content-Type"] = "application/json"
     request_headers.update(headers or {})

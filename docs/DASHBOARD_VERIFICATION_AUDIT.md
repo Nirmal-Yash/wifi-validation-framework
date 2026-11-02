@@ -18,10 +18,10 @@ NETREGRESS_PORT changes the Flask port and proxy target together. NETREGRESS_FRO
 The supported frontend engine expression is:
 
 ~~~text
-^22.12.0 || ^24.0.0 || >=26.0.0
+^22.22.2 || ^24.15.0 || >=26.0.0
 ~~~
 
-This is aligned across frontend/package.json and scripts/start_dashboard.sh. Vitest 5 declares Node ^22.12.0 || ^24.0.0 || >=26.0.0; Vite 8 and @vitejs/plugin-react support Node >=22.12.0 on the 22.x line. Node 22.22.1 therefore satisfies the declared dependency engine range and is no longer rejected by an unnecessarily high patch-level gate. Node 23.x and 25.x are intentionally excluded by the package engine expression.
+This is aligned across frontend/package.json and scripts/start_dashboard.sh. The current resolved development dependency graph contains packages that declare ^22.22.2 || ^24.15.0 || >=26.0.0. CI on Node 22.22.1 emitted npm EBADENGINE warnings for @asamuzakjp/css-color, @asamuzakjp/dom-selector and w3c-xmlserializer. The launcher and package engine therefore retain the stricter supported range instead of suppressing those warnings. Node 23.x and 25.x are intentionally excluded by the package engine expression.
 
 ## 3. Runtime verification log
 
@@ -43,7 +43,8 @@ The startup sequence verifies, in order:
 6. Flask process liveness and GET /api/v1/health response envelope directly on the backend port.
 7. React/Vite root document availability and root mount element.
 8. Same-origin GET /api/v1/health through Vite, requiring the canonical JSON data envelope. This detects a missing or incorrect proxy target rather than mistaking Vite's HTML fallback for an API response.
-9. Both service processes are stopped when the launcher exits.
+9. The frontend runs as a direct Vite Node process, so the launcher can stop it without leaving an npm-owned child process.
+10. The real-launcher smoke test verifies that both dashboard ports stop accepting connections after shutdown.
 
 The scripts/test_dashboard_startup.sh smoke test exercises the real launcher with isolated temporary credentials and a temporary SQLite database. It then tests the browser-facing UI and session path through Vite: unauthenticated session restore, OWNER login, cookie flags, CSRF retrieval, CSRF-protected activity, logout and post-logout session rejection. GitHub Actions uploads the per-run startup log as a workflow artifact.
 
