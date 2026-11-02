@@ -321,7 +321,7 @@ Certification scenario records must distinguish execution class, especially REAL
 
 ## 21. Local development and presentation update
 
-The modern local development flow runs Flask on 127.0.0.1:5000 and React/Vite on 127.0.0.1:5173. Vite proxies /api/* to Flask so the browser uses one origin for the API session and CSRF workflow. Configure a local OWNER using NETREGRESS_AUTH_REQUIRED=1, NETREGRESS_SESSION_SECRET, and NETREGRESS_AUTH_USERS_JSON as shown in frontend/README.md; do not add a default password to the repository. The Vite development host is loopback-only by default.
+The modern local development flow runs Flask on 127.0.0.1:5050 and React/Vite on 127.0.0.1:5173; port 5000 remains available for the local GNS3 service. Vite proxies /api/* to Flask so the browser uses one origin for the API session and CSRF workflow. Configure a local OWNER using NETREGRESS_AUTH_REQUIRED=1, NETREGRESS_SESSION_SECRET, and NETREGRESS_AUTH_USERS_JSON as shown in frontend/README.md; do not add a default password to the repository. The Vite development host is loopback-only by default.
 
 The dashboard presentation now uses an operational hero, explicit refresh context, consistent action links, refined spacing/surface hierarchy, responsive layouts, reduced-motion support, and a skip-to-main-content link. KPI labels are domain-aware: total Runs are separated from latest-eight activity, and validated outcomes are counted from VALIDATED and VALIDATED_WITH_WARNINGS; REJECTED and UNVALIDATED remain visible as items needing review. No frontend number maps pytest PASS directly to business release validation.
 
@@ -346,3 +346,6 @@ The current Run query/persistence contract still has no project identifier. Ther
 This local Runner uses Flask's signed session cookie with HttpOnly, SameSite and HTTPS-aware Secure configuration. It does not currently use a shared server-side session/revocation store or a distributed login-rate-limit store. Cookie signing-secret rotation invalidates existing local sessions. A hosted multi-worker deployment must add shared server-side session persistence/revocation and distributed rate limiting. MFA and OIDC/SAML are not currently implemented; do not represent them as active controls.
 
 The Run model has no project ID, so the API and legacy Flask interface both fail closed for named/empty project scopes. The default locally provisioned OWNER is explicitly wildcard-scoped. Project-scoped users must not be provisioned until project-aware filtering and resource-level authorization are available.
+
+
+See the Dashboard Startup, Port Mapping and Verification Audit in DASHBOARD_VERIFICATION_AUDIT.md for the canonical Node engine range, service map, runtime log location and startup smoke-test contract.

@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DATABASE_PATH = Path(os.getenv("NETREGRESS_DATABASE_PATH", ROOT / "results" / "test_results.db"))
 RUNNER_HOST = "127.0.0.1"
 try:
-    RUNNER_PORT = int(os.getenv("NETREGRESS_PORT", "5000"))
+    RUNNER_PORT = int(os.getenv("NETREGRESS_PORT", "5050"))
 except ValueError as exc:
     raise RuntimeError("NETREGRESS_PORT must be an integer") from exc
 if not 1 <= RUNNER_PORT <= 65535:

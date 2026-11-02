@@ -29,7 +29,9 @@ echo "To save baseline:  python regression/baseline_runner.py --version $FIRMWAR
 echo "To simulate bug:   python regression/fw_simulator.py --version v2.0 --bug dns"
 echo "To run diff:       python regression/diff_engine.py --version $FIRMWARE"
 echo ""
-echo "Starting dashboard at http://localhost:5000 ..."
+NETREGRESS_PORT="${NETREGRESS_PORT:-5050}"
+export NETREGRESS_PORT
+echo "Starting legacy dashboard at http://127.0.0.1:$NETREGRESS_PORT ..."
 python3 dashboard/app.py &
 
 echo "Done."

@@ -478,7 +478,7 @@ python regression/baseline_runner.py --version v1.0
 
 # Start dashboard
 python dashboard/app.py
-# Open http://localhost:5000 in browser
+# Open http://127.0.0.1:5050 in browser
 ```
 
 ### Full Regression Demo

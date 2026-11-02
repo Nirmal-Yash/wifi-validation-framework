@@ -5,15 +5,25 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 
 const root=path.dirname(fileURLToPath(import.meta.url));
-const runnerPort=process.env.NETREGRESS_PORT||"5000";
-const apiTarget=process.env.NETREGRESS_API_TARGET||`http://127.0.0.1:${runnerPort}`;
+
+function readPort(name,fallback){
+ const raw=process.env[name]||String(fallback);
+ if(!/^\d+$/.test(raw))throw new Error(name+" must be an integer port.");
+ const value=Number(raw);
+ if(!Number.isSafeInteger(value)||value<1024||value>65535)throw new Error(name+" must be between 1024 and 65535.");
+ return value;
+}
+
+const runnerPort=readPort("NETREGRESS_PORT",5050);
+const frontendPort=readPort("NETREGRESS_FRONTEND_PORT",5173);
+const apiTarget=process.env.NETREGRESS_API_TARGET||"http://127.0.0.1:"+runnerPort;
 
 export default defineConfig({
  plugins:[react(),tailwindcss()],
  resolve:{alias:{"@":path.resolve(root,"src")}},
  server:{
   host:"127.0.0.1",
-  port:5173,
+  port:frontendPort,
   strictPort:true,
   proxy:{"/api":{target:apiTarget,changeOrigin:true}},
  },

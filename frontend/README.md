@@ -16,11 +16,13 @@ Stop previous Flask/Vite terminals with **Ctrl+C** first. Review any local chang
 
 The launcher uses `wifi-venv/bin/python` (or `.venv/bin/python`), checks ports, verifies the API health endpoint and starts Flask plus Vite together. It creates a local OWNER account on first launch and reuses the password hash on subsequent launches. Username: **`owner`**. The password is at least 12 characters and is never stored as plaintext. Credentials and the Flask signing secret are retained in the Git-ignored `.local/` directory with restricted permissions.
 
-Open **http://127.0.0.1:5173**. Flask listens on **127.0.0.1:5000** by default. If the port is occupied, consistently select another one:
+Open **http://127.0.0.1:5173**. Flask listens on **127.0.0.1:5050** by default; port **5000** is left for the local GNS3 service. To override either local service port, set both variables explicitly:
 
-```bash
-NETREGRESS_PORT=5050 ./scripts/start_dashboard.sh
-```
+~~~bash
+NETREGRESS_PORT=5051 NETREGRESS_FRONTEND_PORT=5174 ./scripts/start_dashboard.sh
+~~~
+
+Each launcher run writes a timestamped, permission-restricted verification log to the .local/logs/ directory. It records toolchain checks, port checks, dependency/auth checks, Flask health, Vite root and the API health response through the Vite proxy. Sensitive credential values are redacted.
 
 Reset the owner password and rotate the signing secret (invalidating prior sessions) with:
 
@@ -82,7 +84,7 @@ npm run build
 npm run start
 ```
 
-Node.js **22.22.2+**, **24.15+**, or **26+** is required by the pinned Vite/test toolchain. For normal use, prefer `./scripts/start_dashboard.sh`, which aligns the authenticated Flask backend and Vite proxy. Keep Flask and Vite processes on the same local host/port configuration. Production deployment must serve the built assets over HTTPS, set Secure cookies and retain the same-origin `/api/v1` proxy boundary.
+Node.js **22.12.0+ on 22.x**, **any 24.x**, or **26+** is required by the pinned Vite 8 / Vitest 5 toolchain. For normal use, prefer `./scripts/start_dashboard.sh`, which aligns the authenticated Flask backend and Vite proxy. Keep Flask and Vite processes on the same local host/port configuration. Production deployment must serve the built assets over HTTPS, set Secure cookies and retain the same-origin `/api/v1` proxy boundary.
 
 Run the backend security contract tests after changes to session configuration:
 
