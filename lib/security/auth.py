@@ -9,15 +9,21 @@ class AuthConfigurationError(RuntimeError): pass
 @dataclass(frozen=True,slots=True)
 class UserRecord:
     username:str; password_hash:str; role:Role; projects:tuple[str,...]=("*",)
-    def can_access_project(self,project_id): return project_id is None or "*" in self.projects or project_id in self.projects
+    def can_access_project(self,project_id): return "*" in self.projects or (project_id is not None and project_id in self.projects)
 @dataclass(frozen=True,slots=True)
 class AuthenticatedUser:
     username:str
     role:Role
     projects:tuple[str,...]
-    def can_access_project(self,project_id): return project_id is None or "*" in self.projects or project_id in self.projects
+    def can_access_project(self,project_id): return "*" in self.projects or (project_id is not None and project_id in self.projects)
 class AuthManager:
-    def __init__(self,users:Sequence[UserRecord],*,required=True): self._users={u.username:u for u in users}; self.required=required
+    def __init__(self,users:Sequence[UserRecord],*,required=True):
+        records=tuple(users)
+        usernames=[user.username for user in records]
+        if len(usernames)!=len(set(usernames)):
+            raise AuthConfigurationError("configured usernames must be unique")
+        self._users={user.username:user for user in records}
+        self.required=required
     @classmethod
     def from_env(cls):
         required=os.getenv("NETREGRESS_AUTH_REQUIRED","0").lower() not in {"0","false","no"}; raw=os.getenv("NETREGRESS_AUTH_USERS_JSON","").strip()
@@ -25,7 +31,28 @@ class AuthManager:
         try: items=json.loads(raw)
         except json.JSONDecodeError as exc: raise AuthConfigurationError("NETREGRESS_AUTH_USERS_JSON is not valid JSON") from exc
         if not isinstance(items,list): raise AuthConfigurationError("NETREGRESS_AUTH_USERS_JSON must be an array")
-        return cls([UserRecord(str(x["username"]),str(x["password_hash"]),Role(str(x["role"]).upper()),tuple(x.get("projects") or ("*",))) for x in items],required=required)
+        users=[]
+        for index,item in enumerate(items):
+            if not isinstance(item,dict):
+                raise AuthConfigurationError(f"configured user at index {index} must be an object")
+            username=item.get("username")
+            password_hash=item.get("password_hash")
+            if not isinstance(username,str) or not username.strip():
+                raise AuthConfigurationError(f"configured user at index {index} has no valid username")
+            if not isinstance(password_hash,str) or not password_hash.strip():
+                raise AuthConfigurationError(f"configured user {username!r} has no password hash")
+            try:
+                role=Role(str(item.get("role","")).upper())
+            except ValueError as exc:
+                raise AuthConfigurationError(f"configured user {username!r} has an unsupported role") from exc
+            projects=item.get("projects",["*"])
+            if not isinstance(projects,list) or any(not isinstance(project,str) or not project.strip() for project in projects):
+                raise AuthConfigurationError(f"projects for user {username!r} must be an array of non-empty strings")
+            normalized_projects=tuple(project.strip() for project in projects)
+            if "*" in normalized_projects and len(normalized_projects)!=1:
+                raise AuthConfigurationError(f"wildcard project scope for user {username!r} cannot be combined with named projects")
+            users.append(UserRecord(username.strip(),password_hash.strip(),role,normalized_projects))
+        return cls(users,required=required)
     @staticmethod
     def password_hash(password): return generate_password_hash(password,method="scrypt")
     def authenticate(self,username,password):

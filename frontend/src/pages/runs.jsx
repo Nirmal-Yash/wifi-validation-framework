@@ -5,6 +5,7 @@ import {navigate} from "../router";
 import {useAsyncLoader,useMutation} from "../hooks";
 import {formatDate} from "../utils";
 import {Button,DataTable,ErrorState,Field,InlineNotice,LoadingState,Pagination,Section,StatusBadge} from "../components/ui";
+import {Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle} from "@/components/ui/dialog";
 
 export default function RunsPage({user}){
  const[filters,setFilters]=useState({firmware:"",lab:"",profile:"",status:"",outcome:"",page:1});
@@ -20,7 +21,7 @@ export default function RunsPage({user}){
  if(loader.error&&!loader.data)return <ErrorState error={loader.error} onRetry={loader.reload}/>;
  const data=loader.data;
  return <div className="page-stack">
-  <div className="page-title-row"><div><div className="eyebrow">Operate / Execution history</div><h2>Runs</h2><p className="muted">Filter persisted executions and follow each result back to its evidence and validation outcome.</p></div>{canLaunch?<Button onClick={()=>setShowLaunch(true)}><Play size={15} aria-hidden="true"/>Start Run</Button>:null}</div>
+  <div className="page-actions-row"><span className="context-caption">{activeFilterCount?activeFilterCount+" active filter(s)":"Showing persisted execution history"}</span>{canLaunch?<Button onClick={()=>setShowLaunch(true)}><Play size={15} aria-hidden="true"/>Start Run</Button>:null}</div>
   {mutation.error?<InlineNotice tone="danger">{mutation.error.message}</InlineNotice>:mutation.success?<InlineNotice tone="success">The Runner accepted the Run request. Refreshing persisted history.</InlineNotice>:null}
   <Section title="Filter history" subtitle="Filters are applied by the Runner API." actions={<span className="filter-count">{activeFilterCount} active</span>}>
    <form className="filter-grid" onSubmit={apply}>
@@ -42,14 +43,17 @@ export default function RunsPage({user}){
    ]} emptyTitle="No matching Runs" emptyMessage={activeFilterCount?"Try clearing one or more filters.":"No Runs have been persisted yet."}/>
    <Pagination page={data?.page||1} pages={data?.pages||1} onChange={page=>setFilters({...filters,page})}/>
   </Section>
-  {showLaunch?<div className="dialog-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget&&!mutation.loading)setShowLaunch(false);}}><div className="dialog wide" role="dialog" aria-modal="true" aria-labelledby="launch-title" aria-describedby="launch-description">
-   <div className="dialog-icon"><Play size={18}/></div><h2 id="launch-title">Start validation Run</h2><p id="launch-description" className="muted">The Runner validates authorization, configuration and idempotency. This form submits the requested execution scope.</p>
-   <form className="form-stack" onSubmit={startRun}>
-    <Field label="Firmware version" required><input value={form.firmware_version} onChange={e=>setForm({...form,firmware_version:e.target.value})} required/></Field>
-    <Field label="Tests" hint="Optional comma-separated TestRegistry IDs. Leave blank to use the configured default selection."><input value={form.tests} onChange={e=>setForm({...form,tests:e.target.value})} placeholder="wifi.latency.threshold, …"/></Field>
-    {mutation.error?<InlineNotice tone="danger">{mutation.error.message}</InlineNotice>:null}
-    <div className="dialog-actions"><Button type="button" variant="outline" onClick={()=>setShowLaunch(false)} disabled={mutation.loading}>Close</Button><Button type="submit" loading={mutation.loading}><Play size={14}/>Start Run</Button></div>
-   </form>
-  </div></div>:null}
+  <Dialog open={showLaunch} onOpenChange={open=>{if(!mutation.loading)setShowLaunch(open);}}>
+   <DialogContent className="run-launch-dialog">
+    <div className="dialog-icon"><Play size={18}/></div>
+    <DialogHeader><DialogTitle>Start validation Run</DialogTitle><DialogDescription>The Runner validates authorization, configuration and idempotency. This form submits the requested execution scope.</DialogDescription></DialogHeader>
+    <form className="form-stack" onSubmit={startRun}>
+     <Field label="Firmware version" required><input value={form.firmware_version} onChange={e=>setForm({...form,firmware_version:e.target.value})} required/></Field>
+     <Field label="Tests" hint="Optional comma-separated TestRegistry IDs. Leave blank to use the configured default selection."><input value={form.tests} onChange={e=>setForm({...form,tests:e.target.value})} placeholder="wifi.latency.threshold, …"/></Field>
+     {mutation.error?<InlineNotice tone="danger">{mutation.error.message}</InlineNotice>:null}
+     <DialogFooter><Button type="button" variant="outline" onClick={()=>setShowLaunch(false)} disabled={mutation.loading}>Close</Button><Button type="submit" loading={mutation.loading}><Play size={14}/>Start Run</Button></DialogFooter>
+    </form>
+   </DialogContent>
+  </Dialog>
  </div>;
 }

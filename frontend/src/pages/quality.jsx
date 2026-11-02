@@ -16,7 +16,7 @@ export function RegressionPage(){
  const regressionCount=comparisons.filter(item=>["REGRESSION","SOFT_REGRESSION"].includes(item.classification)).length;
  const fixedCount=comparisons.filter(item=>["FIXED","IMPROVED"].includes(item.classification)).length;
  return <div className="page-stack">
-  <div className="page-title-row"><div><div className="eyebrow">Analyze / Compare</div><h2>Regression intelligence</h2><p className="muted">Compare two persisted Runs. Confirm comparability and environment class before interpreting performance changes.</p></div><GitCompare className="page-title-icon" size={25} aria-hidden="true"/></div>
+  <div className="page-actions-row"><span className="context-caption">Explicit baseline-to-current comparison · no implicit baseline</span></div>
   <Section title="Compare Runs" subtitle="Choose an explicit baseline and current Run. No implicit baseline is assumed.">
    <form className="filter-grid" onSubmit={event=>{event.preventDefault();setSubmitted({baseline:baseline.trim(),current:current.trim()});}}>
     <Field label="Baseline Run ID" required><input value={baseline} onChange={e=>setBaseline(e.target.value)} placeholder="Baseline Run ID" required/></Field>
@@ -63,7 +63,7 @@ export function PerformancePage(){
  if(loader.loading&&!loader.data)return <LoadingState label="Loading performance history…"/>;
  if(loader.error&&!loader.data)return <ErrorState error={loader.error} onRetry={loader.reload}/>;
  return <div className="page-stack">
-  <div className="page-title-row"><div><div className="eyebrow">Analyze / Trends</div><h2>Performance trends</h2><p className="muted">Each chart represents one metric and one unit. Means include only explicitly valid, non-warm-up numeric samples.</p></div><TrendingUp size={25} className="page-title-icon" aria-hidden="true"/></div>
+  <div className="page-actions-row"><span className="context-caption">Metric history · valid non-warm-up samples only in aggregates</span></div>
   <Section title="Select metric" subtitle="The test ID loads persisted history; choose one metric before interpreting its trend.">
    <form className="filter-grid" onSubmit={event=>{event.preventDefault();setSubmitted(testId.trim());setMetricName("");}}>
     <Field label="Test ID" required><input list="test-options" value={testId} onChange={e=>setTestId(e.target.value)} required/><datalist id="test-options">{defaultTests.map(item=><option key={item} value={item}/>)}</datalist></Field>
@@ -106,7 +106,7 @@ export function TelemetryPage(){
    value:toFiniteNumber(item.point.value),captured_at:item.point.captured_at||item.snapshot?.captured_at,
  }));
  return <div className="page-stack">
-  <div className="page-title-row"><div><div className="eyebrow">Analyze / Radio & network</div><h2>WiFi telemetry</h2><p className="muted">Source, timestamp, interface and environment class remain attached to every point. Virtual WiFi data is not RF certification.</p></div><Wifi size={25} className="page-title-icon" aria-hidden="true"/></div>
+  <div className="page-actions-row"><span className="context-caption">Environment-aware data · virtual WiFi is not RF certification</span></div>
   <Section title="Select Run" subtitle="Load only integrity-verified telemetry attached to this Run.">
    <form className="filter-grid compact-filter-grid" onSubmit={event=>{event.preventDefault();setSubmitted(runId.trim());setMetricSelection("");}}>
     <Field label="Run ID" required><input value={runId} onChange={e=>setRunId(e.target.value)} required placeholder="Run ID"/></Field>

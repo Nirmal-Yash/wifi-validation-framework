@@ -97,8 +97,16 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
 fi
 NODE_VERSION="$(node -p 'process.versions.node')"
 IFS=. read -r NODE_MAJOR NODE_MINOR NODE_PATCH <<< "$NODE_VERSION"
-if (( NODE_MAJOR < 20 || ( NODE_MAJOR == 20 && NODE_MINOR < 19 ) )); then
-  echo "ERROR: Node.js 20.19+ is required; detected $NODE_VERSION." >&2
+NODE_SUPPORTED=0
+if (( NODE_MAJOR == 22 && ( NODE_MINOR > 22 || ( NODE_MINOR == 22 && NODE_PATCH >= 2 ) ) )); then
+  NODE_SUPPORTED=1
+elif (( NODE_MAJOR == 24 && NODE_MINOR >= 15 )); then
+  NODE_SUPPORTED=1
+elif (( NODE_MAJOR >= 26 )); then
+  NODE_SUPPORTED=1
+fi
+if (( NODE_SUPPORTED == 0 )); then
+  echo "ERROR: Frontend toolchain requires Node.js 22.22.2+, 24.15+, or 26+; detected $NODE_VERSION." >&2
   exit 1
 fi
 

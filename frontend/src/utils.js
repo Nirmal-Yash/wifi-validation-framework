@@ -41,9 +41,7 @@ export const summarizeRunOutcomes = (items = []) => ({
   ).length,
 });
 
-export const canExecute = (role) => ["OWNER", "ADMIN", "OPERATOR"].includes(role);
-export const canAdmin = (role) => ["OWNER", "ADMIN"].includes(role);
-export const canOwner = (role) => role === "OWNER";
+export {canExecute,canAdmin,canOwner,canView,canPerform,canAccessRoute,ROLE_PERMISSIONS,ROUTE_PERMISSIONS} from "./permissions";
 
 export const formatDate = (value) => {
   if (value === null || value === undefined || value === "") return "—";

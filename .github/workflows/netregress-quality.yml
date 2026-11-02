@@ -1,0 +1,81 @@
+name: NetRegress quality gates
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "dashboard/**"
+      - "lib/security/**"
+      - "scripts/start_dashboard.sh"
+      - "tests/test_auth_flow.py"
+      - "tests/test_rbac_auth.py"
+      - "tests/test_dashboard_rbac_matrix.py"
+      - "tests/test_dashboard_session_enforcement.py"
+      - ".github/workflows/netregress-quality.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "dashboard/**"
+      - "lib/security/**"
+      - "scripts/start_dashboard.sh"
+      - "tests/test_auth_flow.py"
+      - "tests/test_rbac_auth.py"
+      - "tests/test_dashboard_rbac_matrix.py"
+      - "tests/test_dashboard_session_enforcement.py"
+      - ".github/workflows/netregress-quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: netregress-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend tests and production build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up supported Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.15.0"
+      - name: Install pinned frontend dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test
+      - name: Build production assets
+        working-directory: frontend
+        run: npm run build
+
+  backend-auth:
+    name: Backend session and RBAC contract
+    runs-on: ubuntu-latest
+    env:
+      NETREGRESS_SESSION_SECRET: netregress-ci-session-secret
+      NETREGRESS_SESSION_COOKIE_SECURE: "0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+      - name: Run authentication, RBAC and session tests
+        run: >-
+          python -m pytest
+          tests/test_auth_flow.py
+          tests/test_rbac_auth.py
+          tests/test_dashboard_rbac_matrix.py
+          tests/test_dashboard_session_enforcement.py

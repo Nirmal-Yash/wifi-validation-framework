@@ -1,8 +1,8 @@
 # NetRegress Runner UI
 
-The modern operational UI is a React + Vite client over the canonical `/api/v1` contract. Flask remains the API/session host and the older Flask/Jinja page remains available as a compatibility dashboard.
+The React/Vite client is the operational frontend for the Flask Runner's canonical `/api/v1` contract. Legacy Flask/Jinja routes remain in the repository; the React/Vite application is the canonical operational UI.
 
-## One-command setup and startup
+## One-command local setup
 
 From the repository root on Ubuntu:
 
@@ -12,88 +12,93 @@ git pull --ff-only origin main
 ./scripts/start_dashboard.sh
 ```
 
-Stop any old backend and Vite terminals first with **Ctrl+C**. Check `git status --short` before pulling; do not discard local modifications to force an update.
+Stop previous Flask/Vite terminals with **Ctrl+C** first. Review any local changes before pulling; do not discard them to force an update.
 
-The launcher uses `wifi-venv/bin/python` (or `.venv/bin/python` when available), checks for port conflicts, installs frontend dependencies when missing or when the package/toolchain files have changed, creates the local OWNER credential on first run, verifies the Flask health endpoint, and starts the Vite UI. Press **Ctrl+C** to stop both services.
+The launcher uses `wifi-venv/bin/python` (or `.venv/bin/python`), checks ports, verifies the API health endpoint and starts Flask plus Vite together. It creates a local OWNER account on first launch and reuses the password hash on subsequent launches. Username: **`owner`**. The password is at least 12 characters and is never stored as plaintext. Credentials and the Flask signing secret are retained in the Git-ignored `.local/` directory with restricted permissions.
 
-On first run, create and confirm an owner password of at least 12 characters. The username is **`owner`**. The password hash and Flask session secret are stored under the Git-ignored `.local/` directory with restricted file permissions; the plaintext password is never written to disk. Later starts reuse this account, so you keep the same login password. To reset it (and invalidate existing sessions), stop the running services and run:
+Open **http://127.0.0.1:5173**. Flask listens on **127.0.0.1:5000** by default. If the port is occupied, consistently select another one:
+
+```bash
+NETREGRESS_PORT=5050 ./scripts/start_dashboard.sh
+```
+
+Reset the owner password and rotate the signing secret (invalidating prior sessions) with:
 
 ```bash
 ./scripts/start_dashboard.sh --reset-owner
 ./scripts/start_dashboard.sh
 ```
 
-Open **http://127.0.0.1:5173** for the React UI. By default, Flask listens on **127.0.0.1:5000** and Vite proxies `/api/*` to that same port. A shared `NETREGRESS_PORT` setting keeps the backend and frontend aligned. If port 5000 is already occupied, stop the conflicting service or use a free port for both, for example:
+## Frontend architecture
 
-```bash
-NETREGRESS_PORT=5050 ./scripts/start_dashboard.sh
-```
+- **React 19 + Vite 8** for the application runtime and local development server.
+- **Tailwind CSS v4** for the utility layer and central design tokens.
+- **shadcn/ui-style component architecture**, configured by `components.json`, with Radix UI primitives for accessible Dialog, Dropdown Menu, Tabs, Tooltip and Slot behavior. Reusable project-owned components live under `src/components/ui`; they are source components, not a remote runtime dependency.
+- **TanStack Query** for server-state caching, request refetching, mutation lifecycle and cache invalidation on sign-out.
+- **Lucide React** for consistent icons and action affordances.
+- A single responsive Sidebar/AppShell, shared form/card/table/status primitives, and a shared page-heading hierarchy. Dark/light themes persist only the non-sensitive visual preference.
 
-The launcher refuses to start if the chosen backend port or Vite port 5173 is already occupied, instead of silently attaching to the wrong service. Do not open Flask's root page to sign in to the React UI; use the Vite URL above. Flask's root route is the legacy compatibility UI.
+## Authentication and session controls
 
-## Authentication behavior
+The UI uses the Flask signed session cookie. It does **not** store passwords, session cookies, access tokens or CSRF tokens in localStorage/sessionStorage.
 
-- A successful login creates an HTTP-only Flask session cookie.
-- A CSRF token is returned on login and attached to browser state-changing API requests.
-- Invalid credentials remain on the login page with an explicit error.
-- A stopped backend, proxy mismatch or non-JSON response shows a separate connection/setup screen and a retry action; it is not reported as a bad password.
-- The launcher requires authentication. Do not disable authentication to work around a connection problem.
+- The session is restored from `GET /api/v1/auth/me`; the API decides whether the cookie is authenticated.
+- The cookie is named `netregress_session`, is HttpOnly, SameSite=Lax and refreshed on requests. Local HTTP development keeps Secure disabled; set `NETREGRESS_SESSION_COOKIE_SECURE=1` when serving behind HTTPS.
+- CSRF tokens are fetched from `/api/v1/auth/csrf` and retained in memory only. State-changing requests include `X-CSRF-Token`; POST requests also carry an idempotency key. A stale CSRF token is refreshed once only after the API returns `CSRF_REQUIRED`.
+- The client warns after 27 minutes of inactivity and signs out at 30 minutes. Flask independently enforces a 30-minute authenticated-request idle timeout and a 1-hour sliding permanent-cookie lifetime. Continue-session explicitly revalidates `/auth/me`; sign-out/expiry clears TanStack Query cache and in-memory CSRF state.
+- A 401 on a protected API request triggers a global session-expired transition. API/connection errors are not presented as invalid passwords.
+- Login attempts are rate-limited server-side. The UI does not replace that control.
+- This standalone local Runner does not currently implement MFA, OIDC/SAML SSO, self-service user provisioning or a distributed session store. Do not describe those capabilities as enabled; add an identity provider and shared session/rate-limit infrastructure before multi-user or cloud deployment.
 
-## UI system and data representation
+## RBAC and server authority
 
-The React client uses a consistent **shadcn-inspired component system** with Lucide icons: responsive sidebar navigation, button variants/sizes, semantic status badges, cards/sections, structured tables, dialogs, and shared loading/empty/error states. The components live in `src/components` and intentionally keep the existing CSS/Vite stack rather than adding a second styling framework. Shared tokens give forms, tables, badges, charts and navigation consistent spacing, contrast, focus states and responsive behavior.
+The frontend permission matrix mirrors the backend's roles:
 
-Data is presented according to the Runner's persisted contracts:
+| Role | View | Execute Runs / firmware operations | Admin baselines / waivers | Owner-only |
+| --- | --- | --- | --- | --- |
+| OWNER | Yes | Yes | Yes | Yes |
+| ADMIN | Yes | Yes | Yes | No |
+| OPERATOR | Yes | Yes | No | No |
+| VIEWER | Yes | No | No | No |
 
-- Business outcomes are shown separately from lifecycle status; a pytest `PASS` is never promoted to a release validation outcome.
-- Dashboard activity and outcome distributions state their denominator (latest eight Runs); the all-time total comes from the API total.
-- Trend lines never mix different metric names or units. Only samples marked `VALID` that are numeric, finite and not warm-up contribute to means; raw samples are still shown in the sample table.
-- No values, test results, readiness states, or trend points are inferred when the API did not record them. Missing and unrecognized outcomes remain explicitly visible.
-- Charts have accessible text alternatives and supporting value tables. A performance pass ratio is descriptive and does not replace the Runner's business outcome or release gate.
+The matrix hides unauthorized navigation and controls and provides a clear access-denied page. It is only a usability boundary: Flask's API remains authoritative for view, execute, admin, project-scope, CSRF and idempotency checks. Firmware/rollback actions and waiver creation require a confirmation step; release waiver controls are hidden from Operators and Viewers.
 
-Run `npm test` and `npm run build` after UI or dependency changes. Runtime/browser verification remains required before retiring the Flask/Jinja compatibility layer.
+## Data presentation rules
 
-## UI surface
+- Lifecycle state, test status, evidence state, and business outcome remain separate fields.
+- A pytest `PASS` is not shown as a release validation outcome.
+- Dashboard distributions disclose their denominator (latest eight Runs) and keep missing/unrecognized outcomes visible.
+- Metric charts do not mix different metric names or units. Summary means include only explicit `VALID`, finite numeric, non-warm-up samples. Raw observations remain accessible.
+- Telemetry charts are split by metric/unit. Environment classification remains visible, and virtual WiFi is not represented as physical RF certification.
+- Empty, loading, partial, and error states are distinct. Charts include accessible descriptions and supporting value tables.
 
-- authenticated login/session bootstrap/logout;
-- role-aware navigation for OWNER, ADMIN, OPERATOR and VIEWER;
-- Dashboard and Runner readiness;
-- historical Run filtering, pagination and launch;
-- Run detail with lifecycle/outcome context, tests, Lab Health, telemetry, evidence artifacts and configuration;
-- Test detail with persisted execution contract, metrics/raw samples, failure semantics and evidence;
-- Run-to-Run regression intelligence with comparison, classification filtering and drill-down;
-- performance history with accessible SVG trend charts and tabular values;
-- WiFi telemetry inspection with environment-class labeling;
-- Lab Health inspection by Run or Lab;
-- authenticated artifact browser and downloads;
-- administrator baseline promotion;
-- operator firmware update/rollback controls;
-- administrator release-waiver creation;
-- explicit confirmation for destructive Run actions;
-- loading, empty, error and retry states;
-- keyboard-accessible interactive tables;
-- responsive navigation and layouts.
-
-The dashboard KPIs use the domain's actual business outcomes (VALIDATED, VALIDATED_WITH_WARNINGS, REJECTED, UNVALIDATED) and disclose when counts cover only the latest eight Runs. They never infer a release PASS from a pytest status.
-
-The backend remains authoritative for authorization, CSRF, idempotency, evidence integrity, path confinement and release semantics. UI role visibility is not a security boundary.
-
-## Frontend commands
+## Development and verification
 
 ```bash
 cd frontend
 npm install
-npm run start
-npm run dev
 npm test
 npm run build
-npm run preview
+npm run start
 ```
 
-Use `./scripts/start_dashboard.sh` for normal local development because it configures authentication and keeps the backend/proxy ports aligned. Standalone Vite commands are intended for frontend-only work when the backend is already running on the configured port.
+Node.js **22.22.2+**, **24.15+**, or **26+** is required by the pinned Vite/test toolchain. For normal use, prefer `./scripts/start_dashboard.sh`, which aligns the authenticated Flask backend and Vite proxy. Keep Flask and Vite processes on the same local host/port configuration. Production deployment must serve the built assets over HTTPS, set Secure cookies and retain the same-origin `/api/v1` proxy boundary.
 
-Vite builds a static bundle into `frontend/dist`. Production hosting must serve that bundle from a host/path that proxies `/api/v1` to the Runner. Runtime browser verification is still required before retiring the Flask/Jinja compatibility layer.
+Run the backend security contract tests after changes to session configuration:
 
-## npm install compatibility
+```bash
+cd ..
+source wifi-venv/bin/activate
+python -m pytest tests/test_auth_flow.py tests/test_rbac_auth.py tests/test_dashboard_rbac_matrix.py -q
+```
 
-This frontend pins its direct build/test toolchain in `package.json`. The project-local `.npmrc` enables `legacy-peer-deps` as a workaround for npm Arborist's `Cannot read properties of null (reading 'edgesOut')` crash observed with the Vite/Vitest optional peer graph on older distro-provided npm. This setting is scoped to `frontend/`; it is not a global npm setting. `@testing-library/react` v16 also requires `@testing-library/dom`, so both are explicitly pinned in the frontend's development dependencies. When updating Vite, the React plugin, Testing Library, or Vitest, run `npm test` and `npm run build` and review dependency compatibility explicitly.
+Do not interpret a successful frontend build as proof of backend authorization or a successful REAL_LAB certification. Browser/manual verification is required before removing the Flask/Jinja compatibility UI.
+
+## npm compatibility
+
+The project-local `.npmrc` contains `legacy-peer-deps=true` to work around the previously observed npm Arborist `edgesOut` resolver crash. It is scoped to `frontend/`; it does not change global npm configuration. Run `npm test` and `npm run build` after any dependency update.
+
+ 
+Project scopes fail closed. The current Run query/persistence contract has no project ID to filter on, so users configured with named projects (or an empty project list) are denied unscoped Run API access. The legacy Flask dashboard also rejects non-wildcard scopes. The default local OWNER uses the explicit wildcard scope `["*"]`. Do not assign restricted project scopes until project-aware Run queries and resource-level authorization are implemented.
+
+The local session is a signed Flask cookie, not a shared server-side session service. The API validates the cookie, CSRF token, role and 30-minute idle timestamp; rotating the local signing secret invalidates all cookies. Before multi-worker, hosted or multi-tenant deployment, move sessions and login-rate limits to shared server-side stores with explicit per-session revocation.

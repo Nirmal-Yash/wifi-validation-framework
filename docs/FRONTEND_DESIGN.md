@@ -326,3 +326,23 @@ The modern local development flow runs Flask on 127.0.0.1:5000 and React/Vite on
 The dashboard presentation now uses an operational hero, explicit refresh context, consistent action links, refined spacing/surface hierarchy, responsive layouts, reduced-motion support, and a skip-to-main-content link. KPI labels are domain-aware: total Runs are separated from latest-eight activity, and validated outcomes are counted from VALIDATED and VALIDATED_WITH_WARNINGS; REJECTED and UNVALIDATED remain visible as items needing review. No frontend number maps pytest PASS directly to business release validation.
 
 The API remains authoritative for authorization, CSRF, idempotency, artifact containment and release-policy semantics. The browser must be exercised against the live Flask API before the React client is considered runtime-verified or the Jinja compatibility pages are retired.
+
+
+## Full React application and session lifecycle
+
+The canonical application uses React 19, Vite 8, Tailwind CSS v4, Radix primitives wrapped in project-owned shadcn-style components, Lucide icons and TanStack Query. Shared components live under `src/components/ui`; Sidebar/AppShell, modal, menu, tab, tooltip, card, table, form and status primitives share design tokens. Route changes animate into the content area; dialogs and menus use Radix focus handling; reduced-motion is respected. Navigation collapses to a mobile drawer.
+
+Authentication is restored from the same-origin Flask session via `GET /api/v1/auth/me`. The signed cookie is named `netregress_session`, HttpOnly, SameSite=Lax, and Secure in HTTPS deployment. It is never read by JavaScript. CSRF material is requested from `/auth/csrf` and kept only in memory; mutation calls send the CSRF header and idempotency key. A stale CSRF token is refreshed at most once when the Runner returns `CSRF_REQUIRED`. No session or CSRF credential is put into localStorage or sessionStorage.
+
+The browser warns after 27 minutes without interaction and requires explicit continuation; local sign-out occurs at 30 minutes. The API separately enforces a 30-minute authenticated-request idle timeout. Cross-tab activity/logout/login events are synchronized with BroadcastChannel; only event types are broadcast, never credentials. Query cache and CSRF memory are cleared on sign-out and 401.
+
+The frontend permission matrix is OWNER (view/execute/admin/owner), ADMIN (view/execute/admin), OPERATOR (view/execute), VIEWER (view). Route visibility and action controls mirror the server matrix. Flask API guards remain authoritative for every route, including baseline promotion, waivers, run execution, firmware flash and rollback. High-impact actions require a confirmation dialog; confirmations are UX safeguards, not substitutes for server authorization.
+
+The current Run query/persistence contract still has no project identifier. Therefore, the backend now treats empty and named project scopes fail-closed on unscoped Run APIs. The default local OWNER's explicit `["*"]` scope remains supported. Named-project query filtering must be implemented before assigning project-scoped accounts to operational workloads.
+
+
+### Scope and deployment limitations
+
+This local Runner uses Flask's signed session cookie with HttpOnly, SameSite and HTTPS-aware Secure configuration. It does not currently use a shared server-side session/revocation store or a distributed login-rate-limit store. Cookie signing-secret rotation invalidates existing local sessions. A hosted multi-worker deployment must add shared server-side session persistence/revocation and distributed rate limiting. MFA and OIDC/SAML are not currently implemented; do not represent them as active controls.
+
+The Run model has no project ID, so the API and legacy Flask interface both fail closed for named/empty project scopes. The default locally provisioned OWNER is explicitly wildcard-scoped. Project-scoped users must not be provisioned until project-aware filtering and resource-level authorization are available.

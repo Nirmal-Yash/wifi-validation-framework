@@ -1,6 +1,7 @@
 import io
 import os
 import sys
+import time
 from pathlib import Path
 
 try:
@@ -73,9 +74,13 @@ def create_app(database_path: str | Path = DATABASE_PATH, *, auth_manager: AuthM
     flask_app = Flask(__name__)
     flask_app.secret_key = os.getenv("NETREGRESS_SESSION_SECRET") or os.urandom(32)
     flask_app.config.update(
+        SESSION_COOKIE_NAME=os.getenv("NETREGRESS_SESSION_COOKIE_NAME","netregress_session"),
+        SESSION_COOKIE_PATH="/",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=os.getenv("NETREGRESS_SESSION_COOKIE_SECURE","0").lower() in {"1","true","yes"},
+        SESSION_REFRESH_EACH_REQUEST=True,
+        SESSION_IDLE_TIMEOUT_SECONDS=int(os.getenv("NETREGRESS_SESSION_IDLE_TIMEOUT_SECONDS","1800")),
         PERMANENT_SESSION_LIFETIME=3600,
         MAX_CONTENT_LENGTH=int(os.getenv("NETREGRESS_MAX_REQUEST_BYTES","4194304")),
     )
@@ -83,7 +88,7 @@ def create_app(database_path: str | Path = DATABASE_PATH, *, auth_manager: AuthM
     def harden_response(response):
         return apply_security_headers(
             response,
-            no_store=request.path.startswith("/api/v1/"),
+            no_store=request.path.startswith("/api/v1/") or bool(session.get("netregress_user")),
             hsts=bool(flask_app.config["SESSION_COOKIE_SECURE"]),
         )
     query = DashboardQueryService(SQLiteDatabase(database_path))
@@ -96,8 +101,29 @@ def create_app(database_path: str | Path = DATABASE_PATH, *, auth_manager: AuthM
     def require_dashboard_authentication():
         if request.path.startswith("/api/v1/") or request.path == "/favicon.ico":
             return None
-        if auth_manager.required and session.get("netregress_user") is None:
+        if not auth_manager.required:
+            return None
+        identity = session.get("netregress_user")
+        if identity is None:
             return Response("Authentication required. Use POST /api/v1/auth/login.", status=401, mimetype="text/plain")
+        if not isinstance(identity, dict):
+            session.clear()
+            return Response("Invalid session. Sign in again.", status=401, mimetype="text/plain")
+        projects = identity.get("projects", ["*"])
+        if not isinstance(projects, (list, tuple)) or tuple(projects) != ("*",):
+            return Response("Project-scoped access is not supported by the legacy dashboard. Use a project-aware API client.", status=403, mimetype="text/plain")
+        try:
+            last_activity = float(session.get("netregress_last_activity", 0))
+        except (TypeError, ValueError):
+            last_activity = 0
+        idle_timeout = float(flask_app.config["SESSION_IDLE_TIMEOUT_SECONDS"])
+        if last_activity <= 0 or time.time() - last_activity > idle_timeout:
+            session.clear()
+            return Response("Session expired after inactivity. Sign in again.", status=401, mimetype="text/plain")
+        # Legacy page navigation counts as direct user interaction. Legacy
+        # polling endpoints under /api/ must not extend the idle session.
+        if not request.path.startswith("/api/"):
+            session["netregress_last_activity"] = time.time()
         return None
 
     @flask_app.route("/")

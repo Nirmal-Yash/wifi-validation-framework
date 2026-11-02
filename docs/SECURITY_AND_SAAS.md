@@ -243,3 +243,25 @@ Security audit tooling performs Python syntax, tracked-secret-pattern, shell-inv
 
 ## Iterations 28–30 release security and governance
 The final release wave adds content-addressed release inventory, tracked-artifact rejection, clean-tree enforcement, source syntax auditing and operational readiness checks. Release tooling does not introduce a network trust dependency and does not bypass authentication, RBAC, artifact containment, idempotency, firmware authorization or release-gate controls. REAL_LAB evidence remains execution-bound and cannot be inferred from a release manifest.
+
+ 
+## Frontend session and RBAC contract (2026)
+
+The local React client does not store session credentials or CSRF material in localStorage/sessionStorage. It uses the same-origin, signed Flask session cookie (`netregress_session`, HttpOnly, SameSite=Lax; Secure is required in HTTPS deployment), restores identity from `/api/v1/auth/me`, obtains a session-bound CSRF token from `/api/v1/auth/csrf`, and sends it on mutations. Client-side idle policy warns at 27 minutes and signs out at 30 minutes; the Flask permanent-session lifetime remains 1 hour and refreshes on requests. Logout and expiry clear in-memory CSRF state and query cache.
+
+The UI permission matrix is a presentation control only. Server-side `AuthManager.authorize`, API guards, project scope, CSRF, login rate limiting, idempotency and artifact confinement remain authoritative. Owner/Admin-only governance controls are not exposed to Operators or Viewers. UI security never grants any role additional backend capabilities.
+
+ 
+### Project-scope enforcement note
+
+Project membership is not equivalent to role membership. Empty project lists remain empty and do not become a wildcard. A user with a named project scope is denied by the API when a request does not carry a verifiable project identifier. The current Run persistence/query model does not yet expose project IDs, so only explicit wildcard-scoped local accounts can use the unfiltered Run APIs. This is intentionally fail-closed; project-scoped query filtering is a separate backend capability that must be added before assigning named-project users to production workloads.
+
+ 
+### Session inactivity enforcement
+
+The browser warning is a usability layer; the Flask API is authoritative. The client warns at 27 minutes and signs out at 30 minutes of user inactivity. The API separately records the last authenticated request in the signed session and rejects the session after 30 minutes without an authenticated API request. The Flask permanent cookie lifetime is one hour and refreshes on authenticated requests. A request after idle expiry receives `SESSION_EXPIRED` and clears the signed session. This remains a single-process local Runner design; a multi-worker/cloud deployment must use a shared server-side session and rate-limit store with centrally enforced revocation.
+
+
+### Legacy-interface project boundary
+
+The older Flask/Jinja dashboard does not carry a project ID on its Run or evidence queries. It therefore permits only explicit wildcard-scoped identities and returns 403 for named or empty project scopes. The React API uses the same fail-closed rule for endpoints without project context. This is a temporary safe restriction, not project-level multi-tenancy.

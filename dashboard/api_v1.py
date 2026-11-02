@@ -2,10 +2,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any,Callable
 from functools import wraps
-from flask import Blueprint,jsonify,request,session,send_file
+from flask import Blueprint,jsonify,request,session,send_file,current_app
 from lib.repositories import SQLiteDatabase
 from lib.services import RunProcessManager, WaiverService, FirmwareOperationService, IdempotencyStore, CsrfService, LoginRateLimiter, RequestSecurityError, resolve_confined_path, RunnerDoctor
 from lib.adapters import DeviceProfile, OpenWrtDeviceAdapter, SSHFirmwareAdapter, VirtualLinuxDeviceAdapter
@@ -43,21 +44,52 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         except DashboardQueryError as exc:return error("NOT_FOUND",str(exc),404)
         except (ValueError,TypeError) as exc:return error("INVALID_REQUEST",str(exc),400)
         except Exception as exc:return error("INTERNAL_ERROR","Dashboard query failed",500,{"type":type(exc).__name__})
-    def require(action="view",project_id=None):
+    def require(action="view",project_id=None,*,touch=False):
         raw=session.get("netregress_user")
         if raw is None:
-            if auth.required:return error("UNAUTHENTICATED","authentication required",401)
+            if auth.required:
+                return error("UNAUTHENTICATED","authentication required",401)
             actor=AuthenticatedUser("local",Role.OWNER,("*",))
         else:
-            try:actor=AuthenticatedUser(raw["username"],Role(raw["role"]),tuple(raw.get("projects") or ("*",)))
-            except (KeyError,ValueError):session.clear();return error("UNAUTHENTICATED","invalid session",401)
+            now=time.time()
+            idle_timeout=float(current_app.config.get("SESSION_IDLE_TIMEOUT_SECONDS",1800))
+            try:
+                if not isinstance(raw, dict):
+                    raise TypeError("invalid session identity")
+                last_activity=float(session.get("netregress_last_activity",0))
+                if last_activity<=0 or now-last_activity>idle_timeout:
+                    session.clear()
+                    return error("SESSION_EXPIRED","session expired after inactivity",401)
+                raw_projects = raw.get("projects", ["*"])
+                if not isinstance(raw_projects, (list, tuple)) or any(
+                    not isinstance(project, str) or not project.strip()
+                    for project in raw_projects
+                ):
+                    raise ValueError("invalid project scope")
+                actor = AuthenticatedUser(
+                    raw["username"],
+                    Role(raw["role"]),
+                    tuple(raw_projects),
+                )
+            except (KeyError, ValueError, TypeError):
+                session.clear()
+                return error("UNAUTHENTICATED", "invalid session", 401)
             if request.method in {"POST","PUT","PATCH","DELETE"} and request.path != "/api/v1/auth/login" and not CsrfService.validate(session,request.headers.get("X-CSRF-Token")):
                 return error("CSRF_REQUIRED","valid X-CSRF-Token header required for browser state changes",403)
-        return None if auth.authorize(actor,action,project_id) else error("FORBIDDEN","authorization denied",403)
+        if not auth.authorize(actor,action,project_id):
+            return error("FORBIDDEN","authorization denied",403)
+        if raw is not None:
+            # Background GET polling must not extend an idle user's session.
+            if touch or request.method in {"POST","PUT","PATCH","DELETE"}:
+                session["netregress_last_activity"]=now
+        return None
     @api.get("/health")
     def health():return ok({"status":"ok"})
     @api.get("/readiness")
     def readiness():
+        denied = require("view")
+        if denied is not None:
+            return denied
         report=RunnerDoctor(Path(__file__).resolve().parents[1]).run(database=query.database.path)
         checks=[{"check_id":item.check_id,"status":item.status,"message":item.message} for item in report.checks]
         payload={"status":"ready" if report.ready else "not_ready","summary":report.summary,"checks":checks}
@@ -72,13 +104,23 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         except AuthConfigurationError as exc:return error("AUTH_NOT_CONFIGURED",str(exc),503)
         user=auth.authenticate(username,str(payload.get("password","")))
         if user is None:return error("INVALID_CREDENTIALS","invalid credentials",401)
-        session.clear();session["netregress_user"]={"username":user.username,"role":user.role.value,"projects":list(user.projects)};session.permanent=True
+        session.clear()
+        session["netregress_user"]={"username":user.username,"role":user.role.value,"projects":list(user.projects)}
+        session["netregress_last_activity"]=time.time()
+        session.permanent=True
         return ok({**session["netregress_user"],"csrf_token":CsrfService.token(session)})
     @api.get("/auth/csrf")
     def csrf():
         denied=require("view")
         if denied is not None:return denied
         return ok({"csrf_token":CsrfService.token(session)})
+
+    @api.post("/auth/activity")
+    def activity():
+        denied=require("view",touch=True)
+        if denied is not None:
+            return denied
+        return ok({"active":True})
     @api.post("/auth/logout")
     def logout():
         denied=require("view")
@@ -86,7 +128,20 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         session.clear();return ok({"logged_out":True})
     @api.get("/auth/me")
     def me():
-        raw=session.get("netregress_user");return ok(raw) if raw else error("UNAUTHENTICATED","authentication required",401)
+        raw=session.get("netregress_user")
+        if raw is None:
+            return error("UNAUTHENTICATED","authentication required",401)
+        now=time.time()
+        idle_timeout=float(current_app.config.get("SESSION_IDLE_TIMEOUT_SECONDS",1800))
+        try:
+            last_activity=float(session.get("netregress_last_activity",0))
+        except (TypeError,ValueError):
+            last_activity=0
+        if last_activity<=0 or now-last_activity>idle_timeout:
+            session.clear()
+            return error("SESSION_EXPIRED","session expired after inactivity",401)
+        session["netregress_last_activity"]=now
+        return ok(raw)
     def protected(fn:Callable):
         @wraps(fn)
         def wrapper(*args,**kwargs):
@@ -209,9 +264,15 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     @protected
     def artifact_download(artifact_id):
         try:
-            artifact=query.artifact(artifact_id);token=os.getenv("NETREGRESS_DASHBOARD_TOKEN");remote=request.remote_addr not in {"127.0.0.1","::1"}
-            if token and request.headers.get("Authorization")!="Bearer "+token:return error("FORBIDDEN","valid bearer token required",403)
-            if not token and remote and auth.required:return error("FORBIDDEN","remote artifact download requires NETREGRESS_DASHBOARD_TOKEN",403)
+            artifact=query.artifact(artifact_id)
+            token=os.getenv("NETREGRESS_DASHBOARD_TOKEN")
+            remote=request.remote_addr not in {"127.0.0.1","::1"}
+            # Local authenticated sessions may download directly. Remote
+            # downloads additionally require the configured bearer token.
+            if remote and token and request.headers.get("Authorization")!="Bearer "+token:
+                return error("FORBIDDEN","valid bearer token required",403)
+            if remote and not token and auth.required:
+                return error("FORBIDDEN","remote artifact download requires NETREGRESS_DASHBOARD_TOKEN",403)
             path=query._safe_artifact_path(artifact)
             if path is None:return error("ARTIFACT_UNAVAILABLE","artifact is missing or failed integrity verification",404)
             return send_file(path,as_attachment=True,download_name=artifact.display_name)

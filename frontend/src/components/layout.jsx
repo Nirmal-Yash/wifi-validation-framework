@@ -1,110 +1,112 @@
-import React,{useEffect,useState} from "react";
+import React from "react";
 import {
-  Activity,BarChart3,ChevronRight,ClipboardList,FileText,GitCompare,
-  Gauge,LayoutDashboard,LogOut,Menu,PanelLeft,Settings,ShieldCheck,
-  Wifi,X,
+ Activity,BarChart3,ChevronDown,ChevronRight,ClipboardList,FileArchive,
+ FileCheck2,GitCompare,LayoutDashboard,LogOut,SlidersHorizontal,Wifi,ShieldCheck,
 } from "lucide-react";
-import {navigate} from "../router";
-import {canAdmin,canExecute} from "../utils";
-import {Button,IconButton} from "./ui";
+import {navigate} from "@/router";
+import {canAdmin,canExecute} from "@/permissions";
+import {DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuLabel,DropdownMenuSeparator,DropdownMenuTrigger} from "@/components/ui/dropdown-menu";
+import {
+ Sidebar,SidebarContent,SidebarFooter,SidebarGroup,SidebarGroupLabel,
+ SidebarHeader,SidebarInset,SidebarMenu,SidebarMenuButton,SidebarMenuItem,
+ SidebarProvider,SidebarTrigger,
+} from "@/components/ui/sidebar";
+import {ThemeToggle} from "@/components/theme-toggle";
 
-const groups=[
-  {title:"Operate",items:[
-    ["dashboard","/","Overview",LayoutDashboard],
-    ["runs","/runs","Run history",ClipboardList],
-    ["artifacts","/artifacts","Evidence",FileText],
-    ["readiness","/readiness","Readiness",ShieldCheck],
-  ]},
-  {title:"Analyze",items:[
-    ["regressions","/regressions","Regressions",GitCompare],
-    ["performance","/performance","Performance",BarChart3],
-    ["telemetry","/telemetry","WiFi telemetry",Wifi],
-    ["lab-health","/lab-health","Lab health",Activity],
-  ]},
-  {title:"Govern",items:[
-    ["baselines","/baselines","Baselines",Gauge],
-    ["operations","/operations","Operations",Settings],
-  ]},
+const navGroups=[
+ {title:"Workspace",items:[
+  ["dashboard","/","Overview",LayoutDashboard],
+  ["runs","/runs","Run history",ClipboardList],
+  ["artifacts","/artifacts","Evidence library",FileArchive],
+  ["readiness","/readiness","Runner readiness",ShieldCheck],
+ ]},
+ {title:"Analysis",items:[
+  ["regressions","/regressions","Regressions",GitCompare],
+  ["performance","/performance","Performance",BarChart3],
+  ["telemetry","/telemetry","WiFi telemetry",Wifi],
+  ["lab-health","/lab-health","Lab health",Activity],
+ ]},
+ {title:"Governance",items:[
+  ["baselines","/baselines","Baselines",FileCheck2],
+  ["operations","/operations","Operations",SlidersHorizontal],
+ ]},
 ];
-
 const pageMeta={
-  dashboard:{group:"Operate",title:"Overview"},
-  runs:{group:"Operate",title:"Run history"},
-  run:{group:"Operate",title:"Run detail"},
-  test:{group:"Operate",title:"Test detail"},
-  artifacts:{group:"Operate",title:"Evidence"},
-  readiness:{group:"Operate",title:"Readiness"},
-  regressions:{group:"Analyze",title:"Regressions"},
-  performance:{group:"Analyze",title:"Performance"},
-  telemetry:{group:"Analyze",title:"WiFi telemetry"},
-  "lab-health":{group:"Analyze",title:"Lab health"},
-  baselines:{group:"Govern",title:"Baselines"},
-  operations:{group:"Govern",title:"Operations"},
+ dashboard:{section:"Workspace",title:"Overview",description:"A live view of execution health and validation outcomes."},
+ runs:{section:"Workspace",title:"Run history",description:"Review executions, inspect outcomes and start new validation work."},
+ run:{section:"Workspace",title:"Run detail",description:"Execution state, evidence, telemetry and configuration."},
+ test:{section:"Workspace",title:"Test detail",description:"Test contract, measurements and failure semantics."},
+ artifacts:{section:"Workspace",title:"Evidence library",description:"Browse integrity-verified artifacts registered by the Runner."},
+ readiness:{section:"Workspace",title:"Runner readiness",description:"Inspect runtime checks before starting validation work."},
+ regressions:{section:"Analysis",title:"Regressions",description:"Compare persisted Runs and understand the evidence behind each classification."},
+ performance:{section:"Analysis",title:"Performance",description:"Track valid measurements over time without mixing metrics or units."},
+ telemetry:{section:"Analysis",title:"WiFi telemetry",description:"Explore environment-aware network observations from persisted evidence."},
+ "lab-health":{section:"Analysis",title:"Lab health",description:"Inspect read-only snapshots of the execution environment."},
+ baselines:{section:"Governance",title:"Baselines",description:"Promote trusted Run evidence into reusable validation baselines."},
+ operations:{section:"Governance",title:"Operations",description:"Perform explicitly authorized firmware and release-governance actions."},
 };
-
-function NavLink({routeKey,href,label,Icon,active,onNavigate}){
- return <a href={href} className={"nav-link "+(active?"active":"")} onClick={event=>{event.preventDefault();onNavigate(href);}} aria-current={active?"page":undefined}>
-  <Icon size={17} strokeWidth={1.8} aria-hidden="true"/>
-  <span>{label}</span>
-  {active?<span className="nav-active-mark" aria-hidden="true"/>:null}
+function Brand(){
+ return <a href="/" className="brand" onClick={event=>{event.preventDefault();navigate("/");}}>
+  <span className="brand-mark">NR</span>
+  <span className="brand-wordmark"><strong>NetRegress</strong><small>VALIDATION RUNNER</small></span>
  </a>;
 }
-
+function UserMenu({user,onLogout}){
+ const initials=String(user?.username||"owner").slice(0,2).toUpperCase();
+ return <DropdownMenu>
+  <DropdownMenuTrigger asChild><button className="profile-trigger" aria-label="Open account menu">
+   <span className="user-avatar">{initials}</span>
+   <span className="profile-copy"><strong>{user.username}</strong><small>{user.role}</small></span>
+   <ChevronDown size={15} aria-hidden="true"/>
+  </button></DropdownMenuTrigger>
+  <DropdownMenuContent align="end" className="profile-menu">
+   <DropdownMenuLabel><span className="profile-menu-label">Signed in as</span><strong>{user.username}</strong><small>{user.role} · Local Runner</small></DropdownMenuLabel>
+   <DropdownMenuSeparator/>
+   <DropdownMenuItem onSelect={onLogout} variant="destructive"><LogOut size={15}/>Sign out</DropdownMenuItem>
+  </DropdownMenuContent>
+ </DropdownMenu>;
+}
 export default function AppShell({user,routeName,onLogout,children}){
- const[mobileNavOpen,setMobileNavOpen]=useState(false);
- const meta=pageMeta[routeName]||{group:"Operate",title:"Runner"};
- const visibleGroups=groups.map(group=>({...group,items:group.items
-  .filter(([key])=>(key!=="baselines"||canAdmin(user.role)))
-  .filter(([key])=>(key!=="operations"||canExecute(user.role)))
+ const meta=pageMeta[routeName]||{section:"Workspace",title:"Runner",description:"NetRegress standalone validation operations."};
+ const visibleGroups=navGroups.map(group=>({
+  ...group,
+  items:group.items.filter(([key])=>key!=="baselines"||canAdmin(user.role)).filter(([key])=>key!=="operations"||canExecute(user.role)),
  })).filter(group=>group.items.length);
- const go=href=>{navigate(href);setMobileNavOpen(false);};
- useEffect(()=>{
-  const closeOnEscape=event=>{if(event.key==="Escape")setMobileNavOpen(false);};
-  window.addEventListener("keydown",closeOnEscape);
-  document.body.classList.toggle("nav-open",mobileNavOpen);
-  return()=>{window.removeEventListener("keydown",closeOnEscape);document.body.classList.remove("nav-open");};
- },[mobileNavOpen]);
- const routeMatches=(key)=>routeName===key||(key==="runs"&&["run","test"].includes(routeName));
- const initials=String(user.username||"owner").slice(0,2).toUpperCase();
-
- return <div className={"app-shell "+(mobileNavOpen?"mobile-nav-open":"")}>
+ const activeKey=routeName==="run"||routeName==="test"?"runs":routeName;
+ const go=(event,href)=>{event.preventDefault();navigate(href);};
+ return <SidebarProvider>
   <a className="skip-link" href="#main-content">Skip to main content</a>
-  {mobileNavOpen?<button type="button" className="sidebar-backdrop" aria-label="Close navigation menu" onClick={()=>setMobileNavOpen(false)}/>:null}
-  <aside className={"sidebar "+(mobileNavOpen?"is-open":"")} aria-label="Main sidebar">
-   <div className="brand">
-    <div className="brand-mark" aria-hidden="true">NR</div>
-    <div className="brand-wordmark"><strong>NetRegress</strong><span>Validation Runner</span></div>
-    <IconButton label="Close navigation" className="sidebar-close" onClick={()=>setMobileNavOpen(false)}><X size={17}/></IconButton>
+  <Sidebar>
+   <SidebarHeader><Brand/><SidebarTrigger/></SidebarHeader>
+   <div className="workspace-card">
+    <span className="workspace-icon"><Activity size={16}/></span>
+    <span className="workspace-copy"><strong>Local workspace</strong><small>Standalone Runner</small></span>
+    <span className="workspace-status" title="Local session">LOCAL</span>
    </div>
-   <div className="workspace-switcher"><span className="workspace-avatar"><PanelLeft size={16}/></span><span><strong>Local workspace</strong><small>Standalone Runner</small></span><ChevronRight size={15} aria-hidden="true"/></div>
-   <nav className="sidebar-nav" aria-label="Primary navigation">
-    {visibleGroups.map(group=><div className="nav-group" key={group.title}>
-     <span className="nav-group-title">{group.title}</span>
-     {group.items.map(([key,href,label,Icon])=><NavLink key={key} routeKey={key} href={href} label={label} Icon={Icon} active={routeMatches(key)} onNavigate={go}/>)}
-    </div>)}
-   </nav>
-   <div className="sidebar-bottom">
-    <div className="runner-presence"><span className="presence-indicator" aria-hidden="true"/><div><strong>Runner session</strong><span>Authenticated locally</span></div><span className="presence-label">ON</span></div>
-    <div className="sidebar-footer">
-     <span className="user-avatar" aria-hidden="true">{initials}</span>
-     <div className="user-identity"><strong>{user.username}</strong><span>{user.role}</span></div>
-     <IconButton label="Sign out" onClick={onLogout}><LogOut size={17}/></IconButton>
-    </div>
-   </div>
-  </aside>
-  <main className="content" id="main-content" tabIndex="-1">
+   <SidebarContent>
+    {visibleGroups.map(group=><SidebarGroup key={group.title}>
+     <SidebarGroupLabel>{group.title}</SidebarGroupLabel>
+     <SidebarMenu>{group.items.map(([key,href,label,Icon])=><SidebarMenuItem key={key}>
+      <SidebarMenuButton href={href} tooltip={label} isActive={activeKey===key} onClick={event=>go(event,href)}>
+       <Icon size={17} strokeWidth={1.8} aria-hidden="true"/><span>{label}</span>
+      </SidebarMenuButton>
+     </SidebarMenuItem>)}</SidebarMenu>
+    </SidebarGroup>)}
+   </SidebarContent>
+   <SidebarFooter>
+    <div className="sidebar-security-note"><span className="security-indicator"/><span><strong>Session protected</strong><small>{user.role} · Authenticated local session</small></span></div>
+   </SidebarFooter>
+  </Sidebar>
+  <SidebarInset>
    <header className="topbar">
-    <div className="topbar-left">
-     <IconButton label="Open navigation" className="mobile-nav-trigger" onClick={()=>setMobileNavOpen(true)}><Menu size={19}/></IconButton>
-     <div className="topbar-breadcrumb"><span>NetRegress</span><ChevronRight size={13} aria-hidden="true"/><span>{meta.group}</span><ChevronRight size={13} aria-hidden="true"/><strong>{meta.title}</strong></div>
-    </div>
-    <div className="topbar-meta">
-     <span className="environment-pill"><span className="presence-indicator" aria-hidden="true"/>Local Runner</span>
-     <span className="role-pill"><ShieldCheck size={14} aria-hidden="true"/>{user.role}</span>
-    </div>
+    <div className="topbar-start"><SidebarTrigger/><div className="breadcrumbs"><span>NetRegress</span><ChevronRight size={13}/><span>{meta.section}</span><ChevronRight size={13}/><strong>{meta.title}</strong></div></div>
+    <div className="topbar-end"><span className="local-pill"><span className="presence-indicator"/>Local Runner</span><span className="topbar-divider"/><ThemeToggle/><UserMenu user={user} onLogout={onLogout}/></div>
    </header>
-   <h1 className="sr-only">{meta.title}</h1>
-   <div className="content-body">{children}</div>
-  </main>
- </div>;
+   <main id="main-content" className="content-body" tabIndex="-1">
+    <div className="content-intro"><div><div className="eyebrow">{meta.section}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="content-intro-meta"><span className="role-chip">{user.role}</span></div></div>
+    <div className="page-content" key={routeName+window.location.pathname+window.location.search}>{children}</div>
+   </main>
+   <footer className="app-footer"><span>NetRegress · Standalone Runner</span><span>Evidence-led validation · Local-first</span></footer>
+  </SidebarInset>
+ </SidebarProvider>;
 }

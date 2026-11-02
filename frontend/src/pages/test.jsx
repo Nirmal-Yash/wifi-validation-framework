@@ -1,5 +1,5 @@
 import React from "react";
-import {ArrowLeft,Activity,FileText,ShieldCheck,Timer} from "lucide-react";
+import {Activity,ArrowLeft,FileText,ShieldCheck,Timer} from "lucide-react";
 import {api} from "../api";
 import {navigate} from "../router";
 import {useAsyncLoader} from "../hooks";
@@ -14,7 +14,7 @@ export default function TestDetailPage({runId,testResultId}){
  const sampleCount=metrics.reduce((sum,metric)=>sum+validSamples(metric.samples).length,0);
  return <div className="page-stack">
   <div className="breadcrumb"><a href={"/runs/"+encodeURIComponent(runId)} onClick={event=>{event.preventDefault();navigate("/runs/"+encodeURIComponent(runId));}}>Run</a><span>/</span><span>{test.test_id}</span></div>
-  <div className="page-title-row"><div><div className="eyebrow">Evidence / Test execution</div><h2>{test.test_id}</h2><p className="muted mono">{test.test_result_id}</p></div><div className="button-row"><StatusBadge value={test.status}/><Button variant="outline" size="sm" onClick={()=>navigate("/runs/"+encodeURIComponent(runId))}><ArrowLeft size={14}/>Back to Run</Button></div></div>
+  <div className="page-actions-row"><span className="context-caption mono">{test.test_result_id}</span><div className="button-row"><StatusBadge value={test.status}/><Button variant="outline" size="sm" onClick={()=>navigate("/runs/"+encodeURIComponent(runId))}><ArrowLeft size={14}/>Back to Run</Button></div></div>
   <div className="stat-grid">
    <StatCard label="Functional status" value={<StatusBadge value={test.status}/>} hint="Persisted TestResult status" icon={<Activity size={17}/>}/>
    <StatCard label="Evidence state" value={<StatusBadge value={test.evidence_state}/>} hint="Evidence contract" icon={<ShieldCheck size={17}/>}/>
@@ -23,12 +23,13 @@ export default function TestDetailPage({runId,testResultId}){
   </div>
   <Section title="Execution contract" subtitle="The persisted TestRegistry definition is authoritative for what ran.">
    <KeyValueGrid items={[
-    {label:"Category",value:definition.category},{label:"Protocol",value:definition.protocol},{label:"Severity",value:definition.severity},{label:"Criticality",value:definition.criticality},
+    {label:"Category",value:definition.category},{label:"Protocol",value:definition.protocol},
+    {label:"Severity",value:definition.severity},{label:"Criticality",value:definition.criticality},
     {label:"Direction",value:definition.direction},{label:"Destructive",value:definition.destructive?"Yes":"No"},
     {label:"Estimated duration",value:definition.estimated_duration_sec?definition.estimated_duration_sec+"s":"Not recorded"},
-    {label:"Node ID",value:definition.node_id||test.node_id}
+    {label:"Node ID",value:definition.node_id||test.node_id},
    ]}/>
-   <div className="pill-list">{(definition.requires||[]).map(item=><span className="pill" key={item}>{item}</span>)}{(definition.capabilities||[]).map(item=><span className="pill" key={item}>{item}</span>)}</div>
+   <div className="pill-list">{(definition.requires||[]).map(item=><span className="pill" key={"require-"+item}>{item}</span>)}{(definition.capabilities||[]).map(item=><span className="pill" key={"capability-"+item}>{item}</span>)}</div>
   </Section>
   <Section title="Metrics and raw samples" subtitle="All recorded samples remain visible. Only explicitly valid, finite, non-warm-up samples contribute to the mean.">
    {metrics.length?metrics.map(metric=><div className="nested-block" key={metric.name}>
