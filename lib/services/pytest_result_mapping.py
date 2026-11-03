@@ -56,4 +56,4 @@ def map_pytest_reports(
         if wasxfail is not None:
             return TestResultStatus.KNOWN_FAILURE, str(getattr(setup, "longrepr", "")) or str(wasxfail)
         return TestResultStatus.SKIPPED, str(getattr(setup, "longrepr", "")) or "pytest setup skipped"
-    return TestResultStatus.UNVALIDATED, "pytest did not produce a conclusive call report"
+    return TestResultStatus.UNVALIDATED, "pytest produced no conclusive call report"
