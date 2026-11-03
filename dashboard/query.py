@@ -137,6 +137,7 @@ class DashboardQueryService:
             )
         payload = {
             "run_id": run.run_id,
+            "source_run_id": run.source_run_id,
             "display_id": run.display_id,
             "firmware_version": run.firmware_version,
             "device_id": device_id,
@@ -200,6 +201,7 @@ class DashboardQueryService:
             "severity": result.severity.value,
             "evidence_state": result.evidence_state.value,
             "error_reason": result.error_reason,
+            "execution_metadata": dict(result.execution_metadata),
             "started_at": self._iso(result.started_at),
             "completed_at": self._iso(result.completed_at),
             "metrics": [self.serialize_metric(item) for item in result.metrics],
@@ -229,6 +231,8 @@ class DashboardQueryService:
             "artifact_id": artifact.artifact_id,
             "run_id": artifact.run_id,
             "test_result_id": artifact.test_result_id,
+            "test_node_id": artifact.test_node_id,
+            "attempt_id": artifact.attempt_id,
             "artifact_type": artifact.artifact_type.value,
             "display_name": artifact.display_name,
             "size_bytes": artifact.size_bytes,

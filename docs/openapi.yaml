@@ -26,7 +26,7 @@ paths:
       responses: {"202": {description: Process started}}
   /runs/{run_id}: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Run detail}}}}
   /runs/{run_id}/cancel: {post: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {$ref: '#/components/parameters/IdempotencyKey'}], responses: {"200": {description: Cancelled}}}}
-  /runs/{run_id}/retry: {post: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {$ref: '#/components/parameters/IdempotencyKey'}], responses: {"202": {description: Retry started}}}}
+  /runs/{run_id}/retry: {post: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {$ref: '#/components/parameters/IdempotencyKey'}], responses: {"202": {description: New Run started with source_run_id, process_id, command and status}}}}
   /runs/{run_id}/tests: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Tests}}}}
   /runs/{run_id}/tests/{test_result_id}: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {name: test_result_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Test detail}}}}
   /tests/{test_id}/metrics: {get: {parameters: [{name: test_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Metric history}}}}

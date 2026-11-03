@@ -213,6 +213,8 @@ def test_command_audit_records_redacted_artifact_and_event(tmp_path):
     assert len(events.events) == 1
     assert events.events[0].event_type == "COMMAND_EXECUTED"
     assert artifacts.calls[0]["artifact_type"].value == "COMMAND_OUTPUT"
+    assert artifacts.calls[0]["attempt_id"] == "attempt-1"
+    assert Path(recorder.path).name == "run-123-attempt-1.jsonl"
 
 
 def test_netmiko_runner_returns_structured_result_and_preserves_transport_behavior():

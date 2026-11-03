@@ -153,7 +153,7 @@ All other discovery questions have an implementation decision.
 
 ## Audit basis
 
-Current source audit date: 2026-09-24. Historical audit baseline: `7ad58e0648fdb4eaa06b14c9c8d6db62358327fc`. Subsequent completeness and frontend implementation work is now on the current main tip.
+Current source audit date: 2026-11-03. Historical audit baseline: `7ad58e0648fdb4eaa06b14c9c8d6db62358327fc`. Subsequent completeness and frontend implementation work is now on the current main tip.
 
 The prior release wave established the standalone Runner architecture, but this audit found several source-level contract gaps that had been overstated as complete. The completeness wave closes the identified implementation defects and separates **source implementation readiness** from **execution certification**.
 
@@ -161,9 +161,9 @@ The prior release wave established the standalone Runner architecture, but this 
 
 | Area | State | Audit interpretation |
 |---|---|---|
-| Domain / persistence | Implemented | Stable normalized Run/Attempt/TestResult/Artifact model with additive SQLite migrations and integrity controls. |
-| Run orchestration | Implemented | Deterministic orchestration, resource ownership, process lifecycle and failure classification are present. |
-| Evidence | Implemented | Required evidence remains fail-closed; protocol evidence is persisted and integrity-checked. |
+| Domain / persistence | Implemented | Normalized Run/Attempt/TestResult/Artifact model; SQLite schema version 11 includes test-node/Attempt evidence ownership, persisted pytest execution metadata and source_run_id retry lineage. |
+| Run orchestration | Implemented | Run outcomes and completeness use the latest Attempt and an exact one-to-one match against selected tests; duplicate, missing and unexpected results remain unvalidated. |
+| Evidence | Implemented | TestResult-owned, pytest-node/Attempt-owned, Attempt-wide and Run-wide evidence are scoped explicitly; evidence owned by another test/Attempt, soft-deleted, incomplete, invalid or hash-mismatched cannot satisfy a requirement. |
 | DHCP protocol evidence | Completed in source | DORA, T1 renewal and T2 rebind transaction classification are now correlated from captured DHCP traffic. |
 | EAPOL / Beacon / DNS evidence | Partially operational | Parsers and compatibility wrappers exist with unit coverage; complete production-test live wiring still requires execution-class validation. |
 | Telemetry / measurement | Implemented | Typed WiFi telemetry, raw samples and deterministic statistical evaluation are present; RF claims remain environment-class aware. |
@@ -176,6 +176,17 @@ The prior release wave established the standalone Runner architecture, but this 
 | Operational recovery | Implemented | Backup/restore, retention, stale-lock recovery, orphan Run recovery and audit-chain integrity services are present. |
 | Documentation / release tooling | Reconciled | Roadmap is restored through Iteration 30 and release/doctor tooling is source-addressed. |
 | REAL_LAB certification | Unverified | Protected GNS3/mac80211_hwsim execution evidence must be run in the dedicated real-lab phase. |
+
+## Phase B — Run and Evidence Correctness (2026-11-03)
+
+The Phase B source changes establish the following correctness contracts:
+
+- Run outcome evaluation considers only the latest Attempt and requires exactly one result for each selected pytest node or explicitly selected semantic test ID. Missing, extra, ambiguous and duplicate results produce UNVALIDATED rather than being hidden by a count comparison. A missing/unknown/failed health state cannot validate a Run, and a caller-supplied outcome cannot override persisted results. Retry API launches a new Run with its source_run_id persisted; it does not append results to or mutate the source Run.
+- Pytest PASS, assertion FAIL, setup/teardown ERROR, SKIPPED, KNOWN_FAILURE (xfail), XPASS and inconclusive execution are persisted distinctly. The original setup/call/teardown reports, outcomes and xfail markers are retained in TestResult execution_metadata. An unclassified ERROR is UNVALIDATED rather than a product rejection; only an explicit PRODUCT_FAILED classification can reject it. Declared decision metrics are unit-checked and marked authoritative using TestRegistry metadata when results are recorded.
+- Test-specific artifacts carry their persisted TestResult owner or a pytest-node plus Attempt owner before TestResult persistence. Attempt-wide command-audit artifacts can be shared only within that Attempt and use Attempt-specific files; the protected DHCP PCAP and derived JSON also use Attempt-specific files. Run-wide artifacts remain unowned and can be shared across Attempts. Required evidence must belong to the current test/Attempt (or be Attempt-/Run-wide), be complete, not soft-deleted, and pass hash verification.
+- Sample values must be finite. Baseline promotion validates the latest Attempt, exact selected-test coverage, Run health/outcome, evidence, and declared authoritative measurement policies including the eligible sample minimum. Named-baseline replacement is an atomic SQLite transaction.
+
+These are source-level correctness changes, not REAL_LAB certification. The hardware-backed protected suite and full combined verification must be executed before claiming runtime certification. The GitHub connector used for this phase cannot execute the repository's local Python/SQLite/pytest environment; therefore no local test pass is claimed here. The current green GitHub Actions run predates these pending source changes and is not evidence that this phase has passed CI.
 
 ## Iterations 20–30
 

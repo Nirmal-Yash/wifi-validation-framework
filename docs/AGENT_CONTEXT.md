@@ -128,17 +128,11 @@ If the lab cannot be run, say so. Do not represent unit/integration verification
 
 ## 12. Development workflow
 
-Direct commits to main.
+Work directly against the existing `main` branch. Do not create feature, review or temporary branches.
 
-No feature branches.
+Do not create implementation commits or push intermediate phase work. Complete every planned phase, all verification, documentation and final review first. Then create exactly one consolidated Conventional Commit on `main` and push exactly once. The final commit subject must describe the implementation actually delivered; do not use per-file or per-module commits.
 
-One architectural slice per commit.
-
-Update documentation with behavior/contract changes.
-
-Tag stable milestones.
-
-Runtime DBs, reports, PCAPs and logs remain gitignored.
+Update documentation with behavior, data-contract and API changes as each phase is implemented. Keep runtime databases, reports, PCAPs and logs gitignored.
 
 ## 13. Current next step
 

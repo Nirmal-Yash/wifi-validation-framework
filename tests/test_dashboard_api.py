@@ -223,3 +223,58 @@ def test_operational_mutation_idempotency_is_durable_and_payload_bound(tmp_path)
     conflict=client.post("/api/v1/waivers",json=changed,headers={"Idempotency-Key":"waiver-test-1"})
     assert conflict.status_code == 409
 
+
+
+def test_retry_api_starts_new_process_with_source_run_lineage(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import dashboard.api_v1 as api_module
+
+    db_path = tmp_path / "retry-api.db"
+    database = SQLiteDatabase(db_path)
+    database.initialize()
+    service = make_service(database)
+    source, source_attempt = create_run(service, "v1.0")
+    record(service, source, source_attempt, TestResultStatus.PASS, 10)
+    from lib.domain import EnvironmentHealthStatus, BusinessOutcome
+    service.begin_lab_health_check(source.run_id)
+    service.record_environment_health(source.run_id, EnvironmentHealthStatus.HEALTHY)
+    service.start_run_after_health(source.run_id)
+    service.complete_run(source.run_id, BusinessOutcome.VALIDATED)
+    observed = {}
+
+    class FakeRunProcessManager:
+        def __init__(self, root):
+            observed["root"] = root
+
+        def start(self, **kwargs):
+            observed["start_kwargs"] = kwargs
+            return SimpleNamespace(pid=4321, command=("python", "-m", "pytest"))
+
+    monkeypatch.setattr(api_module, "RunProcessManager", FakeRunProcessManager)
+    response = make_app(db_path).test_client().post(
+        f"/api/v1/runs/{source.run_id}/retry",
+        headers={"Idempotency-Key": "retry-source-lineage-1"},
+    )
+
+    assert response.status_code == 202
+    assert response.get_json()["data"]["source_run_id"] == source.run_id
+    assert observed["start_kwargs"]["env"] == {
+        "NETREGRESS_SOURCE_RUN_ID": source.run_id,
+        "TEST_DB_PATH": str(db_path.resolve()),
+    }
+
+
+def test_retry_api_rejects_nonterminal_source_run(tmp_path):
+    db_path = tmp_path / "retry-active-api.db"
+    database = SQLiteDatabase(db_path)
+    database.initialize()
+    service = make_service(database)
+    source, _ = create_run(service, "v1.0")
+
+    response = make_app(db_path).test_client().post(
+        f"/api/v1/runs/{source.run_id}/retry",
+        headers={"Idempotency-Key": "retry-active-lineage-1"},
+    )
+
+    assert response.status_code == 409
+    assert response.get_json()["error"]["code"] == "RUN_NOT_TERMINAL"

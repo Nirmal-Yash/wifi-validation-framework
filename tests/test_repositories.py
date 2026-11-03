@@ -123,6 +123,7 @@ def test_attempt_and_result_round_trip_with_metric_sample_artifact(tmp_path) -> 
         artifacts=(artifact,),
         started_at=captured_at,
         completed_at=captured_at,
+        execution_metadata={"pytest": {"phase": "call", "outcome": "skipped"}},
     )
 
     SQLiteTestResultRepository(database).save(result)
@@ -131,6 +132,7 @@ def test_attempt_and_result_round_trip_with_metric_sample_artifact(tmp_path) -> 
     assert restored is not None
     assert restored.metrics[0].samples[0].value == 42.5
     assert restored.metrics[0].samples[0].metadata == {"source": "test"}
+    assert restored.execution_metadata == {"pytest": {"phase": "call", "outcome": "skipped"}}
     assert restored.artifacts[0] == artifact
 
 
@@ -248,6 +250,25 @@ def test_legacy_artifact_schema_is_migrated(tmp_path):
                 started_at TEXT,
                 completed_at TEXT
             );
+            CREATE TABLE test_results (
+                test_result_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                attempt_id TEXT NOT NULL,
+                test_id TEXT NOT NULL,
+                node_id TEXT NOT NULL,
+                test_version TEXT NOT NULL,
+                status TEXT NOT NULL,
+                criticality TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                evidence_state TEXT NOT NULL,
+                error_reason TEXT,
+                started_at TEXT,
+                completed_at TEXT,
+                provenance TEXT NOT NULL DEFAULT 'NATIVE',
+                failure_class TEXT,
+                failure_reason TEXT,
+                execution_pid INTEGER
+            );
             CREATE TABLE artifacts (
                 artifact_id TEXT PRIMARY KEY,
                 run_id TEXT NOT NULL,
@@ -262,6 +283,20 @@ def test_legacy_artifact_schema_is_migrated(tmp_path):
         connection.commit()
 
     database.initialize()
+    with database.connection() as connection:
+        run_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(runs)")
+        }
+        artifact_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(artifacts)")
+        }
+        result_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(test_results)")
+        }
+    assert "source_run_id" in run_columns
+    assert {"test_node_id", "attempt_id"}.issubset(artifact_columns)
+    assert "execution_metadata_json" in result_columns
+
     SQLiteRunRepository(database).save(make_run())
     artifact = Artifact(
         artifact_id="legacy-art",
@@ -331,3 +366,163 @@ def test_run_environment_health_round_trip(tmp_path):
 
     assert restored is not None
     assert restored.environment_health is EnvironmentHealthStatus.DEGRADED
+
+
+def test_baseline_replacement_rolls_back_when_supersede_fails(tmp_path):
+    import sqlite3
+
+    database = make_database(tmp_path)
+    SQLiteRunRepository(database).save(make_run())
+    repository = SQLiteBaselineRepository(database)
+    original = Baseline(
+        baseline_id="baseline-original",
+        name="Golden",
+        baseline_run_id="run-1",
+        status="ACTIVE",
+        promoted_by="tester",
+        promoted_at=datetime.now(timezone.utc),
+    )
+    repository.save(original)
+    with database.connection() as connection:
+        connection.execute(
+            """CREATE TRIGGER reject_baseline_supersede
+               BEFORE UPDATE ON run_baselines
+               BEGIN SELECT RAISE(ABORT, 'forced supersede failure'); END"""
+        )
+        connection.commit()
+
+    replacement = Baseline(
+        baseline_id="baseline-replacement",
+        name="Golden",
+        baseline_run_id="run-1",
+        status="ACTIVE",
+        promoted_by="tester",
+        promoted_at=datetime.now(timezone.utc),
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="forced supersede failure"):
+        repository.save_replacing_active(replacement)
+
+    assert repository.get("baseline-original").superseded_by is None
+    assert repository.get("baseline-replacement") is None
+    assert [item.baseline_id for item in repository.list_active()] == ["baseline-original"]
+
+
+def test_node_owned_artifacts_do_not_leak_between_runs_with_same_pytest_node(tmp_path):
+    database = make_database(tmp_path)
+    run_one = make_run()
+    run_two = Run(
+        run_id="run-2",
+        display_id="RUN-20261103-120000-0002",
+        firmware_version="v1.0",
+        lab_id="lab-1",
+        validation_profile="Smoke",
+        selected_tests=("wifi.latency",),
+        test_definition_versions={"wifi.latency": "1.0"},
+        resolved_config={},
+        configuration_hash="b" * 64,
+        repository_commit="commit-2",
+    )
+    SQLiteRunRepository(database).save(run_one)
+    SQLiteRunRepository(database).save(run_two)
+    attempts = SQLiteAttemptRepository(database)
+    attempts.save(Attempt("a-1", "run-1", 1))
+    attempts.save(Attempt("a-2", "run-2", 1))
+    results = SQLiteTestResultRepository(database)
+    for result_id, run_id, attempt_id in (
+        ("tr-1", "run-1", "a-1"),
+        ("tr-2", "run-2", "a-2"),
+    ):
+        results.save(
+            DomainTestResult(
+                test_result_id=result_id,
+                run_id=run_id,
+                attempt_id=attempt_id,
+                test_id="wifi.latency",
+                node_id="tests/test_ping.py::test_latency",
+                test_version="1.0",
+                status=DomainTestResultStatus.PASS,
+                criticality=Criticality.BLOCKING,
+                severity=Severity.HIGH,
+                evidence_state=EvidenceState.COMPLETE,
+            )
+        )
+
+    artifacts = SQLiteArtifactRepository(database)
+    artifacts.save(
+        Artifact(
+            artifact_id="art-run-two",
+            run_id="run-2",
+            artifact_type=ArtifactType.PCAP,
+            path="results/run-two.pcap",
+            sha256="e" * 64,
+            size_bytes=100,
+            test_node_id="tests/test_ping.py::test_latency",
+            attempt_id="a-2",
+        )
+    )
+    artifacts.save(
+        Artifact(
+            artifact_id="art-global-two",
+            run_id="run-2",
+            artifact_type=ArtifactType.SETUP_LOG,
+            path="results/run-two-setup.log",
+            sha256="f" * 64,
+            size_bytes=20,
+        )
+    )
+    artifacts.save(
+        Artifact(
+            artifact_id="art-attempt-two",
+            run_id="run-2",
+            artifact_type=ArtifactType.COMMAND_OUTPUT,
+            path="results/run-two-command.log",
+            sha256="a" * 64,
+            size_bytes=30,
+            attempt_id="a-2",
+        )
+    )
+
+    assert results.get("tr-1").artifacts == ()
+    assert {artifact.artifact_id for artifact in results.get("tr-2").artifacts} == {
+        "art-run-two", "art-global-two", "art-attempt-two"
+    }
+
+
+def test_baseline_replacement_rolls_back_when_insert_fails_after_supersede(tmp_path):
+    import sqlite3
+
+    database = make_database(tmp_path)
+    SQLiteRunRepository(database).save(make_run())
+    repository = SQLiteBaselineRepository(database)
+    original = Baseline(
+        baseline_id="baseline-original",
+        name="Golden",
+        baseline_run_id="run-1",
+        status="ACTIVE",
+        promoted_by="tester",
+        promoted_at=datetime.now(timezone.utc),
+    )
+    repository.save(original)
+    with database.connection() as connection:
+        connection.execute(
+            """CREATE TRIGGER reject_baseline_replacement_insert
+               BEFORE INSERT ON run_baselines
+               WHEN NEW.baseline_id = 'baseline-replacement'
+               BEGIN SELECT RAISE(ABORT, 'forced replacement insert failure'); END"""
+        )
+        connection.commit()
+
+    replacement = Baseline(
+        baseline_id="baseline-replacement",
+        name="Golden",
+        baseline_run_id="run-1",
+        status="ACTIVE",
+        promoted_by="tester",
+        promoted_at=datetime.now(timezone.utc),
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="forced replacement insert failure"):
+        repository.save_replacing_active(replacement)
+
+    assert repository.get("baseline-original").superseded_by is None
+    assert repository.get("baseline-replacement") is None
+    assert [item.baseline_id for item in repository.list_active()] == ["baseline-original"]

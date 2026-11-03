@@ -6,6 +6,9 @@ on:
     paths:
       - "frontend/**"
       - "dashboard/**"
+      - "lib/**"
+      - "docs/**"
+      - "tests/**"
       - "lib/security/**"
       - "scripts/start_dashboard.sh"
       - "scripts/test_dashboard_startup.sh"
@@ -21,6 +24,9 @@ on:
     paths:
       - "frontend/**"
       - "dashboard/**"
+      - "lib/**"
+      - "docs/**"
+      - "tests/**"
       - "lib/security/**"
       - "scripts/start_dashboard.sh"
       - "scripts/test_dashboard_startup.sh"
@@ -62,7 +68,7 @@ jobs:
         run: npm run build
 
   backend-auth:
-    name: Backend session and RBAC contract
+    name: Backend session, RBAC, Run and evidence contracts
     runs-on: ubuntu-latest
     env:
       NETREGRESS_CI_MODE: "1"
@@ -79,7 +85,7 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install backend dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
-      - name: Run authentication, RBAC and session tests
+      - name: Run authentication, dashboard and Phase B correctness tests
         run: >-
           python -m pytest
           tests/test_auth_flow.py
@@ -87,6 +93,17 @@ jobs:
           tests/test_dashboard_rbac_matrix.py
           tests/test_dashboard_session_enforcement.py
           tests/test_dashboard_port_contract.py
+          tests/test_dashboard_api.py
+          tests/test_run_service.py
+          tests/test_repositories.py
+          tests/test_artifact_service.py
+          tests/test_baseline_promotion.py
+          tests/test_domain_models.py
+          tests/test_pytest_result_mapping.py
+          tests/test_legacy_migration.py
+          tests/test_command_runner.py
+          tests/test_iterations_23_25.py
+          tests/test_sync_service.py
 
   dashboard-startup-smoke:
     name: Dashboard startup, proxy and session smoke test (Node 22.22.2)

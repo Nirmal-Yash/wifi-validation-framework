@@ -469,6 +469,9 @@ Required fields:
 | environment_hash | environment identity |
 | repository_commit | code version |
 | created_at | Run creation time |
+| source_run_id | optional source Run for explicit retry lineage; never replaces the source Run or its Attempts |
+
+An API retry of a terminal Run creates a new Run with its own Attempt 1 and persists the original Run ID as `source_run_id`. An in-progress Run may only add another Attempt through an explicit Attempt lifecycle operation.
 
 ## 3. Attempt
 
@@ -502,7 +505,14 @@ Fields:
 - started_at;
 - completed_at;
 - evidence state;
-- reproduction command/reference.
+- reproduction command/reference;
+- execution_metadata (per-phase pytest reports, original outcomes and xfail markers when present).
+
+The pytest node ID remains the execution identity. The semantic test_id remains the stable cross-version identity. Persist only one TestResult for a selected pytest node in an Attempt. Run-level outcome evaluation and baseline promotion use the latest Attempt and require an exact one-to-one match to the selected test set.
+
+Pytest outcomes remain distinct: assertion failures are FAIL; setup/teardown failures are ERROR; skips are SKIPPED; expected xfails are KNOWN_FAILURE; unexpected passes are XPASS; and missing conclusive reports are UNVALIDATED. The original pytest phase/outcome/wasxfail facts remain in execution_metadata for auditability.
+
+Run outcome roll-up is fail-closed: it evaluates only the latest Attempt and requires exactly one result per selected node/semantic test ID, with no duplicate, missing or unexpected result. Missing/unknown/failed environment health is UNVALIDATED. Assertion FAIL on a blocking test is REJECTED. ERROR is REJECTED only when explicitly classified as PRODUCT_FAILED; an unclassified setup/teardown/fixture ERROR is UNVALIDATED, and a proven lab/infrastructure fault is handled by the orchestrator's LAB_FAILED path. A caller-supplied outcome cannot override the outcome derived from persisted facts.
 
 ## 5. Metric
 
@@ -558,6 +568,8 @@ Fields:
 - artifact_id;
 - run_id;
 - optional test_result_id;
+- optional test_node_id (pytest node that owns the evidence when it is collected before a TestResult exists);
+- optional attempt_id (required for pre-TestResult, test-node-owned evidence; absent for Run-level evidence);
 - type;
 - storage key/path;
 - display name;
@@ -568,6 +580,15 @@ Fields:
 - sensitivity class;
 - retain_until;
 - soft_deleted_at.
+
+Evidence ownership rules:
+
+- a test-specific artifact is associated through test_result_id when the result already exists, or through the test_node_id plus attempt_id pair when it is collected before result persistence;
+- an Attempt-wide artifact has attempt_id but no test_result_id or test_node_id and may satisfy any test in that Attempt only. The command-audit JSONL artifact is Attempt-wide and its filename includes the Attempt ID so later Attempts cannot mutate its bytes;
+- the protected DHCP PCAP and its derived protocol JSON are pytest-node/Attempt-owned and use Attempt-specific local filenames;
+- a Run-level artifact has no test_result_id, test_node_id or attempt_id and may satisfy a declared requirement for any test/Attempt in that Run;
+- an artifact explicitly owned by another pytest node or Attempt cannot satisfy this test's evidence requirement;
+- soft-deleted, incomplete, invalid or hash-mismatched artifacts never satisfy required evidence.
 
 Artifact types:
 
@@ -587,7 +608,7 @@ Artifact types:
 
 ## 7A. Protocol evidence
 
-`PROTOCOL_EVIDENCE` is a derived Run-scoped artifact linked to the original raw PCAP.
+`PROTOCOL_EVIDENCE` is derived from the original raw PCAP and inherits its evidence ownership scope. A test capture's derived JSON is associated with the same pytest node and Attempt as its PCAP; a Run-level capture remains Run-level. Derived evidence must never be widened from test/Attempt scope to Run scope.
 
 The derived JSON records correlation facts such as:
 - DHCP transaction IDs, client identities, ordered DORA state and assigned address;
@@ -675,6 +696,8 @@ Fields:
 
 Promoted records are immutable.
 
+Promotion requires a healthy completed Run with a validated business outcome, an exact result for every selected test in the latest Attempt, passing BLOCKING results, complete required evidence and all declared authoritative decision metrics meeting their eligible-sample policies. Replacing a named baseline inserts the replacement and supersedes the previous active baseline in one SQLite transaction.
+
 ## 12. Regression
 
 Regression comparison is attached to a baseline/current pair.
@@ -759,7 +782,7 @@ Authorized cancellation.
 
 POST /api/v1/runs/{run_id}/retry
 
-Creates an explicit new Attempt or Run according to policy.
+Creates a new Run with Attempt 1 and a persisted `source_run_id` pointing to the Run being retried. It never mutates or appends results to a terminal source Run. The source Run and its previous Attempts remain immutable; the new Run has its own lifecycle, evidence and outcome.
 
 ### Test results
 

@@ -172,3 +172,30 @@ def test_lab_health_snapshot_rejects_backwards_time() -> None:
             started_at=started,
             completed_at=started.replace(year=2025),
         )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_sample_rejects_non_finite_measurements(value):
+    with pytest.raises(DomainValidationError, match="finite"):
+        Sample(value=value)
+
+
+def test_sample_rejects_unrepresentable_integer_measurement():
+    with pytest.raises(DomainValidationError, match="finite"):
+        Sample(value=10**10000)
+
+
+def test_pass_cannot_be_recorded_while_required_evidence_is_pending():
+    with pytest.raises(DomainValidationError, match="required evidence is complete"):
+        DomainTestResult(
+            test_result_id="result-1",
+            run_id="run-1",
+            attempt_id="attempt-1",
+            test_id="wifi.dhcp",
+            node_id="tests/test_dhcp.py::test_dhcp_lease_assigned",
+            test_version="1.0",
+            status=DomainTestResultStatus.PASS,
+            criticality=Criticality.BLOCKING,
+            severity=Severity.HIGH,
+            evidence_state=EvidenceState.REQUIRED,
+        )

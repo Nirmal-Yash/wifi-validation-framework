@@ -15,7 +15,7 @@ from lib.connector import load_devices, ConnectionPool
 from lib.services.command_security import CommandSecurityPolicy, SecureCommandRunner
 from lib.services.command_runner import NetmikoRunner
 from lib.security import AuthManager,AuthConfigurationError,AuthenticatedUser,Role
-from lib.domain import WaiverScope
+from lib.domain import RunLifecycle, WaiverScope
 from .query import DashboardQueryError,DashboardQueryService
 
 def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|None=None)->Blueprint:
@@ -197,12 +197,27 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         if denied is not None: return denied
         run=query.run_repository.get(run_id)
         if run is None: return error("NOT_FOUND","Run not found",404)
+        if run.lifecycle not in {
+            RunLifecycle.COMPLETED,
+            RunLifecycle.FAILED,
+            RunLifecycle.LAB_FAILED,
+            RunLifecycle.CANCELLED,
+            RunLifecycle.ABORTED,
+        }:
+            return error("RUN_NOT_TERMINAL", "Only terminal Runs can be retried", 409)
         idem_payload={"run_id":run_id,"selected_tests":list(run.selected_tests),"firmware_version":run.firmware_version}
         key,request_hash,cached,security_error=idempotency_preflight("/api/v1/runs/retry/"+run_id,idem_payload)
         if security_error is not None:return security_error
         if cached is not None:return jsonify(cached.response),cached.status_code
         manager=RunProcessManager(Path(__file__).resolve().parents[1])
-        handle=manager.start(tests=tuple(run.selected_tests),firmware_version=run.firmware_version)
+        handle=manager.start(
+            tests=tuple(run.selected_tests),
+            firmware_version=run.firmware_version,
+            env={
+                "NETREGRESS_SOURCE_RUN_ID": run_id,
+                "TEST_DB_PATH": str(query.database.path.resolve()),
+            },
+        )
         response_data={"source_run_id":run_id,"process_id":handle.pid,"command":list(handle.command),"status":"STARTED"}
         idempotency_store_response("/api/v1/runs/retry/"+run_id,key,request_hash,response_data,202)
         return ok(response_data),202

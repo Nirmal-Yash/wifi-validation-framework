@@ -23,6 +23,7 @@ from lib.domain import (
     Severity,
     TestResult,
     TestResultStatus,
+    MeasurementPolicyEvaluator,
 )
 from lib.repositories import (
     AttemptRepository,
@@ -157,6 +158,7 @@ class RunService:
         test_result_repository: TestResultRepository | None = None,
         baseline_repository=None,
         *,
+        test_registry=None,
         clock: Clock | None = None,
         id_generator: IdGenerator | None = None,
     ) -> None:
@@ -165,6 +167,7 @@ class RunService:
         self.event_repository = event_repository
         self.test_result_repository = test_result_repository
         self.baseline_repository = baseline_repository
+        self.test_registry = test_registry
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.id_generator = id_generator or generate_ulid
 
@@ -192,7 +195,14 @@ class RunService:
         test_definition_versions: Mapping[str, str],
         resolved_config: Mapping[str, Any],
         repository_commit: str,
+        source_run_id: str | None = None,
     ) -> tuple[Run, Attempt]:
+        if source_run_id is not None:
+            source_run = self.run_repository.get(source_run_id)
+            if source_run is None:
+                raise DomainValidationError(f"source Run does not exist: {source_run_id}")
+            if source_run.lifecycle not in _terminal_states():
+                raise DomainValidationError("only terminal Runs can be used as retry sources")
         if not selected_tests:
             raise DomainValidationError("cannot create a run with no selected tests")
         if set(selected_tests) != set(test_definition_versions):
@@ -216,6 +226,7 @@ class RunService:
             configuration_hash=configuration_hash(persisted_config),
             repository_commit=repository_commit,
             lifecycle=RunLifecycle.QUEUED,
+            source_run_id=source_run_id,
             created_at=now,
         )
         self.run_repository.save(run)
@@ -250,6 +261,7 @@ class RunService:
         failure_reason: str | None = None,
         execution_pid: int | None = None,
         provenance: str = "NATIVE",
+        execution_metadata: Mapping[str, Any] | None = None,
     ) -> TestResult:
         if self.test_result_repository is None:
             raise DomainValidationError("test result repository is not configured")
@@ -257,6 +269,33 @@ class RunService:
         attempt = self.attempt_repository.get(attempt_id)
         if attempt is None or attempt.run_id != run_id:
             raise DomainValidationError(f"Attempt does not belong to Run: {attempt_id}")
+
+        if self.test_registry is not None:
+            try:
+                definition = self.test_registry.get(test_id)
+            except KeyError:
+                definition = None
+            if definition is not None and definition.decision_metric:
+                declared_metric = self.test_registry.metric_definition(
+                    test_id, definition.decision_metric
+                )
+                normalized_metrics = []
+                for metric in metrics:
+                    if metric.name == definition.decision_metric:
+                        if metric.unit != declared_metric.unit:
+                            raise DomainValidationError(
+                                f"decision metric unit mismatch for {test_id}:{metric.name}: "
+                                f"expected {declared_metric.unit}, got {metric.unit}"
+                            )
+                        metric = Metric(
+                            name=metric.name,
+                            unit=metric.unit,
+                            samples=metric.samples,
+                            authoritative=True,
+                        )
+                    normalized_metrics.append(metric)
+                metrics = tuple(normalized_metrics)
+
         result = TestResult(
             test_result_id=self.id_generator(),
             run_id=run_id,
@@ -276,6 +315,7 @@ class RunService:
             failure_reason=failure_reason,
             execution_pid=execution_pid,
             provenance=provenance,
+            execution_metadata=dict(execution_metadata or {}),
         )
         self.test_result_repository.save(result)
         self._event(run_id, "TEST_COMPLETED", completed_at or self.clock(), attempt_id=attempt_id)
@@ -357,52 +397,88 @@ class RunService:
         return self.start_run_after_health(run_id)
 
     def complete_run(self, run_id: str, outcome: BusinessOutcome | None = None) -> Run:
-        if outcome is None:
-            outcome = self.derive_business_outcome(run_id)
-        return self._finish(run_id, RunLifecycle.COMPLETED, outcome, "RUN_COMPLETED", None)
+        derived_outcome = self.derive_business_outcome(run_id)
+        if outcome is not None and outcome is not derived_outcome:
+            raise DomainValidationError(
+                "caller-supplied Run outcome cannot override persisted test/evidence facts"
+            )
+        return self._finish(
+            run_id, RunLifecycle.COMPLETED, derived_outcome, "RUN_COMPLETED", None
+        )
+
+    def _latest_attempt_results(self, run_id: str) -> tuple[TestResult, ...]:
+        """Return results only from the most recent persisted Attempt."""
+        if self.test_result_repository is None:
+            return ()
+        attempts = self.attempt_repository.list_for_run(run_id)
+        if not attempts:
+            return ()
+        latest = max(attempts, key=lambda item: item.number)
+        return tuple(self.test_result_repository.list_for_attempt(latest.attempt_id))
+
+    @staticmethod
+    def _selected_result_map(
+        run: Run, results: tuple[TestResult, ...]
+    ) -> dict[str, TestResult] | None:
+        """Require a one-to-one match to each selected node or semantic test ID."""
+        selected = tuple(run.selected_tests)
+        if not selected or len(set(selected)) != len(selected):
+            return None
+        matches: dict[str, list[TestResult]] = {identifier: [] for identifier in selected}
+        for result in results:
+            owners = [
+                identifier
+                for identifier in selected
+                if identifier == result.node_id or identifier == result.test_id
+            ]
+            if len(owners) != 1:
+                return None
+            matches[owners[0]].append(result)
+        if any(len(items) != 1 for items in matches.values()):
+            return None
+        return {identifier: items[0] for identifier, items in matches.items()}
 
     def derive_business_outcome(self, run_id: str) -> BusinessOutcome:
-        """Derive the business validation decision from persisted test/evidence facts."""
+        """Derive validation outcome from the latest Attempt and exact selected test set."""
         run = self._require_run(run_id)
         if run.environment_health in {
+            None,
             EnvironmentHealthStatus.FAILED,
             EnvironmentHealthStatus.UNKNOWN,
         }:
             return BusinessOutcome.UNVALIDATED
-        if self.test_result_repository is None:
-            return BusinessOutcome.UNVALIDATED
-
-        results = self.test_result_repository.list_for_run(run_id)
-        if not results or len({item.test_id for item in results}) < len(run.selected_tests):
+        results = self._latest_attempt_results(run_id)
+        selected_results = self._selected_result_map(run, results)
+        if selected_results is None:
             return BusinessOutcome.UNVALIDATED
 
         warning = False
-        for result in results:
+        for result in selected_results.values():
+            if result.status is TestResultStatus.UNVALIDATED:
+                return BusinessOutcome.UNVALIDATED
+            if result.status in {TestResultStatus.PASS, TestResultStatus.XPASS} and result.evidence_state in {
+                EvidenceState.REQUIRED,
+                EvidenceState.INCOMPLETE,
+                EvidenceState.INVALID,
+            }:
+                return BusinessOutcome.UNVALIDATED
+            if result.status is TestResultStatus.ERROR:
+                if result.failure_class is FailureClass.PRODUCT_FAILED:
+                    return BusinessOutcome.REJECTED
+                return BusinessOutcome.UNVALIDATED
             if result.criticality is Criticality.BLOCKING:
                 if result.status in {
                     TestResultStatus.FAIL,
-                    TestResultStatus.ERROR,
-                    TestResultStatus.BLOCKED,
                     TestResultStatus.KNOWN_FAILURE,
                 }:
                     return BusinessOutcome.REJECTED
-                if result.status is TestResultStatus.SKIPPED:
+                if result.status is TestResultStatus.BLOCKED:
+                    return BusinessOutcome.REJECTED
+                if result.status in {TestResultStatus.SKIPPED, TestResultStatus.XPASS}:
                     return BusinessOutcome.UNVALIDATED
-                if result.status is TestResultStatus.UNVALIDATED:
+                if result.status is not TestResultStatus.PASS:
                     return BusinessOutcome.UNVALIDATED
-                if result.evidence_state in {
-                    EvidenceState.REQUIRED,
-                    EvidenceState.INCOMPLETE,
-                    EvidenceState.INVALID,
-                }:
-                    return BusinessOutcome.UNVALIDATED
-            if result.status in {
-                TestResultStatus.KNOWN_FAILURE,
-                TestResultStatus.XPASS,
-                TestResultStatus.SKIPPED,
-            } and result.criticality is not Criticality.BLOCKING:
-                warning = True
-            if result.criticality is not Criticality.BLOCKING and result.status is not TestResultStatus.PASS:
+            elif result.status is not TestResultStatus.PASS:
                 warning = True
 
         return (
@@ -411,13 +487,26 @@ class RunService:
             else BusinessOutcome.VALIDATED
         )
 
-    def fail_run(self, run_id: str, reason: str | None = None, failure_class: FailureClass = FailureClass.PRODUCT_FAILED) -> Run:
-        outcome = (
-            BusinessOutcome.REJECTED
-            if failure_class is FailureClass.PRODUCT_FAILED
-            else BusinessOutcome.UNVALIDATED
+    def fail_run(
+        self,
+        run_id: str,
+        reason: str | None = None,
+        failure_class: FailureClass | None = FailureClass.PRODUCT_FAILED,
+    ) -> Run:
+        if failure_class is FailureClass.PRODUCT_FAILED:
+            outcome = BusinessOutcome.REJECTED
+        elif failure_class is None:
+            outcome = self.derive_business_outcome(run_id)
+            if outcome in {
+                BusinessOutcome.VALIDATED,
+                BusinessOutcome.VALIDATED_WITH_WARNINGS,
+            }:
+                outcome = BusinessOutcome.UNVALIDATED
+        else:
+            outcome = BusinessOutcome.UNVALIDATED
+        return self._finish(
+            run_id, RunLifecycle.FAILED, outcome, "RUN_FAILED", failure_class, reason
         )
-        return self._finish(run_id, RunLifecycle.FAILED, outcome, "RUN_FAILED", failure_class, reason)
 
     def lab_fail_run(self, run_id: str, reason: str | None = None) -> Run:
         return self._finish(run_id, RunLifecycle.LAB_FAILED, BusinessOutcome.UNVALIDATED, "RUN_LAB_FAILED", FailureClass.LAB_FAILED, reason)
@@ -443,18 +532,94 @@ class RunService:
         run = self._require_run(run_id)
         if run.lifecycle is not RunLifecycle.COMPLETED or run.environment_health is not EnvironmentHealthStatus.HEALTHY:
             raise DomainValidationError("only completed Runs with healthy lab state can become baselines")
-        results = self.test_result_repository.list_for_run(run_id) if self.test_result_repository else []
-        if not results:
-            raise DomainValidationError("baseline requires persisted TestResults")
-        for result in results:
-            if result.criticality is Criticality.BLOCKING:
-                if result.status is not TestResultStatus.PASS:
-                    raise DomainValidationError(f"blocking test is not PASS: {result.test_id}")
-                if result.evidence_state in {EvidenceState.INCOMPLETE, EvidenceState.INVALID, EvidenceState.REQUIRED}:
-                    raise DomainValidationError(f"blocking test evidence is not complete: {result.test_id}")
-                for metric in result.metrics:
-                    if metric.authoritative and not metric.samples:
-                        raise DomainValidationError(f"minimum authoritative samples not met: {result.test_id}:{metric.name}")
+        derived_outcome = self.derive_business_outcome(run_id)
+        if (
+            run.outcome is not derived_outcome
+            or derived_outcome not in {
+                BusinessOutcome.VALIDATED,
+                BusinessOutcome.VALIDATED_WITH_WARNINGS,
+            }
+        ):
+            raise DomainValidationError(
+                "Run outcome does not match currently persisted TestResult/evidence facts"
+            )
+        if not name.strip() or not promoted_by.strip():
+            raise DomainValidationError("baseline name and promoter are required")
+
+        results = self._latest_attempt_results(run_id)
+        selected_results = self._selected_result_map(run, results)
+        if selected_results is None:
+            raise DomainValidationError(
+                "baseline requires exactly one TestResult for every selected test in the latest Attempt"
+            )
+
+        from lib.services.test_registry import TestRegistry
+        registry = self.test_registry or TestRegistry.default()
+        for result in selected_results.values():
+            if result.status is TestResultStatus.UNVALIDATED:
+                raise DomainValidationError(f"unvalidated TestResult cannot be promoted: {result.test_id}")
+            if result.status is TestResultStatus.XPASS:
+                raise DomainValidationError(f"unexpected pytest pass requires review before baseline promotion: {result.test_id}")
+            if result.evidence_state in {
+                EvidenceState.INCOMPLETE, EvidenceState.INVALID, EvidenceState.REQUIRED
+            }:
+                raise DomainValidationError(f"TestResult evidence is not complete: {result.test_id}")
+            if result.criticality is Criticality.BLOCKING and result.status is not TestResultStatus.PASS:
+                raise DomainValidationError(f"blocking test is not PASS: {result.test_id}")
+
+            try:
+                test_definition = registry.get(result.test_id)
+            except KeyError as exc:
+                if any(metric.authoritative for metric in result.metrics):
+                    raise DomainValidationError(
+                        f"authoritative metric definition missing for {result.test_id}"
+                    ) from exc
+                continue
+
+            metrics_by_name = {metric.name: metric for metric in result.metrics}
+            if test_definition.decision_metric:
+                decision_metric = metrics_by_name.get(test_definition.decision_metric)
+                if decision_metric is None:
+                    raise DomainValidationError(
+                        f"required authoritative decision metric missing: {result.test_id}:{test_definition.decision_metric}"
+                    )
+                if not decision_metric.authoritative:
+                    raise DomainValidationError(
+                        f"decision metric is not marked authoritative: {result.test_id}:{test_definition.decision_metric}"
+                    )
+                try:
+                    definition = registry.metric_definition(result.test_id, test_definition.decision_metric)
+                    if definition.unit != decision_metric.unit:
+                        raise DomainValidationError(
+                            f"authoritative metric unit mismatch: {result.test_id}:{decision_metric.name}"
+                        )
+                    MeasurementPolicyEvaluator.evaluate(
+                        decision_metric, definition.measurement_policy
+                    )
+                except Exception as exc:
+                    raise DomainValidationError(
+                        f"authoritative measurement policy not satisfied for {result.test_id}:{decision_metric.name}: {exc}"
+                    ) from exc
+
+            for metric in result.metrics:
+                if not metric.authoritative or metric.name == test_definition.decision_metric:
+                    continue
+                try:
+                    definition = registry.metric_definition(result.test_id, metric.name)
+                    if not definition.authoritative:
+                        raise DomainValidationError(
+                            f"metric is not declared authoritative: {result.test_id}:{metric.name}"
+                        )
+                    if definition.unit != metric.unit:
+                        raise DomainValidationError(
+                            f"authoritative metric unit mismatch: {result.test_id}:{metric.name}"
+                        )
+                    MeasurementPolicyEvaluator.evaluate(metric, definition.measurement_policy)
+                except Exception as exc:
+                    raise DomainValidationError(
+                        f"authoritative measurement policy not satisfied for {result.test_id}:{metric.name}: {exc}"
+                    ) from exc
+
         now = self.clock()
         baseline = Baseline(
             baseline_id=self.id_generator(),
@@ -468,10 +633,10 @@ class RunService:
             test_suite_version=test_suite_version or configuration_hash(run.test_definition_versions),
             lab_class=lab_class or run.lab_id,
         )
-        for old in self.baseline_repository.list_active():
-            if old.name == baseline.name:
-                self.baseline_repository.supersede(old.baseline_id, baseline.baseline_id)
-        self.baseline_repository.save(baseline)
+        save_replacing_active = getattr(self.baseline_repository, "save_replacing_active", None)
+        if save_replacing_active is None:
+            raise DomainValidationError("baseline repository does not support atomic replacement")
+        save_replacing_active(baseline)
         self._event(run_id, "BASELINE_PROMOTED", now, details={"baseline_id": baseline.baseline_id, "name": baseline.name, "promoted_by": baseline.promoted_by})
         return baseline
 

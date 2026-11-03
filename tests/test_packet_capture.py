@@ -24,7 +24,12 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger, run_
     remote_pcap = "/tmp/dhcp_test.pcap"
     remote_download = "/tmp/dhcp_test.sftp.pcap"
     remote_pid_file = "/tmp/dhcp_capture.pid"
-    local_pcap = ROOT / "results" / "captures" / "dhcp_test.pcap"
+    capture_scope = (
+        f"{run_context.run_id}-{run_context.attempt_id}"
+        if run_context is not None
+        else "adhoc"
+    )
+    local_pcap = ROOT / "results" / "captures" / f"dhcp_test-{capture_scope}.pcap"
     local_pcap.parent.mkdir(parents=True, exist_ok=True)
 
     capture_connection = connection_pool.get_connection(capture_device)
@@ -246,6 +251,8 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger, run_
             run_id=run_context.run_id,
             path=local_pcap,
             artifact_type=ArtifactType.PCAP,
+            test_node_id=request.node.nodeid,
+            attempt_id=run_context.attempt_id,
             display_name="dhcp_test.pcap",
             expected_sha256=local_sha256,
             expected_size_bytes=len(data),
@@ -269,12 +276,12 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger, run_
         name="dora_transactions",
     )
 
-    evidence_path = (
-        ROOT / "results" / "evidence" / (
-            (run_context.run_id if run_context is not None else "adhoc")
-            + "-dhcp-protocol.json"
-        )
+    evidence_scope = (
+        f"{run_context.run_id}-{run_context.attempt_id}"
+        if run_context is not None
+        else "adhoc"
     )
+    evidence_path = ROOT / "results" / "evidence" / f"{evidence_scope}-dhcp-protocol.json"
     protocol_service.write_json(evidence, evidence_path)
     if run_context is not None:
         artifact_service = run_context.artifact_service or ArtifactService.from_sqlite(
@@ -284,6 +291,8 @@ def test_pcap_contains_dhcp_packets(connection_pool, params, metric_logger, run_
             run_id=run_context.run_id,
             path=evidence_path,
             artifact_type=ArtifactType.PROTOCOL_EVIDENCE,
+            test_node_id=request.node.nodeid,
+            attempt_id=run_context.attempt_id,
             display_name="dhcp_protocol_evidence.json",
         )
 

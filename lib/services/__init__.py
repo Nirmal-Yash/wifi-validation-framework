@@ -42,6 +42,7 @@ _EXPORTS = {
     "MeasurementEvaluationError": (".statistics", "MeasurementEvaluationError"),
     "MeasurementPolicy": (".statistics", "MeasurementPolicy"),
     "MeasurementPolicyEvaluator": (".statistics", "MeasurementPolicyEvaluator"),
+    "map_pytest_reports": (".pytest_result_mapping", "map_pytest_reports"),
     "MetricDefinition": (".statistics", "MetricDefinition"),
     "StatisticKind": (".statistics", "StatisticKind"),
     "StatisticSummary": (".statistics", "StatisticSummary"),

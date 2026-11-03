@@ -230,7 +230,8 @@ class CommandAuditRecorder:
         self.run_id = run_id
         self.attempt_id = attempt_id
         self.clock = clock
-        self.path = Path(directory) / f"{run_id}.jsonl"
+        evidence_scope = attempt_id or "run"
+        self.path = Path(directory) / f"{run_id}-{evidence_scope}.jsonl"
         self._records = 0
         self._closed = False
         self._artifact_registered = False
@@ -302,7 +303,8 @@ class CommandAuditRecorder:
                     run_id=self.run_id,
                     path=self.path,
                     artifact_type=ArtifactType.COMMAND_OUTPUT,
-                    display_name=f"command-output-{self.run_id}.jsonl",
+                    attempt_id=self.attempt_id,
+                    display_name=f"command-output-{self.run_id}-{self.attempt_id or 'run'}.jsonl",
                     sensitivity_class="SENSITIVE",
                 )
             except Exception as exc:

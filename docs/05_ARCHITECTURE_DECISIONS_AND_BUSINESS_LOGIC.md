@@ -60,11 +60,11 @@ Answers are grouped exactly under the original lettered sections (A–AF, then B
 24. **Lifecycle states:** `QUEUED → PREPARING → LAB_HEALTH_CHECK → RUNNING → COMPLETED | FAILED | LAB_FAILED | CANCELLED | ABORTED`. `UNVALIDATED` is **not** a lifecycle state — it's a business-outcome overlay on a `COMPLETED` run (see Core Decisions table).
 25. **Overall PASS:** All BLOCKING tests PASS **and** lab health PASS **and** no infra error **and** evidence is complete for tests that require it.
 26. **Partial run:** Yes, becomes `LAB_FAILED`, not `FAIL`, when the lab dies mid-run.
-27. **Fixture failure:** `ERROR` at the TestResult level (distinct from FAIL). Rolls up to Run-level `LAB_FAILED` if infra-caused, `FAILED` if test-logic-caused — the exception taxonomy (TC-17/18) decides which.
+27. **Fixture failure:** `ERROR` at the TestResult level (distinct from assertion `FAIL`). An explicitly classified `PRODUCT_FAILED` error can reject a Run. An unclassified setup/teardown/fixture error remains `UNVALIDATED`; when the orchestrator's exception taxonomy establishes a lab/infrastructure fault, it must set the corresponding Run lifecycle/failure classification rather than report a DUT rejection.
 28. **Skipped tests:** Don't count against Run validity unless BLOCKING (BL-03); a skipped BLOCKING test pushes the Run to `UNVALIDATED`, never silently ignored.
 29. **XFAIL/XPASS:** Normalize into your own model but retain the raw pytest outcome as metadata. XFAIL → your own `KNOWN_FAILURE` concept, tied to BL-24 waivers. XPASS → flagged for review, not silently treated as PASS.
 30–31. **Cancellation:** Yes, human-cancellable. Automatic cleanup (restore links/tc/DHCP/DNS, stop captures, release lab lock, mark artifacts incomplete) implemented as a try/finally at the orchestrator level so mid-test cancellation still cleans up.
-32–33. **Retry/attempts:** Both — a brand-new Run is always allowed, and `Run → Attempt[1..n] → TestResults` is also supported. Implement `Attempt` from the start; retrofitting it later is expensive.
+32–33. **Retry/attempts:** A new Run is used for an API retry of a terminal Run and stores `source_run_id` to retain lineage; an in-progress Run may create additional Attempts only through an explicit Attempt lifecycle. A retry never rewrites the source Run or its TestResults.
 
 ## E. TestResult / sample semantics
 
@@ -745,7 +745,7 @@ The configured aggregate is the authoritative decision metric.
 
 A test may be marked FLAKY after inconsistent outcomes occur under materially unchanged conditions.
 
-The system never hides a failed Attempt because a later Attempt passed.
+Every Attempt and its result history remains immutable and visible. The Run's current business outcome is evaluated from the latest Attempt's exact selected-test result set; earlier failed Attempts remain part of the Run history and flaky/retry analysis, but do not contaminate the current Attempt's outcome.
 
 Raw history remains visible.
 

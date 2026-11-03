@@ -119,6 +119,9 @@ def test_legacy_rows_migrate_idempotently(tmp_path):
     artifacts = SQLiteArtifactRepository(database).list_for_run("LEGACY-RUN-1")
     assert len(artifacts) == 1
     assert artifacts[0].provenance == "LEGACY_IMPORTED"
+    assert artifacts[0].test_result_id == "LEGACY-RESULT-1"
+    assert artifacts[0].test_node_id == "tests/test_ping.py::test_ping"
+    assert artifacts[0].attempt_id == "LEGACY-ATTEMPT-1"
 
     baselines = SQLiteBaselineRepository(database).list_active()
     assert len(baselines) == 1

@@ -32,7 +32,7 @@ from lib.domain import (
 )
 from .interfaces import RepositoryConflictError
 
-SCHEMA_VERSION = "7"
+SCHEMA_VERSION = "11"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -78,7 +78,8 @@ CREATE TABLE IF NOT EXISTS runs (
     provenance TEXT NOT NULL DEFAULT 'NATIVE',
     failure_class TEXT,
     failure_reason TEXT,
-    execution_pid INTEGER
+    execution_pid INTEGER,
+    source_run_id TEXT REFERENCES runs(run_id)
 );
 
 CREATE TABLE IF NOT EXISTS attempts (
@@ -107,7 +108,8 @@ CREATE TABLE IF NOT EXISTS test_results (
     provenance TEXT NOT NULL DEFAULT 'NATIVE',
     failure_class TEXT,
     failure_reason TEXT,
-    execution_pid INTEGER
+    execution_pid INTEGER,
+    execution_metadata_json TEXT NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS metrics (
@@ -136,6 +138,8 @@ CREATE TABLE IF NOT EXISTS artifacts (
     artifact_id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
     test_result_id TEXT REFERENCES test_results(test_result_id) ON DELETE CASCADE,
+    test_node_id TEXT,
+    attempt_id TEXT REFERENCES attempts(attempt_id) ON DELETE CASCADE,
     artifact_type TEXT NOT NULL,
     path TEXT NOT NULL,
     sha256 TEXT NOT NULL,
@@ -273,12 +277,14 @@ class SQLiteDatabase:
                 "failure_class": "TEXT",
                 "failure_reason": "TEXT",
                 "execution_pid": "INTEGER",
+                "source_run_id": "TEXT REFERENCES runs(run_id)",
             },
             "test_results": {
                 "provenance": "TEXT NOT NULL DEFAULT 'NATIVE'",
                 "failure_class": "TEXT",
                 "failure_reason": "TEXT",
                 "execution_pid": "INTEGER",
+                "execution_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
             },
             "artifacts": {
                 "display_name": "TEXT NOT NULL DEFAULT ''",
@@ -290,6 +296,8 @@ class SQLiteDatabase:
                 "failure_class": "TEXT",
                 "failure_reason": "TEXT",
                 "execution_pid": "INTEGER",
+                "test_node_id": "TEXT",
+                "attempt_id": "TEXT REFERENCES attempts(attempt_id) ON DELETE CASCADE",
             },
         }
         for table, additions in table_additions.items():
@@ -409,8 +417,8 @@ class SQLiteRunRepository:
                     test_definition_versions_json, resolved_config_json,
                     configuration_hash, repository_commit, lifecycle, outcome,
                     environment_health, environment_snapshot_id, config_snapshot_id,
-                    created_at, started_at, completed_at, provenance, failure_class, failure_reason, execution_pid
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    created_at, started_at, completed_at, provenance, failure_class, failure_reason, execution_pid, source_run_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     run.run_id,
                     run.display_id,
@@ -434,6 +442,7 @@ class SQLiteRunRepository:
                     run.failure_class.value if run.failure_class else None,
                     run.failure_reason,
                     run.execution_pid,
+                    run.source_run_id,
                 ),
             )
             connection.commit()
@@ -568,6 +577,7 @@ class SQLiteRunRepository:
                 failure_class=(FailureClass(row["failure_class"]) if row["failure_class"] else None),
                 failure_reason=row["failure_reason"],
                 execution_pid=row["execution_pid"],
+                source_run_id=row["source_run_id"],
             )
 
     
@@ -678,8 +688,8 @@ class SQLiteTestResultRepository:
                     test_result_id, run_id, attempt_id, test_id, node_id,
                     test_version, status, criticality, severity, evidence_state,
                     error_reason, started_at, completed_at, provenance,
-                    failure_class, failure_reason, execution_pid
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    failure_class, failure_reason, execution_pid, execution_metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     result.test_result_id,
                     result.run_id,
@@ -698,6 +708,7 @@ class SQLiteTestResultRepository:
                     result.failure_class.value if result.failure_class else None,
                     result.failure_reason,
                     result.execution_pid,
+                    _json(result.execution_metadata),
                 ),
             )
 
@@ -773,15 +784,17 @@ class SQLiteTestResultRepository:
     ) -> None:
         connection.execute(
             """INSERT INTO artifacts(
-                artifact_id, run_id, test_result_id, artifact_type, path,
+                artifact_id, run_id, test_result_id, test_node_id, attempt_id, artifact_type, path,
                 sha256, size_bytes, evidence_state, display_name, created_at,
                 sensitivity_class, retain_until, soft_deleted_at, provenance,
                 failure_class, failure_reason, execution_pid
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 artifact.artifact_id,
                 artifact.run_id,
                 artifact.test_result_id,
+                artifact.test_node_id,
+                artifact.attempt_id,
                 artifact.artifact_type.value,
                 artifact.path,
                 artifact.sha256,
@@ -843,6 +856,8 @@ class SQLiteTestResultRepository:
                 size_bytes=artifact_row["size_bytes"],
                 evidence_state=EvidenceState(artifact_row["evidence_state"]),
                 test_result_id=artifact_row["test_result_id"],
+                test_node_id=artifact_row["test_node_id"],
+                attempt_id=artifact_row["attempt_id"],
                 display_name=artifact_row["display_name"] or artifact_row["path"].rsplit("/", 1)[-1],
                 created_at=_parse_dt(artifact_row["created_at"]),
                 sensitivity_class=artifact_row["sensitivity_class"] or "INTERNAL",
@@ -854,9 +869,16 @@ class SQLiteTestResultRepository:
                 provenance=artifact_row["provenance"] or "NATIVE",
             )
             for artifact_row in connection.execute(
-                "SELECT * FROM artifacts WHERE test_result_id = ? "
-                "ORDER BY artifact_id",
-                (row["test_result_id"],),
+                "SELECT * FROM artifacts WHERE run_id = ? AND ("
+                "test_result_id = ? OR "
+                "(test_result_id IS NULL AND test_node_id = ? AND attempt_id = ?) OR "
+                "(test_result_id IS NULL AND test_node_id IS NULL AND attempt_id = ?) OR "
+                "(test_result_id IS NULL AND test_node_id IS NULL AND attempt_id IS NULL)"
+                ") ORDER BY artifact_id",
+                (
+                    row["run_id"], row["test_result_id"], row["node_id"],
+                    row["attempt_id"], row["attempt_id"],
+                ),
             ).fetchall()
         )
 
@@ -880,6 +902,7 @@ class SQLiteTestResultRepository:
             failure_reason=row["failure_reason"],
             execution_pid=row["execution_pid"],
             provenance=row["provenance"] or "NATIVE",
+            execution_metadata=json.loads(row["execution_metadata_json"] or "{}"),
         )
 
 
@@ -935,6 +958,8 @@ class SQLiteArtifactRepository:
             size_bytes=row["size_bytes"],
             evidence_state=EvidenceState(row["evidence_state"]),
             test_result_id=row["test_result_id"],
+            test_node_id=row["test_node_id"],
+            attempt_id=row["attempt_id"],
             display_name=row["display_name"] or row["path"].rsplit("/", 1)[-1],
             created_at=_parse_dt(row["created_at"]),
             sensitivity_class=row["sensitivity_class"] or "INTERNAL",
@@ -1149,6 +1174,53 @@ class SQLiteBaselineRepository:
                 raise RepositoryConflictError(
                     f"baseline already exists: {baseline.baseline_id}"
                 )
+            connection.execute(
+                """INSERT INTO run_baselines(
+                    baseline_id, name, baseline_run_id, status, device_scope,
+                    firmware_major_scope, test_suite_version, lab_class,
+                    promoted_by, promoted_at, superseded_by, provenance
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)""",
+                (
+                    baseline.baseline_id,
+                    baseline.name,
+                    baseline.baseline_run_id,
+                    baseline.status,
+                    baseline.device_scope,
+                    baseline.firmware_major_scope,
+                    baseline.test_suite_version,
+                    baseline.lab_class,
+                    baseline.promoted_by,
+                    _dt(baseline.promoted_at),
+                    baseline.provenance,
+                ),
+            )
+            connection.commit()
+
+    def save_replacing_active(self, baseline: Baseline) -> None:
+        """Atomically supersede the active name and insert its replacement."""
+        if baseline.superseded_by is not None:
+            raise RepositoryConflictError(
+                "a newly persisted baseline cannot already be superseded"
+            )
+        with self.database.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute(
+                "SELECT 1 FROM run_baselines WHERE baseline_id = ?",
+                (baseline.baseline_id,),
+            ).fetchone():
+                raise RepositoryConflictError(
+                    f"baseline already exists: {baseline.baseline_id}"
+                )
+
+            # The partial unique index permits only one active row per name.
+            # Supersede first, then insert in the same transaction; an insert
+            # failure rolls the supersede back and leaves the original active.
+            connection.execute(
+                """UPDATE run_baselines
+                   SET superseded_by = ?, status = 'SUPERSEDED'
+                   WHERE name = ? AND baseline_id <> ? AND superseded_by IS NULL""",
+                (baseline.baseline_id, baseline.name, baseline.baseline_id),
+            )
             connection.execute(
                 """INSERT INTO run_baselines(
                     baseline_id, name, baseline_run_id, status, device_scope,

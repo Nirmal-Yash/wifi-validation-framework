@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from math import isfinite
 from enum import Enum
 from typing import Any, Mapping
 
@@ -106,6 +107,12 @@ class Sample:
     def __post_init__(self) -> None:
         if not isinstance(self.value, (int, float)):
             raise DomainValidationError("sample value must be numeric")
+        try:
+            finite = isfinite(float(self.value))
+        except (OverflowError, TypeError, ValueError):
+            finite = False
+        if not finite:
+            raise DomainValidationError("sample value must be finite")
         if not self.status.strip():
             raise DomainValidationError("sample status must not be empty")
 
@@ -147,6 +154,8 @@ class Artifact:
     failure_class: FailureClass | None = None
     failure_reason: str | None = None
     execution_pid: int | None = None
+    test_node_id: str | None = None
+    attempt_id: str | None = None
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -170,6 +179,10 @@ class Artifact:
             )
         if not self.provenance.strip():
             raise DomainValidationError("artifact provenance must not be empty")
+        if self.test_node_id is not None:
+            _require_text("test_node_id", self.test_node_id)
+        if self.attempt_id is not None:
+            _require_text("attempt_id", self.attempt_id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,6 +239,7 @@ class TestResult:
     failure_reason: str | None = None
     execution_pid: int | None = None
     provenance: str = "NATIVE"
+    execution_metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -239,10 +253,14 @@ class TestResult:
         ):
             _require_text(name, value)
         if self.status in {TestResultStatus.PASS, TestResultStatus.XPASS} and self.provenance != "LEGACY_IMPORTED" and (
-            self.evidence_state in {EvidenceState.INCOMPLETE, EvidenceState.INVALID}
+            self.evidence_state in {
+                EvidenceState.REQUIRED,
+                EvidenceState.INCOMPLETE,
+                EvidenceState.INVALID,
+            }
         ):
             raise DomainValidationError(
-                "a PASS result cannot have incomplete or invalid required evidence"
+                "PASS/XPASS cannot be recorded before required evidence is complete and valid"
             )
         if (
             self.status == TestResultStatus.UNVALIDATED
@@ -251,6 +269,8 @@ class TestResult:
             raise DomainValidationError(
                 "UNVALIDATED result must explain an evidence/environment problem"
             )
+        if not isinstance(self.execution_metadata, Mapping):
+            raise DomainValidationError("execution_metadata must be a mapping")
 
 
 @dataclass(slots=True)
@@ -301,6 +321,7 @@ class Run:
     started_at: datetime | None = None
     completed_at: datetime | None = None
     provenance: str = "NATIVE"
+    source_run_id: str | None = None
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -314,6 +335,10 @@ class Run:
             ("provenance", self.provenance),
         ):
             _require_text(name, value)
+        if self.source_run_id is not None:
+            _require_text("source_run_id", self.source_run_id)
+            if self.source_run_id == self.run_id:
+                raise DomainValidationError("a Run cannot be its own source Run")
         if not self.selected_tests:
             raise DomainValidationError("run must contain at least one selected test")
         if set(self.selected_tests) != set(self.test_definition_versions):

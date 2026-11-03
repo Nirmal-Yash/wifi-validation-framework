@@ -229,6 +229,8 @@ class LegacyDatabaseMigrationService:
                         artifact_repo,
                         run_repo,
                         SQLiteEventRepository(self.database),
+                        test_result_repository=result_repo,
+                        attempt_repository=attempt_repo,
                         id_generator=iter([artifact_id, f"LEGACY-ARTIFACT-EVENT-{row_id}"]).__next__,
                     )
                     artifact_service.register_file(

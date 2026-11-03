@@ -50,6 +50,7 @@ from lib.services import (
     repository_commit,
     redact_configuration,
 )
+from lib.services.pytest_result_mapping import map_pytest_reports
 
 
 def pytest_addoption(parser):
@@ -155,15 +156,18 @@ def metric_logger(request):
 
 @pytest.fixture(autouse=True)
 def record_test_result(request, firmware_version):
-    if os.getenv("NETREGRESS_CI_MODE","0").lower() in {"1","true","yes"}:
+    if os.getenv("NETREGRESS_CI_MODE", "0").lower() in {"1", "true", "yes"}:
         yield
         return
-    start_time = time.time()
+
+    started = time.monotonic()
     context = getattr(request.config, "_netregress_run_context", None)
-    telemetry_before = None
-    if context is not None and context.telemetry_service is not None and os.getenv("NETREGRESS_AUTO_TELEMETRY", "1") not in {"0", "false", "no"}:
+    telemetry_enabled = os.getenv("NETREGRESS_AUTO_TELEMETRY", "1").lower() not in {
+        "0", "false", "no"
+    }
+    if context is not None and context.telemetry_service is not None and telemetry_enabled:
         try:
-            telemetry_before = context.telemetry_service.capture_and_register(
+            context.telemetry_service.capture_and_register(
                 run_id=context.run_id,
                 artifact_service=context.artifact_service,
                 interface=os.getenv("NETREGRESS_WIFI_INTERFACE", "wlan0"),
@@ -173,19 +177,7 @@ def record_test_result(request, firmware_version):
 
     yield
 
-    duration_ms = int((time.time() - start_time) * 1000)
-    rep_call = getattr(request.node, "rep_call", None)
-    rep_setup = getattr(request.node, "rep_setup", None)
-    if rep_call is not None:
-        status = "PASS" if rep_call.passed else "FAIL"
-        error_message = str(rep_call.longrepr) if rep_call.failed else None
-    elif rep_setup is not None and rep_setup.failed:
-        status = "FAIL"
-        error_message = f"Setup failed: {rep_setup.longrepr}"
-    else:
-        return
-
-    if context is not None and context.telemetry_service is not None and os.getenv("NETREGRESS_AUTO_TELEMETRY", "1") not in {"0", "false", "no"}:
+    if context is not None and context.telemetry_service is not None and telemetry_enabled:
         try:
             context.telemetry_service.capture_and_register(
                 run_id=context.run_id,
@@ -195,78 +187,113 @@ def record_test_result(request, firmware_version):
         except Exception as exc:
             request.node.user_properties.append(("telemetry_after_warning", str(exc)))
 
-    props = dict(request.node.user_properties)
-    metric_val = props.get("metric_value")
-    metric_unit = props.get("metric_unit")
+    # Persist only after pytest creates the teardown report. This ensures a
+    # fixture/test teardown error cannot be silently recorded as PASS.
+    request.node._netregress_result_pending = {
+        "firmware_version": firmware_version,
+        "duration_ms": int((time.monotonic() - started) * 1000),
+    }
+
+
+def _persist_test_result(item):
+    if getattr(item, "_netregress_result_recorded", False):
+        return
+    if os.getenv("NETREGRESS_CI_MODE", "0").lower() in {"1", "true", "yes"}:
+        return
+
+    reports = {
+        phase: getattr(item, f"rep_{phase}", None)
+        for phase in ("setup", "call", "teardown")
+    }
+    status, error_message = map_pytest_reports(reports)
+    pending = getattr(item, "_netregress_result_pending", {})
+    report_duration = sum(
+        getattr(report, "duration", 0.0)
+        for report in reports.values()
+        if report is not None
+    )
+    duration_ms = pending.get("duration_ms", int(report_duration * 1000))
+    firmware_version = pending.get(
+        "firmware_version", item.config.getoption("--firmware-version")
+    )
+    props = dict(getattr(item, "user_properties", ()))
 
     try:
         insert_result(
-            test_name=request.node.nodeid,
-            status=status,
+            test_name=item.nodeid,
+            status=status.value,
             firmware_version=firmware_version,
             duration_ms=duration_ms,
             error_message=error_message,
-            metric_value=metric_val,
-            metric_unit=metric_unit,
+            metric_value=props.get("metric_value"),
+            metric_unit=props.get("metric_unit"),
         )
     except Exception as db_err:
-        sys.stderr.write(f"\n[WARN] Failed to insert test result to DB: {db_err}\n")
-
-    if context is not None:
-        collector = getattr(request.node, "_metric_collector", None)
-        metrics = collector.metrics() if collector is not None else ()
-        definition = context.definition_for(request.node.nodeid)
-
-        evidence_state = EvidenceState.NOT_REQUIRED
-        if definition.evidence_requirements:
-            evidence_state = EvidenceState.REQUIRED
-            artifacts = context.artifact_service.list_for_run(context.run_id) if context.artifact_service else []
-            by_type = {artifact.artifact_type for artifact in artifacts if artifact.test_result_id in {None, request.node.nodeid}}
-            missing = [kind for kind in definition.evidence_requirements if kind not in by_type]
-            invalid = False
-            for artifact in artifacts:
-                if artifact.artifact_type in definition.evidence_requirements and context.artifact_service is not None:
-                    try:
-                        if not context.artifact_service.verify(artifact.artifact_id):
-                            invalid = True
-                    except Exception:
-                        invalid = True
-            if invalid:
-                evidence_state = EvidenceState.INVALID
-            elif missing:
-                evidence_state = EvidenceState.INCOMPLETE
-            else:
-                evidence_state = EvidenceState.COMPLETE
-                if status == "PASS":
-                    status = "PASS"
-
-        result_status = (
-            TestResultStatus.PASS if status == "PASS" else TestResultStatus.FAIL
+        sys.stderr.write(
+            f"\\n[WARN] Failed to insert test result to legacy DB: {db_err}\\n"
         )
-        if definition.evidence_requirements and evidence_state in {EvidenceState.INCOMPLETE, EvidenceState.INVALID} and result_status is TestResultStatus.PASS:
-            result_status = TestResultStatus.UNVALIDATED
+
+    context = getattr(item.config, "_netregress_run_context", None)
+    if context is None:
+        item._netregress_result_recorded = True
+        return
+
+    collector = getattr(item, "_metric_collector", None)
+    metrics = collector.metrics() if collector is not None else ()
+    definition = context.definition_for(item.nodeid)
+    evidence_state = EvidenceState.NOT_REQUIRED
+    if definition.evidence_requirements:
+        if context.artifact_service is None:
+            evidence_state = EvidenceState.INCOMPLETE
+        else:
+            evidence_state = context.artifact_service.evaluate_test_evidence(
+                run_id=context.run_id,
+                node_id=item.nodeid,
+                required_types=definition.evidence_requirements,
+                attempt_id=context.attempt_id,
+            )
+        if status in {TestResultStatus.PASS, TestResultStatus.XPASS} and evidence_state in {
+            EvidenceState.REQUIRED, EvidenceState.INCOMPLETE, EvidenceState.INVALID
+        }:
+            status = TestResultStatus.UNVALIDATED
             error_message = error_message or f"required evidence state: {evidence_state.value}"
 
-        context.run_service.record_test_result(
-            run_id=context.run_id,
-            attempt_id=context.attempt_id,
-            test_id=definition.test_id,
-            node_id=request.node.nodeid,
-            test_version=definition.version,
-            status=result_status,
-            criticality=definition.criticality,
-            severity=definition.severity,
-            evidence_state=evidence_state,
-            metrics=metrics,
-            error_reason=error_message,
-        )
+    execution_metadata = {
+        "pytest": {
+            "reports": {
+                phase: {
+                    "outcome": getattr(report, "outcome", None),
+                    "wasxfail": getattr(report, "wasxfail", None),
+                }
+                for phase, report in reports.items()
+                if report is not None
+            }
+        }
+    }
+    context.run_service.record_test_result(
+        run_id=context.run_id,
+        attempt_id=context.attempt_id,
+        test_id=definition.test_id,
+        node_id=item.nodeid,
+        test_version=definition.version,
+        status=status,
+        criticality=definition.criticality,
+        severity=definition.severity,
+        evidence_state=evidence_state,
+        metrics=metrics,
+        error_reason=error_message,
+        execution_metadata=execution_metadata,
+    )
+    item._netregress_result_recorded = True
 
 
 @pytest.hookimpl(tryfirst=True, hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     outcome = yield
-    rep = outcome.get_result()
-    setattr(item, f"rep_{rep.when}", rep)
+    report = outcome.get_result()
+    setattr(item, f"rep_{report.when}", report)
+    if report.when == "teardown":
+        _persist_test_result(item)
 
 
 def _validation_profile(config) -> str:
@@ -280,11 +307,13 @@ def _validation_profile(config) -> str:
     return os.getenv("NETREGRESS_VALIDATION_PROFILE", "Full")
 
 
-def _create_run_service() -> RunService:
+def _create_run_service(test_registry=None) -> RunService:
     db_path = Path(
         os.getenv("TEST_DB_PATH", str(ROOT / "results" / "test_results.db"))
     )
-    return RunService.from_sqlite(SQLiteDatabase(db_path))
+    return RunService.from_sqlite(
+        SQLiteDatabase(db_path), test_registry=test_registry
+    )
 
 
 def _run_repository_context(session):
@@ -308,7 +337,7 @@ def pytest_collection_finish(session):
     resolved = resolver.resolve(defaults=params, environment=resolver.environment_json())
     persisted_config = redact_configuration(resolved.values)
 
-    service = _create_run_service()
+    service = _create_run_service(test_registry=registry)
     lock_manager = ResourceLockManager(ROOT / "results" / "locks")
     fingerprint_service = EnvironmentFingerprintService(ROOT)
     lab_controller = LabController(
@@ -335,6 +364,7 @@ def pytest_collection_finish(session):
         or repository_commit(str(ROOT)),
         device_identity={"device_id": os.getenv("NETREGRESS_DEVICE_ID", "client_vm")},
         topology=params.get("network", {}),
+        source_run_id=os.getenv("NETREGRESS_SOURCE_RUN_ID") or None,
     )
     run, attempt = orchestration.run, orchestration.attempt
     session.config._netregress_resource_lease = orchestration.lease
@@ -495,7 +525,7 @@ def pytest_sessionfinish(session, exitstatus):
         elif exitstatus == 2:
             context.run_service.abort_run(context.run_id)
         else:
-            context.run_service.fail_run(context.run_id)
+            context.run_service.fail_run(context.run_id, failure_class=None)
 
     lease = getattr(session.config, "_netregress_resource_lease", None)
     if lease is not None:
