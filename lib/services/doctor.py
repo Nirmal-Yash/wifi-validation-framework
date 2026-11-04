@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os,shutil,sqlite3,sys
 from pathlib import Path
+from lib.repositories.database_config import DatabaseConfigurationError, resolve_database_path
 @dataclass(frozen=True,slots=True)
 class DoctorCheck: check_id:str;status:str;message:str
 @dataclass(frozen=True,slots=True)
@@ -18,7 +19,12 @@ class RunnerDoctor:
         if required:
             ok=bool(os.getenv("NETREGRESS_SESSION_SECRET")) and bool(os.getenv("NETREGRESS_AUTH_USERS_JSON"));checks.append(DoctorCheck("authentication","PASS" if ok else "FAIL","configured" if ok else "enabled without required secrets/users"))
         else: checks.append(DoctorCheck("authentication","WARN","local authentication is disabled"))
-        db=Path(database) if database else Path(os.getenv("NETREGRESS_DATABASE_PATH",self.root/"results"/"test_results.db"))
+        try:
+            db = resolve_database_path(database, project_root=self.root)
+        except DatabaseConfigurationError as exc:
+            checks.append(DoctorCheck("database", "FAIL", str(exc)))
+            failures=[c for c in checks if c.status=="FAIL"]
+            return DoctorReport(tuple(checks),not failures,f"{len(failures)} readiness check(s) failed")
         if db.is_file():
             try:
                 c=sqlite3.connect(db);integrity=c.execute("PRAGMA integrity_check").fetchone()[0];c.close();checks.append(DoctorCheck("database","PASS" if integrity=="ok" else "FAIL",f"integrity_check={integrity}"))

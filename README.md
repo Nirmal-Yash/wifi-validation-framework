@@ -66,6 +66,24 @@ pip install -r requirements.txt
 pytest tests/ -v --firmware-version=v1.0
 ~~~
 
+## Database path configuration
+
+The Runner uses one SQLite database path across the dashboard, pytest session orchestration, health checks and operational CLI tools. Resolution order is:
+
+1. An explicit path passed to `SQLiteDatabase(path)` or a CLI `--db` / `--database` option.
+2. `NETREGRESS_DATABASE_PATH`.
+3. The backward-compatible `TEST_DB_PATH` alias.
+4. A SQLite `DATABASE_URL` (`sqlite:///` or `sqlite+pysqlite:///`).
+5. The repository default `results/test_results.db`.
+
+When both `NETREGRESS_DATABASE_PATH` and `TEST_DB_PATH` are set, they must resolve to the same file or startup fails closed. Non-SQLite `DATABASE_URL` values are not enabled by the standalone Runner. Use `NETREGRESS_DATABASE_PATH` for new deployments; retain `TEST_DB_PATH` only while migrating existing environments.
+
+~~~bash
+export NETREGRESS_DATABASE_PATH="$PWD/results/test_results.db"
+python scripts/netregress_sync.py --url "$NETREGRESS_SYNC_URL"
+python scripts/netregress_reproduce.py <RUN_ID>
+~~~
+
 ## Lab provisioning
 
 ~~~bash

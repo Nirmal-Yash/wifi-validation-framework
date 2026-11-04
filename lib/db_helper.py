@@ -2,7 +2,10 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "results" / "test_results.db"
+from lib.repositories.database_config import resolve_database_path
+
+ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = resolve_database_path(project_root=ROOT)
 
 
 def _connect():

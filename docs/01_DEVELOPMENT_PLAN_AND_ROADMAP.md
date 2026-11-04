@@ -23,6 +23,43 @@ Companion canonical documents:
 
 ## 2. Current authoritative development plan
 
+### Current bounded implementation sequence — Phases B–P
+
+This B–P programme is the current execution order for the next development slices. It supersedes older phase groupings as the active work sequence while preserving all historical Iteration 20–30 notes below for traceability. Each phase is delivered as a coherent, testable slice; implementation is not spread across an oversized multi-module session.
+
+| Phase | Scope | Status |
+|---|---|---|
+| B | Run and Evidence Correctness: latest-Attempt result mapping, exact selected-node coverage, fail-closed evidence ownership, pytest phase metadata, retry lineage and atomic baseline replacement | Implemented; source/CI baseline previously green; REAL_LAB certification remains separate |
+| C | Canonical Persistence Foundation: one SQLite path resolver, explicit database transaction scope, atomic initial Run + Attempt + creation events, and consistent resolver use by application entry points | Implemented in this Phase C checkpoint; hosted CI result is recorded separately; REAL_LAB is not claimed |
+| D | Legacy Compatibility and Historical Migration: legacy helper facade, read-only source handling, deterministic IDs/provenance, migration ledger, idempotent import and legacy-baseline ineligibility | Planned |
+| E | Database Schema Governance and Reliability: make Alembic the schema migration authority, versioned upgrades, schema drift checks, compatibility validation, and migration recovery | Planned |
+| F | Execution and Process Reliability: worker lifecycle, subprocess supervision, cancellation, timeout taxonomy, crash/interrupt recovery and deterministic finalization | Planned |
+| G | Configuration, Environment and Resource Orchestration: typed configuration provenance, environment fingerprints, lab/device leases, orchestration boundaries and preflight contracts | Planned |
+| H | Protocol Evidence Certification: live DHCP DORA, EAPOL four-way, Beacon/RSN and DNS correlation against verified real captures | Planned |
+| I | Telemetry, Performance and Recovery Validation: measured WiFi telemetry, statistically governed performance tests, fault/recovery assertions and evidence correlation | Planned |
+| J | Device and Firmware Lifecycle: adapter capability contracts, image verification, flash/reboot/readiness, rollback and target-specific lifecycle certification | Planned |
+| K | Security and Deployment Hardening: credential handling, auth/RBAC, secure command boundaries, artifact controls, deployment policy and security regression | Planned |
+| L | API, Dashboard and Frontend Completion: typed API contract, consistent errors, pagination, operational UX, authenticated downloads and browser/runtime parity | Planned |
+| M | Regression Intelligence, Release Gate and Offline Operations: comparable baseline logic, metric classification, waiver boundaries, local queue recovery and release decision evidence | Planned |
+| N | Standalone Packaging and Production Certification: reproducible install, upgrade/backup/restore, doctor/manifest, operator runbooks and the full standalone certification matrix | Planned |
+| O | Cloud/SaaS Expansion and Integration: separate control-plane contracts, tenant/project ownership, outbound synchronization and remote release workflows; begin only after standalone Runner certification | Deferred until Phase N certification |
+| P | GitHub Repository Organization and Cleanup: source and docs ownership audit, tests/workflow coverage, dependency hygiene, stale-file/branch cleanup, secret scan, release metadata and final repository freeze | Final phase |
+
+#### Phase C — implementation contract
+
+Phase C deliberately establishes persistence primitives without taking ownership of historical data conversion or schema migration governance.
+
+- **Canonical database location:** `SQLiteDatabase(path=None)` delegates to `resolve_database_path`. Explicit path wins; otherwise `NETREGRESS_DATABASE_PATH`, then the compatible `TEST_DB_PATH` alias, then a synchronous SQLite `DATABASE_URL`, then repository-root `results/test_results.db`. Conflicting canonical/legacy environment paths fail closed.
+- **Connection versus transaction:** `SQLiteDatabase.connection()` remains the low-level connection context and preserves existing caller-managed commit semantics. `SQLiteDatabase.transaction(immediate=False)` is the explicit write-unit boundary; it commits on normal exit and rolls back on any exception. `immediate=True` acquires the SQLite write reservation before the unit starts.
+- **Initial Run unit-of-work:** `SQLiteRunRepository.save_initial_bundle` stores the Run, Attempt 1, `RUN_CREATED` and `ATTEMPT_CREATED` events in one immediate transaction. A conflict/failure in any member leaves none of the bundle persisted. The service generates IDs in the existing order and returns only after the unit commits.
+- **Repository entry points:** dashboard defaults, pytest RunService setup, RunnerDoctor, sync CLI and reproduction CLI share the same resolver. Explicit programmatic/CLI paths remain supported.
+- **Existing result boundary:** TestResult, its metrics, raw samples and associated artifact references continue to be written by the existing single-connection atomic repository operation. This phase does not weaken or replace that behavior.
+- **Explicit exclusions:** legacy `lib/db_helper.py` conversion and historical import belong to Phase D. Alembic authority, schema version strategy and migration drift governance belong to Phase E. No schema version change is introduced by Phase C.
+
+**Phase C completion gate:** resolver precedence/conflict behavior is tested; transaction rollback is tested; successful and failing Run bundle persistence is tested; all supported entry points use the resolver; existing Run/TestResult/repository contracts remain compatible; focused CI is green. The GNS3/mac80211_hwsim 11-test protected suite remains a separate runtime certification gate and is not inferred from source tests.
+
+The historical consolidated Iteration programme below remains preserved as implementation history. Where it conflicts with the current B–P sequence, the B–P sequence above determines the next phase to execute.
+
 ## 0. Purpose
 
 This is the authoritative implementation plan for all development after the current Iteration 19 Runner state.
@@ -103,23 +140,17 @@ Every iteration is executed completely before starting the next:
 
 ### 2.2 Commit policy
 
-**No implementation commits are to be pushed during the execution of these iterations.**
-
-All implementation work remains in the working tree until the complete program is finished and every final certification gate passes.
-
-At the end of the entire plan:
-
-- stage the complete final codebase;
-- verify there are no unintended files;
-- verify all required tests and certification scenarios;
-- create **one single commit on `main`**;
-- use this commit message:
+- Work directly on `main`; do not create feature, review, or temporary branches.
+- Keep each phase free of per-file, micro, scratch, or partial commits.
+- When a phase checkpoint is explicitly requested for delivery, complete its implementation, tests, documentation and review first, then create exactly one consolidated Conventional Commit for that phase and push once with a fast-forward update.
+- Never rewrite existing history or force-update `main`.
+- The approved Phase C checkpoint is delivered as one commit with the subject:
 
 ```
-feat(runner): complete production-grade validation platform
+feat(persistence): establish canonical SQLite transaction foundation
 ```
 
-No intermediate iteration commits, micro-commits, scratch commits, or temporary implementation commits are to be pushed.
+The Phase C commit must not contain unfinished Phase D migration work or Phase E schema-governance work. The remaining B–P programme proceeds according to the phase gates above and explicit delivery instructions; no per-file or per-module commits are permitted.
 
 ---
 

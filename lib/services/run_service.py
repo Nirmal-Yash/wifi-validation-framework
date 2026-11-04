@@ -229,16 +229,29 @@ class RunService:
             source_run_id=source_run_id,
             created_at=now,
         )
-        self.run_repository.save(run)
-        self._event(run.run_id, "RUN_CREATED", now)
-
+        run_created_event = LifecycleEvent(
+            event_id=self.id_generator(),
+            run_id=run.run_id,
+            event_type="RUN_CREATED",
+            occurred_at=now,
+            details={},
+        )
         attempt = Attempt(
             attempt_id=self.id_generator(),
             run_id=run.run_id,
             number=1,
         )
-        self.attempt_repository.save(attempt)
-        self._event(run.run_id, "ATTEMPT_CREATED", now, attempt_id=attempt.attempt_id)
+        attempt_created_event = LifecycleEvent(
+            event_id=self.id_generator(),
+            run_id=run.run_id,
+            event_type="ATTEMPT_CREATED",
+            occurred_at=now,
+            attempt_id=attempt.attempt_id,
+            details={},
+        )
+        self.run_repository.save_initial_bundle(
+            run, attempt, (run_created_event, attempt_created_event)
+        )
         return run, attempt
 
     def record_test_result(

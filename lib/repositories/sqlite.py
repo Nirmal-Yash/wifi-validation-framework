@@ -251,8 +251,10 @@ def _json(value: Mapping) -> str:
 class SQLiteDatabase:
     """SQLite connection factory and additive schema bootstrap."""
 
-    def __init__(self, path: Path | str) -> None:
-        self.path = Path(path)
+    def __init__(self, path: Path | str | None = None) -> None:
+        from .database_config import resolve_database_path
+
+        self.path = resolve_database_path(path)
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -267,6 +269,19 @@ class SQLiteDatabase:
             yield connection
         finally:
             connection.close()
+
+    @contextmanager
+    def transaction(self, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
+        """Run a write unit with an explicit commit/rollback boundary."""
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
+            try:
+                yield connection
+                connection.commit()
+            except BaseException:
+                if connection.in_transaction:
+                    connection.rollback()
+                raise
 
     @staticmethod
     def _migrate_schema(connection: sqlite3.Connection) -> None:
@@ -378,74 +393,105 @@ class SQLiteRunRepository:
         self.database = database
 
     def save(self, run: Run) -> None:
-        with self.database.connection() as connection:
-            if connection.execute(
-                "SELECT 1 FROM runs WHERE run_id = ?", (run.run_id,)
-            ).fetchone():
-                raise RepositoryConflictError(f"run already exists: {run.run_id}")
+        with self.database.transaction() as connection:
+            self.save_in_transaction(connection, run)
 
-            if run.environment:
-                connection.execute(
-                    """INSERT INTO environment_snapshots
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        run.environment.snapshot_id,
-                        run.environment.host_os,
-                        run.environment.kernel,
-                        run.environment.python_version,
-                        run.environment.repository_commit,
-                        run.environment.configuration_hash,
-                        _json(run.environment.tools),
-                    ),
-                )
+    @staticmethod
+    def save_in_transaction(connection: sqlite3.Connection, run: Run) -> None:
+        if connection.execute(
+            "SELECT 1 FROM runs WHERE run_id = ?", (run.run_id,)
+        ).fetchone():
+            raise RepositoryConflictError(f"run already exists: {run.run_id}")
 
-            if run.config_snapshot:
-                connection.execute(
-                    """INSERT INTO config_snapshots
-                       VALUES (?, ?, ?)""",
-                    (
-                        run.config_snapshot.snapshot_id,
-                        _json(run.config_snapshot.resolved_config),
-                        run.config_snapshot.configuration_hash,
-                    ),
-                )
-
+        if run.environment:
             connection.execute(
-                """INSERT INTO runs (
-                    run_id, display_id, firmware_version, lab_id,
-                    validation_profile, selected_tests_json,
-                    test_definition_versions_json, resolved_config_json,
-                    configuration_hash, repository_commit, lifecycle, outcome,
-                    environment_health, environment_snapshot_id, config_snapshot_id,
-                    created_at, started_at, completed_at, provenance, failure_class, failure_reason, execution_pid, source_run_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO environment_snapshots
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
-                    run.run_id,
-                    run.display_id,
-                    run.firmware_version,
-                    run.lab_id,
-                    run.validation_profile,
-                    _json({"tests": list(run.selected_tests)}),
-                    _json(run.test_definition_versions),
-                    _json(run.resolved_config),
-                    run.configuration_hash,
-                    run.repository_commit,
-                    run.lifecycle.value,
-                    run.outcome.value if run.outcome else None,
-                    run.environment_health.value if run.environment_health else None,
-                    run.environment.snapshot_id if run.environment else None,
-                    run.config_snapshot.snapshot_id if run.config_snapshot else None,
-                    _dt(run.created_at),
-                    _dt(run.started_at),
-                    _dt(run.completed_at),
-                    run.provenance,
-                    run.failure_class.value if run.failure_class else None,
-                    run.failure_reason,
-                    run.execution_pid,
-                    run.source_run_id,
+                    run.environment.snapshot_id,
+                    run.environment.host_os,
+                    run.environment.kernel,
+                    run.environment.python_version,
+                    run.environment.repository_commit,
+                    run.environment.configuration_hash,
+                    _json(run.environment.tools),
                 ),
             )
-            connection.commit()
+
+        if run.config_snapshot:
+            connection.execute(
+                """INSERT INTO config_snapshots
+                   VALUES (?, ?, ?)""",
+                (
+                    run.config_snapshot.snapshot_id,
+                    _json(run.config_snapshot.resolved_config),
+                    run.config_snapshot.configuration_hash,
+                ),
+            )
+
+        connection.execute(
+            """INSERT INTO runs (
+                run_id, display_id, firmware_version, lab_id,
+                validation_profile, selected_tests_json,
+                test_definition_versions_json, resolved_config_json,
+                configuration_hash, repository_commit, lifecycle, outcome,
+                environment_health, environment_snapshot_id, config_snapshot_id,
+                created_at, started_at, completed_at, provenance, failure_class, failure_reason, execution_pid, source_run_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                run.run_id,
+                run.display_id,
+                run.firmware_version,
+                run.lab_id,
+                run.validation_profile,
+                _json({"tests": list(run.selected_tests)}),
+                _json(run.test_definition_versions),
+                _json(run.resolved_config),
+                run.configuration_hash,
+                run.repository_commit,
+                run.lifecycle.value,
+                run.outcome.value if run.outcome else None,
+                run.environment_health.value if run.environment_health else None,
+                run.environment.snapshot_id if run.environment else None,
+                run.config_snapshot.snapshot_id if run.config_snapshot else None,
+                _dt(run.created_at),
+                _dt(run.started_at),
+                _dt(run.completed_at),
+                run.provenance,
+                run.failure_class.value if run.failure_class else None,
+                run.failure_reason,
+                run.execution_pid,
+                run.source_run_id,
+            ),
+        )
+
+
+    def save_initial_bundle(
+        self,
+        run: Run,
+        attempt: Attempt,
+        events: tuple[LifecycleEvent, ...],
+    ) -> None:
+        """Persist a new Run, its first Attempt and creation events atomically."""
+        if attempt.run_id != run.run_id:
+            raise RepositoryConflictError("initial Attempt must belong to the new Run")
+        if attempt.number != 1:
+            raise RepositoryConflictError("initial Attempt number must be 1")
+        events = tuple(events)
+        if tuple(event.event_type for event in events) != ("RUN_CREATED", "ATTEMPT_CREATED"):
+            raise RepositoryConflictError(
+                "initial Run creation requires RUN_CREATED and ATTEMPT_CREATED events"
+            )
+        if any(event.run_id != run.run_id for event in events):
+            raise RepositoryConflictError("initial lifecycle events must belong to the new Run")
+        if events[0].attempt_id is not None or events[1].attempt_id != attempt.attempt_id:
+            raise RepositoryConflictError("initial lifecycle events have invalid Attempt ownership")
+
+        with self.database.transaction(immediate=True) as connection:
+            self.save_in_transaction(connection, run)
+            SQLiteAttemptRepository.save_in_transaction(connection, attempt)
+            for event in events:
+                SQLiteEventRepository.append_in_transaction(connection, event)
 
     def update(self, run: Run) -> None:
         with self.database.connection() as connection:
@@ -594,27 +640,31 @@ class SQLiteAttemptRepository:
         self.database = database
 
     def save(self, attempt: Attempt) -> None:
-        with self.database.connection() as connection:
-            if connection.execute(
-                "SELECT 1 FROM attempts WHERE attempt_id = ?",
-                (attempt.attempt_id,),
-            ).fetchone():
-                raise RepositoryConflictError(
-                    f"attempt already exists: {attempt.attempt_id}"
-                )
-            connection.execute(
-                """INSERT INTO attempts(
-                       attempt_id, run_id, number, started_at, completed_at
-                   ) VALUES (?, ?, ?, ?, ?)""",
-                (
-                    attempt.attempt_id,
-                    attempt.run_id,
-                    attempt.number,
-                    _dt(attempt.started_at),
-                    _dt(attempt.completed_at),
-                ),
+        with self.database.transaction() as connection:
+            self.save_in_transaction(connection, attempt)
+
+    @staticmethod
+    def save_in_transaction(connection: sqlite3.Connection, attempt: Attempt) -> None:
+        if connection.execute(
+            "SELECT 1 FROM attempts WHERE attempt_id = ?",
+            (attempt.attempt_id,),
+        ).fetchone():
+            raise RepositoryConflictError(
+                f"attempt already exists: {attempt.attempt_id}"
             )
-            connection.commit()
+        connection.execute(
+            """INSERT INTO attempts(
+                   attempt_id, run_id, number, started_at, completed_at
+               ) VALUES (?, ?, ?, ?, ?)""",
+            (
+                attempt.attempt_id,
+                attempt.run_id,
+                attempt.number,
+                _dt(attempt.started_at),
+                _dt(attempt.completed_at),
+            ),
+        )
+
 
     def update(self, attempt: Attempt) -> None:
         with self.database.connection() as connection:
@@ -674,7 +724,7 @@ class SQLiteTestResultRepository:
         self.database = database
 
     def save(self, result: TestResult) -> None:
-        with self.database.connection() as connection:
+        with self.database.transaction() as connection:
             if connection.execute(
                 "SELECT 1 FROM test_results WHERE test_result_id = ?",
                 (result.test_result_id,),
@@ -748,7 +798,6 @@ class SQLiteTestResultRepository:
             for artifact in result.artifacts:
                 self._insert_artifact(connection, artifact)
 
-            connection.commit()
 
     def get(self, test_result_id: str) -> TestResult | None:
         with self.database.connection() as connection:
@@ -977,23 +1026,26 @@ class SQLiteEventRepository:
         self.database = database
 
     def append(self, event: LifecycleEvent) -> None:
-        with self.database.connection() as connection:
-            connection.execute(
-                """INSERT INTO lifecycle_events(
-                    event_id, run_id, attempt_id, test_result_id, event_type,
-                    occurred_at, details_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    event.event_id,
-                    event.run_id,
-                    event.attempt_id,
-                    event.test_result_id,
-                    event.event_type,
-                    _dt(event.occurred_at),
-                    _json(event.details),
-                ),
-            )
-            connection.commit()
+        with self.database.transaction() as connection:
+            self.append_in_transaction(connection, event)
+
+    @staticmethod
+    def append_in_transaction(connection: sqlite3.Connection, event: LifecycleEvent) -> None:
+        connection.execute(
+            """INSERT INTO lifecycle_events(
+                event_id, run_id, attempt_id, test_result_id, event_type,
+                occurred_at, details_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                event.event_id,
+                event.run_id,
+                event.attempt_id,
+                event.test_result_id,
+                event.event_type,
+                _dt(event.occurred_at),
+                _json(event.details),
+            ),
+        )
 
     def list_for_run(self, run_id: str) -> list[LifecycleEvent]:
         with self.database.connection() as connection:

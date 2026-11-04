@@ -248,9 +248,39 @@ Phase 1 repositories use SQLite. Later they use SQLAlchemy/PostgreSQL without ch
 
 ## 19. Transaction boundaries
 
-TestResult, its metrics and artifact references should be committed atomically.
+### Database path ownership
 
-Physical artifacts are created and verified first. Orphan reconciliation handles files whose database registration failed.
+All Runner-owned SQLite consumers resolve the same database path through `lib.repositories.database_config.resolve_database_path`. Resolution precedence is explicit path → `NETREGRESS_DATABASE_PATH` → compatible `TEST_DB_PATH` → synchronous SQLite `DATABASE_URL` → repository-root `results/test_results.db`. If both environment path variables are configured, they must resolve to the same file; ambiguity is a startup/configuration error. Non-SQLite URLs are rejected by the standalone Runner path resolver.
+
+`SQLiteDatabase.connection()` is the low-level connection scope. It intentionally retains caller-managed commit semantics for compatibility with existing repository and service call sites. Multi-write operations must use the explicit transaction context instead of relying on close-time behavior.
+
+### Explicit transaction contract
+
+`SQLiteDatabase.transaction(immediate=False)` opens one connection and starts a transaction. On successful exit it commits; on any exception it rolls back and re-raises. `immediate=True` uses `BEGIN IMMEDIATE` so a write unit acquires its reservation before performing the first write and fails consistently under competing writers.
+
+Initial Run creation is one repository unit-of-work:
+
+~~~text
+Run row + optional snapshots
+        ↓
+Attempt 1 row
+        ↓
+RUN_CREATED event
+        ↓
+ATTEMPT_CREATED event
+        ↓
+       COMMIT
+~~~
+
+The bundle is all-or-nothing. The service does not report successful creation before the repository transaction commits. Duplicate IDs, invalid event ownership, foreign-key failures or any later insert failure roll back the complete bundle, including the Run and its first event. Standalone Run, Attempt and event repository writes continue to use the same explicit transaction primitive while preserving their public save/append contracts.
+
+### TestResult and artifact boundary
+
+TestResult, its metrics, raw samples and associated artifact references are inserted and committed atomically by the TestResult repository. A partial metric/sample/artifact insert must roll back the TestResult itself. Physical artifact files are created and verified before registration; orphan reconciliation handles files whose database registration failed. Artifact registration is a separate write unit and does not pretend that the filesystem and SQLite share a distributed transaction.
+
+### Scope boundary
+
+Phase C establishes path and transaction primitives only. Historical legacy-table import/compatibility is owned by Phase D. Alembic migration authority, schema-version governance and schema drift enforcement are owned by Phase E. The current additive bootstrap remains unchanged until the explicit schema-governance phase.
 
 ## 19A. FaultService
 

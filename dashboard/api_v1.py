@@ -215,6 +215,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             firmware_version=run.firmware_version,
             env={
                 "NETREGRESS_SOURCE_RUN_ID": run_id,
+                "NETREGRESS_DATABASE_PATH": str(query.database.path.resolve()),
                 "TEST_DB_PATH": str(query.database.path.resolve()),
             },
         )

@@ -9,7 +9,7 @@ from lib.services import HttpSyncTransport, RunnerSyncService
 
 def main() -> int:
     parser=argparse.ArgumentParser(description='Synchronize locally queued NetRegress Runner envelopes')
-    parser.add_argument('--db',type=Path,default=ROOT/'results'/'test_results.db')
+    parser.add_argument('--db',type=Path,default=None)
     parser.add_argument('--url',default=os.getenv('NETREGRESS_SYNC_URL'))
     parser.add_argument('--runner-id',default=os.getenv('NETREGRESS_RUNNER_ID') or os.getenv('HOSTNAME') or 'local-runner')
     parser.add_argument('--token',default=os.getenv('NETREGRESS_SYNC_TOKEN'))

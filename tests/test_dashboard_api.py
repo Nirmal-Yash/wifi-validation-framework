@@ -260,6 +260,7 @@ def test_retry_api_starts_new_process_with_source_run_lineage(tmp_path, monkeypa
     assert response.get_json()["data"]["source_run_id"] == source.run_id
     assert observed["start_kwargs"]["env"] == {
         "NETREGRESS_SOURCE_RUN_ID": source.run_id,
+        "NETREGRESS_DATABASE_PATH": str(db_path.resolve()),
         "TEST_DB_PATH": str(db_path.resolve()),
     }
 

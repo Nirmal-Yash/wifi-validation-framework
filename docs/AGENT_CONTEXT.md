@@ -130,13 +130,19 @@ If the lab cannot be run, say so. Do not represent unit/integration verification
 
 Work directly against the existing `main` branch. Do not create feature, review or temporary branches.
 
-Do not create implementation commits or push intermediate phase work. Complete every planned phase, all verification, documentation and final review first. Then create exactly one consolidated Conventional Commit on `main` and push exactly once. The final commit subject must describe the implementation actually delivered; do not use per-file or per-module commits.
+Work directly on `main`; do not create feature, review or temporary branches. Keep each phase free of per-file, micro or scratch commits. When a phase checkpoint is explicitly requested for delivery, package the entire completed phase in exactly one consolidated Conventional Commit on `main` and push once using a fast-forward update. Do not rewrite existing history. The current approved checkpoint is Phase C; its commit must contain the complete C implementation, tests and documentation, not unfinished D/E work.
 
 Update documentation with behavior, data-contract and API changes as each phase is implemented. Keep runtime databases, reports, PCAPs and logs gitignored.
 
-## 13. Current next step
+## 13. Current phase sequence and next step
 
-Source/CI verification is complete for the current standalone Runner slice. The immediate next step is protected REAL_LAB execution: re-establish the 11-test baseline, then verify the completeness-wave changes against the same lab. After the baseline is green, complete protected EAPOL/Beacon/DNS live-evidence wiring and authenticated browser/runtime verification. The future Cloud/SaaS Project control plane remains intentionally last.
+The current authoritative implementation sequence is the bounded B–P programme in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. Phase B is implemented. Phase C establishes canonical SQLite path resolution and transaction integrity, including atomic creation of a Run, its first Attempt and both creation events. Phase C deliberately leaves legacy database import to Phase D and Alembic/schema governance to Phase E.
+
+**Next implementation phase: D — Legacy Compatibility and Historical Migration.** It will reconcile the older `lib/db_helper.py` storage contract with normalized Run/Attempt/TestResult repositories and provide safe, idempotent import from legacy databases. Do not start that work as part of Phase C.
+
+The protected GNS3/mac80211_hwsim real-lab suite remains a separate certification requirement. The historical 11/11 baseline is not evidence that current `main` has been recertified. Source-level persistence tests or GitHub-hosted CI must never be described as a real-lab pass.
+
+The iteration notes below are retained as historical implementation records. The B–P programme above determines the current development order.
 
 Iterations 6 through 12 are implemented on main. Local/unit execution and the required real-lab gates remain pending where documented because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
 

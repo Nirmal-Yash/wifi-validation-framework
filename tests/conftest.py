@@ -308,11 +308,8 @@ def _validation_profile(config) -> str:
 
 
 def _create_run_service(test_registry=None) -> RunService:
-    db_path = Path(
-        os.getenv("TEST_DB_PATH", str(ROOT / "results" / "test_results.db"))
-    )
     return RunService.from_sqlite(
-        SQLiteDatabase(db_path), test_registry=test_registry
+        SQLiteDatabase(), test_registry=test_registry
     )
 
 

@@ -8,7 +8,7 @@ from lib.services import ReproductionManifestService,TestRegistry
 def main():
     parser=argparse.ArgumentParser(description="Create a deterministic NetRegress reproduction manifest")
     parser.add_argument("run_id")
-    parser.add_argument("--database",default="results/test_results.db")
+    parser.add_argument("--database",default=None)
     parser.add_argument("--output",default="results/reproduction")
     args=parser.parse_args()
     database=SQLiteDatabase(args.database);database.initialize()

@@ -10,6 +10,7 @@ from .interfaces import (
     TestResultRepository,
     SyncQueueRepository,
 )
+from .database_config import DatabaseConfigurationError, resolve_database_path
 from .sqlite import (
     SQLiteArtifactRepository,
     SQLiteAttemptRepository,
@@ -22,6 +23,8 @@ from .sqlite import (
 )
 
 __all__ = [
+    "DatabaseConfigurationError",
+    "resolve_database_path",
     "ArtifactRepository",
     "AttemptRepository",
     "BaselineRepository",

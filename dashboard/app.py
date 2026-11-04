@@ -19,12 +19,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib.db_helper import get_all_results, get_latest_results, get_metric_history, get_pass_rate_by_firmware, init_db
 from dashboard.api_v1 import create_api_blueprint
 from dashboard.query import DashboardQueryService
-from lib.repositories import SQLiteDatabase
+from lib.repositories import SQLiteDatabase, resolve_database_path
 from lib.security import AuthManager
 from lib.services import apply_security_headers
 
 ROOT = Path(__file__).resolve().parent.parent
-DATABASE_PATH = Path(os.getenv("NETREGRESS_DATABASE_PATH", ROOT / "results" / "test_results.db"))
+DATABASE_PATH = resolve_database_path(project_root=ROOT)
 RUNNER_HOST = "127.0.0.1"
 try:
     RUNNER_PORT = int(os.getenv("NETREGRESS_PORT", "5050"))
