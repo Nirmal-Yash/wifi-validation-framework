@@ -472,7 +472,17 @@ class SQLiteRunRepository:
         attempt: Attempt,
         events: tuple[LifecycleEvent, ...],
     ) -> None:
-        """Persist a new Run, its first Attempt and creation events atomically."""
+        with self.database.transaction(immediate=True) as connection:
+            self.save_initial_bundle_in_transaction(connection, run, attempt, events)
+
+    @staticmethod
+    def save_initial_bundle_in_transaction(
+        connection: sqlite3.Connection,
+        run: Run,
+        attempt: Attempt,
+        events: tuple[LifecycleEvent, ...],
+    ) -> None:
+        """Persist a new Run bundle inside a caller-owned transaction."""
         if attempt.run_id != run.run_id:
             raise RepositoryConflictError("initial Attempt must belong to the new Run")
         if attempt.number != 1:
@@ -486,12 +496,10 @@ class SQLiteRunRepository:
             raise RepositoryConflictError("initial lifecycle events must belong to the new Run")
         if events[0].attempt_id is not None or events[1].attempt_id != attempt.attempt_id:
             raise RepositoryConflictError("initial lifecycle events have invalid Attempt ownership")
-
-        with self.database.transaction(immediate=True) as connection:
-            self.save_in_transaction(connection, run)
-            SQLiteAttemptRepository.save_in_transaction(connection, attempt)
-            for event in events:
-                SQLiteEventRepository.append_in_transaction(connection, event)
+        SQLiteRunRepository.save_in_transaction(connection, run)
+        SQLiteAttemptRepository.save_in_transaction(connection, attempt)
+        for event in events:
+            SQLiteEventRepository.append_in_transaction(connection, event)
 
     def update(self, run: Run) -> None:
         with self.database.connection() as connection:
@@ -725,78 +733,82 @@ class SQLiteTestResultRepository:
 
     def save(self, result: TestResult) -> None:
         with self.database.transaction() as connection:
-            if connection.execute(
-                "SELECT 1 FROM test_results WHERE test_result_id = ?",
-                (result.test_result_id,),
-            ).fetchone():
-                raise RepositoryConflictError(
-                    f"test result already exists: {result.test_result_id}"
-                )
+            self.save_in_transaction(connection, result)
 
-            connection.execute(
-                """INSERT INTO test_results(
-                    test_result_id, run_id, attempt_id, test_id, node_id,
-                    test_version, status, criticality, severity, evidence_state,
-                    error_reason, started_at, completed_at, provenance,
-                    failure_class, failure_reason, execution_pid, execution_metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    result.test_result_id,
-                    result.run_id,
-                    result.attempt_id,
-                    result.test_id,
-                    result.node_id,
-                    result.test_version,
-                    result.status.value,
-                    result.criticality.value,
-                    result.severity.value,
-                    result.evidence_state.value,
-                    result.error_reason,
-                    _dt(result.started_at),
-                    _dt(result.completed_at),
-                    result.provenance,
-                    result.failure_class.value if result.failure_class else None,
-                    result.failure_reason,
-                    result.execution_pid,
-                    _json(result.execution_metadata),
-                ),
+    @staticmethod
+    def save_in_transaction(connection: sqlite3.Connection, result: TestResult) -> None:
+        if connection.execute(
+            "SELECT 1 FROM test_results WHERE test_result_id = ?",
+            (result.test_result_id,),
+        ).fetchone():
+            raise RepositoryConflictError(
+                f"test result already exists: {result.test_result_id}"
             )
 
-            for metric in result.metrics:
-                metric_id = f"{result.test_result_id}:{metric.name}"
+        connection.execute(
+            """INSERT INTO test_results(
+                test_result_id, run_id, attempt_id, test_id, node_id,
+                test_version, status, criticality, severity, evidence_state,
+                error_reason, started_at, completed_at, provenance,
+                failure_class, failure_reason, execution_pid, execution_metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                result.test_result_id,
+                result.run_id,
+                result.attempt_id,
+                result.test_id,
+                result.node_id,
+                result.test_version,
+                result.status.value,
+                result.criticality.value,
+                result.severity.value,
+                result.evidence_state.value,
+                result.error_reason,
+                _dt(result.started_at),
+                _dt(result.completed_at),
+                result.provenance,
+                result.failure_class.value if result.failure_class else None,
+                result.failure_reason,
+                result.execution_pid,
+                _json(result.execution_metadata),
+            ),
+        )
+
+        for metric in result.metrics:
+            metric_id = f"{result.test_result_id}:{metric.name}"
+            connection.execute(
+                """INSERT INTO metrics(
+                       metric_id, test_result_id, name, unit, authoritative
+                   ) VALUES (?, ?, ?, ?, ?)""",
+                (
+                    metric_id,
+                    result.test_result_id,
+                    metric.name,
+                    metric.unit,
+                    int(metric.authoritative),
+                ),
+            )
+            for sequence, sample in enumerate(metric.samples, start=1):
                 connection.execute(
-                    """INSERT INTO metrics(
-                           metric_id, test_result_id, name, unit, authoritative
-                       ) VALUES (?, ?, ?, ?, ?)""",
+                    """INSERT INTO samples(
+                        sample_id, metric_id, sequence, value, status,
+                        warmup, retried, captured_at, metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
+                        f"{metric_id}:{sequence}",
                         metric_id,
-                        result.test_result_id,
-                        metric.name,
-                        metric.unit,
-                        int(metric.authoritative),
+                        sequence,
+                        float(sample.value),
+                        sample.status,
+                        int(sample.warmup),
+                        int(sample.retried),
+                        _dt(sample.captured_at),
+                        _json(sample.metadata),
                     ),
                 )
-                for sequence, sample in enumerate(metric.samples, start=1):
-                    connection.execute(
-                        """INSERT INTO samples(
-                            sample_id, metric_id, sequence, value, status,
-                            warmup, retried, captured_at, metadata_json
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (
-                            f"{metric_id}:{sequence}",
-                            metric_id,
-                            sequence,
-                            float(sample.value),
-                            sample.status,
-                            int(sample.warmup),
-                            int(sample.retried),
-                            _dt(sample.captured_at),
-                            _json(sample.metadata),
-                        ),
-                    )
 
-            for artifact in result.artifacts:
-                self._insert_artifact(connection, artifact)
+        for artifact in result.artifacts:
+            SQLiteTestResultRepository._insert_artifact(connection, artifact)
 
 
     def get(self, test_result_id: str) -> TestResult | None:
@@ -1214,39 +1226,42 @@ class SQLiteBaselineRepository:
         self.database = database
 
     def save(self, baseline: Baseline) -> None:
+        with self.database.transaction() as connection:
+            self.save_in_transaction(connection, baseline)
+
+    @staticmethod
+    def save_in_transaction(connection: sqlite3.Connection, baseline: Baseline) -> None:
         if baseline.superseded_by is not None:
             raise RepositoryConflictError(
                 "a newly persisted baseline cannot already be superseded"
             )
-        with self.database.connection() as connection:
-            if connection.execute(
-                "SELECT 1 FROM run_baselines WHERE baseline_id = ?",
-                (baseline.baseline_id,),
-            ).fetchone():
-                raise RepositoryConflictError(
-                    f"baseline already exists: {baseline.baseline_id}"
-                )
-            connection.execute(
-                """INSERT INTO run_baselines(
-                    baseline_id, name, baseline_run_id, status, device_scope,
-                    firmware_major_scope, test_suite_version, lab_class,
-                    promoted_by, promoted_at, superseded_by, provenance
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)""",
-                (
-                    baseline.baseline_id,
-                    baseline.name,
-                    baseline.baseline_run_id,
-                    baseline.status,
-                    baseline.device_scope,
-                    baseline.firmware_major_scope,
-                    baseline.test_suite_version,
-                    baseline.lab_class,
-                    baseline.promoted_by,
-                    _dt(baseline.promoted_at),
-                    baseline.provenance,
-                ),
+        if connection.execute(
+            "SELECT 1 FROM run_baselines WHERE baseline_id = ?",
+            (baseline.baseline_id,),
+        ).fetchone():
+            raise RepositoryConflictError(
+                f"baseline already exists: {baseline.baseline_id}"
             )
-            connection.commit()
+        connection.execute(
+            """INSERT INTO run_baselines(
+                baseline_id, name, baseline_run_id, status, device_scope,
+                firmware_major_scope, test_suite_version, lab_class,
+                promoted_by, promoted_at, superseded_by, provenance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)""",
+            (
+                baseline.baseline_id,
+                baseline.name,
+                baseline.baseline_run_id,
+                baseline.status,
+                baseline.device_scope,
+                baseline.firmware_major_scope,
+                baseline.test_suite_version,
+                baseline.lab_class,
+                baseline.promoted_by,
+                _dt(baseline.promoted_at),
+                baseline.provenance,
+            ),
+        )
 
     def save_replacing_active(self, baseline: Baseline) -> None:
         """Atomically supersede the active name and insert its replacement."""
@@ -1305,7 +1320,7 @@ class SQLiteBaselineRepository:
     def list_active(self) -> list[Baseline]:
         with self.database.connection() as connection:
             rows = connection.execute(
-                "SELECT * FROM run_baselines WHERE superseded_by IS NULL "
+                "SELECT * FROM run_baselines WHERE superseded_by IS NULL AND status = 'ACTIVE' AND provenance = 'NATIVE' "
                 "ORDER BY promoted_at DESC"
             ).fetchall()
         return [self._to_domain(row) for row in rows]

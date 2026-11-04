@@ -282,6 +282,14 @@ TestResult, its metrics, raw samples and associated artifact references are inse
 
 Phase C establishes path and transaction primitives only. Historical legacy-table import/compatibility is owned by Phase D. Alembic migration authority, schema-version governance and schema drift enforcement are owned by Phase E. The current additive bootstrap remains unchanged until the explicit schema-governance phase.
 
+### Phase D — legacy compatibility and historical import
+
+The legacy database helper is a compatibility facade over canonical repositories, not a second persistence implementation. Legacy writes create LEGACY_IMPORTED Runs/Attempts/TestResults with UNKNOWN environment health, UNVALIDATED Run outcome and incomplete evidence. Dashboard and regression reads are projections of canonical rows.
+
+Historical import is explicit through scripts/netregress_migrate_legacy.py. A separate source database is opened read-only. A source-specific namespace is recorded in the existing migration ledger, and one target transaction persists each imported Run, Attempt, creation events, TestResult, metric/sample facts, verified artifact reference or unavailable-artifact event, optional imported-baseline record and ledger marker. The report distinguishes imported, skipped, invalid and failed rows. A failed row leaves neither partial canonical records nor a successful ledger marker.
+
+Imported baselines retain historical traceability but are not active. Active baseline listing is restricted to ACTIVE native baselines. Native baseline promotion remains subject to RunService environment-health, outcome, selected-test coverage and evidence checks. Alembic ownership remains outside Phase D and is assigned to Phase E.
+
 ## 19A. FaultService
 
 `FaultService` is the controlled fault-injection boundary used by recovery tests. A `FaultDefinition` declares a stable fault ID, target, apply commands, restore commands and description. Apply/restore commands execute only through the Run's secured `CommandRunner`, so command authorization and audit evidence remain centralized.

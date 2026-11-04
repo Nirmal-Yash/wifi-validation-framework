@@ -67,77 +67,67 @@ def check_syntax():
 
 
 def check_database():
-    print_step("Step 2: Database Schema & Baseline Version Isolation")
+    print_step("Step 2: Canonical Persistence & Legacy Compatibility")
     temp_dir = Path(tempfile.mkdtemp())
     try:
         from lib import db_helper
+        from lib.repositories import SQLiteBaselineRepository, SQLiteDatabase
 
         db_helper.DB_PATH = temp_dir / "verify.db"
+        database = SQLiteDatabase(db_helper.DB_PATH)
         db_helper.init_db()
 
-        # Insert v1.0 run
         db_helper.insert_result(
-            "test_ping",
-            "PASS",
-            firmware_version="v1.0",
-            duration_ms=10,
-            metric_value=12.5,
-            metric_unit="ms",
+            "test_ping", "PASS", firmware_version="v1.0",
+            duration_ms=10, metric_value=12.5, metric_unit="ms",
         )
         db_helper.insert_result(
-            "test_throughput",
-            "PASS",
-            firmware_version="v1.0",
-            duration_ms=10200,
-            metric_value=75.0,
-            metric_unit="Mbps",
+            "test_throughput", "PASS", firmware_version="v1.0",
+            duration_ms=10200, metric_value=75.0, metric_unit="Mbps",
         )
-
-        # Snapshot v1.0
         v1_count = db_helper.save_baseline_from_latest_passes("v1.0")
-        assert v1_count == 2, f"Expected 2 baseline tests, got {v1_count}"
+        assert v1_count == 2, f"Expected 2 imported comparison rows, got {v1_count}"
 
-        # Insert v2.0 run (where throughput drops to 45.0 Mbps)
         db_helper.insert_result(
-            "test_ping",
-            "PASS",
-            firmware_version="v2.0",
-            duration_ms=12,
-            metric_value=13.0,
-            metric_unit="ms",
+            "test_ping", "PASS", firmware_version="v2.0",
+            duration_ms=12, metric_value=13.0, metric_unit="ms",
         )
         db_helper.insert_result(
-            "test_throughput",
-            "PASS",
-            firmware_version="v2.0",
-            duration_ms=10100,
-            metric_value=45.0,
-            metric_unit="Mbps",
+            "test_throughput", "PASS", firmware_version="v2.0",
+            duration_ms=10100, metric_value=45.0, metric_unit="Mbps",
         )
 
-        # Verify v1.0 baseline remains isolated
-        base_v1 = db_helper.get_baseline("v1.0")
-        base_map = {r["test_name"]: dict(r) for r in base_v1}
-        assert (
-            base_map["test_throughput"]["metric_value"] == 75.0
-        ), "Baseline isolation failed: v2.0 modified v1.0 baseline!"
+        baseline_rows = db_helper.get_baseline("v1.0")
+        baseline_map = {row["test_name"]: dict(row) for row in baseline_rows}
+        assert baseline_map["test_throughput"]["metric_value"] == 75.0
+        assert baseline_map["test_throughput"]["baseline_status"] == "IMPORTED"
+        assert db_helper.get_baseline("v2.0") == []
 
-        # Verify metric history
-        hist = db_helper.get_metric_history("test_throughput")
-        assert len(hist) == 2, f"Expected 2 history points, got {len(hist)}"
-        assert hist[0]["metric_value"] == 75.0
-        assert hist[1]["metric_value"] == 45.0
+        history = db_helper.get_metric_history("test_throughput")
+        assert len(history) == 2
+        assert history[0]["metric_value"] == 75.0
+        assert history[1]["metric_value"] == 45.0
 
-        print(f"  [{GREEN}OK{RESET}] Database initialized with metric columns")
-        print(f"  [{GREEN}OK{RESET}] Baseline version filtering & isolation verified")
-        print(f"  [{GREEN}OK{RESET}] Metric history retrieval verified")
+        assert SQLiteBaselineRepository(database).list_active() == []
+        with database.connection() as connection:
+            legacy_tables = connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name IN ('test_runs', 'baselines')"
+            ).fetchall()
+        assert not legacy_tables
+        latest = db_helper.get_latest_results("v1.0")
+        assert latest[0]["run_provenance"] == "LEGACY_IMPORTED"
+
+        print(f"  [{GREEN}OK{RESET}] Canonical Run/Attempt/TestResult compatibility writes")
+        print(f"  [{GREEN}OK{RESET}] Legacy comparison snapshots remain explicitly imported")
+        print(f"  [{GREEN}OK{RESET}] Imported baselines are excluded from active promotion")
+        print(f"  [{GREEN}OK{RESET}] Metric history is read from canonical repositories")
         return True
     except Exception as e:
         print(f"  [{RED}FAIL{RESET}] Database check error: {e}")
         return False
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
-
 
 def check_classifier():
     print_step("Step 3: Regression Classifier Logic (Hard & Soft)")

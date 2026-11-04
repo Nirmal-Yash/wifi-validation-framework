@@ -84,6 +84,24 @@ python scripts/netregress_sync.py --url "$NETREGRESS_SYNC_URL"
 python scripts/netregress_reproduce.py <RUN_ID>
 ~~~
 
+## Legacy database migration
+
+The legacy lib.db_helper API remains available as a facade over canonical Run/Attempt/TestResult repositories. It no longer writes the historical test_runs or baselines tables. Compatibility records are explicitly unvalidated and cannot become release baselines.
+
+Import legacy tables already present in the configured database:
+
+~~~bash
+python scripts/netregress_migrate_legacy.py
+~~~
+
+Or import from a separate read-only historical database:
+
+~~~bash
+python scripts/netregress_migrate_legacy.py --source /path/to/historical-results.db --target results/test_results.db --source-identity wifi-lab-archive-2024
+~~~
+
+Review the JSON summary and reconcile imported, skipped, invalid, failed and unavailable-artifact counts before retiring the source backup. The command is idempotent; failed rows remain retryable. Legacy baseline snapshots remain imported comparison history only. Promote trusted baselines through python regression/baseline_runner.py --version v1.0, which requires a native validated Run and healthy lab state.
+
 ## Lab provisioning
 
 ~~~bash

@@ -32,6 +32,8 @@ _EXPORTS = {
     "TestRegistry": (".test_registry", "TestRegistry"),
     "RunContext": (".run_context", "RunContext"),
     "LegacyDatabaseMigrationService": (".legacy_migration", "LegacyDatabaseMigrationService"),
+    "LegacyCompatibilityService": (".legacy_migration", "LegacyCompatibilityService"),
+    "LegacyMigrationError": (".legacy_migration", "LegacyMigrationError"),
     "ArtifactService": (".artifact_service", "ArtifactService"),
     "MetricCollector": (".metric_collector", "MetricCollector"),
     "FaultDefinition": (".fault_service", "FaultDefinition"),

@@ -30,8 +30,8 @@ This B–P programme is the current execution order for the next development sli
 | Phase | Scope | Status |
 |---|---|---|
 | B | Run and Evidence Correctness: latest-Attempt result mapping, exact selected-node coverage, fail-closed evidence ownership, pytest phase metadata, retry lineage and atomic baseline replacement | Implemented; source/CI baseline previously green; REAL_LAB certification remains separate |
-| C | Canonical Persistence Foundation: one SQLite path resolver, explicit database transaction scope, atomic initial Run + Attempt + creation events, and consistent resolver use by application entry points | Implemented in this Phase C checkpoint; hosted CI result is recorded separately; REAL_LAB is not claimed |
-| D | Legacy Compatibility and Historical Migration: legacy helper facade, read-only source handling, deterministic IDs/provenance, migration ledger, idempotent import and legacy-baseline ineligibility | Planned |
+| C | Canonical Persistence Foundation: one SQLite path resolver, explicit database transaction scope, atomic initial Run + Attempt + creation events, and consistent resolver use by application entry points | Implemented and pushed in 82743fc; Actions run 41855004616 passed; REAL_LAB certification remains unverified |
+| D | Legacy Compatibility and Historical Migration: legacy helper facade, read-only source handling, deterministic IDs/provenance, migration ledger, idempotent import and legacy-baseline ineligibility | Implemented; hosted CI gate included; deployment database import remains an operator-run migration |
 | E | Database Schema Governance and Reliability: make Alembic the schema migration authority, versioned upgrades, schema drift checks, compatibility validation, and migration recovery | Planned |
 | F | Execution and Process Reliability: worker lifecycle, subprocess supervision, cancellation, timeout taxonomy, crash/interrupt recovery and deterministic finalization | Planned |
 | G | Configuration, Environment and Resource Orchestration: typed configuration provenance, environment fingerprints, lab/device leases, orchestration boundaries and preflight contracts | Planned |
@@ -57,6 +57,29 @@ Phase C deliberately establishes persistence primitives without taking ownership
 - **Explicit exclusions:** legacy `lib/db_helper.py` conversion and historical import belong to Phase D. Alembic authority, schema version strategy and migration drift governance belong to Phase E. No schema version change is introduced by Phase C.
 
 **Phase C completion gate:** resolver precedence/conflict behavior is tested; transaction rollback is tested; successful and failing Run bundle persistence is tested; all supported entry points use the resolver; existing Run/TestResult/repository contracts remain compatible; focused CI is green. The GNS3/mac80211_hwsim 11-test protected suite remains a separate runtime certification gate and is not inferred from source tests.
+
+#### Phase D — implementation contract
+
+Phase D retires the parallel legacy persistence path without deleting or silently rewriting historical data.
+
+- **Compatibility facade:** the public functions in lib/db_helper.py retain their signatures but read canonical repository projections and write legacy calls as untrusted LEGACY_IMPORTED Runs/Attempts/TestResults.
+- **Pytest lifecycle:** when a Run context exists, the pytest result hook writes only through RunService. The compatibility facade is reserved for isolated pytest invocations without RunContext; the previous duplicate write is removed.
+- **Historical source handling:** the migration service supports in-place migration and a separate SQLite source opened read-only. Source identity is configurable and otherwise derived from the resolved source path.
+- **Deterministic provenance:** imported Run/Attempt/TestResult/Artifact/Baseline identifiers and ledger keys include a stable source namespace and source row ID. The migration ledger is updated in the same target transaction as the imported records.
+- **Historical facts:** source status, firmware, timestamp, duration, metrics, samples and PCAP references are retained. Available PCAP files are hashed; missing references produce explicit unavailable-artifact events.
+- **Trust boundary:** imported Runs carry LEGACY_IMPORTED provenance, UNKNOWN environment health, UNVALIDATED outcome and incomplete evidence. Imported baselines remain IMPORTED and are excluded from the active native baseline list.
+- **Restart safety:** a successful source row is skipped on subsequent runs. Failed rows roll back as a unit and remain retryable. Unledgered records from the earlier partial importer cause a fail-closed diagnostic instead of duplicate imports.
+- **Operator CLI:** scripts/netregress_migrate_legacy.py reports imported, skipped, failed and unavailable artifact counts and supports a separate --source, --target and stable --source-identity.
+- **Baseline entry point:** regression/baseline_runner.py now selects/promotes only native validated Runs with healthy environment state and lets RunService enforce complete evidence and metric policy.
+
+The migration JSON report distinguishes imported, skipped, invalid and failed rows, plus registered and unavailable artifacts. Unknown legacy statuses are imported as UNVALIDATED with the original value retained, and cause a nonzero CLI exit for explicit operator review.
+
+~~~bash
+python scripts/netregress_migrate_legacy.py
+python scripts/netregress_migrate_legacy.py --source /path/to/archive.sqlite --target results/test_results.db --source-identity wifi-lab-archive-2024
+~~~
+
+**Phase D completion gate:** legacy public callers remain usable; new legacy writes no longer create a second schema; historical sources remain unchanged; row and ledger writes are atomic; imported facts reconcile; migration reruns are idempotent; incomplete prior imports fail closed; imported baselines are never treated as trusted release baselines.
 
 The historical consolidated Iteration programme below remains preserved as implementation history. Where it conflicts with the current B–P sequence, the B–P sequence above determines the next phase to execute.
 

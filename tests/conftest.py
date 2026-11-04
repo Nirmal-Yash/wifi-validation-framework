@@ -218,23 +218,24 @@ def _persist_test_result(item):
     )
     props = dict(getattr(item, "user_properties", ()))
 
-    try:
-        insert_result(
-            test_name=item.nodeid,
-            status=status.value,
-            firmware_version=firmware_version,
-            duration_ms=duration_ms,
-            error_message=error_message,
-            metric_value=props.get("metric_value"),
-            metric_unit=props.get("metric_unit"),
-        )
-    except Exception as db_err:
-        sys.stderr.write(
-            f"\\n[WARN] Failed to insert test result to legacy DB: {db_err}\\n"
-        )
-
     context = getattr(item.config, "_netregress_run_context", None)
     if context is None:
+        # Isolated pytest invocations without a Run context use the compatibility
+        # facade, which itself persists through canonical repositories.
+        try:
+            insert_result(
+                test_name=item.nodeid,
+                status=status.value,
+                firmware_version=firmware_version,
+                duration_ms=duration_ms,
+                error_message=error_message,
+                metric_value=props.get("metric_value"),
+                metric_unit=props.get("metric_unit"),
+            )
+        except Exception as db_err:
+            sys.stderr.write(
+                f"\\n[WARN] Failed to persist compatibility test result: {db_err}\\n"
+            )
         item._netregress_result_recorded = True
         return
 
