@@ -867,21 +867,44 @@ Test:
 - authorization on download;
 - soft deletion and audit trail.
 
-## 12. Database migration verification
+## 12. Database schema governance and migration verification
 
-Use the actual current SQLite schema/data as a migration fixture.
+Alembic is the only schema mutation authority. SQLiteDatabase.initialize() upgrades to the repository's single Alembic head and then validates the physical schema contract. Read-only status and check commands do not upgrade or otherwise mutate a database.
 
-Verify:
+Use a dedicated copy of the database for migration rehearsal. Production upgrades create an online SQLite backup before applying pending revisions. A failed upgrade restores the original database. The alembic_version table is authoritative; schema_meta is a compatibility mirror.
 
-- all historical test results preserved;
-- firmware labels preserved;
-- metrics preserved;
-- baseline history recoverable;
-- imported records clearly marked;
-- new Run IDs created only where justified;
-- no invented evidence;
-- indexes present;
-- post-migration queries return expected results.
+### Inspect and upgrade
+
+~~~bash
+python scripts/netregress_db.py status
+python scripts/netregress_db.py check
+python scripts/netregress_db.py upgrade
+~~~
+
+The drift report checks required tables and columns, required indexes, foreign keys, foreign-key violations and schema metadata. A drifted or unknown revision fails closed; do not repair the database manually or stamp a revision to bypass the check.
+
+### Backup and restore
+
+~~~bash
+python scripts/netregress_db.py backup --output results/backups/manual.sqlite
+~~~
+
+Before restore, stop all Runner, pytest and dashboard processes that could hold the database open. Restore requires explicit confirmation and automatically creates a verified pre-restore copy of the current database:
+
+~~~bash
+python scripts/netregress_db.py restore --backup results/backups/manual.sqlite --confirm
+~~~
+
+Automatic pre-migration backups are written below results/backups/. Retain them until post-upgrade integrity and application checks pass. Schema downgrade revisions are deliberately non-destructive; use a verified SQLite backup for rollback.
+
+### Migration verification requirements
+
+- Fresh install reaches the single Alembic head.
+- Existing pre-Alembic and prior-Alembic databases upgrade without losing Runs or historical baselines.
+- A separate backup passes PRAGMA integrity_check and has a recorded SHA-256.
+- Injected migration failure restores the pre-migration database and preserves the recovery backup.
+- Missing indexes/columns, foreign keys, unknown revisions and multiple heads fail closed.
+- Restore replaces the database only after the backup integrity check succeeds and keeps a pre-restore copy.
 
 ## 13. Regression verification
 

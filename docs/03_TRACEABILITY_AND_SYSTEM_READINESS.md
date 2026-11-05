@@ -153,7 +153,7 @@ All other discovery questions have an implementation decision.
 
 ## Audit basis
 
-Current source audit date: 2026-11-03. Historical audit baseline: `7ad58e0648fdb4eaa06b14c9c8d6db62358327fc`. Subsequent completeness and frontend implementation work is now on the current main tip.
+Current source audit date: 2026-11-05. Historical audit baseline: `7ad58e0648fdb4eaa06b14c9c8d6db62358327fc`. Subsequent completeness and frontend implementation work is now on the current main tip.
 
 The prior release wave established the standalone Runner architecture, but this audit found several source-level contract gaps that had been overstated as complete. The completeness wave closes the identified implementation defects and separates **source implementation readiness** from **execution certification**.
 
@@ -161,7 +161,7 @@ The prior release wave established the standalone Runner architecture, but this 
 
 | Area | State | Audit interpretation |
 |---|---|---|
-| Domain / persistence | Implemented | Normalized Run/Attempt/TestResult/Artifact model; SQLite schema version 11 includes test-node/Attempt evidence ownership, persisted pytest execution metadata and source_run_id retry lineage. |
+| Domain / persistence | Implemented | Normalized Run/Attempt/TestResult/Artifact model; Alembic head 20261105_03 governs SQLite schema version 12, with physical schema drift checks and pre-upgrade backup/recovery. |
 | Run orchestration | Implemented | Run outcomes and completeness use the latest Attempt and an exact one-to-one match against selected tests; duplicate, missing and unexpected results remain unvalidated. |
 | Evidence | Implemented | TestResult-owned, pytest-node/Attempt-owned, Attempt-wide and Run-wide evidence are scoped explicitly; evidence owned by another test/Attempt, soft-deleted, incomplete, invalid or hash-mismatched cannot satisfy a requirement. |
 | DHCP protocol evidence | Completed in source | DORA, T1 renewal and T2 rebind transaction classification are now correlated from captured DHCP traffic. |

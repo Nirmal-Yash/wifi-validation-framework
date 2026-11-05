@@ -23,6 +23,11 @@ from .sqlite import (
 )
 
 __all__ = [
+    "DatabaseMigrationError",
+    "DatabaseMigrationManager",
+    "DatabaseMigrationStatus",
+    "DatabaseSchemaDriftError",
+    "MultipleMigrationHeadsError",
     "DatabaseConfigurationError",
     "resolve_database_path",
     "ArtifactRepository",
@@ -47,3 +52,10 @@ __all__ = [
 ]
 
 from .sqlite import SQLiteWaiverRepository
+from .database_migrations import (
+    DatabaseMigrationError,
+    DatabaseMigrationManager,
+    DatabaseMigrationStatus,
+    DatabaseSchemaDriftError,
+    MultipleMigrationHeadsError,
+)

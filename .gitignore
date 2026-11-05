@@ -17,3 +17,6 @@ config/
 WiFi_Validation_Framework_Robust_Reproduction_Guide.docx
 .local/
 node_modules/
+
+# SQLite/Alembic maintenance lock files
+*.migration.lock

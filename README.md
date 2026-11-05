@@ -102,6 +102,37 @@ python scripts/netregress_migrate_legacy.py --source /path/to/historical-results
 
 Review the JSON summary and reconcile imported, skipped, invalid, failed and unavailable-artifact counts before retiring the source backup. The command is idempotent; failed rows remain retryable. Legacy baseline snapshots remain imported comparison history only. Promote trusted baselines through python regression/baseline_runner.py --version v1.0, which requires a native validated Run and healthy lab state.
 
+## Schema migrations and database recovery
+
+Alembic is the schema migration authority. Application initialization upgrades the configured SQLite database to the single repository head and refuses to run if the physical schema drifts from the required contract. An existing database is backed up before upgrade; failed upgrades restore that backup.
+
+Inspect the database without changing it:
+
+~~~bash
+python scripts/netregress_db.py status
+python scripts/netregress_db.py check
+~~~
+
+Apply pending revisions and verify the result:
+
+~~~bash
+python scripts/netregress_db.py upgrade
+~~~
+
+Create and restore an explicit backup:
+
+~~~bash
+python scripts/netregress_db.py backup --output results/backups/manual.sqlite
+~~~
+
+Stop every Runner, pytest and dashboard process before restoring:
+
+~~~bash
+python scripts/netregress_db.py restore --backup results/backups/manual.sqlite --confirm
+~~~
+
+A restore creates a verified pre-restore copy of the current database. Schema downgrades do not drop data; use a verified backup to roll back. Keep automatic pre-migration backups until the upgraded database passes the operator's integrity and application checks.
+
 ## Lab provisioning
 
 ~~~bash

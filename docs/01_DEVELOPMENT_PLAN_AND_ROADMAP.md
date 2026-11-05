@@ -32,7 +32,7 @@ This B–P programme is the current execution order for the next development sli
 | B | Run and Evidence Correctness: latest-Attempt result mapping, exact selected-node coverage, fail-closed evidence ownership, pytest phase metadata, retry lineage and atomic baseline replacement | Implemented; source/CI baseline previously green; REAL_LAB certification remains separate |
 | C | Canonical Persistence Foundation: one SQLite path resolver, explicit database transaction scope, atomic initial Run + Attempt + creation events, and consistent resolver use by application entry points | Implemented and pushed in 82743fc; Actions run 41855004616 passed; REAL_LAB certification remains unverified |
 | D | Legacy Compatibility and Historical Migration: legacy helper facade, read-only source handling, deterministic IDs/provenance, migration ledger, idempotent import and legacy-baseline ineligibility | Implemented; hosted CI gate included; deployment database import remains an operator-run migration |
-| E | Database Schema Governance and Reliability: make Alembic the schema migration authority, versioned upgrades, schema drift checks, compatibility validation, and migration recovery | Planned |
+| E | Database Schema Governance and Reliability: make Alembic the schema migration authority, versioned upgrades, schema drift checks, compatibility validation, and migration recovery | Implemented; migration, drift, backup and rollback tests included in hosted CI |
 | F | Execution and Process Reliability: worker lifecycle, subprocess supervision, cancellation, timeout taxonomy, crash/interrupt recovery and deterministic finalization | Planned |
 | G | Configuration, Environment and Resource Orchestration: typed configuration provenance, environment fingerprints, lab/device leases, orchestration boundaries and preflight contracts | Planned |
 | H | Protocol Evidence Certification: live DHCP DORA, EAPOL four-way, Beacon/RSN and DNS correlation against verified real captures | Planned |
@@ -80,6 +80,31 @@ python scripts/netregress_migrate_legacy.py --source /path/to/archive.sqlite --t
 ~~~
 
 **Phase D completion gate:** legacy public callers remain usable; new legacy writes no longer create a second schema; historical sources remain unchanged; row and ledger writes are atomic; imported facts reconcile; migration reruns are idempotent; incomplete prior imports fail closed; imported baselines are never treated as trusted release baselines.
+
+#### Phase E — implementation contract
+
+Phase E makes Alembic the only schema mutation authority. Application initialization upgrades to one repository head, while read-only status/check commands never mutate the database.
+
+- **Migration authority:** the base revision `20261105_00` adopts the complete Runner SQLite schema; the pre-existing runner-controls and backend-completion revisions remain in the chain; `20261105_03` applies the remaining provenance, evidence and compatibility columns and preserves the historical baseline archive.
+- **Fresh and existing databases:** a fresh file is created by the Alembic chain. A pre-Alembic database is backed up first, then adopted in place; pre-existing Runs and historical baselines are preserved. Databases already at `20260924_01` or `20260924_02` continue forward to the new head.
+- **Runtime boundary:** `SQLiteDatabase.initialize()` delegates to `DatabaseMigrationManager.upgrade()`. The former `executescript(SCHEMA)` and handwritten `_migrate_schema` path is removed from application runtime.
+- **Single head:** repository startup rejects multiple Alembic heads, unknown database revisions and multiple recorded database revisions.
+- **Schema drift:** the read-only schema contract checks required tables/columns, required indexes, foreign keys, foreign-key violations, Alembic revision and schema metadata. Drift is reported and application initialization fails closed; it is not repaired outside a migration.
+- **Backup and recovery:** every upgrade of an existing database creates a consistent SQLite online backup. Backup integrity and SHA-256 are recorded. A failed upgrade restores the pre-migration file; a failed restore is surfaced explicitly rather than reported as success.
+- **Operator commands:** `scripts/netregress_db.py` provides `status`, `check`, `upgrade`, `backup` and explicitly confirmed `restore` operations. Stop all Runner processes before a manual restore.
+- **Downgrade policy:** schema revisions are intentionally non-destructive and raise rather than drop production data. Rollback is performed by restoring a verified pre-migration backup.
+
+Operator commands:
+
+~~~bash
+python scripts/netregress_db.py status
+python scripts/netregress_db.py check
+python scripts/netregress_db.py upgrade
+python scripts/netregress_db.py backup --output results/backups/manual.sqlite
+python scripts/netregress_db.py restore --backup results/backups/manual.sqlite --confirm
+~~~
+
+**Phase E completion gate:** one Alembic head; fresh database bootstrap; pre-Alembic adoption; preservation of existing data; schema drift detection; backup integrity; upgrade rollback; restore verification; focused CI green. No destructive downgrade is offered.
 
 The historical consolidated Iteration programme below remains preserved as implementation history. Where it conflicts with the current B–P sequence, the B–P sequence above determines the next phase to execute.
 

@@ -34,206 +34,9 @@ from .interfaces import RepositoryConflictError
 
 SCHEMA_VERSION = "11"
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS schema_meta (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
+SCHEMA_VERSION = "12"
 
-CREATE TABLE IF NOT EXISTS environment_snapshots (
-    snapshot_id TEXT PRIMARY KEY,
-    host_os TEXT NOT NULL,
-    kernel TEXT NOT NULL,
-    python_version TEXT NOT NULL,
-    repository_commit TEXT NOT NULL,
-    configuration_hash TEXT NOT NULL,
-    tools_json TEXT NOT NULL
-);
 
-CREATE TABLE IF NOT EXISTS config_snapshots (
-    snapshot_id TEXT PRIMARY KEY,
-    resolved_config_json TEXT NOT NULL,
-    configuration_hash TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS runs (
-    run_id TEXT PRIMARY KEY,
-    display_id TEXT NOT NULL UNIQUE,
-    firmware_version TEXT NOT NULL,
-    lab_id TEXT NOT NULL,
-    validation_profile TEXT NOT NULL,
-    selected_tests_json TEXT NOT NULL,
-    test_definition_versions_json TEXT NOT NULL,
-    resolved_config_json TEXT NOT NULL,
-    configuration_hash TEXT NOT NULL,
-    repository_commit TEXT NOT NULL,
-    lifecycle TEXT NOT NULL,
-    outcome TEXT,
-    environment_health TEXT,
-    environment_snapshot_id TEXT REFERENCES environment_snapshots(snapshot_id),
-    config_snapshot_id TEXT REFERENCES config_snapshots(snapshot_id),
-    created_at TEXT,
-    started_at TEXT,
-    completed_at TEXT,
-    provenance TEXT NOT NULL DEFAULT 'NATIVE',
-    failure_class TEXT,
-    failure_reason TEXT,
-    execution_pid INTEGER,
-    source_run_id TEXT REFERENCES runs(run_id)
-);
-
-CREATE TABLE IF NOT EXISTS attempts (
-    attempt_id TEXT PRIMARY KEY,
-    run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
-    number INTEGER NOT NULL,
-    started_at TEXT,
-    completed_at TEXT,
-    UNIQUE(run_id, number)
-);
-
-CREATE TABLE IF NOT EXISTS test_results (
-    test_result_id TEXT PRIMARY KEY,
-    run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
-    attempt_id TEXT NOT NULL REFERENCES attempts(attempt_id) ON DELETE CASCADE,
-    test_id TEXT NOT NULL,
-    node_id TEXT NOT NULL,
-    test_version TEXT NOT NULL,
-    status TEXT NOT NULL,
-    criticality TEXT NOT NULL,
-    severity TEXT NOT NULL,
-    evidence_state TEXT NOT NULL,
-    error_reason TEXT,
-    started_at TEXT,
-    completed_at TEXT,
-    provenance TEXT NOT NULL DEFAULT 'NATIVE',
-    failure_class TEXT,
-    failure_reason TEXT,
-    execution_pid INTEGER,
-    execution_metadata_json TEXT NOT NULL DEFAULT '{}'
-);
-
-CREATE TABLE IF NOT EXISTS metrics (
-    metric_id TEXT PRIMARY KEY,
-    test_result_id TEXT NOT NULL REFERENCES test_results(test_result_id) ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    unit TEXT NOT NULL,
-    authoritative INTEGER NOT NULL,
-    UNIQUE(test_result_id, name)
-);
-
-CREATE TABLE IF NOT EXISTS samples (
-    sample_id TEXT PRIMARY KEY,
-    metric_id TEXT NOT NULL REFERENCES metrics(metric_id) ON DELETE CASCADE,
-    sequence INTEGER NOT NULL,
-    value REAL NOT NULL,
-    status TEXT NOT NULL,
-    warmup INTEGER NOT NULL,
-    retried INTEGER NOT NULL,
-    captured_at TEXT,
-    metadata_json TEXT NOT NULL,
-    UNIQUE(metric_id, sequence)
-);
-
-CREATE TABLE IF NOT EXISTS artifacts (
-    artifact_id TEXT PRIMARY KEY,
-    run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
-    test_result_id TEXT REFERENCES test_results(test_result_id) ON DELETE CASCADE,
-    test_node_id TEXT,
-    attempt_id TEXT REFERENCES attempts(attempt_id) ON DELETE CASCADE,
-    artifact_type TEXT NOT NULL,
-    path TEXT NOT NULL,
-    sha256 TEXT NOT NULL,
-    size_bytes INTEGER NOT NULL,
-    evidence_state TEXT NOT NULL,
-    display_name TEXT NOT NULL DEFAULT '',
-    created_at TEXT,
-    sensitivity_class TEXT NOT NULL DEFAULT 'INTERNAL',
-    retain_until TEXT,
-    soft_deleted_at TEXT,
-    provenance TEXT NOT NULL DEFAULT 'NATIVE',
-    failure_class TEXT,
-    failure_reason TEXT,
-    execution_pid INTEGER
-);
-
-CREATE TABLE IF NOT EXISTS lifecycle_events (
-    event_id TEXT PRIMARY KEY,
-    run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
-    attempt_id TEXT REFERENCES attempts(attempt_id),
-    test_result_id TEXT REFERENCES test_results(test_result_id),
-    event_type TEXT NOT NULL,
-    occurred_at TEXT NOT NULL,
-    details_json TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS run_baselines (
-    baseline_id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    baseline_run_id TEXT NOT NULL REFERENCES runs(run_id),
-    status TEXT NOT NULL,
-    device_scope TEXT NOT NULL,
-    firmware_major_scope TEXT NOT NULL,
-    test_suite_version TEXT NOT NULL,
-    lab_class TEXT NOT NULL,
-    promoted_by TEXT NOT NULL,
-    promoted_at TEXT NOT NULL,
-    superseded_by TEXT,
-    provenance TEXT NOT NULL DEFAULT 'NATIVE'
-);
-
-CREATE TABLE IF NOT EXISTS legacy_migration_records (
-    source_table TEXT NOT NULL,
-    source_row_id INTEGER NOT NULL,
-    target_run_id TEXT NOT NULL,
-    target_result_id TEXT,
-    imported_at TEXT NOT NULL,
-    PRIMARY KEY(source_table, source_row_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_attempts_run ON attempts(run_id);
-CREATE INDEX IF NOT EXISTS idx_results_attempt ON test_results(attempt_id);
-CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts(run_id);
-CREATE INDEX IF NOT EXISTS idx_events_run ON lifecycle_events(run_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_active_baseline_name
-    ON run_baselines(name) WHERE superseded_by IS NULL;
-
-CREATE TABLE IF NOT EXISTS sync_queue (
-    envelope_id TEXT PRIMARY KEY,
-    runner_id TEXT NOT NULL,
-    run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
-    kind TEXT NOT NULL,
-    schema_version TEXT NOT NULL,
-    idempotency_key TEXT NOT NULL UNIQUE,
-    payload_json TEXT NOT NULL,
-    payload_sha256 TEXT NOT NULL,
-    state TEXT NOT NULL,
-    attempt_count INTEGER NOT NULL DEFAULT 0,
-    next_attempt_at TEXT,
-    leased_at TEXT,
-    last_error TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_sync_queue_ready
-    ON sync_queue(state, next_attempt_at, created_at);
-CREATE INDEX IF NOT EXISTS idx_sync_queue_run
-    ON sync_queue(run_id);
-
-CREATE TABLE IF NOT EXISTS release_waivers (
-    waiver_id TEXT PRIMARY KEY,
-    scope TEXT NOT NULL,
-    target_id TEXT NOT NULL,
-    issue_code TEXT NOT NULL,
-    reason TEXT NOT NULL,
-    created_by TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    expires_at TEXT,
-    audit_reference TEXT NOT NULL,
-    active INTEGER NOT NULL DEFAULT 1
-);
-CREATE INDEX IF NOT EXISTS idx_waivers_target ON release_waivers(target_id, active, expires_at);
-"""
 
 
 def _dt(value: datetime | None) -> str | None:
@@ -249,7 +52,7 @@ def _json(value: Mapping) -> str:
 
 
 class SQLiteDatabase:
-    """SQLite connection factory and additive schema bootstrap."""
+    """SQLite connection factory whose schema lifecycle is owned by Alembic."""
 
     def __init__(self, path: Path | str | None = None) -> None:
         from .database_config import resolve_database_path
@@ -259,10 +62,10 @@ class SQLiteDatabase:
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path)
+        connection = sqlite3.connect(self.path, timeout=10)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute("PRAGMA busy_timeout = 5000")
+        connection.execute("PRAGMA busy_timeout = 10000")
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = NORMAL")
         try:
@@ -283,109 +86,11 @@ class SQLiteDatabase:
                     connection.rollback()
                 raise
 
-    @staticmethod
-    def _migrate_schema(connection: sqlite3.Connection) -> None:
-        table_additions = {
-            "runs": {
-                "provenance": "TEXT NOT NULL DEFAULT 'NATIVE'",
-                "environment_health": "TEXT",
-                "failure_class": "TEXT",
-                "failure_reason": "TEXT",
-                "execution_pid": "INTEGER",
-                "source_run_id": "TEXT REFERENCES runs(run_id)",
-            },
-            "test_results": {
-                "provenance": "TEXT NOT NULL DEFAULT 'NATIVE'",
-                "failure_class": "TEXT",
-                "failure_reason": "TEXT",
-                "execution_pid": "INTEGER",
-                "execution_metadata_json": "TEXT NOT NULL DEFAULT '{}'",
-            },
-            "artifacts": {
-                "display_name": "TEXT NOT NULL DEFAULT ''",
-                "created_at": "TEXT",
-                "sensitivity_class": "TEXT NOT NULL DEFAULT 'INTERNAL'",
-                "retain_until": "TEXT",
-                "soft_deleted_at": "TEXT",
-                "provenance": "TEXT NOT NULL DEFAULT 'NATIVE'",
-                "failure_class": "TEXT",
-                "failure_reason": "TEXT",
-                "execution_pid": "INTEGER",
-                "test_node_id": "TEXT",
-                "attempt_id": "TEXT REFERENCES attempts(attempt_id) ON DELETE CASCADE",
-            },
-        }
-        for table, additions in table_additions.items():
-            columns = {
-                row["name"]
-                for row in connection.execute(
-                    f"PRAGMA table_info({table})"
-                ).fetchall()
-            }
-            for name, declaration in additions.items():
-                if name not in columns:
-                    connection.execute(
-                        f"ALTER TABLE {table} ADD COLUMN {name} {declaration}"
-                    )
-
-        baseline_columns = {
-            row["name"]
-            for row in connection.execute(
-                "PRAGMA table_info(baselines)"
-            ).fetchall()
-        }
-        if baseline_columns and "baseline_id" in baseline_columns:
-            if "provenance" in baseline_columns:
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO run_baselines(
-                        baseline_id, name, baseline_run_id, status, device_scope,
-                        firmware_major_scope, test_suite_version, lab_class,
-                        promoted_by, promoted_at, superseded_by, provenance
-                    )
-                    SELECT baseline_id, name, baseline_run_id, status, device_scope,
-                           firmware_major_scope, test_suite_version, lab_class,
-                           promoted_by, promoted_at, superseded_by, provenance
-                    FROM baselines
-                    """
-                )
-            else:
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO run_baselines(
-                        baseline_id, name, baseline_run_id, status, device_scope,
-                        firmware_major_scope, test_suite_version, lab_class,
-                        promoted_by, promoted_at, superseded_by, provenance
-                    )
-                    SELECT baseline_id, name, baseline_run_id, status, device_scope,
-                           firmware_major_scope, test_suite_version, lab_class,
-                           promoted_by, promoted_at, superseded_by, 'NATIVE'
-                    FROM baselines
-                    """
-                )
-            archive_name = "legacy_baselines_archive"
-            suffix = 2
-            while connection.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
-                (archive_name,),
-            ).fetchone():
-                archive_name = f"legacy_baselines_archive_{suffix}"
-                suffix += 1
-            connection.execute(
-                f'ALTER TABLE baselines RENAME TO "{archive_name}"'
-            )
-
     def initialize(self) -> None:
-        with self.connection() as connection:
-            connection.executescript(SCHEMA)
-            self._migrate_schema(connection)
-            connection.execute(
-                """INSERT INTO schema_meta(key, value)
-                   VALUES ('version', ?)
-                   ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
-                (SCHEMA_VERSION,),
-            )
-            connection.commit()
+        """Upgrade to the single Alembic head and reject physical schema drift."""
+        from .database_migrations import DatabaseMigrationManager
+
+        DatabaseMigrationManager(self.path).upgrade()
 
 
 class SQLiteRunRepository:

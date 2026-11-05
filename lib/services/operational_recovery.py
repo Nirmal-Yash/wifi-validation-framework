@@ -15,31 +15,101 @@ class BackupResult:
     destination: Path
     integrity_ok: bool
     size_bytes: int
+    sha256: str = ""
+
 
 class SQLiteBackupService:
-    def backup(self, source: str | Path, destination: str | Path) -> BackupResult:
-        src, dst = Path(source).resolve(), Path(destination).resolve()
+    """Consistent SQLite online backups with integrity and overwrite safeguards."""
+
+    @staticmethod
+    def _integrity(path: Path) -> str:
+        connection = sqlite3.connect(path, timeout=15)
+        try:
+            row = connection.execute("PRAGMA integrity_check").fetchone()
+            return str(row[0]) if row else "no result"
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _digest(path: Path) -> str:
+        import hashlib
+
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _copy(
+        self,
+        source: str | Path,
+        destination: str | Path,
+        *,
+        overwrite: bool,
+    ) -> BackupResult:
+        import os
+        import tempfile
+
+        src = Path(source).expanduser().resolve()
+        dst = Path(destination).expanduser().resolve()
         if not src.is_file():
             raise FileNotFoundError(src)
         if src == dst:
             raise ValueError("backup destination must differ from source")
+        if dst.exists() and not overwrite:
+            raise FileExistsError(dst)
+        if self._integrity(src) != "ok":
+            raise sqlite3.DatabaseError(f"source database integrity check failed: {src}")
+
         dst.parent.mkdir(parents=True, exist_ok=True)
-        source_db = sqlite3.connect(src)
-        target_db = sqlite3.connect(dst)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{dst.name}.", suffix=".sqlite.tmp", dir=dst.parent
+        )
+        os.close(descriptor)
+        temporary = Path(temporary_name)
         try:
-            source_db.backup(target_db)
+            source_db = sqlite3.connect(src, timeout=15)
+            target_db = sqlite3.connect(temporary, timeout=15)
+            try:
+                source_db.backup(target_db, pages=256, sleep=0.05)
+                target_db.execute("PRAGMA integrity_check").fetchone()
+            finally:
+                target_db.close()
+                source_db.close()
+            integrity = self._integrity(temporary)
+            if integrity != "ok":
+                raise sqlite3.DatabaseError(
+                    f"backup integrity check failed: {integrity}"
+                )
+            os.chmod(temporary, 0o600)
+            if overwrite:
+                for suffix in ("-wal", "-shm"):
+                    sidecar = Path(str(dst) + suffix)
+                    if sidecar.exists():
+                        sidecar.unlink()
+                os.replace(temporary, dst)
+            else:
+                # A hard link makes destination creation atomic and refuses a
+                # concurrent writer that created the same backup name.
+                os.link(temporary, dst)
+                temporary.unlink()
+            return BackupResult(
+                source=src,
+                destination=dst,
+                integrity_ok=True,
+                size_bytes=dst.stat().st_size,
+                sha256=self._digest(dst),
+            )
         finally:
-            target_db.close()
-            source_db.close()
-        check = sqlite3.connect(dst)
-        try:
-            integrity = check.execute("PRAGMA integrity_check").fetchone()[0]
-        finally:
-            check.close()
-        return BackupResult(src, dst, integrity == "ok", dst.stat().st_size)
+            if temporary.exists():
+                temporary.unlink()
+
+    def backup(self, source: str | Path, destination: str | Path) -> BackupResult:
+        return self._copy(source, destination, overwrite=False)
 
     def restore(self, backup: str | Path, destination: str | Path) -> BackupResult:
-        return self.backup(backup, destination)
+        return self._copy(backup, destination, overwrite=True)
+
 
 @dataclass(frozen=True, slots=True)
 class RetentionResult:

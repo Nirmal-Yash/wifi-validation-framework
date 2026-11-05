@@ -7,12 +7,15 @@ on:
       - "frontend/**"
       - "dashboard/**"
       - "lib/**"
+      - "alembic/**"
+      - "alembic.ini"
       - "docs/**"
       - "tests/**"
       - "lib/security/**"
       - "scripts/start_dashboard.sh"
       - "scripts/test_dashboard_startup.sh"
       - "scripts/netregress_migrate_legacy.py"
+      - "scripts/netregress_db.py"
       - "run_all.sh"
       - "tests/test_dashboard_port_contract.py"
       - "tests/test_auth_flow.py"
@@ -26,12 +29,15 @@ on:
       - "frontend/**"
       - "dashboard/**"
       - "lib/**"
+      - "alembic/**"
+      - "alembic.ini"
       - "docs/**"
       - "tests/**"
       - "lib/security/**"
       - "scripts/start_dashboard.sh"
       - "scripts/test_dashboard_startup.sh"
       - "scripts/netregress_migrate_legacy.py"
+      - "scripts/netregress_db.py"
       - "run_all.sh"
       - "tests/test_dashboard_port_contract.py"
       - "tests/test_auth_flow.py"
@@ -87,7 +93,7 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install backend dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
-      - name: Run authentication, dashboard and Phase B/C persistence correctness tests
+      - name: Run authentication, dashboard and Phase B–E persistence correctness tests
         run: >-
           python -m pytest
           tests/test_auth_flow.py
@@ -105,6 +111,7 @@ jobs:
           tests/test_pytest_result_mapping.py
           tests/test_legacy_migration.py
           tests/test_db_helper_compatibility.py
+          tests/test_schema_migrations.py
           tests/test_command_runner.py
           tests/test_iterations_23_25.py
           tests/test_sync_service.py

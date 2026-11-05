@@ -290,6 +290,16 @@ Historical import is explicit through scripts/netregress_migrate_legacy.py. A se
 
 Imported baselines retain historical traceability but are not active. Active baseline listing is restricted to ACTIVE native baselines. Native baseline promotion remains subject to RunService environment-health, outcome, selected-test coverage and evidence checks. Alembic ownership remains outside Phase D and is assigned to Phase E.
 
+### Phase E — database schema governance
+
+Alembic is the sole schema mutation authority. `SQLiteDatabase.initialize()` delegates to `DatabaseMigrationManager`, which upgrades to the single repository head and verifies the physical schema contract. The runtime no longer executes a standalone schema script or handwritten additive migration path.
+
+The chain contains a fresh-install base revision, the existing runner-control/backend-completion revisions, and a canonical schema-governance revision. It supports both new databases and existing pre-Alembic/previous-head databases. Existing databases are backed up with SQLite's online backup API before upgrade; migration failure triggers restoration from that backup.
+
+Read-only `status` and `check` operations report revision drift, required table/column/index drift, missing foreign keys, foreign-key violations and schema metadata mismatch. Initialization fails closed on drift. Manual `restore` requires an offline maintenance window, validates the backup, and creates a pre-restore backup of the current database. Schema downgrades are deliberately non-destructive and must use verified backup restoration.
+
+The operator CLI is `scripts/netregress_db.py` with `status`, `check`, `upgrade`, `backup` and explicitly confirmed `restore` commands. Alembic revisions are kept in `alembic/versions`; `schema_meta` is a compatibility mirror, while `alembic_version` is authoritative.
+
 ## 19A. FaultService
 
 `FaultService` is the controlled fault-injection boundary used by recovery tests. A `FaultDefinition` declares a stable fault ID, target, apply commands, restore commands and description. Apply/restore commands execute only through the Run's secured `CommandRunner`, so command authorization and audit evidence remain centralized.
