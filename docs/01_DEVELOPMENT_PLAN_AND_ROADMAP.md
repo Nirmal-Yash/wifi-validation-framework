@@ -33,17 +33,17 @@ This B–P programme is the current execution order for the next development sli
 | C | Canonical Persistence Foundation: one SQLite path resolver, explicit database transaction scope, atomic initial Run + Attempt + creation events, and consistent resolver use by application entry points | Implemented and pushed in 82743fc; Actions run 41855004616 passed; REAL_LAB certification remains unverified |
 | D | Legacy Compatibility and Historical Migration: legacy helper facade, read-only source handling, deterministic IDs/provenance, migration ledger, idempotent import and legacy-baseline ineligibility | Implemented; hosted CI gate included; deployment database import remains an operator-run migration |
 | E | Database Schema Governance and Reliability: make Alembic the schema migration authority, versioned upgrades, schema drift checks, compatibility validation, and migration recovery | Implemented; migration, drift, backup and rollback tests included in hosted CI |
-| F | Execution and Process Reliability: worker lifecycle, subprocess supervision, cancellation, timeout taxonomy, crash/interrupt recovery and deterministic finalization | Planned |
-| G | Configuration, Environment and Resource Orchestration: typed configuration provenance, environment fingerprints, lab/device leases, orchestration boundaries and preflight contracts | Planned |
-| H | Protocol Evidence Certification: live DHCP DORA, EAPOL four-way, Beacon/RSN and DNS correlation against verified real captures | Planned |
-| I | Telemetry, Performance and Recovery Validation: measured WiFi telemetry, statistically governed performance tests, fault/recovery assertions and evidence correlation | Planned |
-| J | Device and Firmware Lifecycle: adapter capability contracts, image verification, flash/reboot/readiness, rollback and target-specific lifecycle certification | Planned |
-| K | Security and Deployment Hardening: credential handling, auth/RBAC, secure command boundaries, artifact controls, deployment policy and security regression | Planned |
-| L | API, Dashboard and Frontend Completion: typed API contract, consistent errors, pagination, operational UX, authenticated downloads and browser/runtime parity | Planned |
-| M | Regression Intelligence, Release Gate and Offline Operations: comparable baseline logic, metric classification, waiver boundaries, local queue recovery and release decision evidence | Planned |
-| N | Standalone Packaging and Production Certification: reproducible install, upgrade/backup/restore, doctor/manifest, operator runbooks and the full standalone certification matrix | Planned |
-| O | Cloud/SaaS Expansion and Integration: separate control-plane contracts, tenant/project ownership, outbound synchronization and remote release workflows; begin only after standalone Runner certification | Deferred until Phase N certification |
-| P | GitHub Repository Organization and Cleanup: source and docs ownership audit, tests/workflow coverage, dependency hygiene, stale-file/branch cleanup, secret scan, release metadata and final repository freeze | Final phase |
+| F | Execution and Process Reliability: worker lifecycle, subprocess supervision, cancellation, timeout taxonomy, crash/interrupt recovery and deterministic finalization | Partially implemented in source; ownership, cancellation races and terminal-state behavior require focused verification and hardening |
+| G | Configuration, Environment and Resource Orchestration: typed configuration provenance, environment fingerprints, lab/device leases, orchestration boundaries and preflight contracts | Partially implemented in source; locking lifecycle, stale lease recovery, device/resource scope and orchestration preflight require focused verification |
+| H | Protocol Evidence Certification: live DHCP DORA, EAPOL four-way, Beacon/RSN and DNS correlation against verified real captures | Source implementation present; DHCP is wired; live evidence for all required protocol paths remains unverified |
+| I | Telemetry, Performance and Recovery Validation: measured WiFi telemetry, statistically governed performance tests, fault/recovery assertions and evidence correlation | Source implementation present; physical RF/performance/recovery certification outstanding |
+| J | Device and Firmware Lifecycle: adapter capability contracts, image verification, flash/reboot/readiness, rollback and target-specific lifecycle certification | Source implementation present; target hardware flash/reboot/rollback certification outstanding |
+| K | Security and Deployment Hardening: credential handling, auth/RBAC, secure command boundaries, artifact controls, deployment policy and security regression | Source implementation substantially present; target deployment and threat-model verification outstanding |
+| L | API, Dashboard and Frontend Completion: typed API contract, consistent errors, pagination, operational UX, authenticated downloads and browser/runtime parity | Source implementation substantially present; authenticated browser/runtime and operational workflow acceptance outstanding |
+| M | Regression Intelligence, Release Gate and Offline Operations: comparable baseline logic, metric classification, waiver boundaries, local queue recovery and release decision evidence | Source implementation present; production synchronization/release workflow acceptance outstanding |
+| N | Standalone Packaging and Production Certification: reproducible install, upgrade/backup/restore, doctor/manifest, operator runbooks and the full standalone certification matrix | Certification tooling present; clean-install and protected 11-scenario REAL_LAB certification outstanding |
+| O | Cloud/SaaS Expansion and Integration: separate control-plane contracts, tenant/project ownership, outbound synchronization and remote release workflows; begin only after standalone Runner certification | Deferred until Phase N certification; no production PostgreSQL/tenant control plane claimed |
+| P | GitHub Repository Organization and Cleanup: source and docs ownership audit, tests/workflow coverage, dependency hygiene, stale-file/branch cleanup, secret scan, release metadata and final repository freeze | Final phase; not started as a completed repository-wide freeze |
 
 #### Phase C — implementation contract
 
@@ -80,6 +80,45 @@ python scripts/netregress_migrate_legacy.py --source /path/to/archive.sqlite --t
 ~~~
 
 **Phase D completion gate:** legacy public callers remain usable; new legacy writes no longer create a second schema; historical sources remain unchanged; row and ledger writes are atomic; imported facts reconcile; migration reruns are idempotent; incomplete prior imports fail closed; imported baselines are never treated as trusted release baselines.
+
+#### Current execution handoff — 2026-11-06
+
+The current `main` head is `849c4e1c6471b0d0a9f2757d81d392c6c75fb657`. Phases B–E have committed implementations. Phase C (`82743fc`), D (`9ed1531`) and E (`849c4e1`) hosted workflow runs 41855004616, 41870444440 and 42053712826 passed. The latest E run passed the backend contract suite, frontend tests/build, and authenticated dashboard startup/proxy/session smoke test. These hosted checks do not certify protected REAL_LAB.
+
+**Next work is Phase F — Execution and Process Reliability.** Phase F and G have source foundations, so begin with targeted gaps and tests rather than a rewrite.
+
+Source surfaces inspected:
+- `lib/services/run_process.py`: subprocess start and PID-based process-group cancellation/kill.
+- `lib/services/run_orchestrator.py`: Run creation, PREPARING transition, configuration/fingerprint persistence and lease acquisition/finalization.
+- `lib/services/resource_lock.py`: file-backed lock and lease metadata.
+- `lib/services/configuration.py`: hierarchical configuration resolution.
+- `lib/services/environment_fingerprint.py`: host, interface, topology and device fingerprint.
+- `lib/services/lab_controller.py`: provisioning compatibility boundary over CommandRunner.
+
+**Phase F work packages**
+- F1 Audit all process call sites, Run state transitions, execution PID persistence, pytest hook/finalizer and cancellation API.
+- F2 Specify typed process handle/outcome contracts, process-group identity, ownership and terminal outcome taxonomy.
+- F3 Implement safe start/wait/terminate/escalate/reap/cleanup semantics, bounded timeouts and captured stdout/stderr.
+- F4 Wire orchestrator/API/pytest lifecycle so process ownership and persisted Run state cannot diverge; make finalization idempotent.
+- F5 Add tests for spawn failure, normal exit, assertion/internal error, cancellation, timeout, SIGTERM grace period, SIGKILL escalation, orphan recovery, stale/reused/foreign PID rejection, worker crash and finalizer exceptions.
+- F6 Run focused and broad non-lab tests, CI, inspect persisted events/artifacts and record unresolved REAL_LAB gate.
+
+Phase F acceptance: no unowned process can be cancelled; terminal finalization leaves no owned process running; Run and process outcomes reconcile; infrastructure/worker failures are not mapped to DUT failure; diagnostics are preserved; cleanup is repeat-safe.
+
+**Phase G work packages**
+- G1 Verify configuration merge order `Defaults → Environment → Lab → Device → Run → Test Override`, immutability, provenance, secret redaction and canonical hashing.
+- G2 Separate stable fingerprint inputs from volatile observations; test deterministic hashing and retained diagnostic provenance.
+- G3 Harden resource locks: stable lock identity, cross-process exclusion, acquisition timeout, lease renewal, owner liveness, expiry and safe stale recovery.
+- G4 Verify lab/device/namespace/firmware lock scopes and prove same-resource operations cannot overlap.
+- G5 Integrate LabController preflight/provision/cleanup incrementally while preserving the existing provisioning script, flags, topology and capture lifecycle.
+- G6 Test failed preflight, unavailable tools, unhealthy lab, concurrent Runs, stale leases, cleanup and legacy CLI compatibility.
+- G7 Run full CI and protected REAL_LAB after execution/lab behavior changes.
+
+Phase G acceptance: deterministic configuration/fingerprint for identical inputs; provenance complete and secrets redacted; exclusive resource operations cannot overlap cross-process; stale recovery cannot remove a live lock; preflight failure blocks pytest; all protected topology, capture and CLI contracts remain unchanged.
+
+**Audit risks to convert into regression tests before editing:** process-group ownership/PID reuse; cancellation and reaping order; Run finalization when the worker or finalizer fails; lock-file unlink/reopen race across processes; lease renewal and stale-owner handling; correct lock scopes; immutable configuration and deterministic fingerprint. These are source-review risks, not yet reproduced runtime failures.
+
+Do not begin Phase H until F and G acceptance gates pass. Preserve the GNS3 topology, phy0/phy1 placement, eth1 management, wlan0 validation traffic, AP br0 DHCP capture, foreground Paramiko tcpdump channel, SFTP PCAP verification, existing pytest node IDs and provisioning CLI.
 
 #### Phase E — implementation contract
 

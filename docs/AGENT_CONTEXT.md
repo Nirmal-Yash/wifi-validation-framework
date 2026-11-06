@@ -254,3 +254,18 @@ Iteration 27 source implementation is complete: the 11-scenario certification ma
 
 ## Iterations 28–30 final release wave
 Iterations 28–30 are one coherent release slice. Iteration 28 owns final release integration and the single-commit rule; Iteration 29 owns reproducible operational readiness and release/doctor tooling; Iteration 30 owns governance and architecture freeze. Runner remains locally authoritative; Cloud/SaaS remains deferred above it. The release manifest is structural/source evidence and does not substitute for protected REAL_LAB execution evidence.
+ 
+## 30. Current B–P execution handoff — 2026-11-06
+
+Current main: `849c4e1c6471b0d0a9f2757d81d392c6c75fb657`.
+
+Phases B–E are implemented on main. Hosted CI:
+- Phase C: 41855004616 — passed.
+- Phase D: 41870444440 — passed.
+- Phase E/current head: 42053712826 — passed backend contracts, frontend tests/build and dashboard startup/proxy/session smoke test.
+
+**Next checkpoint: Phase F — Execution and Process Reliability**, followed by the bounded Phase G resource/configuration work packages in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. Do not treat F/G as absent: process manager, orchestrator, configuration resolver, environment fingerprint, LabController and resource locking already exist. Audit and test the missing safety properties before expanding features.
+
+Current F/G risks to investigate with regression tests: owned process-group identity and PID reuse; cancellation escalation and process reaping; terminal Run/process state consistency; finalizer exceptions; stable cross-process lock path/inode identity; resource lease renewal/recovery and lab/device/firmware lock scopes; configuration immutability/provenance/redaction and deterministic fingerprints.
+
+Protected GNS3/mac80211_hwsim behavior is unchanged and mandatory for execution-affecting acceptance. No CI or source-only test can substitute for the 11-scenario protected lab evidence. Cloud/SaaS remains after standalone certification, and Phase P remains the final cleanup phase.

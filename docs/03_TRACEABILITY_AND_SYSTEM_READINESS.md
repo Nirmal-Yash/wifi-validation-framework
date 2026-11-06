@@ -153,7 +153,13 @@ All other discovery questions have an implementation decision.
 
 ## Audit basis
 
-Current source audit date: 2026-11-05. Historical audit baseline: `7ad58e0648fdb4eaa06b14c9c8d6db62358327fc`. Subsequent completeness and frontend implementation work is now on the current main tip.
+Current repository audit date: 2026-11-06. Audited `main` head: `849c4e1c6471b0d0a9f2757d81d392c6c75fb657`. This is a source/history/hosted-CI audit, not an independent local pytest invocation or protected REAL_LAB run.
+
+- Phase C commit `82743fc3c6dbdfa8ad614a278c87e8299fb94db0`; hosted workflow 41855004616 passed.
+- Phase D commit `9ed15312d5169b8692b82b43715138f9786fcf58`; hosted workflow 41870444440 passed.
+- Phase E commit `849c4e1c6471b0d0a9f2757d81d392c6c75fb657`; hosted workflow 42053712826 passed.
+
+The latest run completed all three jobs successfully: backend persistence/auth/dashboard contracts, frontend tests and production build, and dashboard launcher/Vite proxy/authenticated session smoke test. This workflow does not certify REAL_LAB.
 
 The prior release wave established the standalone Runner architecture, but this audit found several source-level contract gaps that had been overstated as complete. The completeness wave closes the identified implementation defects and separates **source implementation readiness** from **execution certification**.
 
@@ -191,6 +197,37 @@ These are source-level correctness changes, not REAL_LAB certification. The hard
 ## Iterations 20–30
 
 Iterations 20–30 are source-implemented and the full core/release-readiness CI gates now pass. “Implemented” does not mean “runtime certified”: the real-lab execution class remains the authoritative proof for execution-sensitive behavior.
+
+## Current B–P phase assessment — 2026-11-06
+
+| Phase | Source state | Verification / remaining gate |
+|---|---|---|
+| A | Baseline/compatibility constraints documented | Re-establish protected baseline on current lab |
+| B | Implemented | CI baseline passed historically; protected REAL_LAB remains separate |
+| C | Implemented | Hosted workflow 41855004616 passed |
+| D | Implemented | Hosted workflow 41870444440 passed; actual archive import remains operator-run |
+| E | Implemented | Hosted workflow 42053712826 passed; schema/backup/rollback contracts included |
+| F | Partially implemented | Process manager/orchestrator exist; process ownership, cancellation/reap, diagnostics and terminal Run consistency require focused tests |
+| G | Partially implemented | Configuration/fingerprint/lab/resource modules exist; cross-process locking, lease recovery, lock scopes and preflight require focused tests |
+| H | Source implementation present | DHCP is wired; EAPOL/Beacon/DNS live capture certification remains |
+| I | Source implementation present | Physical RF/performance/recovery evidence remains |
+| J | Source implementation present | Real hardware flash/reboot/version/rollback certification remains |
+| K | Substantially implemented | Target deployment and threat-model acceptance remain |
+| L | Substantially implemented | Authenticated browser/runtime and operational workflow acceptance remain |
+| M | Substantially implemented | Production sync endpoint and release-operation acceptance remain |
+| N | Certification tooling present | Clean installation and full protected 11-scenario REAL_LAB certification remain |
+| O | Deferred | No production PostgreSQL repository adapter or tenant control plane claimed |
+| P | Pending final phase | Repository-wide cleanup and final integrity freeze remain |
+
+### Immediate Phase F/G audit targets
+
+- `RunProcessManager.start/cancel/kill`: establish process-group ownership and reject stale, reused or unrelated PIDs before signalling.
+- `RunOrchestrator.prepare/finalize`: prove worker exit/reaping, resource release and persisted Run outcome remain consistent when spawn, test execution or finalization fails.
+- `ResourceLease.release`: add cross-process tests for lock-file identity; ensure a lock pathname cannot be unlinked while waiters may still hold the old inode.
+- Configuration: test exact precedence, deep-merge semantics, immutability, provenance, secret redaction and deterministic hashing.
+- LabController: verify compatibility flags and error/timeout propagation without changing protected provisioning/capture behavior.
+
+These are source-review risks, not yet reproduced runtime failures; convert them into tests before implementation edits.
 
 ## Remaining gaps
 
