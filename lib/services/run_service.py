@@ -44,7 +44,12 @@ IdGenerator = Callable[[], str]
 
 _ALLOWED_TRANSITIONS: dict[RunLifecycle, frozenset[RunLifecycle]] = {
     RunLifecycle.QUEUED: frozenset(
-        {RunLifecycle.PREPARING, RunLifecycle.CANCELLED}
+        {
+            RunLifecycle.PREPARING,
+            RunLifecycle.CANCELLED,
+            RunLifecycle.ABORTED,
+            RunLifecycle.LAB_FAILED,
+        }
     ),
     RunLifecycle.PREPARING: frozenset(
         {
@@ -61,6 +66,7 @@ _ALLOWED_TRANSITIONS: dict[RunLifecycle, frozenset[RunLifecycle]] = {
             RunLifecycle.RUNNING,
             RunLifecycle.LAB_FAILED,
             RunLifecycle.CANCELLED,
+            RunLifecycle.ABORTED,
         }
     ),
     RunLifecycle.RUNNING: frozenset(
@@ -523,6 +529,32 @@ class RunService:
 
     def lab_fail_run(self, run_id: str, reason: str | None = None) -> Run:
         return self._finish(run_id, RunLifecycle.LAB_FAILED, BusinessOutcome.UNVALIDATED, "RUN_LAB_FAILED", FailureClass.LAB_FAILED, reason)
+
+    def request_cancel(
+        self,
+        run_id: str,
+        *,
+        actor: str = "operator",
+        reason: str = "Run cancellation requested",
+    ) -> Run:
+        """Persist cancellation intent before the worker receives a signal."""
+        run = self._require_run(run_id)
+        if run.lifecycle in _terminal_states():
+            raise DomainValidationError("cannot request cancellation for a terminal Run")
+        if not self.cancellation_requested(run_id):
+            self._event(
+                run_id,
+                "RUN_CANCEL_REQUESTED",
+                self.clock(),
+                details={"actor": actor, "reason": reason},
+            )
+        return run
+
+    def cancellation_requested(self, run_id: str) -> bool:
+        return any(
+            event.event_type == "RUN_CANCEL_REQUESTED"
+            for event in self.event_repository.list_for_run(run_id)
+        )
 
     def cancel_run(self, run_id: str, actor: str = "operator", reason: str = "Run cancelled by operator") -> Run:
         return self._finish(run_id, RunLifecycle.CANCELLED, BusinessOutcome.UNVALIDATED, "RUN_CANCELLED", FailureClass.CANCELLED, f"{actor}: {reason}")

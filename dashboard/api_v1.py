@@ -8,14 +8,14 @@ from typing import Any,Callable
 from functools import wraps
 from flask import Blueprint,jsonify,request,session,send_file,current_app
 from lib.repositories import SQLiteDatabase
-from lib.services import RunProcessManager, WaiverService, FirmwareOperationService, IdempotencyStore, CsrfService, LoginRateLimiter, RequestSecurityError, resolve_confined_path, RunnerDoctor
+from lib.services import RunProcessManager, ProcessNotManagedError, ProcessOwnershipError, ProcessTerminationError, RunProcessError, WaiverService, FirmwareOperationService, IdempotencyStore, CsrfService, LoginRateLimiter, RequestSecurityError, resolve_confined_path, RunnerDoctor
 from lib.adapters import DeviceProfile, OpenWrtDeviceAdapter, SSHFirmwareAdapter, VirtualLinuxDeviceAdapter
 from lib.adapters.firmware import FirmwareImage, FirmwareAuthorization, GPGSignatureVerifier
 from lib.connector import load_devices, ConnectionPool
 from lib.services.command_security import CommandSecurityPolicy, SecureCommandRunner
 from lib.services.command_runner import NetmikoRunner
 from lib.security import AuthManager,AuthConfigurationError,AuthenticatedUser,Role
-from lib.domain import RunLifecycle, WaiverScope
+from lib.domain import DomainValidationError, RunLifecycle, WaiverScope
 from .query import DashboardQueryError,DashboardQueryService
 
 def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|None=None)->Blueprint:
@@ -182,11 +182,96 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         key,request_hash,cached,security_error=idempotency_preflight("/api/v1/runs/cancel/"+run_id,idem_payload)
         if security_error is not None:return security_error
         if cached is not None:return jsonify(cached.response),cached.status_code
+        if run.lifecycle in {
+            RunLifecycle.COMPLETED,
+            RunLifecycle.FAILED,
+            RunLifecycle.LAB_FAILED,
+            RunLifecycle.CANCELLED,
+            RunLifecycle.ABORTED,
+        }:
+            return error("RUN_NOT_ACTIVE","Run is already terminal",409)
+        if not run.execution_pid:
+            return error("RUN_PROCESS_UNAVAILABLE","Run has no registered execution process",409)
+
         actor=session.get("netregress_user",{}).get("username","operator")
-        query.run_service.cancel_run(run_id,actor=actor,reason=reason)
-        if run.execution_pid:
-            try: RunProcessManager(Path(__file__).resolve().parents[1]).cancel(run.execution_pid)
-            except ProcessLookupError: pass
+        manager=RunProcessManager(Path(__file__).resolve().parents[1])
+        try:
+            if not manager.validate(run.execution_pid):
+                return error("RUN_PROCESS_EXITED","Run process has already exited",409)
+        except ProcessNotManagedError as exc:
+            return error("PROCESS_NOT_MANAGED",str(exc),409)
+        except ProcessOwnershipError as exc:
+            return error("PROCESS_OWNERSHIP_MISMATCH",str(exc),409)
+        except RunProcessError as exc:
+            return error("PROCESS_CONTROL_FAILED",str(exc),500)
+
+        try:
+            query.run_service.request_cancel(run_id,actor=actor,reason=reason)
+        except DomainValidationError:
+            latest=query.run_repository.get(run_id)
+            return error(
+                "RUN_NOT_ACTIVE",
+                f"Run became terminal before cancellation (state: {latest.lifecycle.value if latest else 'UNKNOWN'})",
+                409,
+            )
+        try:
+            stopped=manager.cancel(run.execution_pid)
+        except ProcessNotManagedError as exc:
+            latest=query.run_repository.get(run_id)
+            if latest is not None and latest.lifecycle is RunLifecycle.CANCELLED:
+                response_data={"run_id":run_id,"status":"CANCELLED"}
+                idempotency_store_response("/api/v1/runs/cancel/"+run_id,key,request_hash,response_data,200)
+                return ok(response_data)
+            return error(
+                "PROCESS_EXITED_DURING_CANCEL",
+                f"{exc}; persisted Run state: {latest.lifecycle.value if latest else 'UNKNOWN'}",
+                409,
+            )
+        except ProcessOwnershipError as exc:
+            return error("PROCESS_OWNERSHIP_MISMATCH",str(exc),409)
+        except ProcessTerminationError as exc:
+            return error("PROCESS_TERMINATION_FAILED",str(exc),504)
+        except RunProcessError as exc:
+            return error("PROCESS_CONTROL_FAILED",str(exc),500)
+
+        latest=query.run_repository.get(run_id)
+        if not stopped:
+            if latest is not None and latest.lifecycle not in {
+                RunLifecycle.COMPLETED,
+                RunLifecycle.FAILED,
+                RunLifecycle.LAB_FAILED,
+                RunLifecycle.CANCELLED,
+                RunLifecycle.ABORTED,
+            }:
+                try:
+                    query.run_service.cancel_run(run_id,actor=actor,reason=reason)
+                except Exception:
+                    pass
+            latest=query.run_repository.get(run_id)
+            if latest is None or latest.lifecycle is not RunLifecycle.CANCELLED:
+                return error(
+                    "RUN_PROCESS_EXITED",
+                    f"Run process exited before cancellation completed (state: {latest.lifecycle.value if latest else 'UNKNOWN'})",
+                    409,
+                )
+
+        latest=query.run_repository.get(run_id)
+        if latest is not None and latest.lifecycle not in {
+            RunLifecycle.COMPLETED,
+            RunLifecycle.FAILED,
+            RunLifecycle.LAB_FAILED,
+            RunLifecycle.CANCELLED,
+            RunLifecycle.ABORTED,
+        }:
+            try:
+                query.run_service.cancel_run(run_id,actor=actor,reason=reason)
+            except DomainValidationError:
+                # The pytest finalizer may have completed the cancellation first.
+                pass
+        latest=query.run_repository.get(run_id)
+        if latest is None or latest.lifecycle is not RunLifecycle.CANCELLED:
+            return error("RUN_FINALIZATION_RACE","Process stopped but Run finalized with a different outcome",409)
+
         response_data={"run_id":run_id,"status":"CANCELLED"}
         idempotency_store_response("/api/v1/runs/cancel/"+run_id,key,request_hash,response_data,200)
         return ok(response_data)

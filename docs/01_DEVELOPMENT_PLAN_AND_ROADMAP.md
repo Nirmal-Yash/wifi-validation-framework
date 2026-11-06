@@ -33,7 +33,7 @@ This B–P programme is the current execution order for the next development sli
 | C | Canonical Persistence Foundation: one SQLite path resolver, explicit database transaction scope, atomic initial Run + Attempt + creation events, and consistent resolver use by application entry points | Implemented and pushed in 82743fc; Actions run 41855004616 passed; REAL_LAB certification remains unverified |
 | D | Legacy Compatibility and Historical Migration: legacy helper facade, read-only source handling, deterministic IDs/provenance, migration ledger, idempotent import and legacy-baseline ineligibility | Implemented; hosted CI gate included; deployment database import remains an operator-run migration |
 | E | Database Schema Governance and Reliability: make Alembic the schema migration authority, versioned upgrades, schema drift checks, compatibility validation, and migration recovery | Implemented; migration, drift, backup and rollback tests included in hosted CI |
-| F | Execution and Process Reliability: worker lifecycle, subprocess supervision, cancellation, timeout taxonomy, crash/interrupt recovery and deterministic finalization | Partially implemented in source; ownership, cancellation races and terminal-state behavior require focused verification and hardening |
+| F | Execution and Process Reliability: worker lifecycle, subprocess supervision, cancellation, timeout taxonomy, crash/interrupt recovery and deterministic finalization | Implementation delivered on 2026-11-06; focused hosted verification pending; protected REAL_LAB remains separate |
 | G | Configuration, Environment and Resource Orchestration: typed configuration provenance, environment fingerprints, lab/device leases, orchestration boundaries and preflight contracts | Partially implemented in source; locking lifecycle, stale lease recovery, device/resource scope and orchestration preflight require focused verification |
 | H | Protocol Evidence Certification: live DHCP DORA, EAPOL four-way, Beacon/RSN and DNS correlation against verified real captures | Source implementation present; DHCP is wired; live evidence for all required protocol paths remains unverified |
 | I | Telemetry, Performance and Recovery Validation: measured WiFi telemetry, statistically governed performance tests, fault/recovery assertions and evidence correlation | Source implementation present; physical RF/performance/recovery certification outstanding |
@@ -80,6 +80,20 @@ python scripts/netregress_migrate_legacy.py --source /path/to/archive.sqlite --t
 ~~~
 
 **Phase D completion gate:** legacy public callers remain usable; new legacy writes no longer create a second schema; historical sources remain unchanged; row and ledger writes are atomic; imported facts reconcile; migration reruns are idempotent; incomplete prior imports fail closed; imported baselines are never treated as trusted release baselines.
+
+#### Phase F implementation update — 2026-11-06
+
+Delivered in this pass:
+- Runner-launched pytest uses an isolated Linux session/process group; stdout/stderr is captured in a private log under `results/processes/`.
+- A private manifest binds PID, PGID, SID, Linux `/proc` start-time identity, command, working directory and log path.
+- Cancel/kill validates that ownership record before signalling; unmanaged, stale and reused PIDs fail closed.
+- Cancellation sends SIGTERM, waits a bounded grace period, revalidates identity, escalates to SIGKILL and confirms process-group exit.
+- A child reaper waits for the pytest process and keeps ownership metadata while same-session descendants remain.
+- API cancellation persists `RUN_CANCEL_REQUESTED` before signalling. Pytest finalization honors this intent so an operator cancellation is not misclassified as an abort.
+- Pytest session finalization has an outer `finally` that releases the lab lease despite persistence or cleanup errors, and attempts worker-crash classification if finalization raises.
+- Focused process-control/cancellation-intent tests are added to hosted backend CI.
+
+Verification pending: focused process tests and the hosted CI run triggered by this commit. Protected REAL_LAB must still be re-established after execution/process behavior changes. Local pytest and attached GNS3 execution were not available in this session.
 
 #### Current execution handoff — 2026-11-06
 

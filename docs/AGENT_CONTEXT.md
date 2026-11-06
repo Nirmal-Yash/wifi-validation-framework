@@ -257,15 +257,15 @@ Iterations 28–30 are one coherent release slice. Iteration 28 owns final relea
  
 ## 30. Current B–P execution handoff — 2026-11-06
 
-Current main: `849c4e1c6471b0d0a9f2757d81d392c6c75fb657`.
+Current main before Phase F delivery: `e1c914f757c98c76ee98637f1e14a254fab2922e`.
 
-Phases B–E are implemented on main. Hosted CI:
-- Phase C: 41855004616 — passed.
-- Phase D: 41870444440 — passed.
-- Phase E/current head: 42053712826 — passed backend contracts, frontend tests/build and dashboard startup/proxy/session smoke test.
+Phases B–E are implemented on main and their hosted CI runs passed:
+- Phase C: 41855004616.
+- Phase D: 41870444440.
+- Phase E: 42053712826 (backend contracts, frontend tests/build and dashboard startup/proxy/session smoke test).
 
-**Next checkpoint: Phase F — Execution and Process Reliability**, followed by the bounded Phase G resource/configuration work packages in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. Do not treat F/G as absent: process manager, orchestrator, configuration resolver, environment fingerprint, LabController and resource locking already exist. Audit and test the missing safety properties before expanding features.
+**Phase F implementation delivered in the current checkpoint; hosted verification is pending.** It adds owned Linux process groups, PID/PGID/SID and start-time identity manifests, private stdout/stderr logs, fail-closed cancellation, SIGTERM/SIGKILL escalation, persisted cancellation intent, pytest finalizer handling and lease release from an outer `finally`. Orchestrator prepare/finalizer exceptions now terminalize Runs rather than leaving PREPARING state. Focused tests cover process cancellation/escalation, PID mismatch, spawn failure, cancellation intent, timeout classification and orchestrator failure/lease cleanup.
 
-Current F/G risks to investigate with regression tests: owned process-group identity and PID reuse; cancellation escalation and process reaping; terminal Run/process state consistency; finalizer exceptions; stable cross-process lock path/inode identity; resource lease renewal/recovery and lab/device/firmware lock scopes; configuration immutability/provenance/redaction and deterministic fingerprints.
+After the Phase F hosted CI result is green, proceed to **Phase G — Configuration, Environment and Resource Orchestration**. Its remaining work is stable cross-process lock identity, lease renewal/recovery and lab/device/firmware lock scopes, immutable configuration provenance/redaction/hashing, deterministic environment fingerprint verification and preflight acceptance. Do not start H until G's gate passes.
 
-Protected GNS3/mac80211_hwsim behavior is unchanged and mandatory for execution-affecting acceptance. No CI or source-only test can substitute for the 11-scenario protected lab evidence. Cloud/SaaS remains after standalone certification, and Phase P remains the final cleanup phase.
+The protected GNS3/mac80211_hwsim test remains mandatory after execution-affecting work. No CI or source-only test substitutes for its 11-scenario evidence. Preserve topology, hwsim PHY placement, eth1 management, wlan0 test traffic, AP br0 DHCP capture, foreground Paramiko tcpdump, SFTP PCAP verification, existing pytest node IDs and provisioning CLI. Cloud/SaaS remains after standalone certification; Phase P remains final cleanup.

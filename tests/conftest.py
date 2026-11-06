@@ -464,24 +464,57 @@ def pytest_sessionfinish(session, exitstatus):
     if context is None:
         return
 
-    run = context.run_service.run_repository.get(context.run_id)
-    health_error = None
-    runner_error = None
+    lease = getattr(session.config, "_netregress_resource_lease", None)
+    try:
+        _finalize_run_session(session, context, exitstatus)
+    except Exception as exc:
+        sys.stderr.write(f"\n[ERROR] Run finalization failed: {exc}\n")
+        try:
+            current = context.run_service.run_repository.get(context.run_id)
+            if current is not None and current.lifecycle not in {
+                RunLifecycle.COMPLETED,
+                RunLifecycle.FAILED,
+                RunLifecycle.LAB_FAILED,
+                RunLifecycle.CANCELLED,
+                RunLifecycle.ABORTED,
+            }:
+                context.run_service.worker_crashed(
+                    context.run_id, f"pytest session finalization failed: {exc}"
+                )
+        except Exception as recovery_exc:
+            sys.stderr.write(
+                f"\n[ERROR] Could not persist worker-crash recovery: {recovery_exc}\n"
+            )
+    finally:
+        # Never keep the lab lease because finalization or persistence failed.
+        if lease is not None:
+            try:
+                lease.release()
+            except Exception as exc:
+                sys.stderr.write(
+                    f"\n[WARN] Failed to release lab resource lock: {exc}\n"
+                )
 
-    if run is not None and run.lifecycle not in {
+
+def _finalize_run_session(session, context, exitstatus):
+    run = context.run_service.run_repository.get(context.run_id)
+    terminal_states = {
         RunLifecycle.COMPLETED,
         RunLifecycle.FAILED,
         RunLifecycle.LAB_FAILED,
         RunLifecycle.CANCELLED,
         RunLifecycle.ABORTED,
-    }:
+    }
+    health_error = None
+    runner_error = None
+
+    if run is not None and run.lifecycle not in terminal_states:
         try:
             health_service = getattr(session.config, "_netregress_health_service", None)
             if health_service is not None:
                 post_health = health_service.check(phase="AFTER")
                 context.run_service.record_environment_health(
-                    context.run_id,
-                    post_health.overall_status,
+                    context.run_id, post_health.overall_status
                 )
                 if post_health.overall_status == EnvironmentHealthStatus.FAILED:
                     context.run_service.lab_fail_run(context.run_id)
@@ -509,14 +542,12 @@ def pytest_sessionfinish(session, exitstatus):
             runner_error = runner_error or exc
 
     run = context.run_service.run_repository.get(context.run_id)
-    if run is not None and run.lifecycle not in {
-        RunLifecycle.COMPLETED,
-        RunLifecycle.FAILED,
-        RunLifecycle.LAB_FAILED,
-        RunLifecycle.CANCELLED,
-        RunLifecycle.ABORTED,
-    }:
-        if runner_error is not None or health_error is not None:
+    if run is not None and run.lifecycle not in terminal_states:
+        if context.run_service.cancellation_requested(context.run_id):
+            context.run_service.cancel_run(
+                context.run_id, actor="operator", reason="persisted cancellation request"
+            )
+        elif runner_error is not None or health_error is not None:
             context.run_service.lab_fail_run(context.run_id)
         elif exitstatus == 0:
             context.run_service.complete_run(context.run_id)
@@ -524,11 +555,6 @@ def pytest_sessionfinish(session, exitstatus):
             context.run_service.abort_run(context.run_id)
         else:
             context.run_service.fail_run(context.run_id, failure_class=None)
-
-    lease = getattr(session.config, "_netregress_resource_lease", None)
-    if lease is not None:
-        try: lease.release()
-        except Exception as exc: sys.stderr.write(f"\n[WARN] Failed to release lab resource lock: {exc}\n")
 
     terminal = context.run_service.run_repository.get(context.run_id)
     if terminal is not None:
@@ -539,23 +565,35 @@ def pytest_sessionfinish(session, exitstatus):
                 results_root=ROOT / "results",
             ).build(
                 run_id=context.run_id,
-                reason=(terminal.failure_reason or terminal.failure_class.value if terminal.failure_class else "terminal-run-record"),
+                reason=(
+                    terminal.failure_reason
+                    or (
+                        terminal.failure_class.value
+                        if terminal.failure_class
+                        else "terminal-run-record"
+                    )
+                ),
             ) if terminal.lifecycle is not RunLifecycle.COMPLETED else None
             ReproductionManifestService(
                 test_registry=context.test_registry,
                 root=ROOT,
             ).create(context.run_id, terminal)
         except Exception as exc:
-            sys.stderr.write(f"\n[WARN] Failed to finalize diagnostic/reproduction evidence: {exc}\n")
+            sys.stderr.write(
+                f"\n[WARN] Failed to finalize diagnostic/reproduction evidence: {exc}\n"
+            )
 
     try:
         from lib.services import RunnerSyncService
         RunnerSyncService.from_sqlite(
             context.run_service.run_repository.database,
-            runner_id=os.getenv("NETREGRESS_RUNNER_ID", os.getenv("HOSTNAME", "local-runner")),
+            runner_id=os.getenv(
+                "NETREGRESS_RUNNER_ID", os.getenv("HOSTNAME", "local-runner")
+            ),
         ).queue_run(context.run_id)
     except Exception as exc:
-        sys.stderr.write(f"\n[WARN] Failed to queue Run for synchronization: {exc}\n")
+        sys.stderr.write(f"\n[WARN] Failed to queue Run for synchronization: {exc}\n"
+        )
 
 
 @pytest.fixture(scope="session")

@@ -113,6 +113,7 @@ jobs:
           tests/test_db_helper_compatibility.py
           tests/test_schema_migrations.py
           tests/test_command_runner.py
+          tests/test_run_process.py
           tests/test_iterations_23_25.py
           tests/test_sync_service.py
 

@@ -207,7 +207,7 @@ Iterations 20–30 are source-implemented and the full core/release-readiness CI
 | C | Implemented | Hosted workflow 41855004616 passed |
 | D | Implemented | Hosted workflow 41870444440 passed; actual archive import remains operator-run |
 | E | Implemented | Hosted workflow 42053712826 passed; schema/backup/rollback contracts included |
-| F | Partially implemented | Process manager/orchestrator exist; process ownership, cancellation/reap, diagnostics and terminal Run consistency require focused tests |
+| F | Implementation delivered; hosted verification pending | Owned process groups, PID identity validation, SIGTERM/SIGKILL cancellation, logs, cancellation intent and exception-safe lease release added; focused CI pending |
 | G | Partially implemented | Configuration/fingerprint/lab/resource modules exist; cross-process locking, lease recovery, lock scopes and preflight require focused tests |
 | H | Source implementation present | DHCP is wired; EAPOL/Beacon/DNS live capture certification remains |
 | I | Source implementation present | Physical RF/performance/recovery evidence remains |
