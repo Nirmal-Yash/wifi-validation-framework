@@ -29,7 +29,7 @@ class FirmwareOperationService:
             database_path = getattr(database, "path", None)
             if database_path:
                 self.resource_lock_manager=ResourceLockManager(
-                    Path(database_path).resolve().parent / ".locks"
+                    Path(database_path).resolve().parent / "locks"
                 )
 
     def _acquire_lock(self, device_id: str, run_id: str | None, actor: str):
@@ -37,7 +37,7 @@ class FirmwareOperationService:
             return None
         owner=f"runner:{os.getpid()}:{run_id or actor}"
         return self.resource_lock_manager.acquire(
-            f"firmware:{device_id}",
+            f"device:{device_id}",
             owner,
             timeout=0.0,
             lease_seconds=900.0,

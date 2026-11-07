@@ -84,7 +84,7 @@ def test_openwrt_version_parser_accepts_ubus_payload():
 def test_firmware_mutation_respects_exclusive_device_lock(tmp_path):
     manager = ResourceLockManager(tmp_path / "locks")
     device = FakeDeviceAdapter()
-    held = manager.acquire("firmware:" + device.identify().device_id, "runner:999", timeout=0)
+    held = manager.acquire("device:" + device.identify().device_id, "runner:999", timeout=0)
     try:
         service = FirmwareOperationService(resource_lock_manager=manager)
         with pytest.raises(ResourceLockError):

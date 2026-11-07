@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import fcntl
 import hashlib
 import json
 import os
@@ -135,33 +136,132 @@ class RetentionService:
         return RetentionResult(removed_files,removed_bytes)
 
 class StaleLockRecovery:
+    """Inspect and clear stale metadata without ever unlinking lock inodes."""
+
+    @staticmethod
+    def _owner_alive(owner: str | None) -> bool:
+        if not owner or not owner.startswith("runner:"):
+            return False
+        try:
+            pid = int(owner.split(":", 2)[1])
+            if pid <= 1:
+                return False
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except (ValueError, IndexError):
+            return False
+
+    @staticmethod
+    def _read_metadata(path: Path) -> dict[str, object]:
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                value = json.load(handle)
+            return value if isinstance(value, dict) else {}
+        except (OSError, ValueError, TypeError):
+            return {}
+
     def inspect(self, lock_dir: str | Path) -> tuple[dict[str, object], ...]:
-        root=Path(lock_dir).resolve()
-        if not root.is_dir(): return ()
-        now=datetime.now(timezone.utc)
-        result=[]
+        root = Path(lock_dir).resolve()
+        if not root.is_dir():
+            return ()
+        now = datetime.now(timezone.utc)
+        results = []
         for path in sorted(root.glob("*.lock")):
+            metadata = self._read_metadata(path)
             try:
-                data=json.loads(path.read_text(encoding="utf-8"))
-                expires=datetime.fromisoformat(data["expires_at"])
-                owner=str(data["owner"])
-                pid=int(owner.split(":")[1]) if owner.startswith("runner:") else None
-                alive=True
-                if pid:
-                    try: os.kill(pid,0)
-                    except ProcessLookupError: alive=False
-                    except PermissionError: alive=True
-                result.append({"path":str(path),"resource_id":data.get("resource_id"),"owner":owner,"expired":expires<=now,"owner_alive":alive})
-            except (OSError,ValueError,TypeError,KeyError,json.JSONDecodeError):
-                result.append({"path":str(path),"resource_id":None,"owner":None,"expired":True,"owner_alive":False})
-        return tuple(result)
+                expires = datetime.fromisoformat(str(metadata["expires_at"]))
+                owner = str(metadata.get("owner", ""))
+                expired = expires <= now
+            except (ValueError, TypeError, KeyError):
+                owner = str(metadata.get("owner", "")) or None
+                expired = True
+
+            descriptor = None
+            locked = True
+            try:
+                flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+                descriptor = os.open(path, flags)
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    locked = False
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
+                except BlockingIOError:
+                    locked = True
+            except OSError:
+                locked = True
+            finally:
+                if descriptor is not None:
+                    os.close(descriptor)
+
+            results.append({
+                "path": str(path),
+                "resource_id": metadata.get("resource_id"),
+                "owner": owner,
+                "state": metadata.get("state", "UNKNOWN"),
+                "expired": expired,
+                "owner_alive": self._owner_alive(owner),
+                "locked": locked,
+            })
+        return tuple(results)
+
     def recover(self, lock_dir: str | Path) -> int:
-        removed=0
-        for item in self.inspect(lock_dir):
-            if item["expired"] and not item["owner_alive"]:
-                Path(str(item["path"])).unlink(missing_ok=True)
-                removed += 1
-        return removed
+        """Mark abandoned, unlocked leases recovered; preserve each lock inode."""
+        root = Path(lock_dir).resolve()
+        if not root.is_dir():
+            return 0
+        recovered = 0
+        now = datetime.now(timezone.utc)
+        for item in self.inspect(root):
+            if (
+                not item["expired"]
+                or item["owner_alive"]
+                or item["locked"]
+                or item["state"] not in {"HELD", "UNKNOWN"}
+            ):
+                continue
+            path = Path(str(item["path"]))
+            descriptor = None
+            try:
+                flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+                descriptor = os.open(path, flags)
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    continue
+                with os.fdopen(os.dup(descriptor), "r+b") as handle:
+                    handle.seek(0)
+                    try:
+                        metadata = json.load(handle)
+                    except (ValueError, TypeError):
+                        metadata = {}
+                    if not isinstance(metadata, dict):
+                        metadata = {}
+                    metadata.update({
+                        "state": "RECOVERED",
+                        "expires_at": now.isoformat(),
+                        "updated_at": now.isoformat(),
+                    })
+                    handle.seek(0)
+                    handle.truncate(0)
+                    handle.write(json.dumps(
+                        metadata, sort_keys=True, separators=(",", ":")
+                    ).encode("utf-8"))
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                recovered += 1
+            except OSError:
+                continue
+            finally:
+                if descriptor is not None:
+                    try:
+                        fcntl.flock(descriptor, fcntl.LOCK_UN)
+                    finally:
+                        os.close(descriptor)
+        return recovered
 
 class RunRecoveryService:
     """Classify abandoned RUNNING Runs after a process/host restart."""

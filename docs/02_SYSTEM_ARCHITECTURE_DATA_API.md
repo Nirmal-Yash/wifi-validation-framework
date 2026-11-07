@@ -218,17 +218,13 @@ The current AP br0 DHCP capture remains the behavioral reference.
 
 ## 15. LabController
 
-LabController gradually absorbs reusable provisioning logic:
+LabController is the compatibility boundary around the established provisioning shell.
 
-- GNS3 communication;
-- node discovery and lifecycle;
-- hwsim placement/state;
-- interface wiring;
-- service readiness;
-- client preparation;
-- router service setup;
-- AP readiness;
-- controlled recovery.
+- Run preparation performs a read-only launcher preflight: the configured script must exist and be executable before a Run or resource lease is created.
+- Explicit `provision(...)` and `cleanup(...)` operations retain the shell's existing argument/flag contract. They quote each argument, apply bounded timeouts and require an observed zero exit status.
+- Missing exit status, timeout, transport error or non-zero exit fails closed.
+- Run/pytest preparation never calls provision or cleanup automatically; physical-lab mutation remains an explicit operator action.
+- Longer-term reusable responsibilities remain GNS3 communication, node discovery/lifecycle, hwsim placement, interface wiring, service readiness and controlled recovery.
 
 ## 16. LabHealthService
 
@@ -238,7 +234,15 @@ Health states are `HEALTHY`, `DEGRADED`, `FAILED`, and `UNKNOWN`. A required com
 
 ## 17. Environment fingerprint
 
-Capture host OS/kernel, Python, tool versions, GNS3, Docker, hostapd, wpa_supplicant, FRR, hwsim state, repository commit and effective configuration hash.
+The stable identity digest covers host OS/kernel, Python, architecture/hostname, repository commit, available interfaces, lab ID, effective configuration hash, topology and device identity. Capture time and volatile observations are retained separately in the fingerprint payload but do not alter the stable identity digest. Fingerprint inputs are detached and immutable after capture. Non-finite or non-JSON input is rejected.
+
+## 17A. Configuration and resource orchestration
+
+Configuration merge precedence is `Defaults → Environment → Lab → Device → Run → Test Override`. The resolver retains per-leaf provenance, deep-copies caller input, returns immutable nested mappings/lists and computes a canonical JSON SHA-256. Credential redaction is applied before configuration is persisted or exposed through RunContext; the configuration hash remains tied to the effective resolved input.
+
+Resource locks are advisory cross-process `flock` leases stored under the resolved SQLite database's adjacent `locks` directory. Each resource ID maps to a collision-resistant persistent lock path. Lock files are never unlinked on release or stale recovery: unlinking a locked inode could let waiters and new openers lock different inodes. Lease metadata records owner, state, acquisition and expiry; the OS lock, not metadata expiry alone, is the source of exclusivity. Renewal updates metadata while the lock is held. Stale recovery can mark expired/dead-owner metadata recovered only after obtaining the same lock non-blockingly, and never removes the lock file.
+
+Run orchestration acquires lab and known device locks (plus an optional network-namespace lock) in deterministic order as one all-or-nothing lease group. Firmware update/rollback use the same `device:<id>` lock key and lock directory, preventing those mutations from overlapping a validation Run on the same device. All leases are released during terminal Run finalization or preparation failure.
 
 ## 18. Persistence
 

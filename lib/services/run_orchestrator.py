@@ -16,7 +16,7 @@ from .environment_fingerprint import (
     EnvironmentFingerprint,
     EnvironmentFingerprintService,
 )
-from .resource_lock import ResourceLease, ResourceLockManager
+from .resource_lock import ResourceLeaseGroup, ResourceLockManager
 from .run_service import RunService, redact_configuration
 
 
@@ -26,7 +26,7 @@ class RunExecutionSession:
     attempt: Attempt
     configuration: ResolvedConfiguration
     fingerprint: EnvironmentFingerprint
-    lease: ResourceLease
+    lease: ResourceLeaseGroup
 
 
 _TERMINAL_STATES = {
@@ -81,8 +81,28 @@ class RunOrchestrator:
             run=run_overrides,
             test_override=test_overrides,
         )
-        lease = self.lock_manager.acquire(
-            f"lab:{lab_id}",
+        if self.lab_controller is not None:
+            # This is a read-only compatibility preflight; provisioning remains
+            # an explicit operator action and is never triggered by pytest.
+            self.lab_controller.validate_launcher()
+
+        resources = [f"lab:{lab_id}"]
+        configured_device = (device_identity or {}).get("device_id")
+        if configured_device is None:
+            configured_device = configuration.values.get("device_id")
+        if configured_device:
+            resources.append(f"device:{configured_device}")
+
+        namespace_id = (
+            (device_identity or {}).get("namespace_id")
+            or (device_identity or {}).get("network_namespace")
+            or configuration.values.get("namespace_id")
+        )
+        if namespace_id:
+            resources.append(f"namespace:{namespace_id}")
+
+        lease = self.lock_manager.acquire_many(
+            resources,
             f"runner:{os.getpid()}:{self.run_service.id_generator()[-8:]}",
         )
         run = None

@@ -33,8 +33,8 @@ This B–P programme is the current execution order for the next development sli
 | C | Canonical Persistence Foundation: one SQLite path resolver, explicit database transaction scope, atomic initial Run + Attempt + creation events, and consistent resolver use by application entry points | Implemented and pushed in 82743fc; Actions run 41855004616 passed; REAL_LAB certification remains unverified |
 | D | Legacy Compatibility and Historical Migration: legacy helper facade, read-only source handling, deterministic IDs/provenance, migration ledger, idempotent import and legacy-baseline ineligibility | Implemented; hosted CI gate included; deployment database import remains an operator-run migration |
 | E | Database Schema Governance and Reliability: make Alembic the schema migration authority, versioned upgrades, schema drift checks, compatibility validation, and migration recovery | Implemented; migration, drift, backup and rollback tests included in hosted CI |
-| F | Execution and Process Reliability: worker lifecycle, subprocess supervision, cancellation, timeout taxonomy, crash/interrupt recovery and deterministic finalization | Implementation delivered on 2026-11-06; focused hosted verification pending; protected REAL_LAB remains separate |
-| G | Configuration, Environment and Resource Orchestration: typed configuration provenance, environment fingerprints, lab/device leases, orchestration boundaries and preflight contracts | Partially implemented in source; locking lifecycle, stale lease recovery, device/resource scope and orchestration preflight require focused verification |
+| F | Execution and Process Reliability: worker lifecycle, subprocess supervision, cancellation, timeout taxonomy, crash/interrupt recovery and deterministic finalization | Implemented; hosted workflow 42216004283 passed all three jobs; protected REAL_LAB remains separate |
+| G | Configuration, Environment and Resource Orchestration: typed configuration provenance, environment fingerprints, lab/device leases, orchestration boundaries and preflight contracts | Implementation delivered in this checkpoint; focused hosted CI pending; protected REAL_LAB remains separate |
 | H | Protocol Evidence Certification: live DHCP DORA, EAPOL four-way, Beacon/RSN and DNS correlation against verified real captures | Source implementation present; DHCP is wired; live evidence for all required protocol paths remains unverified |
 | I | Telemetry, Performance and Recovery Validation: measured WiFi telemetry, statistically governed performance tests, fault/recovery assertions and evidence correlation | Source implementation present; physical RF/performance/recovery certification outstanding |
 | J | Device and Firmware Lifecycle: adapter capability contracts, image verification, flash/reboot/readiness, rollback and target-specific lifecycle certification | Source implementation present; target hardware flash/reboot/rollback certification outstanding |
@@ -93,46 +93,33 @@ Delivered in this pass:
 - Pytest session finalization has an outer `finally` that releases the lab lease despite persistence or cleanup errors, and attempts worker-crash classification if finalization raises.
 - Focused process-control/cancellation-intent tests are added to hosted backend CI.
 
-Verification pending: focused process tests and the hosted CI run triggered by this commit. Protected REAL_LAB must still be re-established after execution/process behavior changes. Local pytest and attached GNS3 execution were not available in this session.
+Hosted workflow 42216004283 passed all three jobs, including the focused process tests. Protected REAL_LAB must still be re-established after execution/process behavior changes. Local pytest and attached GNS3 execution were not available in this session.
 
-#### Current execution handoff — 2026-11-06
+#### Phase G implementation update — 2026-11-07
 
-The current `main` head is `849c4e1c6471b0d0a9f2757d81d392c6c75fb657`. Phases B–E have committed implementations. Phase C (`82743fc`), D (`9ed1531`) and E (`849c4e1`) hosted workflow runs 41855004616, 41870444440 and 42053712826 passed. The latest E run passed the backend contract suite, frontend tests/build, and authenticated dashboard startup/proxy/session smoke test. These hosted checks do not certify protected REAL_LAB.
+Delivered in this pass:
+- Configuration layers merge in the declared order `Defaults → Environment → Lab → Device → Run → Test Override`. Inputs are detached; nested maps/lists are immutable in the resolved result; per-leaf provenance is retained; hashes use canonical JSON and reject non-finite values.
+- Environment fingerprints now hash stable host/repository/interface/lab/configuration/topology/device identity. Capture time and volatile observations are retained in the payload but excluded from the stable identity digest.
+- Resource lock paths are collision-resistant and persistent. Lock files are opened without following symlinks, use restrictive permissions and are never unlinked on release/recovery, preventing a waiter/new-opener inode split.
+- Leases support renewal and repeat-safe release. Multi-resource acquisition is sorted and all-or-nothing; lab, device and optional network-namespace resources are held together through Run finalization.
+- Firmware operations use the same database-adjacent `locks` directory and `device:<id>` lock key as validation Runs, preventing firmware mutation from overlapping a validation Run on that device.
+- Stale recovery checks the actual advisory lock, marks expired/dead-owner metadata recovered only after acquiring the lock, and preserves the lock inode. A live lock is never reclaimed even if its metadata expiry has passed.
+- Run preparation validates the provisioning launcher before creating a Run or acquiring resources. Provision/cleanup remain explicit operations; pytest does not automatically mutate or reprovision the lab.
+- LabController quotes every argument, applies bounded timeouts, and fails closed on timeout, transport failure, non-zero exit, or missing exit status.
+- Added tests for configuration, fingerprints, resource locks, stale recovery, LabController and end-to-end orchestration/resource scope. These tests are included in backend CI.
 
-**Next work is Phase F — Execution and Process Reliability.** Phase F and G have source foundations, so begin with targeted gaps and tests rather than a rewrite.
+Verification pending: Phase G hosted CI for this delivery. The protected GNS3/mac80211_hwsim REAL_LAB suite remains a separate required execution gate. No local pytest or physical-lab execution is claimed in this session.
 
-Source surfaces inspected:
-- `lib/services/run_process.py`: subprocess start and PID-based process-group cancellation/kill.
-- `lib/services/run_orchestrator.py`: Run creation, PREPARING transition, configuration/fingerprint persistence and lease acquisition/finalization.
-- `lib/services/resource_lock.py`: file-backed lock and lease metadata.
-- `lib/services/configuration.py`: hierarchical configuration resolution.
-- `lib/services/environment_fingerprint.py`: host, interface, topology and device fingerprint.
-- `lib/services/lab_controller.py`: provisioning compatibility boundary over CommandRunner.
+#### Current execution handoff — 2026-11-07
 
-**Phase F work packages**
-- F1 Audit all process call sites, Run state transitions, execution PID persistence, pytest hook/finalizer and cancellation API.
-- F2 Specify typed process handle/outcome contracts, process-group identity, ownership and terminal outcome taxonomy.
-- F3 Implement safe start/wait/terminate/escalate/reap/cleanup semantics, bounded timeouts and captured stdout/stderr.
-- F4 Wire orchestrator/API/pytest lifecycle so process ownership and persisted Run state cannot diverge; make finalization idempotent.
-- F5 Add tests for spawn failure, normal exit, assertion/internal error, cancellation, timeout, SIGTERM grace period, SIGKILL escalation, orphan recovery, stale/reused/foreign PID rejection, worker crash and finalizer exceptions.
-- F6 Run focused and broad non-lab tests, CI, inspect persisted events/artifacts and record unresolved REAL_LAB gate.
+Current main entering this Phase G delivery: `6da7aa46e3a93fa4fbc7c0e3466b6c1851ddd2a6`. Phases B–E remain implemented with their prior successful hosted CI runs. Phase F commit `6da7aa4` passed hosted workflow 42216004283 across backend contracts (including process lifecycle), frontend tests/build and authenticated dashboard startup/proxy/session smoke tests.
 
-Phase F acceptance: no unowned process can be cancelled; terminal finalization leaves no owned process running; Run and process outcomes reconcile; infrastructure/worker failures are not mapped to DUT failure; diagnostics are preserved; cleanup is repeat-safe.
+**Phase G implementation is delivered in this checkpoint; its hosted CI result is pending.** The implementation covers immutable layered configuration, stable identity fingerprints with separate observations, persistent cross-process resource locks, stale metadata recovery without inode deletion, all-or-nothing lab/device/namespace lease groups, shared validation/firmware device locks and read-only launcher preflight.
 
-**Phase G work packages**
-- G1 Verify configuration merge order `Defaults → Environment → Lab → Device → Run → Test Override`, immutability, provenance, secret redaction and canonical hashing.
-- G2 Separate stable fingerprint inputs from volatile observations; test deterministic hashing and retained diagnostic provenance.
-- G3 Harden resource locks: stable lock identity, cross-process exclusion, acquisition timeout, lease renewal, owner liveness, expiry and safe stale recovery.
-- G4 Verify lab/device/namespace/firmware lock scopes and prove same-resource operations cannot overlap.
-- G5 Integrate LabController preflight/provision/cleanup incrementally while preserving the existing provisioning script, flags, topology and capture lifecycle.
-- G6 Test failed preflight, unavailable tools, unhealthy lab, concurrent Runs, stale leases, cleanup and legacy CLI compatibility.
-- G7 Run full CI and protected REAL_LAB after execution/lab behavior changes.
+Phase G regression coverage includes cross-process exclusion, stable inode across release/reacquire, partial-acquisition rollback, stale-vs-live lock recovery, lease renewal, configuration precedence/provenance/immutability, stable fingerprints, command quoting/failure and Run/firmware/namespace exclusion.
 
-Phase G acceptance: deterministic configuration/fingerprint for identical inputs; provenance complete and secrets redacted; exclusive resource operations cannot overlap cross-process; stale recovery cannot remove a live lock; preflight failure blocks pytest; all protected topology, capture and CLI contracts remain unchanged.
+After Phase G hosted CI passes and the protected lab gate is re-established, proceed to **Phase H — Protocol Evidence Certification**. Do not start I before H has real capture evidence for DHCP, EAPOL, Beacon/RSN and DNS. Preserve the GNS3 topology, phy0/phy1 placement, eth1 management, wlan0 validation traffic, AP br0 DHCP capture, foreground Paramiko tcpdump, SFTP PCAP verification, existing pytest node IDs and provisioning CLI. Provisioning/cleanup remain explicit; Run preflight does not automatically mutate the physical lab.
 
-**Audit risks to convert into regression tests before editing:** process-group ownership/PID reuse; cancellation and reaping order; Run finalization when the worker or finalizer fails; lock-file unlink/reopen race across processes; lease renewal and stale-owner handling; correct lock scopes; immutable configuration and deterministic fingerprint. These are source-review risks, not yet reproduced runtime failures.
-
-Do not begin Phase H until F and G acceptance gates pass. Preserve the GNS3 topology, phy0/phy1 placement, eth1 management, wlan0 validation traffic, AP br0 DHCP capture, foreground Paramiko tcpdump channel, SFTP PCAP verification, existing pytest node IDs and provisioning CLI.
 
 #### Phase E — implementation contract
 

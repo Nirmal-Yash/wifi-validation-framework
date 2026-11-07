@@ -75,6 +75,7 @@ _EXPORTS = {
     "EnvironmentFingerprintService": (".environment_fingerprint", "EnvironmentFingerprintService"),
     "ResourceLockError": (".resource_lock", "ResourceLockError"),
     "ResourceLease": (".resource_lock", "ResourceLease"),
+    "ResourceLeaseGroup": (".resource_lock", "ResourceLeaseGroup"),
     "ResourceLockManager": (".resource_lock", "ResourceLockManager"),
     "LabController": (".lab_controller", "LabController"),
     "LabControllerError": (".lab_controller", "LabControllerError"),

@@ -153,13 +153,14 @@ All other discovery questions have an implementation decision.
 
 ## Audit basis
 
-Current repository audit date: 2026-11-06. Audited `main` head: `849c4e1c6471b0d0a9f2757d81d392c6c75fb657`. This is a source/history/hosted-CI audit, not an independent local pytest invocation or protected REAL_LAB run.
+Current repository audit date: 2026-11-07. Phase G is being delivered on top of Phase F main head `6da7aa46e3a93fa4fbc7c0e3466b6c1851ddd2a6`. This is a source/history/hosted-CI audit; local pytest and protected REAL_LAB execution are not available in this session.
 
-- Phase C commit `82743fc3c6dbdfa8ad614a278c87e8299fb94db0`; hosted workflow 41855004616 passed.
-- Phase D commit `9ed15312d5169b8692b82b43715138f9786fcf58`; hosted workflow 41870444440 passed.
-- Phase E commit `849c4e1c6471b0d0a9f2757d81d392c6c75fb657`; hosted workflow 42053712826 passed.
+- Phase C: hosted workflow 41855004616 passed.
+- Phase D: hosted workflow 41870444440 passed.
+- Phase E: hosted workflow 42053712826 passed.
+- Phase F: hosted workflow 42216004283 passed all three jobs (backend process/lifecycle contracts, frontend tests/build, and dashboard startup/proxy/session smoke test).
 
-The latest run completed all three jobs successfully: backend persistence/auth/dashboard contracts, frontend tests and production build, and dashboard launcher/Vite proxy/authenticated session smoke test. This workflow does not certify REAL_LAB.
+Phase G implementation and tests are included in the current delivery. Its hosted CI result is pending. Hosted CI does not certify protected REAL_LAB.
 
 The prior release wave established the standalone Runner architecture, but this audit found several source-level contract gaps that had been overstated as complete. The completeness wave closes the identified implementation defects and separates **source implementation readiness** from **execution certification**.
 
@@ -198,7 +199,7 @@ These are source-level correctness changes, not REAL_LAB certification. The hard
 
 Iterations 20–30 are source-implemented and the full core/release-readiness CI gates now pass. “Implemented” does not mean “runtime certified”: the real-lab execution class remains the authoritative proof for execution-sensitive behavior.
 
-## Current B–P phase assessment — 2026-11-06
+## Current B–P phase assessment — 2026-11-07
 
 | Phase | Source state | Verification / remaining gate |
 |---|---|---|
@@ -207,8 +208,8 @@ Iterations 20–30 are source-implemented and the full core/release-readiness CI
 | C | Implemented | Hosted workflow 41855004616 passed |
 | D | Implemented | Hosted workflow 41870444440 passed; actual archive import remains operator-run |
 | E | Implemented | Hosted workflow 42053712826 passed; schema/backup/rollback contracts included |
-| F | Implementation delivered; hosted verification pending | Owned process groups, PID identity validation, SIGTERM/SIGKILL cancellation, logs, cancellation intent and exception-safe lease release added; focused CI pending |
-| G | Partially implemented | Configuration/fingerprint/lab/resource modules exist; cross-process locking, lease recovery, lock scopes and preflight require focused tests |
+| F | Implemented | Owned process groups, PID identity validation, SIGTERM/SIGKILL cancellation, logs and cancellation intent; hosted workflow 42216004283 passed all three jobs; REAL_LAB separate |
+| G | Implementation delivered; hosted verification pending | Immutable layered configuration, stable fingerprints, persistent cross-process locks, safe stale recovery, lab/device/namespace leases, shared firmware exclusion and read-only launcher preflight; REAL_LAB separate |
 | H | Source implementation present | DHCP is wired; EAPOL/Beacon/DNS live capture certification remains |
 | I | Source implementation present | Physical RF/performance/recovery evidence remains |
 | J | Source implementation present | Real hardware flash/reboot/version/rollback certification remains |
@@ -219,15 +220,19 @@ Iterations 20–30 are source-implemented and the full core/release-readiness CI
 | O | Deferred | No production PostgreSQL repository adapter or tenant control plane claimed |
 | P | Pending final phase | Repository-wide cleanup and final integrity freeze remain |
 
-### Immediate Phase F/G audit targets
+### Phase G implementation evidence and remaining acceptance
 
-- `RunProcessManager.start/cancel/kill`: establish process-group ownership and reject stale, reused or unrelated PIDs before signalling.
-- `RunOrchestrator.prepare/finalize`: prove worker exit/reaping, resource release and persisted Run outcome remain consistent when spawn, test execution or finalization fails.
-- `ResourceLease.release`: add cross-process tests for lock-file identity; ensure a lock pathname cannot be unlinked while waiters may still hold the old inode.
-- Configuration: test exact precedence, deep-merge semantics, immutability, provenance, secret redaction and deterministic hashing.
-- LabController: verify compatibility flags and error/timeout propagation without changing protected provisioning/capture behavior.
+Phase G source changes in this delivery:
+- `lib/services/configuration.py`: declared precedence, deep copy, immutable nested results, per-leaf provenance, canonical hash and strict JSON/non-finite validation.
+- `lib/services/environment_fingerprint.py`: stable identity digest with separately retained volatile observations and immutable payload.
+- `lib/services/resource_lock.py`: stable collision-resistant inode, no symlink following, persistent lock file, renewal, idempotent release and ordered all-or-nothing resource groups.
+- `lib/services/operational_recovery.py`: stale metadata is reclaimed only after acquiring the same advisory lock; the inode is preserved.
+- `lib/services/run_orchestrator.py` and `lib/services/firmware_service.py`: shared lab/device/optional namespace leases and shared validation/firmware device scope.
+- `lib/services/lab_controller.py`: launcher preflight, argument quoting, bounded timeout and fail-closed exit status. Provision/cleanup remain explicit.
 
-These are source-review risks, not yet reproduced runtime failures; convert them into tests before implementation edits.
+Focused tests cover cross-process exclusion, inode stability, partial acquisition rollback, live-vs-stale recovery, lease renewal, configuration immutability/provenance, volatile observations, shell quoting/status handling and Run/firmware/namespace exclusion.
+
+Hosted CI for this delivery is pending. The protected real-lab acceptance remains outstanding; verify 11-scenario GNS3/mac80211_hwsim behavior after the hosted tests pass.
 
 ## Remaining gaps
 

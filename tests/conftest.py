@@ -336,7 +336,8 @@ def pytest_collection_finish(session):
     persisted_config = redact_configuration(resolved.values)
 
     service = _create_run_service(test_registry=registry)
-    lock_manager = ResourceLockManager(ROOT / "results" / "locks")
+    lock_directory = service.run_repository.database.path.resolve().parent / "locks"
+    lock_manager = ResourceLockManager(lock_directory)
     fingerprint_service = EnvironmentFingerprintService(ROOT)
     lab_controller = LabController(
         command_runner=LocalRunner(),
