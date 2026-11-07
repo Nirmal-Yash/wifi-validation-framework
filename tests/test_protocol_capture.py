@@ -563,3 +563,56 @@ def test_real_wifi_dns_capture_correlates_query_response(
         except Exception:
             pass
         helper.cleanup()
+
+
+
+def test_monitor_creation_failure_removes_only_test_owned_interface(monkeypatch):
+    commands = []
+
+    class FakeTcpdump:
+        def __init__(self, connection, *, interface, scope, filter_expr=None):
+            self.interface = interface
+
+        def ap_exec(self, command, *, timeout=20, check=True):
+            commands.append((self.interface, command))
+            if command == "iw dev wlan0 info":
+                return "Interface wlan0\n\twiphy 0\n", "", 0
+            if command == "iw dev mon0 info":
+                return "", "interface not found", 1
+            if command.startswith("sudo -n iw phy phy0 interface add mon0 type monitor"):
+                return "", "", 0
+            if command == "sudo -n ip link set mon0 up":
+                raise RuntimeError("simulated monitor activation failure")
+            if command == "sudo -n iw dev mon0 del":
+                return "", "", 0
+            raise AssertionError(f"Unexpected AP command: {command}")
+
+    monkeypatch.setitem(globals(), "ForegroundTcpdump", FakeTcpdump)
+
+    with pytest.raises(RuntimeError, match="simulated monitor activation failure"):
+        _ensure_ap_monitor_interface(object())
+
+    assert any(command.startswith("sudo -n iw phy phy0 interface add mon0") for _, command in commands)
+    assert ("wlan0", "sudo -n iw dev mon0 del") in commands
+
+
+def test_preexisting_monitor_interface_is_not_recreated_or_deleted(monkeypatch):
+    commands = []
+
+    class FakeTcpdump:
+        def __init__(self, connection, *, interface, scope, filter_expr=None):
+            self.interface = interface
+
+        def ap_exec(self, command, *, timeout=20, check=True):
+            commands.append((self.interface, command))
+            if command == "iw dev wlan0 info":
+                return "Interface wlan0\n\twiphy 0\n", "", 0
+            if command == "iw dev mon0 info":
+                return "Interface mon0\n\ttype monitor\n\twiphy 0\n", "", 0
+            raise AssertionError(f"Unexpected AP command: {command}")
+
+    monkeypatch.setitem(globals(), "ForegroundTcpdump", FakeTcpdump)
+
+    assert _ensure_ap_monitor_interface(object()) is False
+    assert not any("interface add mon0" in command for _, command in commands)
+    assert not any(command == "sudo -n iw dev mon0 del" for _, command in commands)
