@@ -577,9 +577,13 @@ class ProtocolEvidenceService:
     @staticmethod
     def _dns_qname(packet: Any) -> str | None:
         dns = packet[DNS]
-        if dns.qd is None or not getattr(dns.qd, "qname", None):
+        if int(getattr(dns, "qdcount", 0) or 0) < 1:
             return None
-        return bytes(dns.qd.qname).decode("utf-8", errors="replace").rstrip(".").lower()
+        question = dns.qd[0]
+        qname = getattr(question, "qname", None)
+        if not qname:
+            return None
+        return bytes(qname).decode("utf-8", errors="replace").rstrip(".").lower()
 
     @staticmethod
     def _dns_flow(packet: Any) -> tuple[str, str, int, str, int] | None:
@@ -645,7 +649,6 @@ class ProtocolEvidenceService:
         for _, packet in ordered:
             dns = packet[DNS]
             name = self._dns_qname(packet)
-            qtype = int(dns.qd.qtype) if dns.qd is not None else 0
             if name is None:
                 if expected is None:
                     if int(dns.qr) == 0:
@@ -656,6 +659,7 @@ class ProtocolEvidenceService:
                 continue
             if expected is not None and name != expected:
                 continue
+            qtype = int(dns.qd[0].qtype)
 
             flow = self._dns_flow(packet)
             timestamp = float(getattr(packet, "time", 0.0))

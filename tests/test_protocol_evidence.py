@@ -9,6 +9,7 @@ from scapy.all import (
     Dot11,
     Dot11Beacon,
     Dot11Elt,
+    EAPOL,
     Ether,
     IP,
     LLC,
