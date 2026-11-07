@@ -78,6 +78,8 @@ class BeaconEvidence:
     beacon_interval_ms: float | None = None
     capabilities: str | None = None
     matches_expected_ssid: bool = True
+    rsn_valid: bool = False
+    matches_expected_bssid: bool = True
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)

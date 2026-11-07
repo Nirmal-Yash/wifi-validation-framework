@@ -209,8 +209,8 @@ Iterations 20–30 are source-implemented and the full core/release-readiness CI
 | D | Implemented | Hosted workflow 41870444440 passed; actual archive import remains operator-run |
 | E | Implemented | Hosted workflow 42053712826 passed; schema/backup/rollback contracts included |
 | F | Implemented | Owned process groups, PID identity validation, SIGTERM/SIGKILL cancellation, logs and cancellation intent; hosted workflow 42216004283 passed all three jobs; REAL_LAB separate |
-| G | Implementation delivered; hosted verification pending | Immutable layered configuration, stable fingerprints, persistent cross-process locks, safe stale recovery, lab/device/namespace leases, shared firmware exclusion and read-only launcher preflight; REAL_LAB separate |
-| H | Source implementation present | DHCP is wired; EAPOL/Beacon/DNS live capture certification remains |
+| G | Implemented; hosted CI passed | Immutable layered configuration, stable fingerprints, persistent cross-process locks, safe stale recovery, lab/device/namespace leases, shared firmware exclusion and read-only launcher preflight; workflow 42363358706 passed; REAL_LAB separate |
+| H | Source implementation delivered; protected execution pending | Hardened DHCP/EAPOL/Beacon/RSN/DNS correlation; EAPOL/Beacon/DNS foreground capture tests, SFTP/hash verification and Run-scoped artifacts added; protected live execution and DHCP T1/T2 capture remain pending |
 | I | Source implementation present | Physical RF/performance/recovery evidence remains |
 | J | Source implementation present | Real hardware flash/reboot/version/rollback certification remains |
 | K | Substantially implemented | Target deployment and threat-model acceptance remain |
@@ -232,12 +232,12 @@ Phase G source changes in this delivery:
 
 Focused tests cover cross-process exclusion, inode stability, partial acquisition rollback, live-vs-stale recovery, lease renewal, configuration immutability/provenance, volatile observations, shell quoting/status handling and Run/firmware/namespace exclusion.
 
-Hosted CI for this delivery is pending. The protected real-lab acceptance remains outstanding; verify 11-scenario GNS3/mac80211_hwsim behavior after the hosted tests pass.
+Phase G hosted workflow 42363358706 passed. The protected real-lab acceptance remains outstanding; verify the full GNS3/mac80211_hwsim suite on the lab host.
 
 ## Remaining gaps
 
 1. **Future Cloud control plane:** a durable first-class Project entity, organization model and end-to-end multi-project ownership remain intentionally deferred to the future Cloud/SaaS control plane; the standalone Runner keeps local role/project primitives without inventing Cloud persistence.
-2. **Protected protocol execution evidence:** DHCP evidence is source-wired into the real capture path. EAPOL, Beacon/RSN and DNS analyzers have typed implementations and unit coverage but still require protected live execution evidence.
+2. **Protected protocol execution evidence:** the DHCP capture path remains intact; EAPOL/Beacon/RSN capture on the AP's existing PHY and DNS capture on AP `br0` are now wired as protected real-lab tests with verified PCAP and Run-scoped protocol JSON artifacts. These tests have not yet been run on the protected lab. The dnsmasq lease remains 12 hours, so live T1/T2 evidence requires a separately approved short-lease execution window; the pytest path does not alter DHCP service configuration.
 3. **Runtime certification:** CI/source verification cannot replace GNS3/mac80211_hwsim, real-device firmware, authenticated browser/runtime, and production-like deployment evidence.
 
 ## Protected behavioral baseline

@@ -400,7 +400,36 @@ class TestRegistry:
                         "dhcp_packets": "packets",
                         "dora_transactions": "transactions",
                     },
-                    evidence_requirements=(ArtifactType.PCAP,),
+                    evidence_requirements=(
+                        ArtifactType.PCAP,
+                        ArtifactType.PROTOCOL_EVIDENCE,
+                    ),
+                ),
+                TestDefinition(
+                    "wifi.protocol.eapol_beacon",
+                    "tests/test_protocol_capture.py::test_real_wifi_capture_contains_eapol_and_beacon",
+                    "1.0", "Standard Regression", "WPA2/EAPOL + 802.11 Beacon/RSN",
+                    Severity.HIGH, Criticality.BLOCKING,
+                    ("ap_host", "client_vm"), "client↔AP",
+                    destructive=False, estimated_duration_sec=60,
+                    capabilities=("monitor_capture", "pcap_capture", "sftp", "wpa_cli"),
+                    evidence_requirements=(
+                        ArtifactType.PCAP,
+                        ArtifactType.PROTOCOL_EVIDENCE,
+                    ),
+                ),
+                TestDefinition(
+                    "wifi.protocol.dns_capture",
+                    "tests/test_protocol_capture.py::test_real_wifi_dns_capture_correlates_query_response",
+                    "1.0", "Standard Regression", "DNS/PCAP",
+                    Severity.HIGH, Criticality.BLOCKING,
+                    ("ap_host", "client_vm"), "client→resolver",
+                    destructive=False, estimated_duration_sec=30,
+                    capabilities=("pcap_capture", "sftp", "dns"),
+                    evidence_requirements=(
+                        ArtifactType.PCAP,
+                        ArtifactType.PROTOCOL_EVIDENCE,
+                    ),
                 ),
             )
         )

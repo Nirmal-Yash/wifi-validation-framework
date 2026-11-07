@@ -93,7 +93,7 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install backend dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
-      - name: Run authentication, dashboard and Phase B–G correctness tests
+      - name: Run authentication, dashboard and Phase B–H correctness tests
         run: >-
           python -m pytest
           tests/test_auth_flow.py
@@ -120,6 +120,7 @@ jobs:
           tests/test_lab_controller.py
           tests/test_phase_g_orchestration.py
           tests/test_device_firmware_adapters.py
+          tests/test_protocol_evidence.py
           tests/test_iterations_23_25.py
           tests/test_sync_service.py
 

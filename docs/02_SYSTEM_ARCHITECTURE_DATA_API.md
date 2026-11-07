@@ -214,7 +214,7 @@ start
 → register
 ~~~
 
-The current AP br0 DHCP capture remains the behavioral reference.
+The AP `br0` DHCP capture remains the protected behavioral reference. The same foreground Paramiko/tcpdump → clean stop → SFTP → SHA-256 verification lifecycle is used for DNS on `br0` and for EAPOL/Beacon frames on a temporary `mon0` created on the existing AP wiphy. The monitor interface is removed only when the test created it; AP `wlan0`, hostapd and the protected channel are not reconfigured.
 
 ## 15. LabController
 
@@ -325,12 +325,12 @@ The service does not decide whether disruption or recovery constitutes a product
 `ProtocolEvidenceService` consumes verified PCAP artifacts and derives typed protocol evidence without modifying the raw capture.
 
 Supported correlation:
-- DHCP transaction ID + client identity with ordered DORA detection;
-- EAPOL endpoint grouping + four-way handshake key-message ordering;
-- beacon SSID/BSSID/channel/RSN/cipher/AKM/beacon-interval/capability extraction;
-- DNS transaction ID + question correlation.
+- DHCP transaction ID + client identity with ordered DORA detection; T1 renewal is a unicast `ciaddr` request, T2 rebind is a limited-broadcast `ciaddr` request, and each requires a subsequent ACK in the same transaction;
+- EAPOL four-way message ordering with AP/client direction checks, pairwise-key message validation, M1/M2 replay-counter equality and M3/M4 replay-counter equality with an increasing M3 counter;
+- beacon identity selection by expected SSID/BSSID, RSN structure validation, cipher/AKM extraction and beacon interval conversion from 802.11 Time Units to milliseconds;
+- DNS transaction ID + normalized question + transport protocol + reversed IP/port five-tuple + temporal ordering, with each response consumed at most once and only correlated A/AAAA answers accepted.
 
-The service writes JSON evidence only after packet parsing succeeds. The raw PCAP remains authoritative, and compatibility functions in `lib/wifi_analyzer.py` delegate to this service.
+The service writes JSON evidence only after packet parsing succeeds. The raw PCAP remains authoritative, and compatibility functions in `lib/wifi_analyzer.py` delegate to this service. A parsed analyzer result is not itself a live-lab certification: execution-sensitive evidence must reference the verified raw PCAP collected from the protected GNS3/mac80211_hwsim environment.
 
 ## 20. Lifecycle events
 

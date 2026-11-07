@@ -1079,13 +1079,28 @@ Protocol analyzer tests must verify:
 
 - DHCP correlation by transaction ID and client identity;
 - DORA ordering rather than independent packet counts;
-- EAPOL four-way message ordering;
-- beacon RSN/cipher/AKM extraction;
-- DNS query/response transaction correlation;
+- T1 renewal vs T2 rebind classification from unicast vs limited-broadcast `ciaddr` requests, with a subsequent ACK;
+- EAPOL M1/M2/M3/M4 direction, pairwise-key message semantics and replay-counter relationships;
+- beacon target identity, channel, structurally valid RSN, ciphers, AKM, capabilities and TU-to-millisecond interval conversion;
+- DNS transaction ID, normalized question, reversed IP/transport ports, temporal order and one-to-one response correlation;
 - raw PCAP remains unchanged after analysis;
-- derived protocol evidence can be serialized and registered as Run-scoped evidence.
+- derived protocol evidence is serialized and registered beside the raw PCAP as Run/TestResult-scoped evidence.
 
-The real DHCP capture test must continue using the protected AP `br0` tcpdump + SFTP + SHA-256 path while its assertion is upgraded from packet count/ACK presence to correlated DORA evidence.
+The existing DHCP test must retain its AP `br0` foreground Paramiko tcpdump + SFTP + SHA-256 path and correlated DORA assertion.
+
+### Protected EAPOL / Beacon capture
+
+`tests/test_protocol_capture.py::test_real_wifi_capture_contains_eapol_and_beacon` creates `mon0` on the existing AP PHY only when it is absent, without changing AP `wlan0`, hostapd or the configured channel. It captures without a restrictive filter, triggers client reassociation over the separate management path (`eth1`), waits for `wpa_state=COMPLETED`, then proves the four-way EAPOL exchange and the expected SSID/BSSID, channel 6 and WPA2-PSK/CCMP RSN beacon. A pre-existing `mon0` must already share the AP `wlan0` wiphy. The test removes `mon0` only when it created it.
+
+### Protected DNS capture
+
+`tests/test_protocol_capture.py::test_real_wifi_dns_capture_correlates_query_response` captures `udp port 53 or tcp port 53` on AP `br0` while the client resolves the configured hostname. It validates the actual query/response reverse flow and confirms the resolved address appears in the correlated PCAP evidence.
+
+Both new tests use the same foreground tcpdump channel, SFTP binary transfer, remote/local SHA-256 equality and Run-scoped PCAP plus protocol JSON registration. They are marked `real_lab`; hardware-free CI runs only the analyzer fixture tests and does not claim the live capture tests passed.
+
+### DHCP T1/T2 operational constraint
+
+The current authoritative dnsmasq configuration uses a 12-hour lease. A routine short test cannot wait for T1/T2; do not shorten or rewrite the lease in pytest or during implicit provisioning. Live T1/T2 capture requires an operator-approved isolated short-lease window, followed by verification that the normal 12-hour lab configuration is restored. Synthetic PCAP fixtures validate classifier behavior only and do not substitute for this live acceptance.
 
 ## 24. Iteration 14 telemetry validation
 

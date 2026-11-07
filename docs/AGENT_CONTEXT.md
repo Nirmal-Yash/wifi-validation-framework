@@ -136,23 +136,13 @@ Update documentation with behavior, data-contract and API changes as each phase 
 
 ## 13. Current phase sequence and next step
 
-The current authoritative implementation sequence is the bounded B–P programme in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. Phase B is implemented. Phase C establishes canonical SQLite path resolution and transaction integrity, including atomic creation of a Run, its first Attempt and both creation events. Phase C deliberately leaves legacy database import to Phase D and Alembic/schema governance to Phase E.
+The authoritative B–P sequence is in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. Phases B–G are implemented; Phase G hosted workflow 42363358706 passed its backend, frontend and dashboard jobs.
 
-**Next implementation phase: D — Legacy Compatibility and Historical Migration.** It will reconcile the older `lib/db_helper.py` storage contract with normalized Run/Attempt/TestResult repositories and provide safe, idempotent import from legacy databases. Do not start that work as part of Phase C.
+**Phase H source implementation is delivered; the next required action is protected live-lab acceptance, not Phase I implementation.** The protocol analyzers enforce DHCP transaction sequencing and destination-based T1/T2 classification, directional/replay-paired EAPOL four-way handshakes, target Beacon identity and valid RSN parsing, and DNS question/five-tuple/time correlation. Protected live capture tests collect EAPOL/Beacon on an AP-side monitor interface sharing the existing AP PHY and DNS on AP `br0`, using foreground Paramiko tcpdump, SFTP, remote/local SHA-256 checks and Run-scoped PCAP/protocol JSON artifacts.
 
-The protected GNS3/mac80211_hwsim real-lab suite remains a separate certification requirement. The historical 11/11 baseline is not evidence that current `main` has been recertified. Source-level persistence tests or GitHub-hosted CI must never be described as a real-lab pass.
+The protected GNS3/mac80211_hwsim execution has not yet been performed in this environment. Do not proceed to Phase I until the Phase H live evidence is captured and accepted. The current dnsmasq lease is 12 hours; live T1/T2 testing requires an explicit operator-approved short-lease window and must not mutate the normal lab configuration implicitly. Do not create synthetic evidence for live certification.
 
-The iteration notes below are retained as historical implementation records. The B–P programme above determines the current development order.
-
-Iterations 6 through 12 are implemented on main. Local/unit execution and the required real-lab gates remain pending where documented because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
-
-Iteration 13 implementation is present on main: typed protocol evidence, DHCP transaction correlation, EAPOL four-way sequence detection, beacon RSN/security extraction, DNS query/response correlation and Run-scoped protocol-evidence artifacts. Local/unit and real-lab verification remain pending because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
-
-Iteration 14 implementation is present on main: typed WiFi telemetry points/snapshots, secured read-only collection through wpa_cli/iw, environment-class labeling, retry/failure counters where available and RunContext integration. Local/unit and real-lab verification remain pending because this execution environment cannot run the repository or GNS3/mac80211_hwsim lab.
-
-The historical iteration sequence through Iteration 30 is implemented on main; future work must now follow the protected runtime-certification sequence documented in the canonical roadmap rather than treating another source iteration as the immediate priority.
-
-Legacy test result storage remains as compatibility storage until the migration is explicitly retired.
+The established topology remains phy0=AP, phy1=client, management eth1, WiFi data path wlan0 and AP DHCP/DNS bridge br0. Existing DHCP foreground capture and pytest node IDs remain protected. Provisioning and cleanup remain explicit; no source/CI result substitutes for the real-lab gate. Cloud/SaaS remains deferred until standalone Runner certification; Phase P remains final repository cleanup.
 
 ## 14. Iteration 6 status
 
@@ -187,7 +177,9 @@ Raw samples remain the source of truth. Aggregate evaluation is deterministic an
 
 ## 21. Iteration 13 status
 
-Protocol evidence is now separated from raw packet collection. `ProtocolEvidenceService` preserves the protected DHCP capture path while validating correlated DHCP DORA transactions, and it provides typed analyzers for EAPOL four-way handshakes, 802.11 beacons/RSN parameters and DNS transaction correlation. DHCP protocol evidence is emitted as a Run-scoped JSON artifact beside the verified PCAP.
+Protocol evidence is separated from raw packet collection. The DHCP analyzer validates DORA and distinguishes T1 unicast renewal from T2 limited-broadcast rebind only when a subsequent ACK is present. EAPOL completion requires correct AP/client direction and pairwise-key replay-counter relationships. Beacon evidence selects the expected SSID/BSSID, validates RSN structure and reports beacon interval in milliseconds. DNS correlation requires matching transaction/question, reversed IP/transport endpoints and response-after-query ordering; only correlated IP answers are retained.
+
+The protected DHCP capture path remains unchanged. New real-lab EAPOL/Beacon and DNS capture tests preserve raw PCAPs, verify SFTP SHA-256 equality and register PCAP plus protocol JSON under the Run/TestResult. These tests have not yet been executed against GNS3/mac80211_hwsim in this environment. The current 12-hour dnsmasq lease also means live T1/T2 acceptance requires an operator-approved short-lease window.
 
 Legacy `lib.wifi_analyzer` entry points remain available as compatibility wrappers and now expose the richer correlated evidence fields.
 
@@ -257,12 +249,10 @@ Iterations 28–30 are one coherent release slice. Iteration 28 owns final relea
  
 ## 30. Current B–P execution handoff — 2026-11-07
 
-Current main entering Phase G delivery: `6da7aa46e3a93fa4fbc7c0e3466b6c1851ddd2a6`.
+Current `main` entering Phase H delivery: `64ff134690b03d6fd10c18eb6062a5c6c7a24aae`.
 
-Phases B–E have passed their recorded hosted CI runs. Phase F commit `6da7aa4` passed workflow 42216004283 across backend process/lifecycle tests, frontend tests/build and dashboard startup/proxy/session smoke tests.
+Phase G commit `64ff134` passed workflow 42363358706 across backend correctness tests, frontend tests/build and dashboard startup/proxy/session smoke tests.
 
-**Phase G implementation is delivered in this checkpoint; hosted CI is pending.** The change hardens immutable configuration/provenance, stable identity fingerprints, persistent cross-process resource leases, safe stale metadata recovery, deterministic multi-resource acquisition, shared Run/firmware device exclusion, optional namespace exclusion, and read-only launcher preflight. Provisioning and cleanup remain explicit, not automatic.
+**Phase H source implementation is delivered in this checkpoint.** Parser coverage now rejects false EAPOL handshakes using endpoint direction and replay counters, DNS cross-flow and duplicate response matching, malformed RSN elements, wrong Beacon identity, and DHCP ACKs that precede the renewal/rebind request. Protected capture tests were added for AP-side EAPOL/Beacon collection and AP-bridge DNS collection, with foreground Paramiko tcpdump, SFTP, remote/local SHA-256 verification and Run-scoped PCAP/protocol JSON artifacts. The original DHCP capture path and node ID are unchanged.
 
-Phase G tests include cross-process locks, stable inode, stale-vs-live recovery, multi-resource rollback, lease renewal, config immutability/provenance, stable fingerprint observations, LabController quoting/timeout/exit-status and Run/firmware/namespace exclusion.
-
-After Phase G hosted CI passes and the protected REAL_LAB gate is re-established, proceed to **Phase H — Protocol Evidence Certification**. Preserve GNS3 topology, phy0/phy1, eth1 management, wlan0 test traffic, AP br0 DHCP capture, foreground Paramiko tcpdump, SFTP PCAP verification, existing pytest node IDs and provisioning CLI. No hosted CI/source-only result substitutes for the 11-scenario protected-lab evidence. Cloud/SaaS remains after standalone certification; Phase P remains final cleanup.
+**The Phase H protected live acceptance is not yet complete.** These real-lab tests, the existing DHCP capture and the full protected suite must be executed on the established GNS3/mac80211_hwsim host. The current 12-hour dnsmasq lease means T1/T2 capture requires a separately approved short-lease window. Do not automatically alter lab lease configuration or proceed to Phase I until the live evidence has been accepted. Cloud/SaaS remains after standalone certification; Phase P remains final cleanup.
