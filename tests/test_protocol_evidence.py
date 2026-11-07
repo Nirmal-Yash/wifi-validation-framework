@@ -519,3 +519,13 @@ def test_dns_questionless_response_is_reported_as_unmatched(tmp_path):
     assert evidence.unmatched_query_count == 1
     assert evidence.unmatched_response_count == 1
     assert evidence.correlated_transaction_count == 0
+
+
+def test_dns_question_helper_handles_empty_question_list():
+    packet = Ether() / DNS(qr=1, qdcount=1, qd=None, ancount=0)
+    assert ProtocolEvidenceService._dns_question(packet) is None
+
+
+def test_dns_answer_values_handles_inconsistent_answer_count():
+    packet = Ether() / DNS(qr=1, ancount=2, an=[])
+    assert ProtocolEvidenceService._dns_answer_values(packet) == ()

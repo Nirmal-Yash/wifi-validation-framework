@@ -575,15 +575,25 @@ class ProtocolEvidenceService:
         )
 
     @staticmethod
-    def _dns_qname(packet: Any) -> str | None:
-        dns = packet[DNS]
-        if int(getattr(dns, "qdcount", 0) or 0) < 1:
+    def _dns_question(packet: Any) -> Any | None:
+        """Return the first question without indexing an empty Scapy PacketList."""
+        questions = packet[DNS].getfieldval("qd")
+        if isinstance(questions, (list, tuple)):
+            return questions[0] if questions else None
+        return questions
+
+    @staticmethod
+    def _dns_qname(question: Any) -> str | None:
+        if question is None:
             return None
-        question = dns.qd[0]
         qname = getattr(question, "qname", None)
         if not qname:
             return None
-        return bytes(qname).decode("utf-8", errors="replace").rstrip(".").lower()
+        value = (
+            qname if isinstance(qname, str)
+            else bytes(qname).decode("utf-8", errors="replace")
+        )
+        return value.rstrip(".").lower()
 
     @staticmethod
     def _dns_flow(packet: Any) -> tuple[str, str, int, str, int] | None:
@@ -612,13 +622,20 @@ class ProtocolEvidenceService:
     def _dns_answer_values(packet: Any) -> tuple[str, ...]:
         dns = packet[DNS]
         values: list[str] = []
-        for index in range(int(dns.ancount or 0)):
-            answer = dns.an[index]
-            if not hasattr(answer, "rdata"):
+        answer_records = dns.getfieldval("an")
+        if isinstance(answer_records, (list, tuple)):
+            answers = answer_records
+        elif answer_records is None:
+            answers = ()
+        else:
+            answers = (answer_records,)
+        answer_count = max(0, int(getattr(dns, "ancount", 0) or 0))
+        for answer in answers[:answer_count]:
+            value = getattr(answer, "rdata", None)
+            if value is None:
                 continue
-            value = str(answer.rdata)
             try:
-                values.append(str(ipaddress.ip_address(value)))
+                values.append(str(ipaddress.ip_address(str(value))))
             except ValueError:
                 continue
         return tuple(values)
@@ -648,7 +665,8 @@ class ProtocolEvidenceService:
 
         for _, packet in ordered:
             dns = packet[DNS]
-            name = self._dns_qname(packet)
+            question = self._dns_question(packet)
+            name = self._dns_qname(question)
             if name is None:
                 if expected is None:
                     if int(dns.qr) == 0:
@@ -659,7 +677,7 @@ class ProtocolEvidenceService:
                 continue
             if expected is not None and name != expected:
                 continue
-            qtype = int(dns.qd[0].qtype)
+            qtype = int(getattr(question, "qtype", 0) or 0)
 
             flow = self._dns_flow(packet)
             timestamp = float(getattr(packet, "time", 0.0))

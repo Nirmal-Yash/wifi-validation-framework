@@ -121,6 +121,8 @@ jobs:
           tests/test_phase_g_orchestration.py
           tests/test_device_firmware_adapters.py
           tests/test_protocol_evidence.py
+          tests/test_packet_capture.py
+          tests/test_protocol_capture.py
           tests/test_iterations_23_25.py
           tests/test_sync_service.py
 

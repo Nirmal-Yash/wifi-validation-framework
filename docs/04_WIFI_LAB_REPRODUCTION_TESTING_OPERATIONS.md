@@ -1096,7 +1096,7 @@ The existing DHCP test must retain its AP `br0` foreground Paramiko tcpdump + SF
 
 `tests/test_protocol_capture.py::test_real_wifi_dns_capture_correlates_query_response` captures `udp port 53 or tcp port 53` on AP `br0` while the client resolves the configured hostname. It validates the actual query/response reverse flow and confirms the resolved address appears in the correlated PCAP evidence.
 
-Both new tests use the same foreground tcpdump channel, SFTP binary transfer, remote/local SHA-256 equality and Run-scoped PCAP plus protocol JSON registration. They are marked `real_lab`; hardware-free CI runs only the analyzer fixture tests and does not claim the live capture tests passed.
+Both new tests use the same foreground tcpdump channel, SFTP binary transfer, remote/local SHA-256 equality and Run-scoped PCAP plus protocol JSON registration. They are marked `real_lab`; hardware-free CI collects the protected capture modules with their real-lab connection fixture skipped, and runs the analyzer fixtures; it does not claim the live capture tests passed.
 
 ### DHCP T1/T2 operational constraint
 

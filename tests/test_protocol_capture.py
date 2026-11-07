@@ -317,23 +317,31 @@ def _ensure_ap_monitor_interface(ap_connection) -> bool:
         )
         return False
 
-    ForegroundTcpdump(
+    creator = ForegroundTcpdump(
         ap_connection, interface="wlan0", scope="preflight"
-    ).ap_exec(
-        f"sudo -n iw phy {shlex.quote(phy)} interface add mon0 type monitor "
-        "&& sudo -n ip link set mon0 up",
+    )
+    # Track ownership immediately after creation; a later activation or
+    # verification error must not leak a monitor interface into the lab.
+    creator.ap_exec(
+        f"sudo -n iw phy {shlex.quote(phy)} interface add mon0 type monitor",
         timeout=15,
     )
-    monitor_info, _, _ = ForegroundTcpdump(
-        ap_connection, interface="mon0", scope="preflight"
-    ).ap_exec("iw dev mon0 info", timeout=10)
-    monitor_match = re.search(r"^\s*wiphy\s+(\d+)\s*$", monitor_info, re.MULTILINE)
-    assert monitor_match and monitor_match.group(1) == match.group(1), (
-        f"New mon0 does not share AP wlan0's wiphy {phy}: {monitor_info!r}"
-    )
-    assert re.search(r"\btype\s+monitor\b", monitor_info, re.IGNORECASE), (
-        f"New mon0 is not a monitor-mode interface: {monitor_info!r}"
-    )
+    try:
+        creator.ap_exec("sudo -n ip link set mon0 up", timeout=10)
+        monitor_info, _, _ = creator.ap_exec("iw dev mon0 info", timeout=10)
+        monitor_match = re.search(r"^\s*wiphy\s+(\d+)\s*$", monitor_info, re.MULTILINE)
+        assert monitor_match and monitor_match.group(1) == match.group(1), (
+            f"New mon0 does not share AP wlan0's wiphy {phy}: {monitor_info!r}"
+        )
+        assert re.search(r"\btype\s+monitor\b", monitor_info, re.IGNORECASE), (
+            f"New mon0 is not a monitor-mode interface: {monitor_info!r}"
+        )
+    except Exception:
+        try:
+            creator.ap_exec("sudo -n iw dev mon0 del", timeout=10, check=False)
+        except Exception:
+            pass
+        raise
     return True
 
 
