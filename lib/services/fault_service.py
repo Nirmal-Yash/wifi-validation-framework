@@ -59,6 +59,16 @@ class FaultService:
     def __init__(self, command_runner: CommandRunner) -> None:
         self.command_runner = command_runner
 
+    @staticmethod
+    def _check_known_exit_status(result, fault: FaultDefinition, phase: str) -> None:
+        # Netmiko cannot report a process exit code. Known failures are rejected;
+        # unknown status remains subject to explicit postcondition/recovery checks.
+        if result.exit_code not in (None, 0):
+            raise RuntimeError(
+                f"fault {phase} command failed for {fault.fault_id}: "
+                f"{result.safe_display_command}: exit code {result.exit_code}"
+            )
+
     def apply(self, fault: FaultDefinition) -> None:
         self._execute(fault, fault.apply_commands, phase="apply")
 
@@ -78,6 +88,7 @@ class FaultService:
                         f"fault restore transport failed for {fault.fault_id}: "
                         f"{result.safe_display_command}: {result.transport_error}"
                     )
+                self._check_known_exit_status(result, fault, "restore")
             except Exception as exc:
                 first_error = first_error or exc
         for check_command, required_tokens in fault.restore_checks:
@@ -96,6 +107,7 @@ class FaultService:
                             f"fault restore verification transport failed for {fault.fault_id}: "
                             f"{result.safe_display_command}: {result.transport_error}"
                         )
+                    self._check_known_exit_status(result, fault, "restore verification")
                     output = result.stdout.strip()
                     if (not required_tokens and output) or (
                         required_tokens and all(token in output for token in required_tokens)
@@ -153,6 +165,7 @@ class FaultService:
                     f"fault restore association transport failed for {fault.fault_id}: "
                     f"{result.safe_display_command}: {result.transport_error}"
                 )
+            self._check_known_exit_status(result, fault, "association verification")
 
         def field(output: str, key: str) -> str | None:
             for line in output.splitlines():
@@ -203,9 +216,16 @@ class FaultService:
         try:
             self.apply(fault)
             yield
-        finally:
-            # Restoration is unconditional so a partially applied fault cannot
-            # leave the shared lab in a mutated state.
+        except BaseException as primary_error:
+            try:
+                self.restore(fault)
+            except Exception as restore_error:
+                primary_error.add_note(
+                    f"Fault restoration also failed for {fault.fault_id}: {restore_error}"
+                )
+                raise primary_error from restore_error
+            raise
+        else:
             self.restore(fault)
 
     def _execute(
@@ -228,6 +248,7 @@ class FaultService:
                     f"fault command transport failed for {fault.fault_id}: "
                     f"{result.safe_display_command}: {result.transport_error}"
                 )
+            self._check_known_exit_status(result, fault, phase)
 
     @staticmethod
     def wifi_link_flap(

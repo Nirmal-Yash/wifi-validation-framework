@@ -424,6 +424,10 @@ Every `TelemetryPoint` carries `VIRTUAL_WIFI` or `PHYSICAL_WIFI` plus source, in
 
 Telemetry is contextual evidence and does not become an authoritative PASS metric unless a future TestRegistry definition explicitly opts into it. Virtual hwsim telemetry never represents RF certification.
 
+Telemetry points and snapshots are immutable, including recursively frozen JSON metadata. A known non-zero command exit invalidates that command's output. Netmiko's interactive transport cannot expose a process exit code; parsed driver output from that transport is retained only with an explicit exit-status-unavailable warning. Missing or malformed observations are never converted into synthetic measurements.
+
+Performance tests use TestRegistry as the decision authority. The default plan records one warm-up plus three measured repetitions, persists every raw sample, excludes warm-ups from aggregation, and applies MEAN to ping success/packet loss/throughput and P95 to latency. Each performance decision policy requires at least three eligible samples.
+
 
 ## 19D. RegressionIntelligenceService
 

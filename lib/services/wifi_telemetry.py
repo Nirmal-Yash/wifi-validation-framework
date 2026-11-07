@@ -194,32 +194,39 @@ class WifiTelemetryService:
         return None
 
     def _run_readonly(self, *, source: str, command: str) -> _CommandObservation:
-        result = self.command_runner.execute(
-            self.target,
-            command,
-            command_category="wifi_telemetry",
-            idempotent=True,
-            privilege_mode="USER",
-        )
+        try:
+            result = self.command_runner.execute(
+                self.target, command, command_category="wifi_telemetry",
+                idempotent=True, privilege_mode="USER",
+            )
+        except Exception as exc:
+            return _CommandObservation(
+                source=source, stdout="",
+                warning=f"{source} execution failed: {type(exc).__name__}: {exc}",
+            )
         if not result.transport_succeeded:
             return _CommandObservation(
-                source=source,
-                stdout="",
+                source=source, stdout="",
                 warning=f"{source} transport failed: {result.transport_error}",
             )
         if result.exit_code not in (None, 0):
+            # A known command failure must never contribute partial stdout as evidence.
             return _CommandObservation(
-                source=source,
-                stdout=result.stdout,
+                source=source, stdout="",
                 warning=f"{source} exited with code {result.exit_code}",
             )
         if not result.stdout.strip():
             return _CommandObservation(
-                source=source,
-                stdout="",
+                source=source, stdout="",
                 warning=f"{source} returned no telemetry output",
             )
-        return _CommandObservation(source=source, stdout=result.stdout)
+        warning = None
+        if result.exit_code is None:
+            warning = (
+                f"{source} exit status is unavailable through {result.transport}; "
+                "only parsed driver output is retained"
+            )
+        return _CommandObservation(source=source, stdout=result.stdout, warning=warning)
 
     def capture(self, *, run_id: str, interface: str = "wlan0") -> WifiTelemetrySnapshot:
         interface = self._validate_interface(interface)
@@ -246,29 +253,37 @@ class WifiTelemetryService:
         signal_dbm = signal_poll.get("RSSI")
         signal_source = "wpa_cli.signal_poll"
         if signal_dbm is None:
-            signal_dbm = iw_link.get("signal_dbm", station.get("signal_dbm"))
-            signal_source = "iw.link" if "signal_dbm" in iw_link else "iw.station_dump"
+            if "signal_dbm" in iw_link:
+                signal_dbm, signal_source = iw_link["signal_dbm"], "iw.link"
+            else:
+                signal_dbm, signal_source = station.get("signal_dbm"), "iw.station_dump"
         noise_dbm = signal_poll.get("NOISE")
         frequency_mhz = signal_poll.get("FREQUENCY")
+        frequency_source = "wpa_cli.signal_poll"
         if frequency_mhz is None:
-            frequency_mhz = iw_link.get("frequency_mhz")
+            frequency_mhz, frequency_source = iw_link.get("frequency_mhz"), "iw.link"
         bitrate_mbps = signal_poll.get("LINKSPEED")
         bitrate_source = "wpa_cli.signal_poll"
         if bitrate_mbps is None:
-            bitrate_mbps = station.get("tx_bitrate_mbps", iw_link.get("tx_bitrate_mbps"))
-            bitrate_source = "iw.station_dump" if "tx_bitrate_mbps" in station else "iw.link"
+            if "tx_bitrate_mbps" in station:
+                bitrate_mbps, bitrate_source = station["tx_bitrate_mbps"], "iw.station_dump"
+            else:
+                bitrate_mbps, bitrate_source = iw_link.get("tx_bitrate_mbps"), "iw.link"
         phy_mode = station.get("phy_mode") or iw_link.get("phy_mode")
+        phy_mode_source = "iw.station_dump" if station.get("phy_mode") else "iw.link"
         if not phy_mode:
             warnings.append("PHY mode could not be determined from observed driver output")
 
         points: list[TelemetryPoint] = []
         point_specs = (
             (TelemetryMetric.RSSI_DBM, signal_dbm, "dBm", signal_source),
-            (TelemetryMetric.SNR_DB, signal_dbm - noise_dbm if signal_dbm is not None and noise_dbm is not None else None, "dB", signal_source),
+            (TelemetryMetric.SNR_DB,
+             signal_dbm - noise_dbm if signal_dbm is not None and noise_dbm is not None else None,
+             "dB", f"{signal_source}+wpa_cli.signal_poll"),
             (TelemetryMetric.CHANNEL, self.channel_from_frequency(frequency_mhz) if frequency_mhz is not None else None, "channel", "derived.frequency_to_channel"),
-            (TelemetryMetric.FREQUENCY_MHZ, frequency_mhz, "MHz", "wpa_cli.signal_poll/iw.link"),
+            (TelemetryMetric.FREQUENCY_MHZ, frequency_mhz, "MHz", frequency_source),
             (TelemetryMetric.BITRATE_MBPS, bitrate_mbps, "Mbps", bitrate_source),
-            (TelemetryMetric.PHY_MODE, phy_mode, "mode", "iw.link/iw.station_dump"),
+            (TelemetryMetric.PHY_MODE, phy_mode, "mode", phy_mode_source),
             (TelemetryMetric.TX_RETRIES_TOTAL, station.get("tx_retries_total"), "count", "iw.station_dump"),
             (TelemetryMetric.TX_FAILED_TOTAL, station.get("tx_failed_total"), "count", "iw.station_dump"),
         )

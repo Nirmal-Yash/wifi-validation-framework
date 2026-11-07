@@ -3,7 +3,11 @@ import json
 from pathlib import Path
 import pytest
 
-from lib.domain.telemetry import TelemetryEnvironmentClass, TelemetryMetric
+from lib.domain.telemetry import (
+    TelemetryEnvironmentClass,
+    TelemetryMetric,
+    TelemetryPoint,
+)
 from lib.services.wifi_telemetry import TelemetryCollectionError, WifiTelemetryService
 
 SIGNAL_POLL = """\
@@ -33,12 +37,13 @@ Station 02:11:22:33:44:55 (on wlan0)
 """
 
 class FakeRunner:
-    def __init__(self, outputs=None):
+    def __init__(self, outputs=None, *, exit_codes=None):
         self.outputs = outputs or {
             "wpa_cli": SIGNAL_POLL,
             "iw dev wlan0 link": IW_LINK,
             "iw dev wlan0 station dump": STATION_DUMP,
         }
+        self.exit_codes = exit_codes or {}
         self.calls = []
 
     def execute(self, target, command, **kwargs):
@@ -51,7 +56,11 @@ class FakeRunner:
                     {
                         "transport_succeeded": True,
                         "transport_error": None,
-                        "exit_code": 0,
+                        "exit_code": next(
+                            (code for prefix, code in self.exit_codes.items()
+                             if command.startswith(prefix)),
+                            0,
+                        ),
                         "stdout": output,
                     },
                 )()
@@ -171,3 +180,49 @@ def test_capture_and_register_creates_immutable_paths(tmp_path):
     assert first[1]["path"] != second[1]["path"]
     assert Path(first[1]["path"]).is_file()
     assert Path(second[1]["path"]).is_file()
+
+
+
+def test_nonzero_readonly_command_output_is_not_used_as_measurement():
+    runner = FakeRunner(
+        outputs={"wpa_cli": SIGNAL_POLL, "iw dev wlan0 link": "",
+                 "iw dev wlan0 station dump": ""},
+        exit_codes={"wpa_cli": 127},
+    )
+    service = WifiTelemetryService(
+        command_runner=runner, target="client_vm",
+        environment_class=TelemetryEnvironmentClass.VIRTUAL_WIFI,
+    )
+    with pytest.raises(TelemetryCollectionError):
+        service.capture(run_id="run-command-failed")
+
+
+def test_unknown_netmiko_exit_status_is_explicitly_retained_as_warning():
+    runner = FakeRunner(exit_codes={
+        "wpa_cli": None, "iw dev wlan0 link": None,
+        "iw dev wlan0 station dump": None,
+    })
+    snapshot = WifiTelemetryService(
+        command_runner=runner, target="client_vm",
+        environment_class=TelemetryEnvironmentClass.VIRTUAL_WIFI,
+    ).capture(run_id="run-netmiko")
+    assert snapshot.points
+    assert any("exit status is unavailable" in warning for warning in snapshot.warnings)
+
+
+def test_telemetry_point_detaches_and_freezes_nested_metadata():
+    metadata = {"target": "client_vm", "details": {"interfaces": ["wlan0"]}}
+    point = TelemetryPoint(
+        metric=TelemetryMetric.RSSI_DBM, value=-47.0, unit="dBm",
+        environment_class=TelemetryEnvironmentClass.VIRTUAL_WIFI,
+        source="iw.link", interface="wlan0",
+        captured_at=datetime(2026, 9, 24, 8, 0, tzinfo=timezone.utc),
+        metadata=metadata,
+    )
+    metadata["details"]["interfaces"].append("eth1")
+    serialized = point.as_dict()
+    assert serialized["metadata"]["details"]["interfaces"] == ["wlan0"]
+    with pytest.raises(TypeError):
+        point.metadata["target"] = "other"
+    with pytest.raises(AttributeError):
+        point.metadata["details"]["interfaces"].append("eth1")

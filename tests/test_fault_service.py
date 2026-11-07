@@ -8,6 +8,7 @@ class FakeRunner:
     def __init__(self):
         self.commands = []
         self.fail_on = set()
+        self.exit_code = None
 
     def execute_shell(self, target, command, **kwargs):
         self.commands.append((target, command, kwargs["command_category"]))
@@ -19,7 +20,7 @@ class FakeRunner:
             command_category=kwargs["command_category"],
             safe_display_command=command,
             stdout="ok" if "echo ok" in command else "",
-            exit_code=None,
+            exit_code=self.exit_code,
             transport="fake",
         )
 
@@ -233,3 +234,26 @@ def test_wifi_restore_requires_wpa2_security_fields(monkeypatch):
 
     with pytest.raises(RuntimeError, match="association verification failed"):
         FaultService(runner).restore(make_wifi_restore_fault())
+
+
+
+def test_fault_service_rejects_known_nonzero_apply_exit_status():
+    runner = FakeRunner()
+    runner.exit_code = 23
+    with pytest.raises(RuntimeError, match="exit code 23"):
+        FaultService(runner).apply(make_fault())
+
+
+def test_fault_restore_failure_does_not_mask_validation_failure():
+    class RestoreFailureRunner(FakeRunner):
+        def execute_shell(self, target, command, **kwargs):
+            if kwargs["command_category"].startswith("fault.restore."):
+                raise RuntimeError("restore failed")
+            return super().execute_shell(target, command, **kwargs)
+
+    service = FaultService(RestoreFailureRunner())
+    with pytest.raises(RuntimeError, match="validation failed") as captured:
+        with service.context(make_fault()):
+            raise RuntimeError("validation failed")
+    assert isinstance(captured.value.__cause__, RuntimeError)
+    assert "restore failed" in str(captured.value.__cause__)

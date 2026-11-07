@@ -28,3 +28,10 @@ network:
   monitor_ip: 192.168.122.40
   management_gateway: 10.10.10.1
   lab_gateway: 192.168.122.1
+performance:
+  warmup_iterations: 1
+  sample_count: 3
+  ping_success_packet_count: 5
+  packet_loss_packet_count: 20
+  latency_packet_count: 10
+  iperf_duration_sec: 10

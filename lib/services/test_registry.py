@@ -211,7 +211,7 @@ class TestRegistry:
                     measurement_policies={
                         "ping_success": MeasurementPolicy(
                             aggregate=StatisticKind.MEAN,
-                            minimum_samples=1,
+                            minimum_samples=3,
                         ),
                     },
                     decision_metric="ping_success",
@@ -230,7 +230,7 @@ class TestRegistry:
                     measurement_policies={
                         "latency": MeasurementPolicy(
                             aggregate=StatisticKind.P95,
-                            minimum_samples=1,
+                            minimum_samples=3,
                         ),
                     },
                     decision_metric="latency",
@@ -249,7 +249,7 @@ class TestRegistry:
                     measurement_policies={
                         "packet_loss": MeasurementPolicy(
                             aggregate=StatisticKind.MEAN,
-                            minimum_samples=1,
+                            minimum_samples=3,
                         ),
                     },
                     decision_metric="packet_loss",
@@ -269,7 +269,7 @@ class TestRegistry:
                     measurement_policies={
                         "throughput": MeasurementPolicy(
                             aggregate=StatisticKind.MEAN,
-                            minimum_samples=1,
+                            minimum_samples=3,
                         ),
                     },
                 ),

@@ -28,12 +28,20 @@ class MeasurementPolicy:
     include_retried: bool = True
 
     def __post_init__(self) -> None:
-        if self.minimum_samples < 1:
-            raise DomainValidationError("minimum_samples must be at least 1")
-        if not self.allowed_statuses:
+        if not isinstance(self.aggregate, StatisticKind):
+            raise DomainValidationError("aggregate must be a StatisticKind")
+        if isinstance(self.minimum_samples, bool) or not isinstance(self.minimum_samples, int) or self.minimum_samples < 1:
+            raise DomainValidationError("minimum_samples must be a positive integer")
+        if not isinstance(self.allowed_statuses, (tuple, list)):
+            raise DomainValidationError("allowed_statuses must be a sequence of status strings")
+        statuses = tuple(self.allowed_statuses)
+        if not statuses:
             raise DomainValidationError("allowed_statuses must not be empty")
-        if any(not status.strip() for status in self.allowed_statuses):
-            raise DomainValidationError("allowed_statuses cannot contain empty values")
+        if any(not isinstance(status, str) or not status.strip() for status in statuses):
+            raise DomainValidationError("allowed_statuses must contain non-empty strings")
+        if not isinstance(self.include_retried, bool):
+            raise DomainValidationError("include_retried must be a boolean")
+        object.__setattr__(self, "allowed_statuses", statuses)
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,10 +52,14 @@ class MetricDefinition:
     authoritative: bool = False
 
     def __post_init__(self) -> None:
-        if not self.name.strip():
+        if not isinstance(self.name, str) or not self.name.strip():
             raise DomainValidationError("metric definition name must not be empty")
-        if not self.unit.strip():
+        if not isinstance(self.unit, str) or not self.unit.strip():
             raise DomainValidationError("metric definition unit must not be empty")
+        if not isinstance(self.measurement_policy, MeasurementPolicy):
+            raise DomainValidationError("metric definition requires a MeasurementPolicy")
+        if not isinstance(self.authoritative, bool):
+            raise DomainValidationError("metric authoritative flag must be a boolean")
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +148,12 @@ class MeasurementPolicyEvaluator:
         metrics: Sequence[Metric],
         definitions: Sequence[MetricDefinition],
     ) -> tuple[StatisticSummary, ...]:
+        metric_names = [metric.name for metric in metrics]
+        definition_names = [definition.name for definition in definitions]
+        if len(metric_names) != len(set(metric_names)):
+            raise MeasurementEvaluationError("duplicate collected metric names are not allowed")
+        if len(definition_names) != len(set(definition_names)):
+            raise MeasurementEvaluationError("duplicate metric definitions are not allowed")
         metric_by_name = {metric.name: metric for metric in metrics}
         summaries: list[StatisticSummary] = []
         for definition in definitions:
