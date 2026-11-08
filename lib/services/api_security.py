@@ -129,6 +129,8 @@ def apply_security_headers(response: Any, *, no_store: bool = False, hsts: bool 
 
 class LoginRateLimiter:
     def __init__(self, *, window_seconds: int = 60, max_attempts: int = 8):
+        if window_seconds < 1 or max_attempts < 1:
+            raise ValueError("rate-limit window and attempt count must be positive")
         self.window_seconds = window_seconds
         self.max_attempts = max_attempts
         self._attempts: dict[str, list[float]] = {}
@@ -136,7 +138,7 @@ class LoginRateLimiter:
     def allow(self, key: str, now: float | None = None) -> bool:
         import time
         current = now if now is not None else time.monotonic()
-        recent = [item for item in self._attempts.get(key, []) if current - item < self.window_seconds]
+        recent = [item for item in self._attempts.get(key, []) if 0 <= current - item < self.window_seconds]
         if len(recent) >= self.max_attempts:
             self._attempts[key] = recent
             return False
@@ -145,25 +147,35 @@ class LoginRateLimiter:
         if len(self._attempts) > 2048:
             self._attempts = {
                 k: v for k, v in self._attempts.items()
-                if v and current - v[-1] < self.window_seconds
+                if v and 0 <= current - v[-1] < self.window_seconds
             }
         return True
 
 def validate_https_endpoint(url: str) -> str:
-    parsed = urlparse(str(url))
-    if parsed.scheme.lower() != "https" or not parsed.hostname or parsed.username or parsed.password:
-        raise RequestSecurityError("outbound endpoint must be an HTTPS URL without embedded credentials")
-    host = parsed.hostname
+    """Accept only HTTPS endpoints whose complete DNS answer set is globally routable."""
     try:
-        addresses = {item[4][0] for item in socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)}
-    except OSError as exc:
+        parsed = urlparse(str(url))
+        host = parsed.hostname
+        # Accessing .port validates malformed and out-of-range port notation.
+        port = parsed.port or 443
+    except ValueError as exc:
+        raise RequestSecurityError("outbound endpoint URL is malformed") from exc
+    if parsed.scheme.lower() != "https" or not host or parsed.username or parsed.password:
+        raise RequestSecurityError("outbound endpoint must be an HTTPS URL without embedded credentials")
+    if parsed.fragment:
+        raise RequestSecurityError("outbound endpoint must not contain a URL fragment")
+    try:
+        answers = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except (OSError, UnicodeError) as exc:
         raise RequestSecurityError("outbound endpoint hostname cannot be resolved") from exc
-    blocked = []
-    for address in addresses:
-        ip = ipaddress.ip_address(address)
-        if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_multicast or ip.is_unspecified:
-            blocked.append(address)
-    if blocked:
+    addresses = {item[4][0] for item in answers if item and item[4]}
+    if not addresses:
+        raise RequestSecurityError("outbound endpoint hostname has no usable address")
+    try:
+        non_global = [address for address in addresses if not ipaddress.ip_address(address).is_global]
+    except ValueError as exc:
+        raise RequestSecurityError("outbound endpoint resolved to an invalid IP address") from exc
+    if non_global:
         raise RequestSecurityError("outbound endpoint resolves to a non-public IP address")
     return parsed.geturl()
 
