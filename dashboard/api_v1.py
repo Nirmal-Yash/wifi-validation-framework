@@ -1,5 +1,6 @@
 from __future__ import annotations
 import hashlib
+import hmac
 import json
 import os
 import time
@@ -366,14 +367,21 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     def artifact_download(artifact_id):
         try:
             artifact=query.artifact(artifact_id)
-            token=os.getenv("NETREGRESS_DASHBOARD_TOKEN")
+            sensitivity=str(artifact.sensitivity_class or "").strip().upper()
+            if sensitivity not in {"PUBLIC","INTERNAL"}:
+                denied=require("admin")
+                if denied is not None:
+                    return denied
+
             remote=request.remote_addr not in {"127.0.0.1","::1"}
-            # Local authenticated sessions may download directly. Remote
-            # downloads additionally require the configured bearer token.
-            if remote and token and request.headers.get("Authorization")!="Bearer "+token:
-                return error("FORBIDDEN","valid bearer token required",403)
-            if remote and not token and auth.required:
-                return error("FORBIDDEN","remote artifact download requires NETREGRESS_DASHBOARD_TOKEN",403)
+            if remote:
+                token=(os.getenv("NETREGRESS_DASHBOARD_TOKEN") or "").strip()
+                supplied=request.headers.get("Authorization","")
+                if not token:
+                    return error("FORBIDDEN","remote artifact downloads are disabled until NETREGRESS_DASHBOARD_TOKEN is configured",403)
+                if not hmac.compare_digest(supplied,"Bearer "+token):
+                    return error("FORBIDDEN","valid bearer token required for remote artifact download",403)
+
             path=query._safe_artifact_path(artifact)
             if path is None:return error("ARTIFACT_UNAVAILABLE","artifact is missing or failed integrity verification",404)
             return send_file(path,as_attachment=True,download_name=artifact.display_name)

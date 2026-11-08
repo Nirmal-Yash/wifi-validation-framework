@@ -438,3 +438,8 @@ The new source change strengthens `validate_https_endpoint`, which is consumed b
 The existing quality workflow now runs the strict source audit and focused API/RBAC/session tests. Hosted workflow [42510776806](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42510776806) completed successfully; all three jobs passed, including both new security-specific steps.
 
 Remaining: verify artifact sensitivity and per-resource download authorization; secure-cookie/HSTS policy behind the real reverse proxy; production secret provisioning; independent dependency scanning; DNS-rebinding/connection-time resolution review; and an independent threat-model assessment. Optional scanner presence in the source-audit output is not evidence that those scanners ran. No production deployment or penetration-test certification is claimed.
+
+
+### Artifact download authorization hardening — 2026-11-09
+
+The Phase K artifact route now uses persisted `sensitivity_class`: PUBLIC/INTERNAL downloads use the standard authenticated-viewer route; SENSITIVE or unknown classifications require admin authorization. Remote downloads require a configured `NETREGRESS_DASHBOARD_TOKEN` with constant-time bearer comparison even when `NETREGRESS_AUTH_REQUIRED=0`. Results-root containment and SHA-256 verification remain required. Focused route tests cover absent/incorrect/correct remote tokens and OPERATOR-vs-ADMIN authorization. Reverse-proxy client-IP provenance still requires target deployment verification.

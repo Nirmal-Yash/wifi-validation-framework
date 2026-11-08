@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from lib.domain import (
+    ArtifactType,
     Criticality,
     EvidenceState,
     Metric,
@@ -22,7 +23,7 @@ from lib.repositories import (
 )
 from lib.services import ArtifactService, RunService
 from dashboard.app import create_app
-from lib.security import AuthManager
+from lib.security import AuthManager, Role, UserRecord
 
 
 TEST_ID = "wifi.latency.threshold"
@@ -279,3 +280,86 @@ def test_retry_api_rejects_nonterminal_source_run(tmp_path):
 
     assert response.status_code == 409
     assert response.get_json()["error"]["code"] == "RUN_NOT_TERMINAL"
+
+
+
+def register_download_artifact(db, run_id, root, sensitivity):
+    path = root / ("download-" + run_id + ".txt")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("artifact payload", encoding="utf-8")
+    return ArtifactService.from_sqlite(db).register_file(
+        run_id=run_id,
+        path=path,
+        artifact_type=ArtifactType.OTHER,
+        sensitivity_class=sensitivity,
+    )
+
+
+def test_remote_artifact_download_requires_configured_bearer_token(tmp_path, monkeypatch):
+    db_path = tmp_path / "remote-artifact.sqlite"
+    db = SQLiteDatabase(db_path)
+    db.initialize()
+    run, _ = create_run(make_service(db), "v1.0")
+    root = tmp_path / "results"
+    artifact = register_download_artifact(db, run.run_id, root, "INTERNAL")
+    app = make_app(db_path)
+    app.config["NETREGRESS_QUERY"].results_root = root
+    client = app.test_client()
+    remote = {"REMOTE_ADDR": "203.0.113.25"}
+
+    monkeypatch.delenv("NETREGRESS_DASHBOARD_TOKEN", raising=False)
+    denied = client.get(
+        f"/api/v1/artifacts/{artifact.artifact_id}/download",
+        environ_base=remote,
+    )
+    assert denied.status_code == 403
+
+    monkeypatch.setenv("NETREGRESS_DASHBOARD_TOKEN", "download-access-token")
+    invalid = client.get(
+        f"/api/v1/artifacts/{artifact.artifact_id}/download",
+        headers={"Authorization": "Bearer wrong-token"},
+        environ_base=remote,
+    )
+    assert invalid.status_code == 403
+
+    allowed = client.get(
+        f"/api/v1/artifacts/{artifact.artifact_id}/download",
+        headers={"Authorization": "Bearer download-access-token"},
+        environ_base=remote,
+    )
+    assert allowed.status_code == 200
+    assert allowed.data == b"artifact payload"
+
+
+def test_sensitive_artifact_download_requires_admin_role(tmp_path):
+    db_path = tmp_path / "sensitive-artifact.sqlite"
+    db = SQLiteDatabase(db_path)
+    db.initialize()
+    run, _ = create_run(make_service(db), "v1.0")
+    root = tmp_path / "results"
+    artifact = register_download_artifact(db, run.run_id, root, "SENSITIVE")
+    password = "phase-k-test-password"
+    auth = AuthManager(
+        (
+            UserRecord("operator", AuthManager.password_hash(password), Role.OPERATOR),
+            UserRecord("admin", AuthManager.password_hash(password), Role.ADMIN),
+        ),
+        required=True,
+    )
+    app = create_app(db_path, auth_manager=auth)
+    app.config["NETREGRESS_QUERY"].results_root = root
+
+    operator = app.test_client()
+    assert operator.post(
+        "/api/v1/auth/login", json={"username": "operator", "password": password}
+    ).status_code == 200
+    denied = operator.get(f"/api/v1/artifacts/{artifact.artifact_id}/download")
+    assert denied.status_code == 403
+
+    admin = app.test_client()
+    assert admin.post(
+        "/api/v1/auth/login", json={"username": "admin", "password": password}
+    ).status_code == 200
+    allowed = admin.get(f"/api/v1/artifacts/{artifact.artifact_id}/download")
+    assert allowed.status_code == 200
+    assert allowed.data == b"artifact payload"

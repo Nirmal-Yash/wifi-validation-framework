@@ -2850,4 +2850,11 @@ This Phase K source hardening:
 
 Hosted workflow [42510776806](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42510776806) passed all three jobs. The strict source audit and focused API security boundary tests both passed within the backend job.
 
-**Phase K acceptance still outstanding:** inspect and enforce sensitivity-based authorization on each artifact download path; verify secure cookies and HSTS behind the actual HTTPS reverse proxy; validate production secret provisioning and deployment configuration; run an independent dependency scanner and threat-model review; review DNS-rebinding/connection-time resolution behavior in the outbound transport. The current source audit reports optional scanner availability but does not itself execute Bandit, Semgrep or pip-audit. Local project-scope RBAC is not durable multi-tenant isolation. These operational/security acceptance items must not be represented as completed by hosted CI.
+**Phase K acceptance still outstanding:** verify secure cookies and HSTS behind the actual HTTPS reverse proxy; validate production secret provisioning and deployment configuration; run an independent dependency scanner and threat-model review; review DNS-rebinding/connection-time resolution behavior in the outbound transport. The current source audit reports optional scanner availability but does not itself execute Bandit, Semgrep or pip-audit. Local project-scope RBAC is not durable multi-tenant isolation. These operational/security acceptance items must not be represented as completed by hosted CI.
+
+
+#### Phase K artifact download control — 2026-11-09
+
+The artifact download route now applies the persisted sensitivity classification. `PUBLIC` and `INTERNAL` artifacts retain the existing authenticated-viewer policy; any other or unknown sensitivity value requires an OWNER/ADMIN-level authorization decision. Remote artifact downloads fail closed unless `NETREGRESS_DASHBOARD_TOKEN` is configured and the supplied bearer token matches using constant-time comparison. Local authenticated sessions retain the direct download path. SHA-256 and results-root containment checks remain mandatory.
+
+Route-level regression tests cover remote token absence, invalid and valid bearer tokens, plus OPERATOR denial and ADMIN approval for a `SENSITIVE` artifact. Hosted CI must pass these tests before this route-level slice is considered verified. Reverse-proxy client-IP trust remains a deployment review item; do not trust arbitrary forwarded-IP headers.

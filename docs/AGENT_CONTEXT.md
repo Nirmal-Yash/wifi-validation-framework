@@ -286,3 +286,8 @@ Phase K audit confirmed the existing auth/RBAC, session/CSRF, command policy/red
 Remaining K acceptance: artifact sensitivity/authorization audit for downloads; HTTPS reverse-proxy cookie/HSTS verification; real deployment secret configuration; independent dependency scan and threat-model review; DNS rebinding/connection-time resolution analysis. The source audit reports optional scanner availability; it does not run Bandit, Semgrep or pip-audit itself. Do not imply production deployment or penetration-test certification.
 
 Next phase: **Phase L — API, Dashboard and Frontend Completion**. Audit API/OpenAPI/frontend parity first, then close bounded endpoint and operational workflow gaps, add authenticated browser tests and accessibility checks, and preserve legacy CLI/API compatibility. Do not begin a Cloud tenant model here; Phase O remains deferred until Phase N standalone certification.
+
+
+### Phase K artifact download authorization
+
+The v1 artifact download route now enforces the stored sensitivity label: PUBLIC/INTERNAL uses the authenticated view contract; SENSITIVE and unrecognized labels require admin authorization. Remote downloads require a configured `NETREGRESS_DASHBOARD_TOKEN` and constant-time bearer-token comparison even when application session auth is disabled. Local authenticated sessions remain usable. Download containment and SHA-256 checks are unchanged. Regression tests cover remote token and OPERATOR/ADMIN role behavior. Reverse-proxy source-IP trust must be verified in deployment; never trust arbitrary forwarded-IP headers.
