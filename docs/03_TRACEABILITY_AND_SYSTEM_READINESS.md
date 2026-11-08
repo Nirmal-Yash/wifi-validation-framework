@@ -212,8 +212,8 @@ Iterations 20–30 are source-implemented and the full core/release-readiness CI
 | G | Implemented; hosted CI passed | Immutable layered configuration, stable fingerprints, persistent cross-process locks, safe stale recovery, lab/device/namespace leases, shared firmware exclusion and read-only launcher preflight; workflow 42363358706 passed; REAL_LAB separate |
 | H | Source implementation delivered; protected execution pending | Hardened DHCP/EAPOL/Beacon/RSN/DNS correlation; EAPOL/Beacon/DNS foreground capture tests, SFTP/hash verification and Run-scoped artifacts added; protected live execution and DHCP T1/T2 capture remain pending |
 | I | Source implementation present | Physical RF/performance/recovery evidence remains |
-| J | Lifecycle hardened; hosted contract coverage included | Strict capabilities, OpenWrt profile defaults, env-backed SFTP credentials, image/path validation, full-scope device locking and expected-version rollback verification are source-covered; real hardware certification remains outstanding |
-| K | Substantially implemented | Target deployment and threat-model acceptance remain |
+| J | Lifecycle hardened; hosted CI passed | Strict capabilities, OpenWrt profile defaults, env-backed SFTP credentials, image/path validation, full-scope device locking and expected-version rollback verification are source-covered; workflow 42472939649 passed all 3 jobs; real hardware certification remains outstanding |
+| K | Security source hardening delivered; hosted CI passed | Global-address SSRF destination validation, focused API/RBAC/session tests and strict source audit passed workflow 42510776806 (3/3 jobs); artifact download sensitivity, production proxy/secrets, independent dependency scan, DNS-rebinding review and threat-model acceptance remain |
 | L | Substantially implemented | Authenticated browser/runtime and operational workflow acceptance remain |
 | M | Substantially implemented | Production sync endpoint and release-operation acceptance remain |
 | N | Certification tooling present | Clean installation and full protected 11-scenario REAL_LAB certification remain |
@@ -427,3 +427,14 @@ This is not a claim of full runtime certification. The remaining 10% is dominate
 SOURCE_IMPLEMENTED != CORE_CI_GREEN != REAL_LAB_CERTIFIED != FULL_PRODUCTION_RUNTIME_CERTIFIED
 
 Core CI/source checks prove source and policy contracts. They cannot manufacture protected GNS3/mac80211_hwsim evidence, real-device firmware evidence, or browser/runtime evidence.
+
+
+## Phase K security hardening — 2026-11-09
+
+The source audit confirmed the pre-existing standalone security controls: backend role authorization, project-scope primitives, password hashing, session expiry, CSRF, login throttling, security headers, durable idempotency fingerprints, command allowlists/destructive-operation policy, command/output redaction and audit evidence, artifact integrity/sensitivity metadata, confined firmware paths and recovery/audit services.
+
+The new source change strengthens `validate_https_endpoint`, which is consumed by the synchronization transport. The validator now rejects malformed URL forms, embedded credentials, fragments, resolution errors, empty answers and every DNS answer that is not globally routable; mixed public/private DNS results are rejected. New API boundary tests cover IPv4 and IPv6 special-use ranges and valid public addresses.
+
+The existing quality workflow now runs the strict source audit and focused API/RBAC/session tests. Hosted workflow [42510776806](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42510776806) completed successfully; all three jobs passed, including both new security-specific steps.
+
+Remaining: verify artifact sensitivity and per-resource download authorization; secure-cookie/HSTS policy behind the real reverse proxy; production secret provisioning; independent dependency scanning; DNS-rebinding/connection-time resolution review; and an independent threat-model assessment. Optional scanner presence in the source-audit output is not evidence that those scanners ran. No production deployment or penetration-test certification is claimed.

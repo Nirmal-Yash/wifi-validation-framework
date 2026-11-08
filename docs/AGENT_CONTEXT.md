@@ -130,13 +130,13 @@ If the lab cannot be run, say so. Do not represent unit/integration verification
 
 Work directly against the existing `main` branch. Do not create feature, review or temporary branches.
 
-Work directly on `main`; do not create feature, review or temporary branches. Keep each phase free of per-file, micro or scratch commits. When a phase checkpoint is explicitly requested for delivery, package the entire completed phase in exactly one consolidated Conventional Commit on `main` and push once using a fast-forward update. Do not rewrite existing history. Phase J is the active implementation slice in this handoff.
+Work directly on `main`; do not create feature, review or temporary branches. Keep each phase free of per-file, micro or scratch commits. When a phase checkpoint is explicitly requested for delivery, package the entire completed phase in exactly one consolidated Conventional Commit on `main` and push once using a fast-forward update. Do not rewrite existing history. Phase J source implementation is delivered; Phase K is the active implementation slice in this handoff.
 
 Update documentation with behavior, data-contract and API changes as each phase is implemented. Keep runtime databases, reports, PCAPs and logs gitignored.
 
 ## 13. Current phase sequence and next step
 
-The authoritative B–P sequence is in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. Phases B–I have source/hosted-CI implementation on `main`; their protected real-lab gates remain distinct from hosted CI. Phase J owns device and firmware lifecycle hardening.
+The authoritative B–P sequence is in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. Phases B–J have source/hosted-CI implementation on `main`; their protected real-lab/hardware gates remain distinct from hosted CI. Phase J owns device and firmware lifecycle hardening and is delivered. Phase K owns security and deployment hardening.
 
 **Phase H source implementation is delivered; its protected live-lab acceptance remains outstanding.** The protocol analyzers enforce DHCP transaction sequencing and destination-based T1/T2 classification, directional/replay-paired EAPOL four-way handshakes, target Beacon identity and valid RSN parsing, and DNS question/five-tuple/time correlation. Protected live capture tests collect EAPOL/Beacon on an AP-side monitor interface sharing the existing AP PHY and DNS on AP `br0`, using foreground Paramiko tcpdump, SFTP, remote/local SHA-256 checks and Run-scoped PCAP/protocol JSON artifacts.
 
@@ -275,3 +275,14 @@ Phase J hardening is delivered on the single main branch. Device capability bool
 Rollback is not considered complete merely because the command returned or the device became reachable. Each rollback request must identify the expected restored version, and the Runner verifies that version after readiness before recording rollback completion. The API and OpenAPI contract require that expected version.
 
 Hosted CI remains hardware-free. Physical flash/reboot/rollback certification must be performed on the approved target device and must never be inferred from fake adapters or GNS3 virtual Wi-Fi.
+
+
+## 33. Phase K implementation handoff — 2026-11-09
+
+Phase J verification: main commit `ed236db0291ec717ad67c82d4b7ecc1e71968854`; hosted workflow [42472939649](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42472939649) passed all three jobs. Physical firmware flash/reboot/rollback certification remains outstanding.
+
+Phase K audit confirmed the existing auth/RBAC, session/CSRF, command policy/redaction/audit, durable idempotency, artifact integrity/sensitivity, path confinement and operational recovery foundations. This delivery hardens outbound HTTPS destination validation (complete globally-routable DNS answer set, no empty/mixed answer acceptance), adds IPv4/IPv6/security-boundary regression tests, and executes the strict source security audit plus focused API/RBAC/session tests in hosted CI. Hosted workflow [42510776806](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42510776806) passed 3/3 jobs.
+
+Remaining K acceptance: artifact sensitivity/authorization audit for downloads; HTTPS reverse-proxy cookie/HSTS verification; real deployment secret configuration; independent dependency scan and threat-model review; DNS rebinding/connection-time resolution analysis. The source audit reports optional scanner availability; it does not run Bandit, Semgrep or pip-audit itself. Do not imply production deployment or penetration-test certification.
+
+Next phase: **Phase L — API, Dashboard and Frontend Completion**. Audit API/OpenAPI/frontend parity first, then close bounded endpoint and operational workflow gaps, add authenticated browser tests and accessibility checks, and preserve legacy CLI/API compatibility. Do not begin a Cloud tenant model here; Phase O remains deferred until Phase N standalone certification.
