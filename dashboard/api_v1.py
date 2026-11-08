@@ -496,10 +496,19 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         denied=require("execute")
         if denied is not None: return denied
         payload=request.get_json(silent=True) or {}
-        try: run_id=str(payload["run_id"])
-        except KeyError as exc:return error("INVALID_REQUEST",str(exc),400)
+        try:
+            run_id_raw = payload["run_id"]
+            expected_version_raw = payload["expected_version"]
+        except KeyError as exc:
+            return error("INVALID_REQUEST",str(exc),400)
+        if not isinstance(run_id_raw, str) or not run_id_raw.strip():
+            return error("INVALID_REQUEST","run_id must be a non-empty string",400)
+        if not isinstance(expected_version_raw, str) or not expected_version_raw.strip():
+            return error("INVALID_REQUEST","expected_version must be a non-empty string",400)
+        run_id = run_id_raw.strip()
+        expected_version = expected_version_raw.strip()
         reason=str(payload.get("reason","authorized firmware rollback"))
-        idem_payload={"device_id":device_id,"run_id":run_id,"reason":reason}
+        idem_payload={"device_id":device_id,"run_id":run_id,"expected_version":expected_version,"reason":reason}
         key,request_hash,cached,security_error=idempotency_preflight("/api/v1/firmware/rollback/"+device_id,idem_payload)
         if security_error is not None:return security_error
         if cached is not None:return jsonify(cached.response),cached.status_code
@@ -514,10 +523,10 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             identity=FirmwareOperationService(
                 run_repository=query.run_service.run_repository,
                 event_repository=query.event_repository,
-            ).rollback(adapter=firmware_adapter,authorization=auth,run_id=run_id)
+            ).rollback(adapter=firmware_adapter,authorization=auth,expected_version=expected_version,run_id=run_id)
         except (ValueError,RuntimeError,OSError) as exc:
             return error("FIRMWARE_ROLLBACK_FAILED",str(exc),400)
-        response_data={"device_id":identity.device_id,"firmware_version":identity.firmware_version}
+        response_data={"device_id":identity.device_id,"firmware_version":identity.firmware_version,"verified_version":identity.firmware_version}
         idempotency_store_response("/api/v1/firmware/rollback/"+device_id,key,request_hash,response_data,200)
         return ok(response_data)
 

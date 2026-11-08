@@ -37,7 +37,7 @@ This B–P programme is the current execution order for the next development sli
 | G | Configuration, Environment and Resource Orchestration: typed configuration provenance, environment fingerprints, lab/device leases, orchestration boundaries and preflight contracts | Implemented; hosted workflow 42363358706 passed frontend, backend and dashboard jobs; protected REAL_LAB remains separate |
 | H | Protocol Evidence Certification: live DHCP DORA, EAPOL four-way, Beacon/RSN and DNS correlation against verified real captures | Source implementation and focused CI coverage delivered: replay/direction-aware EAPOL, endpoint/time-aware DNS, strict RSN/Beacon validation, and protected live EAPOL/Beacon/DNS capture tests; REAL_LAB acceptance pending, including operator-approved DHCP T1/T2 capture |
 | I | Telemetry, Performance and Recovery Validation: measured WiFi telemetry, statistically governed performance tests, fault/recovery assertions and evidence correlation | Implemented; repeated performance samples, warm-up exclusion, immutable environment-aware telemetry, secured fault restoration and hosted CI passed; protected RF/performance/recovery certification outstanding |
-| J | Device and Firmware Lifecycle: adapter capability contracts, image verification, flash/reboot/readiness, rollback and target-specific lifecycle certification | Source implementation present; target hardware flash/reboot/rollback certification outstanding |
+| J | Device and Firmware Lifecycle: adapter capability contracts, image verification, flash/reboot/readiness, rollback and target-specific lifecycle certification | Lifecycle hardened; hosted contract tests included; target hardware flash/reboot/rollback certification outstanding |
 | K | Security and Deployment Hardening: credential handling, auth/RBAC, secure command boundaries, artifact controls, deployment policy and security regression | Source implementation substantially present; target deployment and threat-model verification outstanding |
 | L | API, Dashboard and Frontend Completion: typed API contract, consistent errors, pagination, operational UX, authenticated downloads and browser/runtime parity | Source implementation substantially present; authenticated browser/runtime and operational workflow acceptance outstanding |
 | M | Regression Intelligence, Release Gate and Offline Operations: comparable baseline logic, metric classification, waiver boundaries, local queue recovery and release decision evidence | Source implementation present; production synchronization/release workflow acceptance outstanding |
@@ -2823,3 +2823,17 @@ Production readiness is intentionally split into source completeness and executi
 6. Affected artifacts are inspected.
 7. Real 11-test validation remains green whenever execution/network behavior changed.
 8. Source readiness is never misrepresented as protected REAL_LAB certification.
+
+
+#### Phase J implementation update — 2026-11-08
+
+Delivered in this source/hosted-CI pass:
+- Device capability configuration uses strict boolean parsing. Explicit string values such as `"false"` and `"0"` remain false, while unknown names or invalid values fail closed.
+- OpenWrt configuration-derived profiles receive firmware-capable defaults and the ubus version query/parser. Rollback remains disabled unless explicitly configured.
+- `__ENV__:VARIABLE` credential markers are resolved for the SSH/SFTP device profile. Missing credentials fail closed instead of being passed as literal marker strings to Paramiko.
+- Firmware version identifiers and supplied SHA-256 digests are validated; metadata is detached and recursively immutable. Remote firmware paths remain beneath the configured firmware directory.
+- Reboot capability is enforced and readiness polling validates positive finite timeout/interval bounds. The generic version-field regex is corrected.
+- Firmware update now acquires the shared device-exclusive lock before image/model validation and holds it across upload, remote hash verification, preparation, flash, reboot, readiness and final version verification.
+- Rollback requires an explicit expected version, uses the same device-exclusive lock, waits for readiness, confirms the same device identity, and independently verifies the restored version before recording completion. The API and OpenAPI request contract require and fingerprint that expected version.
+
+The hosted adapter suite exercises these contracts with fake adapters and command stubs. This does not constitute physical firmware certification. Real target flash/reboot/rollback, interruption behavior, compatibility/signature policy and post-flash recovery must still be executed on the approved device family. No real firmware mutation was attempted in this pass.

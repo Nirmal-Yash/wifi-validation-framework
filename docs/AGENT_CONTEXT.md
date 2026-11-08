@@ -130,17 +130,17 @@ If the lab cannot be run, say so. Do not represent unit/integration verification
 
 Work directly against the existing `main` branch. Do not create feature, review or temporary branches.
 
-Work directly on `main`; do not create feature, review or temporary branches. Keep each phase free of per-file, micro or scratch commits. When a phase checkpoint is explicitly requested for delivery, package the entire completed phase in exactly one consolidated Conventional Commit on `main` and push once using a fast-forward update. Do not rewrite existing history. The current approved checkpoint is Phase C; its commit must contain the complete C implementation, tests and documentation, not unfinished D/E work.
+Work directly on `main`; do not create feature, review or temporary branches. Keep each phase free of per-file, micro or scratch commits. When a phase checkpoint is explicitly requested for delivery, package the entire completed phase in exactly one consolidated Conventional Commit on `main` and push once using a fast-forward update. Do not rewrite existing history. Phase J is the active implementation slice in this handoff.
 
 Update documentation with behavior, data-contract and API changes as each phase is implemented. Keep runtime databases, reports, PCAPs and logs gitignored.
 
 ## 13. Current phase sequence and next step
 
-The authoritative B–P sequence is in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. Phases B–G are implemented; Phase G hosted workflow 42363358706 passed its backend, frontend and dashboard jobs.
+The authoritative B–P sequence is in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. Phases B–I have source/hosted-CI implementation on `main`; their protected real-lab gates remain distinct from hosted CI. Phase J owns device and firmware lifecycle hardening.
 
 **Phase H source implementation is delivered; its protected live-lab acceptance remains outstanding.** The protocol analyzers enforce DHCP transaction sequencing and destination-based T1/T2 classification, directional/replay-paired EAPOL four-way handshakes, target Beacon identity and valid RSN parsing, and DNS question/five-tuple/time correlation. Protected live capture tests collect EAPOL/Beacon on an AP-side monitor interface sharing the existing AP PHY and DNS on AP `br0`, using foreground Paramiko tcpdump, SFTP, remote/local SHA-256 checks and Run-scoped PCAP/protocol JSON artifacts.
 
-The protected GNS3/mac80211_hwsim execution has not yet been performed in this environment. The current explicit instruction authorizes Phase I source/CI implementation while Phase H live evidence is pending; combined protected acceptance and any physical RF/performance/recovery claim still require the Phase H live evidence first. The current dnsmasq lease is 12 hours; live T1/T2 testing requires an explicit operator-approved short-lease window and must not mutate the normal lab configuration implicitly. Do not create synthetic evidence for live certification.
+The protected GNS3/mac80211_hwsim execution has not yet been performed in this environment. Phase I source/CI work and Phase J device/firmware lifecycle work may proceed while Phase H live evidence is pending; combined protected acceptance and physical RF/performance/recovery claims still require Phase H live evidence first. The current dnsmasq lease is 12 hours; live T1/T2 testing requires an explicit operator-approved short-lease window and must not mutate the normal lab configuration implicitly. Do not create synthetic evidence for live certification.
 
 The established topology remains phy0=AP, phy1=client, management eth1, WiFi data path wlan0 and AP DHCP/DNS bridge br0. Existing DHCP foreground capture and pytest node IDs remain protected. Provisioning and cleanup remain explicit; no source/CI result substitutes for the real-lab gate. Cloud/SaaS remains deferred until standalone Runner certification; Phase P remains final repository cleanup.
 
@@ -215,11 +215,11 @@ Runtime verification remains pending in this environment; no pytest or real GNS3
 
 ## 25. Iteration 17 status
 
-Device/Firmware adapters are implemented under `lib/adapters`. The current GNS3/Linux class uses a `VirtualLinuxDeviceAdapter`; OpenWrt has an explicit firmware-capable profile. Firmware images are validated, uploaded through SFTP, remotely hash-verified, flashed through a target-specific secured runner, rebooted explicitly, readiness-polled and version-verified. Rollback is a separate explicit operation.
+Device/Firmware adapters are implemented under `lib/adapters`. Phase J hardens configuration-derived capability parsing, OpenWrt firmware defaults, `__ENV__:` credential resolution for SFTP, image/hash/version validation, remote-path confinement, reboot capability checks, readiness polling and exclusive device locking across the entire update lifecycle. Explicit rollback now requires an expected version and independently verifies the restored version before completion is audited.
 
-RunContext now carries optional DeviceAdapter and FirmwareAdapter instances. The pytest session constructs these adapters without performing firmware mutation.
+RunContext carries optional DeviceAdapter and FirmwareAdapter instances. Adapter construction does not perform firmware mutation. Provisioning, flashing, reboot and rollback remain explicit operator-authorized operations.
 
-No real hardware firmware flash, reboot or rollback was executed in this environment.
+Hosted CI uses fake adapters and stubs for lifecycle contracts. No real hardware firmware flash, reboot or rollback was executed in this environment; target-specific certification remains outstanding.
 
 ## 26. Iteration 18 status
 
@@ -266,3 +266,12 @@ Performance tests persist one warm-up plus three measured samples by default. Te
 FaultService rejects known non-zero command results, attempts restore after partial apply or test failure, and preserves the original failure if restore also fails. Existing restore postconditions remain authoritative.
 
 Hosted backend CI includes telemetry/statistics/fault contracts, baseline/regression consumers of the three-sample policy, and performance modules with the real-lab connection fixture skipped. Regression fixtures retain the three-eligible-sample minimum instead of lowering the policy to fit historical one-sample test data. Phase H protected live captures have not been performed here; Phase I live RF/performance/recovery certification remains pending after that prerequisite.
+
+
+## 32. Phase J implementation handoff — 2026-11-08
+
+Phase J hardening is delivered on the single main branch. Device capability booleans are strict, OpenWrt defaults are applied when profiles are loaded from configs/devices.yaml, and SFTP credential fields resolve configured environment markers instead of passing marker text to Paramiko. Firmware image versions/hashes and remote upload paths are validated; the update holds the same device-exclusive resource lock through final version verification.
+
+Rollback is not considered complete merely because the command returned or the device became reachable. Each rollback request must identify the expected restored version, and the Runner verifies that version after readiness before recording rollback completion. The API and OpenAPI contract require that expected version.
+
+Hosted CI remains hardware-free. Physical flash/reboot/rollback certification must be performed on the approved target device and must never be inferred from fake adapters or GNS3 virtual Wi-Fi.

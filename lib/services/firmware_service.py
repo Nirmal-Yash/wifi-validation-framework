@@ -24,13 +24,17 @@ class FirmwareOperationService:
         self.artifact_service=artifact_service
         self.id_generator=id_generator
         self.resource_lock_manager=resource_lock_manager
-        if self.resource_lock_manager is None and run_repository is not None:
-            database = getattr(run_repository, "database", None)
+        if self.resource_lock_manager is None:
+            database = getattr(run_repository, "database", None) if run_repository is not None else None
             database_path = getattr(database, "path", None)
             if database_path:
-                self.resource_lock_manager=ResourceLockManager(
-                    Path(database_path).resolve().parent / "locks"
+                lock_directory = Path(database_path).resolve().parent / "locks"
+            else:
+                lock_directory = Path(
+                    os.getenv("NETREGRESS_LOCK_DIRECTORY")
+                    or (Path(__file__).resolve().parents[2] / "results" / "locks")
                 )
+            self.resource_lock_manager = ResourceLockManager(lock_directory)
 
     def _acquire_lock(self, device_id: str, run_id: str | None, actor: str):
         if self.resource_lock_manager is None:
@@ -50,19 +54,22 @@ class FirmwareOperationService:
 
     def update(self, *, adapter: FirmwareAdapter, image: FirmwareImage, authorization: FirmwareAuthorization, run_id: str | None = None):
         authorization.require('FLASH')
-        state = FirmwareOperationState.REGISTERED
-        self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
-        identity=adapter.identify()
-        self._event(run_id,'FIRMWARE_IDENTIFIED',{'device_id':identity.device_id,'version':identity.firmware_version})
-        validation=adapter.validate_image(image)
-        state = FirmwareOperationState.VALIDATED
-        self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
-        self._event(run_id,'FIRMWARE_VALIDATED',{'valid':validation.valid,'sha256':validation.sha256,'version':validation.image_version,'reasons':list(validation.reasons)})
-        if not validation.valid: raise FirmwareValidationError('; '.join(validation.reasons) or 'firmware image failed validation')
-        if run_id and self.artifact_service is not None:
-            self.artifact_service.register_file(run_id=run_id,path=image.path,artifact_type=ArtifactType.FIRMWARE_REFERENCE,display_name=f'firmware-{image.version}-{Path(image.path).name}',sensitivity_class='SENSITIVE',expected_sha256=validation.sha256)
-        lease = self._acquire_lock(identity.device_id, run_id, authorization.actor)
+        initial_identity = adapter.identify()
+        lease = self._acquire_lock(initial_identity.device_id, run_id, authorization.actor)
         try:
+            identity = adapter.identify()
+            if identity.device_id != initial_identity.device_id:
+                raise FirmwareError("device identity changed while acquiring the firmware lock")
+            state = FirmwareOperationState.REGISTERED
+            self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
+            self._event(run_id,'FIRMWARE_IDENTIFIED',{'device_id':identity.device_id,'version':identity.firmware_version})
+            validation=adapter.validate_image(image)
+            state = FirmwareOperationState.VALIDATED
+            self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
+            self._event(run_id,'FIRMWARE_VALIDATED',{'valid':validation.valid,'sha256':validation.sha256,'version':validation.image_version,'reasons':list(validation.reasons)})
+            if not validation.valid: raise FirmwareValidationError('; '.join(validation.reasons) or 'firmware image failed validation')
+            if run_id and self.artifact_service is not None:
+                self.artifact_service.register_file(run_id=run_id,path=image.path,artifact_type=ArtifactType.FIRMWARE_REFERENCE,display_name=f'firmware-{image.version}-{Path(image.path).name}',sensitivity_class='SENSITIVE',expected_sha256=validation.sha256)
             state = FirmwareOperationState.AUTHORIZED
             self._event(run_id,'FIRMWARE_STATE_CHANGED',{'state':state.value,'operation':'UPDATE'})
             auth=lambda op: FirmwareAuthorization(authorization.actor, authorization.reason, True, op)
@@ -124,19 +131,30 @@ class FirmwareOperationService:
         finally:
             self._release_lock(lease)
 
-    def rollback(self, *, adapter: FirmwareAdapter, authorization: FirmwareAuthorization, run_id: str | None = None):
+    def rollback(self, *, adapter: FirmwareAdapter, authorization: FirmwareAuthorization, expected_version: str, run_id: str | None = None):
         authorization.require('ROLLBACK')
-        identity=adapter.identify()
-        lease=self._acquire_lock(identity.device_id, run_id, authorization.actor)
+        expected_version = expected_version.strip() if isinstance(expected_version, str) else ""
+        if not expected_version:
+            raise ValueError("expected_version is required to verify firmware rollback")
+        initial_identity = adapter.identify()
+        lease = self._acquire_lock(initial_identity.device_id, run_id, authorization.actor)
         try:
-            self._event(run_id,'FIRMWARE_ROLLBACK_STARTED',{'device_id':identity.device_id})
+            identity = adapter.identify()
+            if identity.device_id != initial_identity.device_id:
+                raise FirmwareError("device identity changed while acquiring the firmware lock")
+            self._event(run_id,'FIRMWARE_ROLLBACK_STARTED',{'device_id':identity.device_id,'expected_version':expected_version})
             result=adapter.rollback(authorization=authorization)
             if result.transport_error or result.exit_code not in (None,0):
                 raise FirmwareError('explicit firmware rollback failed')
-            self._event(run_id,'FIRMWARE_ROLLBACK_COMPLETED',{'target':result.target})
-            return adapter.wait_ready()
+            ready = adapter.wait_ready()
+            if ready.device_id != identity.device_id:
+                raise FirmwareError("a different device responded after firmware rollback")
+            verified = adapter.verify_version(expected_version)
+            self._event(run_id,'FIRMWARE_ROLLBACK_COMPLETED',{'target':result.target,'verified_version':verified.firmware_version})
+            self._event(run_id,'FIRMWARE_ROLLBACK_VERSION_VERIFIED',{'version':verified.firmware_version})
+            return verified
         except Exception as exc:
-            self._event(run_id,'FIRMWARE_ROLLBACK_FAILED',{'error':str(exc)}); raise
+            self._event(run_id,'FIRMWARE_ROLLBACK_FAILED',{'error':str(exc),'expected_version':expected_version}); raise
         finally:
             self._release_lock(lease)
 

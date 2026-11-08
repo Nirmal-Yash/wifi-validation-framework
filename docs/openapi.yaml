@@ -64,7 +64,25 @@ paths:
     post: {parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/BaselinePromotionRequest'}}}}, responses: {"201": {description: Baseline promoted}}}
   /baselines/{baseline_id}/promote: {post: {parameters: [{name: baseline_id, in: path, required: true, schema: {type: string}}, {$ref: '#/components/parameters/IdempotencyKey'}], responses: {"201": {description: Baseline promoted}}}}
   /firmware/operations: {post: {parameters: [{$ref: '#/components/parameters/IdempotencyKey'}], requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/FirmwareOperationRequest'}}}}, responses: {"202": {description: Firmware operation}}}}
-  /firmware/{device_id}/rollback: {post: {parameters: [{name: device_id, in: path, required: true, schema: {type: string}}, {$ref: '#/components/parameters/IdempotencyKey'}], responses: {"200": {description: Rollback verified}}}}
+  /firmware/{device_id}/rollback:
+    post:
+      parameters:
+        - {name: device_id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [run_id, expected_version]
+              properties:
+                run_id: {type: string, minLength: 1}
+                expected_version: {type: string, minLength: 1}
+                reason: {type: string, minLength: 1}
+      responses:
+        "200": {description: Rollback command completed and the target version was independently verified}
+        "400": {description: Invalid request or rollback verification failed}
 components:
   parameters:
     IdempotencyKey:
@@ -99,5 +117,7 @@ components:
         version: {type: string}
         reason: {type: string}
         compatible_models: {type: array, items: {type: string}}
-        expected_sha256: {type: string, pattern: '^[0-9a-fA-F]{64}}
+        expected_sha256: {type: string, pattern: '^[0-9a-fA-F]{64}
+        signature_path: {type: string}
+}
         signature_path: {type: string}

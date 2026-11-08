@@ -1154,7 +1154,9 @@ Targeted verification must cover:
 
 ## 27. Iteration 17 adapter validation
 
-Adapter tests cover capability declarations, Linux/OpenWrt profile behavior, version parsing, image hash/model validation, explicit authorization, nominal lifecycle, flash failure, reboot failure without implicit rollback and explicit rollback.
+Adapter tests cover strict capability declarations, Linux/OpenWrt profile behavior, environment-backed SSH credentials, version parsing, image hash/model validation, remote-path confinement, explicit authorization, nominal lifecycle, flash failure, reboot failure without implicit rollback and rollback version verification.
+
+For every physical rollback, the operator must supply the expected restored firmware version. The service waits for the device to become ready, verifies that the same device responded, then independently queries and compares the observed version before recording rollback completion. A command exit or restored SSH reachability alone is not sufficient.
 
 Operational acceptance still requires real-hardware flash/reboot/rollback tests against the supported device family before production firmware control is enabled. Those physical operations were not executed in this environment.
 

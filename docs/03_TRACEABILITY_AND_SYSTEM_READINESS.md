@@ -212,7 +212,7 @@ Iterations 20–30 are source-implemented and the full core/release-readiness CI
 | G | Implemented; hosted CI passed | Immutable layered configuration, stable fingerprints, persistent cross-process locks, safe stale recovery, lab/device/namespace leases, shared firmware exclusion and read-only launcher preflight; workflow 42363358706 passed; REAL_LAB separate |
 | H | Source implementation delivered; protected execution pending | Hardened DHCP/EAPOL/Beacon/RSN/DNS correlation; EAPOL/Beacon/DNS foreground capture tests, SFTP/hash verification and Run-scoped artifacts added; protected live execution and DHCP T1/T2 capture remain pending |
 | I | Source implementation present | Physical RF/performance/recovery evidence remains |
-| J | Source implementation present | Real hardware flash/reboot/version/rollback certification remains |
+| J | Lifecycle hardened; hosted contract coverage included | Strict capabilities, OpenWrt profile defaults, env-backed SFTP credentials, image/path validation, full-scope device locking and expected-version rollback verification are source-covered; real hardware certification remains outstanding |
 | K | Substantially implemented | Target deployment and threat-model acceptance remain |
 | L | Substantially implemented | Authenticated browser/runtime and operational workflow acceptance remain |
 | M | Substantially implemented | Production sync endpoint and release-operation acceptance remain |

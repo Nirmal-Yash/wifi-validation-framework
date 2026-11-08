@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import posixpath
 import re
@@ -12,6 +13,42 @@ from typing import Any, Mapping, Protocol
 import paramiko
 
 from lib.services.command_runner import CommandResult, CommandRunner
+
+
+_ENV_CREDENTIAL_RE = re.compile(r"^__ENV__:([A-Z0-9_]+)$")
+_REMOTE_PATH_RE = re.compile(r"^/[A-Za-z0-9_./-]+$")
+
+
+def _coerce_bool(value: Any, *, name: str) -> bool:
+    """Parse configuration booleans without Python's truthiness trap for strings."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "on", "1"}:
+            return True
+        if normalized in {"false", "no", "off", "0"}:
+            return False
+    raise ValueError(f"{name} must be a boolean value")
+
+
+def _resolve_credential(value: Any, *, name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string or null")
+    if not value.startswith("__ENV__:"):
+        return value
+    match = _ENV_CREDENTIAL_RE.fullmatch(value)
+    if match is None:
+        raise ValueError(f"{name} has an invalid environment-secret marker")
+    secret = os.environ.get(match.group(1))
+    if not secret:
+        raise ValueError(f"required device credential environment variable is unset: {match.group(1)}")
+    return secret
+
 
 class DeviceAdapterError(RuntimeError): pass
 class DeviceUnavailableError(DeviceAdapterError): pass
@@ -32,8 +69,13 @@ class DeviceCapabilities:
     supports_ssh: bool = True
     supports_tftp: bool = False
 
+    def __post_init__(self) -> None:
+        for name in self.__dataclass_fields__:
+            if not isinstance(getattr(self, name), bool):
+                raise TypeError(f"{name} must be a boolean")
+
     def as_dict(self) -> dict[str, bool]:
-        return {name: bool(getattr(self, name)) for name in self.__dataclass_fields__}
+        return {name: getattr(self, name) for name in self.__dataclass_fields__}
 
 @dataclass(frozen=True, slots=True)
 class DeviceProfile:
@@ -56,27 +98,57 @@ class DeviceProfile:
     version_parser: str = 'first-line'
     remote_firmware_directory: str = '/tmp/netregress'
 
+    def __post_init__(self) -> None:
+        for name, value in (("device_id", self.device_id), ("host", self.host), ("username", self.username)):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must not be empty")
+        if isinstance(self.port, bool) or not isinstance(self.port, int) or not 1 <= self.port <= 65535:
+            raise ValueError("device port must be an integer between 1 and 65535")
+        directory = posixpath.normpath(self.remote_firmware_directory)
+        if (
+            not isinstance(self.remote_firmware_directory, str)
+            or not directory.startswith("/")
+            or directory == "/"
+            or ".." in self.remote_firmware_directory.split("/")
+            or not _REMOTE_PATH_RE.fullmatch(directory)
+        ):
+            raise ValueError("remote firmware directory must be a safe absolute path")
+        object.__setattr__(self, "remote_firmware_directory", directory)
+
     @classmethod
     def from_mapping(cls, device_id: str, values: Mapping[str, Any]) -> 'DeviceProfile':
-        defaults = DeviceCapabilities()
+        if not isinstance(values, Mapping):
+            raise ValueError("device profile must be a mapping")
+        device_type = str(values.get('device_type', 'linux')).strip().lower()
         raw_caps = values.get('capabilities') or {}
+        if not isinstance(raw_caps, Mapping):
+            raise ValueError("device capabilities must be a mapping")
+        defaults = (
+            DeviceCapabilities(supports_wpa3=True, supports_firmware_flash=True)
+            if device_type == "openwrt"
+            else DeviceCapabilities()
+        )
+        unknown = set(raw_caps) - set(defaults.__dataclass_fields__)
+        if unknown:
+            raise ValueError(f"unknown device capabilities: {', '.join(sorted(map(str, unknown)))}")
         caps = DeviceCapabilities(**{
-            name: bool(raw_caps.get(name, getattr(defaults, name)))
+            name: _coerce_bool(raw_caps.get(name, getattr(defaults, name)), name=name)
             for name in defaults.__dataclass_fields__
         })
         return cls(
             device_id=device_id, host=str(values['host']), username=str(values['username']),
-            port=int(values.get('port', 22)), password=values.get('password'),
-            key_filename=values.get('key_filename'), device_type=str(values.get('device_type', 'linux')),
-            model=str(values.get('model', 'unknown')), capabilities=caps,
+            port=int(values.get('port', 22)),
+            password=_resolve_credential(values.get('password'), name="password"),
+            key_filename=_resolve_credential(values.get('key_filename'), name="key_filename"),
+            device_type=device_type, model=str(values.get('model', 'unknown')), capabilities=caps,
             health_command=str(values.get('health_command', 'true')),
-            version_command=str(values.get('version_command', 'uname -r')),
+            version_command=str(values.get('version_command', 'ubus call system board' if device_type == 'openwrt' else 'uname -r')),
             wifi_state_command=str(values.get('wifi_state_command', 'iw dev wlan0 link')),
             network_state_command=str(values.get('network_state_command', 'ip -brief addr')),
             reboot_command=str(values.get('reboot_command', 'reboot')),
             firmware_flash_command=str(values.get('firmware_flash_command', 'sysupgrade -n {remote_path}')),
             firmware_rollback_command=values.get('firmware_rollback_command'),
-            version_parser=str(values.get('version_parser', 'first-line')),
+            version_parser=str(values.get('version_parser', 'openwrt-ubus' if device_type == 'openwrt' else 'first-line')),
             remote_firmware_directory=str(values.get('remote_firmware_directory', '/tmp/netregress')),
         )
 
@@ -166,8 +238,10 @@ class SSHDeviceAdapter:
 
     def version(self) -> DeviceIdentity:
         result = self.execute(self.profile.version_command)
-        if not result.transport_succeeded:
-            raise DeviceUnavailableError(f'device version query failed: {result.transport_error}')
+        if not result.transport_succeeded or result.exit_code not in (None, 0):
+            raise DeviceUnavailableError(
+                f'device version query failed: {result.transport_error or result.stderr or result.stdout}'
+            )
         version = self._parse_version(result.stdout)
         if not version:
             raise DeviceAdapterError(f'device {self.profile.device_id} returned no parseable firmware version')
@@ -196,8 +270,16 @@ class SSHDeviceAdapter:
     def upload(self, local_path: str | Path, remote_path: str) -> str:
         source = Path(local_path)
         if not source.is_file(): raise FileNotFoundError(source)
-        if not remote_path.startswith('/') or '..' in remote_path.split('/') or not re.fullmatch(r'/[A-Za-z0-9_./-]+', remote_path):
-            raise ValueError('remote firmware path is invalid')
+        root = self.profile.remote_firmware_directory.rstrip("/")
+        normalized_remote = posixpath.normpath(remote_path)
+        if (
+            not isinstance(remote_path, str)
+            or not _REMOTE_PATH_RE.fullmatch(normalized_remote)
+            or ".." in remote_path.split("/")
+            or not normalized_remote.startswith(root + "/")
+        ):
+            raise ValueError("remote firmware path must stay beneath the configured firmware directory")
+        remote_path = normalized_remote
         client = paramiko.SSHClient()
         client.load_system_host_keys()
         client.set_missing_host_key_policy(paramiko.RejectPolicy())
@@ -208,10 +290,15 @@ class SSHDeviceAdapter:
             sftp = client.open_sftp()
             try:
                 directory = posixpath.dirname(remote_path)
-                try: sftp.stat(directory)
-                except OSError:
-                    if not directory.startswith('/tmp/'): raise
-                    sftp.mkdir(directory)
+                current = ""
+                for component in directory.strip("/").split("/"):
+                    current += "/" + component
+                    try:
+                        sftp.stat(current)
+                    except OSError:
+                        if not current.startswith("/tmp/"):
+                            raise
+                        sftp.mkdir(current)
                 sftp.put(str(source), remote_path)
             finally: sftp.close()
         except (OSError, paramiko.SSHException) as exc:
@@ -229,7 +316,7 @@ class SSHDeviceAdapter:
             release = payload.get('release', {})
             return str(release.get('version') or release.get('revision') or '').strip() or None
         if self.profile.version_parser == 'regex':
-            match = re.search(r'(?im)^\\s*version\\s*[:=]\\s*(\\S+)', output)
+            match = re.search(r'(?im)^\s*version\s*[:=]\s*(\S+)', output)
             return match.group(1) if match else None
         return next((line.strip() for line in output.splitlines() if line.strip()), None)
 
