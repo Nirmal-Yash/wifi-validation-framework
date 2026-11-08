@@ -190,7 +190,7 @@ WiFi telemetry is now a typed Runner service rather than an unstructured dashboa
 
 Every point is explicitly labeled `VIRTUAL_WIFI` or `PHYSICAL_WIFI`. Missing source values remain unavailable and are never synthesized. RunContext now exposes the service and the session fixture constructs it for the current virtual lab.
 
-Verification remains pending in this environment: local/unit execution, a real telemetry capture against mac80211_hwsim, and the protected real-lab regression suite were not executed.
+Telemetry parser, provenance, immutability, statistics and fault-service unit tests are exercised in GitHub-hosted CI. A separate local run and real telemetry capture against mac80211_hwsim, together with the protected real-lab regression suite, have not been executed in this environment.
 
 
 ## 23. Iteration 15 status
@@ -255,7 +255,7 @@ Phase G commit `64ff134` passed workflow 42363358706 across backend correctness 
 
 **Phase H source implementation is delivered in this checkpoint.** Parser coverage now rejects false EAPOL handshakes using endpoint direction and replay counters, DNS cross-flow and duplicate response matching, malformed RSN elements, wrong Beacon identity, and DHCP ACKs that precede the renewal/rebind request. Protected capture tests were added for AP-side EAPOL/Beacon collection and AP-bridge DNS collection, with foreground Paramiko tcpdump, SFTP, remote/local SHA-256 verification and Run-scoped PCAP/protocol JSON artifacts. The original DHCP capture path and node ID are unchanged.
 
-**The Phase H protected live acceptance is not yet complete.** These real-lab tests, the existing DHCP capture and the full protected suite must be executed on the established GNS3/mac80211_hwsim host. The current 12-hour dnsmasq lease means T1/T2 capture requires a separately approved short-lease window. Do not automatically alter lab lease configuration or proceed to Phase I until the live evidence has been accepted. Cloud/SaaS remains after standalone certification; Phase P remains final cleanup.
+**The Phase H protected live acceptance is not yet complete.** These real-lab tests, the existing DHCP capture and the full protected suite must be executed on the established GNS3/mac80211_hwsim host. The current 12-hour dnsmasq lease means T1/T2 capture requires a separately approved short-lease window. Do not automatically alter lab lease configuration. Phase I source and hosted-CI implementation may proceed while Phase H live evidence is pending; Phase I protected RF/performance/recovery acceptance must remain gated until the Phase H live evidence is accepted. Cloud/SaaS remains after standalone certification; Phase P remains final cleanup.
 
 ## 31. Phase I delivery handoff — 2026-11-07
 
@@ -265,4 +265,4 @@ Performance tests persist one warm-up plus three measured samples by default. Te
 
 FaultService rejects known non-zero command results, attempts restore after partial apply or test failure, and preserves the original failure if restore also fails. Existing restore postconditions remain authoritative.
 
-Hosted backend CI includes telemetry/statistics/fault contracts and collects performance modules with the real-lab connection fixture skipped. Phase H protected live captures have not been performed here; Phase I live RF/performance/recovery certification remains pending after that prerequisite.
+Hosted backend CI includes telemetry/statistics/fault contracts, baseline/regression consumers of the three-sample policy, and performance modules with the real-lab connection fixture skipped. Regression fixtures retain the three-eligible-sample minimum instead of lowering the policy to fit historical one-sample test data. Phase H protected live captures have not been performed here; Phase I live RF/performance/recovery certification remains pending after that prerequisite.

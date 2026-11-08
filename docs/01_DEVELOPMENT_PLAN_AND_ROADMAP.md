@@ -112,7 +112,7 @@ Phase G hosted CI passed workflow 42363358706 across backend correctness, fronte
 
 #### Current execution handoff — 2026-11-07
 
-Current `main` entering Phase H: `64ff134690b03d6fd10c18eb6062a5c6c7a24aae`. Phase G commit `64ff134` passed hosted workflow 42363358706 across backend correctness tests, frontend tests/build and dashboard startup/proxy/session smoke tests. Hosted CI is not a substitute for the protected GNS3/mac80211_hwsim gate.
+Phase H implementation baseline: `64ff134690b03d6fd10c18eb6062a5c6c7a24aae`. Phase G passed hosted workflow 42363358706 across backend correctness tests, frontend tests/build and dashboard startup/proxy/session smoke tests. Phase H source/analyzer and protected-capture test collection passed hosted workflow 42379801150; its three live packet-capture cases were skipped in hardware-free CI. Hosted CI is not a substitute for the protected GNS3/mac80211_hwsim gate.
 
 **Phase H source implementation is delivered in this checkpoint.** The protocol analyzers now require:
 - EAPOL M1/M2 replay-counter equality, M3/M4 replay-counter equality, an increasing M3 counter, correct AP/client direction and pairwise-key messages;
@@ -127,8 +127,8 @@ The new protected tests capture EAPOL plus Beacon/RSN frames on a temporary `mon
 #### Phase I implementation update — 2026-11-07
 
 Delivered in this source/hosted-CI pass:
-- Telemetry points and snapshots deep-detach and freeze nested metadata, validate environment/metric types and retain per-source provenance. Known non-zero read-only command results cannot contribute partial telemetry; Netmiko's unavailable exit status is recorded as a warning, not misrepresented as verified command success.
-- Performance tests use one configured warm-up followed by three measured repetitions by default. Raw samples are retained; warm-ups are flagged and excluded by registry policy. Ping success uses MEAN, packet loss uses MEAN, latency uses P95 and throughput uses MEAN; each requires at least three eligible samples.
+- Telemetry points and snapshots deep-detach and freeze nested metadata, validate environment/metric types and retain per-source provenance. Known non-zero read-only command results cannot contribute partial telemetry; Netmiko's unavailable exit status is recorded as a warning, not misrepresented as verified command success. Derived SNR provenance lists each contributing source once.
+- Performance tests use one configured warm-up followed by three measured repetitions by default. Raw samples are retained; warm-ups are flagged and excluded by registry policy. Ping success uses MEAN, packet loss uses MEAN, latency uses P95 and throughput uses MEAN; each requires at least three eligible samples. Baseline-promotion and regression API fixtures now provide three eligible observations rather than weakening that policy.
 - Fault application/restoration rejects known non-zero remote command status, verifies restoration postconditions and preserves the original validation/apply exception if restoration also fails.
 - Hosted backend CI covers telemetry parsing/provenance, statistics, measurement collection, fault service contracts, registry policy minima and performance-module collection. Protected real-lab tests remain skipped in hardware-free CI.
 

@@ -53,10 +53,10 @@ def test_baseline_promotion_requires_eligible_authoritative_samples(tmp_path):
 
 def test_baseline_promotion_uses_latest_attempt_and_supersedes_atomically(tmp_path):
     service = ready_service(tmp_path)
-    first = completed_latency_run(service, samples=[Sample(value=12.0)])
+    first = completed_latency_run(service, samples=[Sample(value=12.0), Sample(value=12.5), Sample(value=11.5)])
     original = service.promote_baseline(first.run_id, name="Golden", promoted_by="owner")
 
-    second = completed_latency_run(service, samples=[Sample(value=10.0), Sample(value=11.0)])
+    second = completed_latency_run(service, samples=[Sample(value=10.0), Sample(value=11.0), Sample(value=10.5)])
     replacement = service.promote_baseline(second.run_id, name="Golden", promoted_by="owner")
 
     stored_original = service.baseline_repository.get(original.baseline_id)

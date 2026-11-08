@@ -275,11 +275,12 @@ class WifiTelemetryService:
             warnings.append("PHY mode could not be determined from observed driver output")
 
         points: list[TelemetryPoint] = []
+        snr_sources = tuple(dict.fromkeys((signal_source, "wpa_cli.signal_poll")))
         point_specs = (
             (TelemetryMetric.RSSI_DBM, signal_dbm, "dBm", signal_source),
             (TelemetryMetric.SNR_DB,
              signal_dbm - noise_dbm if signal_dbm is not None and noise_dbm is not None else None,
-             "dB", f"{signal_source}+wpa_cli.signal_poll"),
+             "dB", "+".join(snr_sources)),
             (TelemetryMetric.CHANNEL, self.channel_from_frequency(frequency_mhz) if frequency_mhz is not None else None, "channel", "derived.frequency_to_channel"),
             (TelemetryMetric.FREQUENCY_MHZ, frequency_mhz, "MHz", frequency_source),
             (TelemetryMetric.BITRATE_MBPS, bitrate_mbps, "Mbps", bitrate_source),

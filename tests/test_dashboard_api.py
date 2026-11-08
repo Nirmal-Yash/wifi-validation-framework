@@ -67,7 +67,7 @@ def record(service, run, attempt, status, value):
                 name="latency",
                 unit="ms",
                 authoritative=True,
-                samples=(Sample(value=value), Sample(value=value)),
+                samples=(Sample(value=value), Sample(value=value), Sample(value=value)),
             ),
         ),
         criticality=Criticality.BLOCKING,

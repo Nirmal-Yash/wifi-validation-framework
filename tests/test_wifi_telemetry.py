@@ -56,6 +56,7 @@ class FakeRunner:
                     {
                         "transport_succeeded": True,
                         "transport_error": None,
+                        "transport": "netmiko",
                         "exit_code": next(
                             (code for prefix, code in self.exit_codes.items()
                              if command.startswith(prefix)),
@@ -70,6 +71,7 @@ class FakeRunner:
             {
                 "transport_succeeded": True,
                 "transport_error": None,
+                        "transport": "netmiko",
                 "exit_code": 0,
                 "stdout": "",
             },
@@ -94,6 +96,8 @@ def test_capture_parses_required_telemetry_and_environment_class():
     assert values[TelemetryMetric.PHY_MODE] == "802.11ac (VHT)"
     assert values[TelemetryMetric.TX_RETRIES_TOTAL] == 7
     assert values[TelemetryMetric.TX_FAILED_TOTAL] == 1
+    sources = {point.metric: point.source for point in snapshot.points}
+    assert sources[TelemetryMetric.SNR_DB] == "wpa_cli.signal_poll"
     assert {point.environment_class for point in snapshot.points} == {TelemetryEnvironmentClass.VIRTUAL_WIFI}
     assert [call[1] for call in runner.calls] == [
         "wpa_cli -i wlan0 signal_poll",

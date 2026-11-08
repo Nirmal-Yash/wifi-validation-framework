@@ -244,6 +244,57 @@ def test_fault_service_rejects_known_nonzero_apply_exit_status():
         FaultService(runner).apply(make_fault())
 
 
+def test_fault_service_restores_after_nonzero_apply_exit_status():
+    class SequencedExitRunner(FakeRunner):
+        def __init__(self, exit_codes):
+            super().__init__()
+            self.exit_codes = list(exit_codes)
+
+        def execute_shell(self, target, command, **kwargs):
+            self.commands.append((target, command, kwargs["command_category"]))
+            return CommandResult(
+                command_id=f"cmd-{len(self.commands)}",
+                target=target,
+                command_category=kwargs["command_category"],
+                safe_display_command=command,
+                exit_code=self.exit_codes.pop(0),
+                transport="fake",
+            )
+
+    runner = SequencedExitRunner([23, 0])
+    with pytest.raises(RuntimeError, match="exit code 23"):
+        with FaultService(runner).context(make_fault()):
+            pass
+
+    assert [command for _, command, _ in runner.commands] == [
+        "sudo ip link set wlan0 down",
+        "sudo ip link set wlan0 up",
+    ]
+
+
+def test_fault_service_rejects_nonzero_restore_exit_status():
+    class SequencedExitRunner(FakeRunner):
+        def __init__(self, exit_codes):
+            super().__init__()
+            self.exit_codes = list(exit_codes)
+
+        def execute_shell(self, target, command, **kwargs):
+            self.commands.append((target, command, kwargs["command_category"]))
+            return CommandResult(
+                command_id=f"cmd-{len(self.commands)}",
+                target=target,
+                command_category=kwargs["command_category"],
+                safe_display_command=command,
+                exit_code=self.exit_codes.pop(0),
+                transport="fake",
+            )
+
+    runner = SequencedExitRunner([0, 9])
+    with pytest.raises(RuntimeError, match="exit code 9"):
+        with FaultService(runner).context(make_fault()):
+            pass
+
+
 def test_fault_restore_failure_does_not_mask_validation_failure():
     class RestoreFailureRunner(FakeRunner):
         def execute_shell(self, target, command, **kwargs):

@@ -160,7 +160,7 @@ Current repository audit date: 2026-11-07. Phase G is being delivered on top of 
 - Phase E: hosted workflow 42053712826 passed.
 - Phase F: hosted workflow 42216004283 passed all three jobs (backend process/lifecycle contracts, frontend tests/build, and dashboard startup/proxy/session smoke test).
 
-Phase G implementation and tests are included in the current delivery. Its hosted CI result is pending. Hosted CI does not certify protected REAL_LAB.
+Phase G implementation and tests passed hosted workflow 42363358706 across backend, frontend/build and dashboard smoke jobs. Hosted CI does not certify protected REAL_LAB.
 
 The prior release wave established the standalone Runner architecture, but this audit found several source-level contract gaps that had been overstated as complete. The completeness wave closes the identified implementation defects and separates **source implementation readiness** from **execution certification**.
 
@@ -173,7 +173,7 @@ The prior release wave established the standalone Runner architecture, but this 
 | Evidence | Implemented | TestResult-owned, pytest-node/Attempt-owned, Attempt-wide and Run-wide evidence are scoped explicitly; evidence owned by another test/Attempt, soft-deleted, incomplete, invalid or hash-mismatched cannot satisfy a requirement. |
 | DHCP protocol evidence | Completed in source | DORA, T1 renewal and T2 rebind transaction classification are now correlated from captured DHCP traffic. |
 | EAPOL / Beacon / DNS evidence | Partially operational | Parsers and compatibility wrappers exist with unit coverage; complete production-test live wiring still requires execution-class validation. |
-| Telemetry / measurement | Implemented | Typed WiFi telemetry, raw samples and deterministic statistical evaluation are present; RF claims remain environment-class aware. |
+| Telemetry / measurement | Implemented; hosted source/contract verification | Typed immutable WiFi telemetry, source/environment provenance, raw warm-up/measured samples and deterministic statistical evaluation are covered by hosted tests; protected RF claims remain unverified until live lab evidence. |
 | Device / firmware | Completed in source | Hash/model/signature validation, explicit authorization, firmware-operation exclusivity and explicit rollback are enforced. |
 | API / security | Implemented | API authorization, CSRF, rate limiting, durable operational idempotency, SSRF/path confinement and structured readiness are present. |
 | RBAC project scoping | Partially operational | Role/project primitives exist, but a durable multi-project entity and end-to-end Run/Device/Lab project association are not yet modeled. |
