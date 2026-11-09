@@ -1,22 +1,55 @@
+# Runtime evidence and local state
 results/
+artifacts/
+.local/
 .robust-backups/
-__pycache__/
-*.pyc
-*.pcap
+logs/
+captures/
+
+# Databases and SQLite sidecars
 *.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+
+# Packet captures and generated diagnostics
+*.pcap
+*.pcapng
+*.log
+*.tmp
+
+# Python environments, bytecode and test/build caches
 wifi-venv/
 .venv/
+venv/
+__pycache__/
+*.py[cod]
 *.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+coverage/
 dist/
 build/
-.env
-artifacts/
-config/
-.robust-backups/
-WiFi_Validation_Framework_Robust_Reproduction_Guide.docx
-.local/
+
+# Node dependencies and frontend build output
 node_modules/
 
-# SQLite/Alembic maintenance lock files
+# Secrets: keep the documented example tracked
+.env
+.env.*
+!.env.example
+
+# SQLite/Alembic maintenance locks
 *.migration.lock
+
+# Historical generated document
+WiFi_Validation_Framework_Robust_Reproduction_Guide.docx
+
+# Legacy singular configuration directory (the canonical directory is configs/)
+config/

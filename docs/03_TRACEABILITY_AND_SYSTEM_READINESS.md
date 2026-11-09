@@ -459,18 +459,18 @@ The Phase K artifact route now uses persisted `sensitivity_class`: PUBLIC/INTERN
 
 ## Phase N — Standalone packaging and production certification (2026-11-09)
 
-Live source audit baseline for this delivery: main de5cd3b2d2b9412536636c7593bf465eb5d49adc. The prior hosted workflow [42619974434](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42619974434) completed successfully for that exact baseline. The Phase N changes below require their own workflow result.
+Phase N source delivery is commit 80831042d8f2f6b86562a0b6ac951cbfe87bceaf. Exact-commit hosted workflow 42629371133 completed successfully: all 3 jobs passed. Backend correctness completed with 360 passed and 7 skipped; API security boundary tests completed with 35 passed; frontend completed with 31 passed across 8 files and a successful production build; the dashboard launcher/proxy/authenticated-session smoke test passed.
 
-### Source implementation
+The seven skips are protected real-lab operations (DHCP, EAPOL/Beacon, DNS capture, ping/loss/latency and throughput) and are not source/CI acceptance.
 
-- Standalone install/bootstrap CLI prepares results/reports/captures/backups/diagnostics/certification directories and private local state, with read-only check-only mode, path/symlink checks and fail-closed permissions.
-- RunnerDoctor is a read-only status report. It distinguishes PASS, WARNING, FAIL and NOT_CHECKED; checks required dependencies, configuration/auth setup, private local auth material, runtime paths, SQLite integrity, Alembic revision/schema drift and optional dashboard/lab prerequisites.
-- Release manifest v2 is deterministic for an unchanged checkout, excludes wall-clock generation time, records source commit/tree, runtime compatibility, dependency pin/lockfile state, Alembic revision inventory and tracked file hashes. Manifest verification compares it with the current source.
-- The 11-scenario matrix now carries objective, preconditions, execution method, expected behavior, required evidence types and verification criteria. The strict evaluator checks lifecycle/outcome, controls, required execution classes, current source commit, environment fingerprint, timestamp, command, typed evidence file paths and SHA-256. REAL_LAB and PROTECTED_TARGET also require operator/approval-reference attestations.
-- Existing DatabaseMigrationManager remains the one Alembic authority and existing SQLiteBackupService remains responsible for online backups and integrity checks. Installer/upgrades call these services rather than inventing an alternative schema or backup path.
+Source implementation includes the standalone installer, read-only doctor, deterministic source manifest, evidence-aware 11-scenario certification evaluator, secure repository .env resolution and the canonical operations runbook. Existing Alembic/SQLite recovery remains authoritative.
 
-### Verification boundaries
+**Open production acceptance:** no Python transitive lockfile or frontend npm lockfile exists, the Runner application version is not separately declared, clean-machine install/upgrade/backup/restore has not been rehearsed, production reverse-proxy/secrets acceptance is outstanding, and protected REAL_LAB/physical firmware evidence remains outstanding. The release manifest must continue to report production reproducibility as false.
 
-The focused Phase N regression tests are added to the backend workflow. A green result must be confirmed against the exact Phase N commit before it is described as hosted-CI verified. The local execution environment for this task cannot resolve github.com and does not have the repository's full Python runtime dependencies installed, so local backend/frontend test execution and a local clean clone were not possible.
+## Combined Phase O/P — bounded integration and repository governance (2026-11-09)
 
-The manifest reports incomplete transitive dependency locking until a Python lockfile and frontend npm lockfile are committed; it does not set production_reproducible true based only on direct dependency declarations. Source implementation and hardware-free CI do not certify a clean-machine install, reverse-proxy deployment, GNS3/mac80211_hwsim REAL_LAB execution or physical firmware lifecycle. Those acceptance gates remain open until actual evidence is collected.
+The full Cloud/SaaS programme remains future scope. The combined O/P source slice adds one narrow operational seam: scripts/netregress_sync.py --status reads the existing SQLite sync queue without an endpoint, token, network request or migration. The queue summary now uses a strictly read-only SQLite connection. Missing database and missing schema states remain distinct. Existing outbound HTTPS delivery and idempotent queue behavior are unchanged.
+
+Repository governance cleanup modernizes the legacy run_all.sh and verify_system.py entry points without deleting their names, aligns them to canonical install/release/dashboard commands, strengthens .gitignore, indexes the standalone operator runbook, adds required source/test paths to the release manifest and introduces regression tests for read-only status/cleanup contracts.
+
+Do not claim Cloud receiver, tenant authorization, PostgreSQL, distributed identity/session infrastructure, remote release control or artifact binary transfer. Those remain future Phase O work. Do not claim that transitive dependency locks or clean-machine/REAL_LAB production certification are complete.

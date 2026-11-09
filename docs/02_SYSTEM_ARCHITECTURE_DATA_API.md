@@ -6,10 +6,10 @@
 
 Companion canonical documents:
 - docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md
-- docs/02_SYSTEM_ARCHITECTURE_DATA_API.md
 - docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md
 - docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md
 - docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
+- docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md
 
 ## 1. Backend contract
 
@@ -1023,3 +1023,14 @@ Iteration 27 adds a versioned certification matrix for the 11 final scenarios. T
 - API: authenticated, authorized and versioned external control/query contract.
 - Artifacts: raw evidence remains authoritative; derived evidence never replaces it.
 - Frontend: presentation over the canonical API, not the execution authority.
+
+
+## 23A. Local synchronization operations and future control-plane boundary
+
+The Runner currently provides an outbound-only synchronization seam: immutable Run snapshot envelopes, SHA-256 payload integrity, stable idempotency keys, SQLite queue state, retry/lease recovery and an HTTPS transport. The local queue status command reports aggregate delivery state without requiring a remote endpoint or mutating the database:
+
+~~~bash
+python scripts/netregress_sync.py --status
+~~~
+
+The command is operational visibility only. It does not transfer artifacts or Run snapshots, create a remote identity, authorize a Project, or prove that a remote receiver accepted data. Cloud ownership, Project/tenant authorization, short-lived Runner credentials, remote schema negotiation and human release workflows remain future Phase O contracts.

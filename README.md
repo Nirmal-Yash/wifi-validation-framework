@@ -223,3 +223,20 @@ python scripts/netregress_certification.py
 The manifest is deterministic for an unchanged Git checkout and records the tracked-file inventory and SHA-256 digests. Its production_reproducible field remains false until both Python and frontend transitive dependency lockfiles exist. The current repository does not contain those lockfiles; the direct dependency declarations alone are not a complete lock.
 
 The 11-scenario certification matrix is an execution/evidence gate. Generate the matrix with python scripts/netregress_certification.py; evaluate a scenario-keyed evidence JSON with --evidence. Each required execution must identify the current source commit, a 64-character environment fingerprint, a timezone-aware timestamp, its command, and SHA-256-verified evidence files below results/. REAL_LAB and PROTECTED_TARGET records additionally require operator and approval-reference attestations. A matrix listing or passing hardware-free CI does not certify the protected lab or physical firmware.
+
+
+## Offline synchronization status
+
+Inspect local delivery state without configuring or contacting a remote endpoint:
+
+~~~bash
+python scripts/netregress_sync.py --status
+~~~
+
+This read-only command reports QUEUED, IN_FLIGHT, ACKED, FAILED and BLOCKED counts. It does not initialize/migrate the database, transmit data, or expose payloads or stored error text. Synchronize only after an approved HTTPS endpoint and credential have been configured:
+
+~~~bash
+python scripts/netregress_sync.py --url "$NETREGRESS_SYNC_URL"
+~~~
+
+The historical root entry points remain available as compatibility wrappers: run_all.sh uses the canonical installer, test suite and authenticated dashboard launcher; verify_system.py delegates to the canonical release gate.

@@ -99,6 +99,8 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install backend dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+      - name: Validate compatibility shell entry points
+        run: bash -n run_all.sh && bash -n scripts/start_dashboard.sh
       - name: Run strict source security audit
         run: python scripts/netregress_security_audit.py --strict
       - name: Run API security boundary tests
@@ -146,6 +148,7 @@ jobs:
           tests/test_regression_intelligence.py
           tests/test_release_readiness.py
           tests/test_standalone_operations.py
+          tests/test_repository_governance.py
           ci_tests/test_release_gate.py
 
   dashboard-startup-smoke:

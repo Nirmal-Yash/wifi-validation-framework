@@ -1170,7 +1170,9 @@ At Run completion, the pytest session attempts to enqueue a local snapshot. Queu
 
 The SQLite sync queue timestamps use timezone-aware UTC values (`timezone.utc`) so terminal Run enqueueing does not fail during session finalization.
 
-Synchronization is explicit through `python scripts/netregress_sync.py --url https://...`. Temporary connectivity failures remain retryable. Stale in-flight leases are recoverable. Repeated delivery uses the same idempotency key so the future Cloud can safely deduplicate accepted envelopes.
+Synchronization is explicit through python scripts/netregress_sync.py --url https://.... Temporary connectivity failures remain retryable. Stale in-flight leases are recoverable. Repeated delivery uses the same idempotency key so a future receiver can safely deduplicate accepted envelopes.
+
+Inspect queue state without a URL, token, network request or migration with python scripts/netregress_sync.py --status. The summary is read-only and reports queued, in-flight, acknowledged, failed and blocked counts; it does not display payloads or error text. A missing database and a missing queue schema are distinguished and are not automatically initialized.
 
 The current environment has no configured Cloud endpoint, so no external synchronization was attempted.
 
@@ -1205,3 +1207,8 @@ python scripts/netregress_release.py manifest
 - Raw PCAP and integrity hashes remain authoritative.
 - Runtime artifacts stay outside tracked source.
 - Protected REAL_LAB execution remains authoritative for execution-sensitive behavior.
+
+
+## Combined Phase O/P delivery boundary
+
+The local queue status command is an operational convenience over the existing Runner-owned sync queue. It is not a Cloud control plane. No tenant data model, PostgreSQL deployment, inbound command channel, distributed identity or remote release workflow was introduced. The protected GNS3/mac80211_hwsim lab, normal DHCP lease, capture topology and existing provisioning entry points remain unchanged.

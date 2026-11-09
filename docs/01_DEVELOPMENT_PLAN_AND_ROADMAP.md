@@ -5,11 +5,11 @@
 > This document aggregates the previously separate development-plan and roadmap documents without deleting their technical detail. The current authoritative sequence is presented first; the historical phase detail and explicit roadmap checklist are preserved afterward.
 
 Companion canonical documents:
-- docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md
 - docs/02_SYSTEM_ARCHITECTURE_DATA_API.md
 - docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md
 - docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md
 - docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
+- docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md
 
 ## 1. Authority and development rules
 
@@ -41,9 +41,9 @@ This B–P programme is the current execution order for the next development sli
 | K | Security and Deployment Hardening: credential handling, auth/RBAC, secure command boundaries, artifact controls, deployment policy and security regression | Source hardening delivered; strict audit, SSRF/API/RBAC/session and artifact-download tests passed workflows 42510776806 and 42511179934 (3/3 jobs); production proxy/secrets, DNS-rebinding and threat-model acceptance remain |
 | L | API, Dashboard and Frontend Completion: typed API contract, consistent errors, pagination, operational UX, authenticated downloads and browser/runtime parity | Source integration and contract tests delivered; hosted workflow [42619327281](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42619327281) passed 3/3 jobs; authenticated reverse-proxy runtime and protected REAL_LAB acceptance remain |
 | M | Regression Intelligence, Release Gate and Offline Operations: comparable baseline logic, metric classification, waiver boundaries, local queue recovery and release decision evidence | Source hardening and regression corrections delivered; hosted workflow [42619327281](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42619327281) passed 3/3 jobs; Cloud endpoint and protected release acceptance remain separate |
-| N | Standalone Packaging and Production Certification: reproducible install, upgrade/backup/restore, doctor/manifest, operator runbooks and the full standalone certification matrix | Source implementation and Phase N regression coverage added; hosted CI pending. Python/npm transitive lockfiles, an explicit Runner service version, clean-machine rehearsal, reverse-proxy production acceptance, protected REAL_LAB and physical firmware evidence remain outstanding |
-| O | Cloud/SaaS Expansion and Integration: separate control-plane contracts, tenant/project ownership, outbound synchronization and remote release workflows; begin only after standalone Runner certification | Deferred until Phase N certification; no production PostgreSQL/tenant control plane claimed |
-| P | GitHub Repository Organization and Cleanup: source and docs ownership audit, tests/workflow coverage, dependency hygiene, stale-file/branch cleanup, secret scan, release metadata and final repository freeze | Final phase; not started as a completed repository-wide freeze |
+| N | Standalone Packaging and Production Certification: reproducible install, upgrade/backup/restore, doctor/manifest, operator runbooks and the full standalone certification matrix | Source implementation delivered in 80831042; hosted workflow 42629371133 passed 3/3 jobs, including 360 backend tests (7 skipped), 35 API security tests and 31 frontend tests. Dependency lockfiles, clean-machine rehearsal, production proxy acceptance, protected REAL_LAB and physical firmware evidence remain open |
+| O | Cloud/SaaS Expansion and Integration: separate control-plane contracts, tenant/project ownership, outbound synchronization and remote release workflows; begin only after standalone Runner certification | Future scope. Combined O/P adds only local read-only sync-queue visibility over the existing outbound-only transport; no Cloud receiver, tenant model, PostgreSQL or remote-control feature is implemented |
+| P | GitHub Repository Organization and Cleanup: source and docs ownership audit, tests/workflow coverage, dependency hygiene, stale-file/branch cleanup, secret scan, release metadata and final repository freeze | Combined O/P source cleanup and governance checks delivered in the current commit; final hosted CI and repository-state audit determine closure. No branch history rewrite or compatibility-file deletion |
 
 #### Phase C — implementation contract
 
@@ -2893,3 +2893,27 @@ The Phase N source slice adds a standalone installer/bootstrap command, a read-o
 - Focused Phase N tests are included in the hosted backend workflow. CI result is pending for the exact delivery commit until GitHub Actions completes.
 
 **Outstanding acceptance is intentional and explicit.** The repository still has no Python transitive lockfile and no frontend npm lockfile; the release manifest therefore sets production_reproducible=false. Clean-machine installation/upgrade/backup/restore, production proxy/secrets review, protected 11-scenario REAL_LAB execution and physical firmware acceptance have not been performed by source-only CI. Phase O remains deferred until those standalone acceptance requirements are met. Phase P remains the final repository-wide cleanup.
+
+
+## Combined Phase O/P — Bounded integration and repository governance (2026-11-09)
+
+The user elected to keep the full Phase O Cloud/SaaS programme as future scope. This combined delivery does not introduce organizations, tenant/project persistence, a remote control plane, PostgreSQL, Celery/Redis, inbound Runner commands, distributed sessions or a Cloud deployment.
+
+### Small Phase O integration retained
+
+- The existing Runner-owned SQLite sync queue, stable idempotency envelopes, retry leases and outbound HTTPS transport remain the only current synchronization path.
+- The command python scripts/netregress_sync.py --status now exposes aggregate queue state counts locally. It requires no Cloud URL or token, does not invoke the transport, does not run Alembic migration, and does not expose queued payloads or error strings.
+- The queue summary is read through a SQLite read-only connection. Missing database and missing sync schema are reported distinctly instead of being silently initialized.
+- Remote endpoint ownership, authentication/credential lifecycle, schema negotiation and tenant/project authorization remain unimplemented future control-plane responsibilities. A successful local queue inspection is not evidence of remote delivery.
+
+### Phase P repository cleanup
+
+- Legacy run_all.sh and verify_system.py names remain as compatibility entry points but delegate to the current installer, release gate and authenticated dashboard launcher. The stale direct dashboard startup and ad-hoc verification database/report mutations are removed.
+- .gitignore now consistently excludes runtime databases/sidecars, PCAP variants, logs, temporary files, local state, Python caches, Node dependencies and .env.* secrets while explicitly preserving .env.example. Duplicate ignore entries are removed.
+- docs/README.md indexes the standalone installation/operations runbook; the README exposes the read-only queue status command and documents the compatibility entry points.
+- The source release manifest's required-file inventory now includes the documentation index, sync CLI, governance entry points and the new governance/sync tests.
+- Repository governance tests cover read-only sync status, no implicit database creation/migration, legacy entry-point routing, documentation indexing and ignore-file rules.
+
+### Explicitly not claimed
+
+No transitive Python/npm lockfiles were created from guessed versions. No obsolete compatibility entry points or secondary branches were deleted without a verified reference audit. No Git history was rewritten. The standalone production certification gaps listed under Phase N remain open; Phase O's full Cloud implementation remains future scope.

@@ -32,11 +32,7 @@ from lib.domain import (
 )
 from .interfaces import RepositoryConflictError
 
-SCHEMA_VERSION = "11"
-
 SCHEMA_VERSION = "12"
-
-
 
 
 def _dt(value: datetime | None) -> str | None:
@@ -68,6 +64,24 @@ class SQLiteDatabase:
         connection.execute("PRAGMA busy_timeout = 10000")
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = NORMAL")
+        try:
+            yield connection
+        finally:
+            connection.close()
+
+    @contextmanager
+    def read_only_connection(self) -> Iterator[sqlite3.Connection]:
+        """Open an existing database without creating files or changing journal mode."""
+        if not self.path.is_file():
+            raise FileNotFoundError(self.path)
+        connection = sqlite3.connect(
+            self.path.resolve().as_uri() + "?mode=ro",
+            uri=True,
+            timeout=10,
+        )
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 10000")
         try:
             yield connection
         finally:
@@ -908,9 +922,10 @@ class SQLiteSyncQueueRepository:
             return cursor.rowcount
 
     def summary(self):
+        """Return queue counts through a strictly read-only SQLite connection."""
         states = ("QUEUED", "IN_FLIGHT", "ACKED", "FAILED", "BLOCKED")
         counts = {state: 0 for state in states}
-        with self.database.connection() as connection:
+        with self.database.read_only_connection() as connection:
             rows = connection.execute(
                 "SELECT state, COUNT(*) AS item_count FROM sync_queue GROUP BY state"
             ).fetchall()

@@ -9,6 +9,7 @@
 | 03_TRACEABILITY_AND_SYSTEM_READINESS.md | Requirement traceability, current state, completeness audit and release readiness | Verification/readiness |
 | 04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md | Installation, exact lab reproduction, testing, operations, troubleshooting and recovery | Operator/runtime procedure |
 | 05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md | Frozen architecture decisions, product semantics and business invariants | Upstream design/business semantics |
+| STANDALONE_INSTALLATION_AND_OPERATIONS.md | Standalone install, configuration, health, backup/restore, release and certification operations | Standalone operator runbook |
 
 ## Separate contracts
 
@@ -18,7 +19,7 @@
 | SECURITY_AND_SAAS.md | Identity, RBAC, secrets, tenant isolation, Cloud and Runner security |
 | FRONTEND_DESIGN.md | React/Vite UI and presentation architecture |
 | PRD.md | Product requirements and product scope |
-| AGENT_CONTEXT.md | Working context and historical implementation state |
+| AGENT_CONTEXT.md | Working context and current implementation handoff |
 
 ## Documentation hierarchy
 

@@ -257,7 +257,15 @@ The real_lab_baseline scenario requires the REAL_LAB execution class. Hardware-f
 
 ## 10. Offline operation and shutdown
 
-Offline sync remains operator-triggered and outbound-only:
+Offline sync remains operator-triggered and outbound-only. Inspect the local queue without a Cloud URL, token, network request or database migration:
+
+~~~bash
+python scripts/netregress_sync.py --status
+~~~
+
+The status command reports aggregate QUEUED, IN_FLIGHT, ACKED, FAILED and BLOCKED counts. It does not expose snapshot contents or stored error text. A missing database is reported as NOT_INITIALIZED; a database without the sync schema is reported as SCHEMA_UNAVAILABLE and is not silently migrated.
+
+When an approved receiver is available, synchronize explicitly:
 
 ~~~bash
 python scripts/netregress_sync.py --url "$NETREGRESS_SYNC_URL"
@@ -290,3 +298,20 @@ Source implementation and hosted CI are distinct from operational certification.
 - Production deployment, independent dependency scanning and threat-model acceptance.
 
 Phase O Cloud/SaaS remains deferred until the standalone Runner is operationally certified. Phase P remains the final repository-wide organization and cleanup phase.
+
+
+## 13. Repository compatibility entry points
+
+The root run_all.sh name remains supported. It creates/activates the project virtual environment, installs declared dependencies, invokes the canonical standalone installer, runs the full pytest suite, and then starts the authenticated dashboard launcher. Set RUN_DASHBOARD=0 to stop after the test suite:
+
+~~~bash
+RUN_DASHBOARD=0 ./run_all.sh
+~~~
+
+verify_system.py remains a compatibility name for the canonical release verification and its internal CI contract tests:
+
+~~~bash
+python verify_system.py
+~~~
+
+New operational scripts and APIs should be called directly; do not reintroduce separate database, dashboard, or report-generation implementations behind these legacy names.

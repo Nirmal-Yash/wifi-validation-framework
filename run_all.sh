@@ -1,37 +1,30 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
-echo "=== WiFi Validation Framework ==="
-cd "$(dirname "$0")"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
 
-if [ ! -d "wifi-venv" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv wifi-venv
+VENV_DIR="${NETREGRESS_VENV_DIR:-$ROOT_DIR/wifi-venv}"
+if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+  python3 -m venv "$VENV_DIR"
 fi
+# shellcheck disable=SC1091
+source "$VENV_DIR/bin/activate"
 
-echo "Activating environment..."
-source wifi-venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 
-echo "Installing dependencies..."
-pip install -q -r requirements.txt
-
-mkdir -p results/reports results/captures
+python scripts/netregress_install.py
 
 FIRMWARE="${FIRMWARE_VERSION:-v1.0}"
-echo "Running full test suite (firmware: $FIRMWARE)..."
-pytest tests/ -v --firmware-version="$FIRMWARE" \
-    --html=results/reports/report.html --self-contained-html
+python -m pytest tests/ -v --firmware-version="$FIRMWARE" \
+  --html=results/reports/report.html --self-contained-html
 
-echo ""
 echo "Test report: results/reports/report.html"
-echo ""
-echo "To save baseline:  python regression/baseline_runner.py --version $FIRMWARE"
-echo "To simulate bug:   python regression/fw_simulator.py --version v2.0 --bug dns"
-echo "To run diff:       python regression/diff_engine.py --version $FIRMWARE"
-echo ""
-NETREGRESS_PORT="${NETREGRESS_PORT:-5050}"
-export NETREGRESS_PORT
-echo "Starting legacy dashboard at http://127.0.0.1:$NETREGRESS_PORT ..."
-python3 dashboard/app.py &
+echo "Baseline promotion remains explicit: python regression/baseline_runner.py --version $FIRMWARE"
 
-echo "Done."
+# Preserve the historical default of starting the dashboard after validation,
+# but route through the authenticated Runner launcher instead of dashboard/app.py.
+if [[ "${RUN_DASHBOARD:-1}" == "1" ]]; then
+  exec "$ROOT_DIR/scripts/start_dashboard.sh"
+fi

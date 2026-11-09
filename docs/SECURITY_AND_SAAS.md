@@ -265,3 +265,10 @@ The browser warning is a usability layer; the Flask API is authoritative. The cl
 ### Legacy-interface project boundary
 
 The older Flask/Jinja dashboard does not carry a project ID on its Run or evidence queries. It therefore permits only explicit wildcard-scoped identities and returns 403 for named or empty project scopes. The React API uses the same fail-closed rule for endpoints without project context. This is a temporary safe restriction, not project-level multi-tenancy.
+
+
+## 29. Current standalone and future Cloud boundary — 2026-11-09
+
+The present repository implements the Runner side of outbound-only synchronization: local content-addressed Run envelopes, SQLite queue state, idempotency, retry leases, payload integrity and an HTTPS transport. Local operators can inspect aggregate queue state with python scripts/netregress_sync.py --status; this command is read-only and never contacts a remote service.
+
+The receiving Cloud service and its business authority are not implemented here. Organization/Project identity, tenant authorization, short-lived Runner credentials, remote schema negotiation, Cloud-side release policy, PostgreSQL and remote command/control remain future scope. Do not infer tenant isolation or Cloud readiness from a successful local sync queue test.
