@@ -69,6 +69,14 @@ describe("Runner API session and CSRF client",()=>{
   window.removeEventListener("netregress:auth-expired",listener);
  });
 
+ it("exposes the release-gate and waiver endpoints",async()=>{
+  const fetchMock=vi.fn().mockResolvedValueOnce(success({accepted:false,issues:[]})).mockResolvedValueOnce(success({items:[]}));
+  vi.stubGlobal("fetch",fetchMock);
+  await api.releaseGate("run 1","base/1");
+  await api.waivers();
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/runs/run%201/release-gate?baseline_run_id=base%2F1");
+  expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/waivers");
+ });
  it("rejects non-JSON proxy errors instead of interpreting them as API data",async()=>{
   vi.stubGlobal("fetch",vi.fn().mockResolvedValueOnce(response(null,502,"text/html")));
   await expect(api.health()).rejects.toMatchObject({status:502,code:"INVALID_API_RESPONSE"});

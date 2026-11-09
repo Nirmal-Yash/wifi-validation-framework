@@ -39,8 +39,8 @@ This B–P programme is the current execution order for the next development sli
 | I | Telemetry, Performance and Recovery Validation: measured WiFi telemetry, statistically governed performance tests, fault/recovery assertions and evidence correlation | Implemented; repeated performance samples, warm-up exclusion, immutable environment-aware telemetry, secured fault restoration and hosted CI passed; protected RF/performance/recovery certification outstanding |
 | J | Device and Firmware Lifecycle: adapter capability contracts, image verification, flash/reboot/readiness, rollback and target-specific lifecycle certification | Source hardened; hosted workflow 42472939649 passed 3/3 jobs; physical target flash/reboot/rollback certification outstanding |
 | K | Security and Deployment Hardening: credential handling, auth/RBAC, secure command boundaries, artifact controls, deployment policy and security regression | Source hardening delivered; strict audit, SSRF/API/RBAC/session and artifact-download tests passed workflows 42510776806 and 42511179934 (3/3 jobs); production proxy/secrets, DNS-rebinding and threat-model acceptance remain |
-| L | API, Dashboard and Frontend Completion: typed API contract, consistent errors, pagination, operational UX, authenticated downloads and browser/runtime parity | Source implementation substantially present; authenticated browser/runtime and operational workflow acceptance outstanding |
-| M | Regression Intelligence, Release Gate and Offline Operations: comparable baseline logic, metric classification, waiver boundaries, local queue recovery and release decision evidence | Source implementation present; production synchronization/release workflow acceptance outstanding |
+| L | API, Dashboard and Frontend Completion: typed API contract, consistent errors, pagination, operational UX, authenticated downloads and browser/runtime parity | Source integration and contract tests delivered 2026-11-09; browser/reverse-proxy runtime and protected REAL_LAB acceptance outstanding |
+| M | Regression Intelligence, Release Gate and Offline Operations: comparable baseline logic, metric classification, waiver boundaries, local queue recovery and release decision evidence | In progress; release and queue reliability contracts being hardened; production synchronization/release acceptance outstanding |
 | N | Standalone Packaging and Production Certification: reproducible install, upgrade/backup/restore, doctor/manifest, operator runbooks and the full standalone certification matrix | Certification tooling present; clean-install and protected 11-scenario REAL_LAB certification outstanding |
 | O | Cloud/SaaS Expansion and Integration: separate control-plane contracts, tenant/project ownership, outbound synchronization and remote release workflows; begin only after standalone Runner certification | Deferred until Phase N certification; no production PostgreSQL/tenant control plane claimed |
 | P | GitHub Repository Organization and Cleanup: source and docs ownership audit, tests/workflow coverage, dependency hygiene, stale-file/branch cleanup, secret scan, release metadata and final repository freeze | Final phase; not started as a completed repository-wide freeze |
@@ -2824,6 +2824,17 @@ Production readiness is intentionally split into source completeness and executi
 7. Real 11-test validation remains green whenever execution/network behavior changed.
 8. Source readiness is never misrepresented as protected REAL_LAB certification.
 
+
+#### Phase L implementation update — 2026-11-09
+
+- Remote artifact downloads accept verified browser sessions; non-browser remote clients still require the configured bearer token and SENSITIVE files remain admin-only.
+- Owner/Admin waiver inventory is exposed through GET /api/v1/waivers; expiry is normalized to UTC and past expiry is rejected.
+- Run Detail exposes attempt history and explicit-baseline Release Gate decisions from the backend evaluator.
+- Rollback submits the expected restored firmware version required by the API.
+- Metrics expose registry aggregates, sample minimums, eligible counts and decision values while preserving raw samples.
+- OpenAPI cookie/readiness contracts and duplicate release-gate path declarations are reconciled, with backend/frontend contract tests added to CI.
+
+Browser/reverse-proxy runtime acceptance and protected REAL_LAB execution remain separate gates.
 
 #### Phase J implementation update — 2026-11-08
 

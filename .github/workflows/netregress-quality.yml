@@ -108,6 +108,7 @@ jobs:
           tests/test_dashboard_session_enforcement.py
           tests/test_dashboard_port_contract.py
           tests/test_dashboard_api.py
+          tests/test_openapi_contract.py
           tests/test_run_service.py
           tests/test_repositories.py
           tests/test_persistence_foundation.py

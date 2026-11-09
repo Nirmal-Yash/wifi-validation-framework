@@ -331,7 +331,37 @@ def test_remote_artifact_download_requires_configured_bearer_token(tmp_path, mon
     assert allowed.data == b"artifact payload"
 
 
-def test_sensitive_artifact_download_requires_admin_role(tmp_path):
+def test_remote_browser_session_can_download_internal_artifact_without_bearer_token(tmp_path, monkeypatch):
+    db_path = tmp_path / "remote-browser-artifact.sqlite"
+    db = SQLiteDatabase(db_path)
+    db.initialize()
+    run, _ = create_run(make_service(db), "v1.0")
+    root = tmp_path / "results"
+    artifact = register_download_artifact(db, run.run_id, root, "INTERNAL")
+    password = "phase-l-browser-password"
+    auth = AuthManager((UserRecord("operator", AuthManager.password_hash(password), Role.OPERATOR),), required=True)
+    app = create_app(db_path, auth_manager=auth)
+    app.config["NETREGRESS_QUERY"].results_root = root
+    client = app.test_client()
+    assert client.post("/api/v1/auth/login", json={"username":"operator","password":password}).status_code == 200
+    monkeypatch.delenv("NETREGRESS_DASHBOARD_TOKEN", raising=False)
+    response = client.get(f"/api/v1/artifacts/{artifact.artifact_id}/download", environ_base={"REMOTE_ADDR":"203.0.113.25"})
+    assert response.status_code == 200 and response.data == b"artifact payload"
+
+
+def test_waiver_list_returns_only_active_records(tmp_path):
+    app = make_app(tmp_path / "waivers.sqlite")
+    client = app.test_client()
+    created = client.post("/api/v1/waivers", json={"scope":"RELEASE","target_id":"*","issue_code":"NO_BASELINE","reason":"approved","expires_at":"2999-01-01T00:00:00+00:00"}, headers={"Idempotency-Key":"phase-l-waiver-create"})
+    assert created.status_code == 201
+    listed = client.get("/api/v1/waivers")
+    assert listed.status_code == 200
+    assert [item["issue_code"] for item in listed.get_json()["data"]["items"]] == ["NO_BASELINE"]
+    expired = client.post("/api/v1/waivers", json={"scope":"TEST","target_id":"test-1","issue_code":"X","reason":"expired","expires_at":"2000-01-01T00:00:00+00:00"}, headers={"Idempotency-Key":"phase-l-waiver-expired"})
+    assert expired.status_code == 400
+
+
+def test_sensitive_artifact_download_requires_admin_role(tmp_path):def test_sensitive_artifact_download_requires_admin_role(tmp_path):
     db_path = tmp_path / "sensitive-artifact.sqlite"
     db = SQLiteDatabase(db_path)
     db.initialize()

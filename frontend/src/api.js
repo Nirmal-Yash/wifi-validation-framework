@@ -96,6 +96,7 @@ export const api={
  cancel:(id,reason)=>request("/runs/"+encode(id)+"/cancel",{method:"POST",body:JSON.stringify({reason})}),
  retry:id=>request("/runs/"+encode(id)+"/retry",{method:"POST"}),
  regressions:(baseline,current,options={})=>request("/regressions"+query({baseline_run_id:baseline,current_run_id:current}),options),
+ releaseGate:(id,baseline)=>request("/runs/"+encode(id)+"/release-gate"+query({baseline_run_id:baseline})),
  runRegressions:(id,baseline)=>request("/runs/"+encode(id)+"/regressions"+query({baseline_run_id:baseline})),
  telemetry:(id,options={})=>request("/runs/"+encode(id)+"/telemetry",options),
  healthForRun:(id,options={})=>request("/runs/"+encode(id)+"/health",options),
@@ -104,6 +105,7 @@ export const api={
  artifactDownloadUrl:id=>base+"/artifacts/"+encode(id)+"/download",
  baselines:()=>request("/baselines"),promoteBaseline:payload=>request("/baselines",{method:"POST",body:JSON.stringify(payload)}),
  promoteExistingBaseline:(id,payload)=>request("/baselines/"+encode(id)+"/promote",{method:"POST",body:JSON.stringify(payload)}),
+ waivers:()=>request("/waivers"),
  createWaiver:payload=>request("/waivers",{method:"POST",body:JSON.stringify(payload)}),
  firmwareOperation:payload=>request("/firmware/operations",{method:"POST",body:JSON.stringify(payload)}),
  firmwareRollback:(id,payload)=>request("/firmware/"+encode(id)+"/rollback",{method:"POST",body:JSON.stringify(payload)})

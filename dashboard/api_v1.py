@@ -374,11 +374,13 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
                     return denied
 
             remote=request.remote_addr not in {"127.0.0.1","::1"}
-            if remote:
+            # Verified browser sessions may download via a reverse proxy. Remote
+            # non-browser clients still require the dedicated bearer token.
+            if remote and session.get("netregress_user") is None:
                 token=(os.getenv("NETREGRESS_DASHBOARD_TOKEN") or "").strip()
                 supplied=request.headers.get("Authorization","")
                 if not token:
-                    return error("FORBIDDEN","remote artifact downloads are disabled until NETREGRESS_DASHBOARD_TOKEN is configured",403)
+                    return error("FORBIDDEN","remote artifact downloads require an authenticated browser session or configured NETREGRESS_DASHBOARD_TOKEN",403)
                 if not hmac.compare_digest(supplied,"Bearer "+token):
                     return error("FORBIDDEN","valid bearer token required for remote artifact download",403)
 
@@ -538,7 +540,25 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         idempotency_store_response("/api/v1/firmware/rollback/"+device_id,key,request_hash,response_data,200)
         return ok(response_data)
 
+    @api.get("/waivers")
+    def list_waivers():
+        denied=require("admin")
+        if denied is not None:
+            return denied
+        from datetime import datetime, timezone
+        now=datetime.now(timezone.utc)
+        items=WaiverService.from_sqlite(query.database).repository.list_active()
+        active=[item for item in items if item.is_active(now)]
+        return ok({"items":[{
+            "waiver_id":item.waiver_id,"scope":item.scope.value,"target_id":item.target_id,
+            "issue_code":item.issue_code,"reason":item.reason,"created_by":item.created_by,
+            "created_at":item.created_at.isoformat(),
+            "expires_at":item.expires_at.isoformat() if item.expires_at else None,
+            "audit_reference":item.audit_reference,
+        } for item in active]})
+
     @api.post("/waivers")
+    def create_waiver():    @api.post("/waivers")
     def create_waiver():
         denied=require("admin")
         if denied is not None: return denied
@@ -554,8 +574,11 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             reason=str(payload["reason"])
             expires_at=None
             if payload.get("expires_at"):
-                from datetime import datetime
-                expires_at=datetime.fromisoformat(str(payload["expires_at"]))
+                from datetime import datetime, timezone
+                expires_at=datetime.fromisoformat(str(payload["expires_at"]).replace("Z","+00:00"))
+                expires_at=expires_at.replace(tzinfo=timezone.utc) if expires_at.tzinfo is None else expires_at.astimezone(timezone.utc)
+                if expires_at <= datetime.now(timezone.utc):
+                    return error("INVALID_REQUEST","expires_at must be in the future",400)
             waiver=WaiverService.from_sqlite(query.database).create(
                 scope=scope,
                 target_id=target_id,

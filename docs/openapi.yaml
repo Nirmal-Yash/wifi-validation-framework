@@ -1,14 +1,14 @@
 openapi: 3.0.3
 info:
   title: NetRegress Runner API
-  version: 1.0.0
+  version: 1.1.0
 servers:
   - url: /api/v1
 security:
   - sessionAuth: []
 paths:
   /health: {get: {security: [], responses: {"200": {description: Healthy}}}}
-  /readiness: {get: {security: [], responses: {"200": {description: Ready}}}}
+  /readiness: {get: {responses: {"200": {description: Ready}}}}
   /auth/csrf:
     get: {responses: {"200": {description: CSRF token}}}
   /auth/login:
@@ -18,6 +18,7 @@ paths:
       responses: {"200": {description: Authenticated}, "401": {description: Invalid credentials}}
   /auth/logout: {post: {responses: {"200": {description: Logged out}}}}
   /auth/me: {get: {responses: {"200": {description: Current user}}}}
+  /auth/activity: {post: {responses: {"200": {description: Authenticated activity heartbeat}}}}
   /runs:
     get: {responses: {"200": {description: Runs}}}
     post:
@@ -35,13 +36,13 @@ paths:
   /runs/{run_id}/health: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Health}}}}
   /runs/{run_id}/regressions: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {name: baseline_run_id, in: query, required: true, schema: {type: string}}], responses: {"200": {description: Regression report}}}}
   /runs/{run_id}/release-gate: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {name: baseline_run_id, in: query, required: true, schema: {type: string}}], responses: {"200": {description: Release gate decision}}}}
-  /runs/{run_id}/release-gate: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {name: baseline_run_id, in: query, required: true, schema: {type: string}}], responses: {"200": {description: Release gate decision}}}}
   /regressions: {get: {responses: {"200": {description: Regression report}}}}
   /artifacts: {get: {responses: {"200": {description: Artifacts}}}}
   /artifacts/{artifact_id}: {get: {parameters: [{name: artifact_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Artifact}}}}
   /artifacts/{artifact_id}/download: {get: {parameters: [{name: artifact_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Artifact binary}}}}
   /labs/{lab_id}/health: {get: {parameters: [{name: lab_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Lab health}}}}
   /waivers:
+    get: {responses: {"200": {description: Active waivers; Owner/Admin only}}}
     post:
       parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
       requestBody:
@@ -94,7 +95,7 @@ components:
         minLength: 8
         maxLength: 128
   securitySchemes:
-    sessionAuth: {type: apiKey, in: cookie, name: session}
+    sessionAuth: {type: apiKey, in: cookie, name: netregress_session}
   schemas:
     LoginRequest:
       type: object

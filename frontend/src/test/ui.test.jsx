@@ -1,7 +1,7 @@
 import React from "react";
 import {render,screen} from "@testing-library/react";
 import {describe,expect,it} from "vitest";
-import {StatusBadge} from "../components/ui";
+import {MetricSampleTable,StatusBadge} from "../components/ui";
 import {mean,summarizeRunOutcomes,validSamples} from "../utils";
 
 describe("StatusBadge",()=>{
@@ -37,7 +37,15 @@ describe("Run outcome representation",()=>{
   });
 });
 
-describe("Metric sample representation",()=>{
+describe("Registry measurement policy",()=>{
+ it("uses the configured aggregate and decision value rather than labeling every metric as a mean",()=>{
+  render(<MetricSampleTable metric={{name:"latency",unit:"ms",authoritative:true,measurement_policy:{aggregate:"p95",minimum_samples:3,eligible_samples:4,decision_value:19.5,status:"READY"},samples:[{value:10,status:"VALID"},{value:15,status:"VALID"},{value:20,status:"VALID"},{value:20,status:"VALID"}]}}/>);
+  expect(screen.getByText("P95 decision value:")).toBeTruthy();
+  expect(screen.getByText(/19.5 ms/)).toBeTruthy();
+ });
+});
+
+describe("Metric sample representation",()=>describe("Metric sample representation",()=>{
   it("includes only valid, finite, non-warm-up numeric samples in summary statistics",()=>{
     const samples=[
       {status:"VALID",value:2},

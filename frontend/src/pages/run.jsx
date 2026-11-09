@@ -1,5 +1,5 @@
 import React,{useState} from "react";
-import {Activity,CheckCircle2,ClipboardList,FileText,LayoutDashboard,Settings,ShieldCheck,Wifi,XCircle} from "lucide-react";
+import {Activity,CheckCircle2,ClipboardList,FileText,GitCompare,LayoutDashboard,Settings,ShieldCheck,Wifi,XCircle} from "lucide-react";
 import {api} from "../api";
 import {Tabs,TabsContent,TabsList,TabsTrigger} from "@/components/ui/tabs";
 import {navigate} from "../router";
@@ -12,10 +12,11 @@ const tabs=[
  {id:"health",label:"Health",Icon:ShieldCheck},
  {id:"telemetry",label:"Telemetry",Icon:Wifi},
  {id:"artifacts",label:"Evidence",Icon:FileText},
+ {id:"release-gate",label:"Release Gate",Icon:GitCompare},
  {id:"configuration",label:"Configuration",Icon:Settings},
 ];
 export default function RunDetailPage({runId,user}){
- const[tab,setTab]=useState("summary"),[confirm,setConfirm]=useState(null);
+ const[tab,setTab]=useState("summary"),[confirm,setConfirm]=useState(null),[baselineRunId,setBaselineRunId]=useState("");
  const runLoader=useAsyncLoader(()=>api.run(runId),[runId],{
   refreshMs:query=>terminalStatuses.has(query.state.data?.lifecycle_status)?false:3000,
   staleTime:1000,
@@ -26,6 +27,8 @@ export default function RunDetailPage({runId,user}){
  const healthLoader=useAsyncLoader(()=>api.healthForRun(runId),[runId],{enabled:tab==="health"||tab==="summary"});
  const telemetryLoader=useAsyncLoader(()=>api.telemetry(runId),[runId],{enabled:tab==="telemetry"});
  const artifactsLoader=useAsyncLoader(()=>api.artifacts({run_id:runId,limit:200}),[runId],{enabled:tab==="artifacts"||tab==="summary"});
+ const baselineLoader=useAsyncLoader(()=>api.baselines(),[],{enabled:tab==="release-gate"});
+ const releaseGateLoader=useAsyncLoader(()=>baselineRunId?api.releaseGate(runId,baselineRunId):Promise.resolve(null),[runId,baselineRunId],{enabled:tab==="release-gate"&&Boolean(baselineRunId)});
  const mutation=useMutation();
  if(runLoader.loading&&!runLoader.data)return<LoadingState label="Loading Run…"/>;
  if(runLoader.error&&!runLoader.data)return<ErrorState error={runLoader.error} onRetry={runLoader.reload}/>;
@@ -48,6 +51,7 @@ export default function RunDetailPage({runId,user}){
   <div className="stat-grid"><StatCard label="Passed tests" value={passed+"/"+totalTests} hint="PASS outcomes / observed TestResults" icon={<CheckCircle2 size={17}/>} tone="success"/><StatCard label="Blocked" value={blocked} hint="Required tests blocked" icon={<XCircle size={17}/>} tone={blocked?"warning":"default"}/><StatCard label="Unvalidated" value={unvalidated} hint="Evidence or comparability incomplete" icon={<ShieldCheck size={17}/>} tone={unvalidated?"warning":"default"}/><StatCard label="Evidence artifacts" value={artifacts.length} hint="Registered records available in this view" icon={<FileText size={17}/>}/></div>
   <div className="run-progress-panel"><div className="row-between"><span>Observed test pass ratio</span><strong>{totalTests?Math.round(passPercent)+"%":"Not available"}</strong></div><div className="progress-track" role="progressbar" aria-label="Observed test pass ratio" aria-valuemin={0} aria-valuemax={100} aria-valuenow={passPercent}><span className={"progress-fill success progress-width-"+Math.round(passPercent)}/></div><p>Test pass ratio is descriptive only; it does not replace the persisted business outcome or release gate.</p></div>
   <Section title="Run context"><KeyValueGrid items={summaryItems}/></Section>
+  <Section title="Attempt history" subtitle="All executions remain visible; the latest persisted attempt is authoritative for current results."><DataTable caption="Run attempt history" rows={run.attempts||[]} rowKey={item=>item.attempt_id} columns={[{key:"number",label:"Attempt"},{key:"attempt_id",label:"Attempt ID",render:item=><span className="mono">{item.attempt_id}</span>},{key:"started_at",label:"Started",render:item=>formatDate(item.started_at)},{key:"completed_at",label:"Completed",render:item=>formatDate(item.completed_at)},{key:"latest",label:"Current",render:item=>item.attempt_id===run.latest_attempt_id?<StatusBadge value="LATEST"/>:"—"}]} emptyTitle="No attempts" emptyMessage="No attempt history has been persisted for this Run."/></Section>  <Section title="Run context"><KeyValueGrid items={summaryItems}/></Section>
   <Tabs value={tab} onValueChange={setTab}><TabsList className="run-tabs" aria-label="Run detail sections">{tabs.map(({id,label,Icon})=><TabsTrigger key={id} value={id}><Icon size={14} aria-hidden="true"/>{label}</TabsTrigger>)}</TabsList>
 
   <TabsContent value="summary">
@@ -76,7 +80,18 @@ export default function RunDetailPage({runId,user}){
    {key:"display_name",label:"Artifact",render:row=><><strong>{row.display_name}</strong><div className="muted mono">{row.artifact_id}</div></>},{key:"artifact_type",label:"Type"},{key:"size_bytes",label:"Size",render:row=>formatBytes(row.size_bytes)},{key:"sha256",label:"SHA-256",render:row=><code className="hash">{row.sha256}</code>},{key:"evidence_state",label:"Evidence",render:row=><StatusBadge value={row.evidence_state}/>},{key:"downloadable",label:"Action",render:row=><ArtifactLink artifact={row}/>}
   ]} emptyTitle="No artifacts" emptyMessage="No evidence artifacts are currently associated with this Run."/></Section>
 </TabsContent>
-<TabsContent value="configuration">
+<TabsContent value="release-gate">
+<Section title="Automated release decision" subtitle="Select an explicit promoted baseline. The backend evaluates persisted Run state, evidence and regression policy.">
+ <div className="filter-grid"><div className="field"><label className="field-label" htmlFor="release-baseline">Baseline Run</label><select id="release-baseline" value={baselineRunId} onChange={event=>setBaselineRunId(event.target.value)}><option value="">Choose a baseline Run…</option>{(baselineLoader.data?.items||[]).map(item=><option key={item.baseline_id} value={item.baseline_run_id}>{item.name} · {item.baseline_run_id}</option>)}</select></div></div>
+ {baselineLoader.loading?<InlineNotice>Loading promoted baselines…</InlineNotice>:null}
+ {baselineLoader.error?<InlineNotice tone="danger">{baselineLoader.error.message}</InlineNotice>:null}
+ {releaseGateLoader.loading?<InlineNotice>Evaluating release policy…</InlineNotice>:null}
+ {releaseGateLoader.error?<InlineNotice tone="danger">{releaseGateLoader.error.message}</InlineNotice>:null}
+ {releaseGateLoader.data?<><div className="row-between"><div><strong>Decision</strong><p>{releaseGateLoader.data.summary}</p></div><StatusBadge value={releaseGateLoader.data.status}/></div><InlineNotice tone={releaseGateLoader.data.accepted?"success":"danger"}>{releaseGateLoader.data.comparability_reason||"Comparability was not established."}</InlineNotice><DataTable caption="Release gate issues" rows={releaseGateLoader.data.issues||[]} rowKey={(item,index)=>item.code+"-"+(item.test_id||index)} columns={[{key:"code",label:"Issue"},{key:"test_id",label:"Test"},{key:"message",label:"Explanation"}]} emptyTitle="No release blockers" emptyMessage="The automated policy found no blocking issues for this Run and baseline."/></>:null}
+ <InlineNotice tone="warning">An ACCEPT result is an automated policy decision, not human release authorization or protected REAL_LAB / physical-device certification.</InlineNotice>
+</Section>
+</TabsContent>
+<TabsContent value="configuration"><TabsContent value="configuration">
 <div className="two-column"><Section title="Resolved configuration"><JsonPanel value={run.config_snapshot?.resolved_config||{}}/></Section><Section title="Environment snapshot"><JsonPanel value={run.environment||{}}/></Section></div>
 </TabsContent>
   </Tabs>

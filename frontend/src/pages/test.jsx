@@ -31,7 +31,7 @@ export default function TestDetailPage({runId,testResultId}){
    ]}/>
    <div className="pill-list">{(definition.requires||[]).map(item=><span className="pill" key={"require-"+item}>{item}</span>)}{(definition.capabilities||[]).map(item=><span className="pill" key={"capability-"+item}>{item}</span>)}</div>
   </Section>
-  <Section title="Metrics and raw samples" subtitle="All recorded samples remain visible. Only explicitly valid, finite, non-warm-up samples contribute to the mean.">
+  <Section title="Metrics and raw samples" subtitle="Raw samples are preserved. Registry-defined aggregates and minimum-sample rules govern authoritative metric decisions.">
    {metrics.length?metrics.map(metric=><div className="nested-block" key={metric.name}>
     <div className="row-between"><div><h3>{metric.name}</h3><p className="muted">{metric.unit||"Unit not recorded"} · {metric.authoritative===false?"Context only":"Authoritative metric"}</p></div><StatusBadge value={metric.authoritative===false?"CONTEXT":"AUTHORITATIVE"}/></div>
     <MetricSampleTable metric={metric}/>

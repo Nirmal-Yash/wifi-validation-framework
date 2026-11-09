@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from lib.domain import ArtifactType, TestResultStatus
+from lib.domain.statistics import MeasurementEvaluationError, MeasurementPolicyEvaluator
 from lib.repositories import (
     SQLiteArtifactRepository,
     SQLiteAttemptRepository,
@@ -204,26 +205,29 @@ class DashboardQueryService:
             "execution_metadata": dict(result.execution_metadata),
             "started_at": self._iso(result.started_at),
             "completed_at": self._iso(result.completed_at),
-            "metrics": [self.serialize_metric(item) for item in result.metrics],
+            "metrics": [self.serialize_metric(item, result.test_id) for item in result.metrics],
             "artifacts": [self.serialize_artifact(item) for item in result.artifacts],
         }
 
-    def serialize_metric(self, metric):
+    def serialize_metric(self, metric, test_id=None):
+        measurement_policy = None
+        if test_id:
+            try:
+                definition = self.test_registry.metric_definition(test_id, metric.name)
+            except KeyError:
+                definition = None
+            if definition is not None:
+                policy = definition.measurement_policy
+                eligible = [s for s in metric.samples if not s.warmup and s.status in policy.allowed_statuses and (policy.include_retried or not s.retried)]
+                try:
+                    summary = MeasurementPolicyEvaluator.evaluate(metric, policy)
+                    measurement_policy = {"aggregate":policy.aggregate.value,"minimum_samples":policy.minimum_samples,"eligible_samples":summary.count,"decision_value":summary.decision_value,"status":"READY","authoritative":definition.authoritative,"error":None}
+                except MeasurementEvaluationError as exc:
+                    measurement_policy = {"aggregate":policy.aggregate.value,"minimum_samples":policy.minimum_samples,"eligible_samples":len(eligible),"decision_value":None,"status":"UNVALIDATED","authoritative":definition.authoritative,"error":str(exc)}
         return {
-            "name": metric.name,
-            "unit": metric.unit,
-            "authoritative": metric.authoritative,
-            "samples": [
-                {
-                    "value": sample.value,
-                    "status": sample.status,
-                    "warmup": sample.warmup,
-                    "retried": sample.retried,
-                    "captured_at": self._iso(sample.captured_at),
-                    "metadata": dict(sample.metadata),
-                }
-                for sample in metric.samples
-            ],
+            "name": metric.name,"unit": metric.unit,"authoritative": metric.authoritative,
+            "measurement_policy": measurement_policy,
+            "samples": [{"value":sample.value,"status":sample.status,"warmup":sample.warmup,"retried":sample.retried,"captured_at":self._iso(sample.captured_at),"metadata":dict(sample.metadata)} for sample in metric.samples],
         }
 
     def serialize_artifact(self, artifact):
@@ -261,6 +265,8 @@ class DashboardQueryService:
             "estimated_duration_sec": definition.estimated_duration_sec,
             "capabilities": list(definition.capabilities),
             "metric_definitions": dict(definition.metric_definitions),
+            "measurement_policies": {name:{"aggregate":policy.aggregate.value,"minimum_samples":policy.minimum_samples,"allowed_statuses":list(policy.allowed_statuses),"include_retried":policy.include_retried} for name,policy in definition.measurement_policies.items()},
+            "decision_metric": definition.decision_metric,
             "threshold_definitions": dict(definition.threshold_definitions),
             "evidence_requirements": [item.value for item in definition.evidence_requirements],
         }
@@ -270,7 +276,7 @@ class DashboardQueryService:
             {
                 "test_result_id": result.test_result_id,
                 "test_id": result.test_id,
-                "metrics": [self.serialize_metric(metric) for metric in result.metrics],
+                "metrics": [self.serialize_metric(metric, result.test_id) for metric in result.metrics],
             }
             for result in self._latest_results(run_id)
         ]
@@ -289,6 +295,7 @@ class DashboardQueryService:
                         "test_id": test_id,
                         "metric_name": metric.name,
                         "unit": metric.unit,
+                        "measurement_policy": self.serialize_metric(metric, test_id).get("measurement_policy"),
                         "samples": [
                             {
                                 "value": sample.value,
@@ -470,51 +477,6 @@ class DashboardQueryService:
                 {"code": item.code, "message": item.message, "test_id": item.test_id}
                 for item in decision.issues
             ],
-            "current_run_id": current_run_id,
-            "baseline_run_id": baseline_run_id,
-            "comparability": report.comparability.value,
-            "comparability_reason": report.reason,
-        }
-
-    def release_gate(self, current_run_id: str, baseline_run_id: str) -> dict[str, Any]:
-        current = self.run_repository.get(current_run_id)
-        if current is None:
-            raise DashboardQueryError(f"Run not found: {current_run_id}")
-        baseline = self.run_repository.get(baseline_run_id)
-        if baseline is None:
-            raise DashboardQueryError(f"Baseline Run not found: {baseline_run_id}")
-        baseline_env = self.environment_class(baseline_run_id)
-        current_env = self.environment_class(current_run_id)
-        report = self.regression_service.compare_runs(
-            baseline_run_id=baseline_run_id,
-            current_run_id=current_run_id,
-            baseline_environment_class=baseline_env,
-            current_environment_class=current_env,
-        )
-        current_results = self._latest_results(current_run_id)
-        required = tuple(dict.fromkeys(
-            self.test_registry.resolve_or_fallback(selected).test_id
-            for selected in current.selected_tests
-        ))
-        decision = ReleaseGateEvaluator().evaluate(
-            ReleaseGateInput(
-                run_lifecycle=current.lifecycle.value,
-                run_id=current.run_id,
-                lab_health=current.environment_health.value if current.environment_health else None,
-                baseline_available=not report.no_baseline,
-                required_test_ids=required,
-                observed_test_ids=tuple(item.test_id for item in current_results),
-                test_statuses={item.test_id:item.status.value for item in current_results},
-                evidence_states={item.test_id:item.evidence_state.value for item in current_results},
-                regression_classifications={item.test_id:item.classification.value for item in report.assessments},
-                waivers=tuple(WaiverService.from_sqlite(self.database).repository.list_active()),
-            )
-        )
-        return {
-            "status": decision.status.value,
-            "accepted": decision.accepted,
-            "summary": decision.summary,
-            "issues": [{"code":item.code,"message":item.message,"test_id":item.test_id} for item in decision.issues],
             "current_run_id": current_run_id,
             "baseline_run_id": baseline_run_id,
             "comparability": report.comparability.value,
