@@ -349,7 +349,16 @@ def test_remote_browser_session_can_download_internal_artifact_without_bearer_to
     assert response.status_code == 200 and response.data == b"artifact payload"
 
 
-def test_waiver_list_returns_only_active_records(tmp_path):
+def test_admin_can_inspect_offline_sync_queue_without_payload_contents(tmp_path):
+    app = make_app(tmp_path / "sync-queue.sqlite")
+    response = app.test_client().get("/api/v1/sync/queue")
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["summary"]["total"] == 0
+    assert data["items"] == []
+
+
+def test_waiver_list_returns_only_active_records(tmp_path):def test_waiver_list_returns_only_active_records(tmp_path):
     app = make_app(tmp_path / "waivers.sqlite")
     client = app.test_client()
     created = client.post("/api/v1/waivers", json={"scope":"RELEASE","target_id":"*","issue_code":"NO_BASELINE","reason":"approved","expires_at":"2999-01-01T00:00:00+00:00"}, headers={"Idempotency-Key":"phase-l-waiver-create"})
@@ -361,7 +370,7 @@ def test_waiver_list_returns_only_active_records(tmp_path):
     assert expired.status_code == 400
 
 
-def test_sensitive_artifact_download_requires_admin_role(tmp_path):def test_sensitive_artifact_download_requires_admin_role(tmp_path):
+def test_sensitive_artifact_download_requires_admin_role(tmp_path):
     db_path = tmp_path / "sensitive-artifact.sqlite"
     db = SQLiteDatabase(db_path)
     db.initialize()

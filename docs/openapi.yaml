@@ -41,6 +41,7 @@ paths:
   /artifacts/{artifact_id}: {get: {parameters: [{name: artifact_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Artifact}}}}
   /artifacts/{artifact_id}/download: {get: {parameters: [{name: artifact_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Artifact binary}}}}
   /labs/{lab_id}/health: {get: {parameters: [{name: lab_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Lab health}}}}
+  /sync/queue: {get: {responses: {"200": {description: Admin-only offline queue status and recent envelopes}}}}
   /waivers:
     get: {responses: {"200": {description: Active waivers; Owner/Admin only}}}
     post:

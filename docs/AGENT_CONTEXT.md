@@ -130,13 +130,13 @@ If the lab cannot be run, say so. Do not represent unit/integration verification
 
 Work directly against the existing `main` branch. Do not create feature, review or temporary branches.
 
-Work directly on `main`; do not create feature, review or temporary branches. Keep each phase free of per-file, micro or scratch commits. When a phase checkpoint is explicitly requested for delivery, package the entire completed phase in exactly one consolidated Conventional Commit on `main` and push once using a fast-forward update. Do not rewrite existing history. Phase J source implementation is delivered; Phase K is the active implementation slice in this handoff.
+Work directly on `main`; do not create feature, review or temporary branches. Keep each phase free of per-file, micro or scratch commits. When a phase checkpoint is explicitly requested for delivery, package the entire completed phase in exactly one consolidated Conventional Commit on `main` and push once using a fast-forward update. Do not rewrite existing history. Phase L source integration and its validation correction are delivered; Phase M source hardening is delivered pending hosted workflow verification.
 
 Update documentation with behavior, data-contract and API changes as each phase is implemented. Keep runtime databases, reports, PCAPs and logs gitignored.
 
 ## 13. Current phase sequence and next step
 
-The authoritative B–P sequence is in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. Phases B–J have source/hosted-CI implementation on `main`; their protected real-lab/hardware gates remain distinct from hosted CI. Phase J owns device and firmware lifecycle hardening and is delivered. Phase K owns security and deployment hardening.
+The authoritative B–P sequence is in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. Phases B–K have source/hosted-CI implementation on `main`; protected real-lab/hardware gates remain distinct from hosted CI. Phase L integrates API/OpenAPI/React and its contract corrections. Phase M hardens baseline comparability, fail-closed release decisions, scoped waiver evidence and offline sync queue recovery.
 
 **Phase H source implementation is delivered; its protected live-lab acceptance remains outstanding.** The protocol analyzers enforce DHCP transaction sequencing and destination-based T1/T2 classification, directional/replay-paired EAPOL four-way handshakes, target Beacon identity and valid RSN parsing, and DNS question/five-tuple/time correlation. Protected live capture tests collect EAPOL/Beacon on an AP-side monitor interface sharing the existing AP PHY and DNS on AP `br0`, using foreground Paramiko tcpdump, SFTP, remote/local SHA-256 checks and Run-scoped PCAP/protocol JSON artifacts.
 
@@ -229,7 +229,15 @@ Internal CI/release gating is implemented. Core CI is hardware-free and cannot c
 
 A durable Runner offline queue is implemented. Run snapshots are stored locally in SQLite and can be synchronized later through an outbound HTTPS transport. The local Runner remains authoritative for raw facts, and synchronization failures do not alter Run/TestResult outcomes. Pytest session completion queues the terminal Run best-effort.
 
-No external Cloud endpoint is configured or contacted in this environment.
+Phase M keeps sync operator-triggered and outbound-only. No external Cloud endpoint is configured or contacted in this environment.
+
+## 30. Phase L/M handoff — 2026-11-09
+
+Phase L source integration is on `main` in `f160e3b`; a targeted validation correction is in `67c377d`. The first Phase L hosted workflow exposed a syntax defect and a malformed UI test grouping; both were corrected before combined Phase M verification.
+
+Phase M hardens completed/healthy baseline and valid-evidence comparability; direction-aware metric deltas; required-test release classification and PASS requirements; auditable exact-scope waivers; atomic SQLite sync queue operations; lease/retry recovery; terminal-only snapshots; payload integrity; and admin-only offline queue inspection. Sync remains outbound-only and operator-triggered.
+
+Do not claim Cloud delivery, human release approval, authenticated reverse-proxy runtime acceptance, or protected REAL_LAB certification without their respective evidence. Check the latest GitHub Actions run on `main` before describing hosted-CI verification.
 
 ## 28. Iterations 20–22 consolidated pass
 Iterations 20–22 are source-implemented as the current Runner foundation: externalized credentials, local authentication/RBAC, deterministic configuration, environment fingerprinting, lab ownership, resource locking, Run orchestration, and mandatory evidence/protocol/telemetry/measurement boundaries. Runtime verification remains separate and is required before certification. Future implementation resumes at Iteration 23.

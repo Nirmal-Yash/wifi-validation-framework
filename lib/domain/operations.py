@@ -30,7 +30,15 @@ class ReleaseWaiver:
     expires_at:datetime|None=None
     audit_reference:str=""
     active:bool=True
-    def is_active(self,now:datetime|None=None)->bool:
-        if not self.active: return False
-        current=now or datetime.now(timezone.utc)
-        return self.expires_at is None or current < self.expires_at
+    def is_active(self, now: datetime | None = None) -> bool:
+        if not self.active:
+            return False
+        current = now or datetime.now(timezone.utc)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        if self.expires_at is None:
+            return True
+        expires_at = self.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        return current.astimezone(timezone.utc) < expires_at.astimezone(timezone.utc)

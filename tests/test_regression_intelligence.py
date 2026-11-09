@@ -1,4 +1,7 @@
-from lib.domain import Attempt, Criticality, EvidenceState, Metric, Run, Severity, Sample, TestResult, TestResultStatus
+from dataclasses import replace
+import pytest
+
+from lib.domain import Attempt, Criticality, EnvironmentHealthStatus, EvidenceState, Metric, Run, RunLifecycle, Severity, Sample, TestResult, TestResultStatus
 from lib.services import RegressionIntelligenceService, RunService, TestRegistry
 
 class R:
@@ -24,7 +27,13 @@ class E:
     def append(self, event): pass
 
 def run(run_id):
-    return Run(run_id, run_id, "v1.0", "lab-1", "Performance", ("wifi.latency.threshold",), {"wifi.latency.threshold":"1.0"}, {"regression":{"thresholds":{"wifi.latency.threshold":{"latency":10}}}}, "cfg", "commit")
+    return Run(
+        run_id, run_id, "v1.0", "lab-1", "Performance",
+        ("wifi.latency.threshold",), {"wifi.latency.threshold":"1.0"},
+        {"regression":{"thresholds":{"wifi.latency.threshold":{"latency":10}}}},
+        "cfg", "commit", lifecycle=RunLifecycle.COMPLETED,
+        environment_health=EnvironmentHealthStatus.HEALTHY,
+    )
 
 def result(run_id, attempt_id, status, metric=None, evidence=EvidenceState.NOT_REQUIRED):
     metrics=(metric,) if metric else ()
@@ -48,8 +57,8 @@ def test_pass_fail_and_fail_pass():
 
 def test_metric_policy_threshold_and_improvement():
     base=run("base"); current=run("current")
-    bm=Metric("latency","ms",(Sample(10),Sample(10)))
-    cm=Metric("latency","ms",(Sample(12),Sample(12)))
+    bm=Metric("latency","ms",(Sample(10),Sample(10),Sample(10)))
+    cm=Metric("latency","ms",(Sample(12),Sample(12),Sample(12)))
     svc=service(base,current,[result("base","base-attempt",TestResultStatus.PASS,bm)],[result("current","current-attempt",TestResultStatus.PASS,cm)])
     report=svc.compare_runs(baseline_run_id="base",current_run_id="current",baseline_environment_class="VIRTUAL_WIFI",current_environment_class="VIRTUAL_WIFI")
     comp=report.assessments[0].metric_comparisons[0]
@@ -72,3 +81,63 @@ def test_invalid_evidence_and_flaky_history():
     report=svc.compare_runs(baseline_run_id="base",current_run_id="current",baseline_environment_class="VIRTUAL_WIFI",current_environment_class="VIRTUAL_WIFI",flaky_history={"wifi.latency.threshold":["PASS","FAIL","PASS"]})
     assert report.assessments[0].classification.value=="UNVALIDATED"
     assert report.assessments[0].flaky_history.flagged is True
+
+
+
+def test_baseline_must_be_completed_and_healthy():
+    base = replace(run("base"), lifecycle=RunLifecycle.RUNNING)
+    current = run("current")
+    svc = service(base, current, [result("base","base-attempt",TestResultStatus.PASS)],
+                  [result("current","current-attempt",TestResultStatus.PASS)])
+    report = svc.compare_runs(
+        baseline_run_id="base", current_run_id="current",
+        baseline_environment_class="VIRTUAL_WIFI", current_environment_class="VIRTUAL_WIFI",
+    )
+    assert report.comparability.value == "INCOMPATIBLE"
+    assert report.assessments[0].classification.value == "NO_BASELINE"
+
+    base = replace(run("base"), environment_health=EnvironmentHealthStatus.FAILED)
+    svc = service(base, current, [result("base","base-attempt",TestResultStatus.PASS)],
+                  [result("current","current-attempt",TestResultStatus.PASS)])
+    report = svc.compare_runs(
+        baseline_run_id="base", current_run_id="current",
+        baseline_environment_class="VIRTUAL_WIFI", current_environment_class="VIRTUAL_WIFI",
+    )
+    assert report.comparability.value == "INCOMPATIBLE"
+
+
+def test_invalid_baseline_evidence_cannot_anchor_regression():
+    base = run("base")
+    current = run("current")
+    invalid = result("base","base-attempt",TestResultStatus.FAIL,evidence=EvidenceState.INVALID)
+    svc = service(base,current,[invalid],[result("current","current-attempt",TestResultStatus.PASS)])
+    report = svc.compare_runs(
+        baseline_run_id="base",current_run_id="current",
+        baseline_environment_class="VIRTUAL_WIFI",current_environment_class="VIRTUAL_WIFI",
+    )
+    assert report.assessments[0].classification.value == "NO_BASELINE"
+    assert "baseline evidence" in report.assessments[0].reason
+
+
+def test_metric_direction_is_explicit_and_zero_baseline_is_not_guessed():
+    from lib.services.regression_intelligence import RegressionIntelligenceError
+    assert RegressionIntelligenceService._delta(100, 110, "LOWER_IS_BETTER") == 10.0
+    assert RegressionIntelligenceService._delta(100, 110, "HIGHER_IS_BETTER") == -10.0
+    assert RegressionIntelligenceService._delta(0, 0, "LOWER_IS_BETTER") == 0.0
+    assert RegressionIntelligenceService._delta(0, 1, "LOWER_IS_BETTER") is None
+    svc = RegressionIntelligenceService(run_service=None, test_registry=TestRegistry.default())
+    with pytest.raises(RegressionIntelligenceError):
+        svc._metric_direction(run("base"), "wifi.latency.threshold", "custom_score")
+
+
+def test_suite_signature_normalizes_semantic_and_pytest_node_selection():
+    semantic_run = run("base")
+    node_run = Run(
+        "node-run", "node-run", "v1.0", "lab-1", "Performance",
+        ("tests/test_ping.py::test_latency_within_threshold",),
+        {"tests/test_ping.py::test_latency_within_threshold":"1.0"},
+        {}, "cfg", "commit", lifecycle=RunLifecycle.COMPLETED,
+        environment_health=EnvironmentHealthStatus.HEALTHY,
+    )
+    svc = RegressionIntelligenceService(run_service=None, test_registry=TestRegistry.default())
+    assert svc._suite_signature(semantic_run) == svc._suite_signature(node_run)

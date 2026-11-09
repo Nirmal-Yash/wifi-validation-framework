@@ -4,15 +4,16 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Any, Mapping, Protocol
-import uuid
 
 import requests
 
 from .api_security import validate_https_endpoint
 
-from lib.domain import Artifact, Run, SyncEnvelope, SyncQueueItem, SyncState
+from lib.domain import Artifact, LifecycleEvent, Run, RunLifecycle, SyncEnvelope, SyncQueueItem, SyncState
+from lib.repositories.interfaces import RepositoryConflictError
 from lib.repositories import (
     ArtifactRepository,
     AttemptRepository,
@@ -139,6 +140,9 @@ class RunnerSyncService:
         run = self.run_repository.get(run_id)
         if run is None:
             raise ValueError(f"Run not found: {run_id}")
+        terminal = {RunLifecycle.COMPLETED, RunLifecycle.FAILED, RunLifecycle.LAB_FAILED, RunLifecycle.CANCELLED, RunLifecycle.ABORTED}
+        if run.lifecycle not in terminal:
+            raise ValueError(f"only terminal Runs can be synchronized; {run_id} is {run.lifecycle.value}")
         attempts = self.attempt_repository.list_for_run(run_id)
         results = self.test_result_repository.list_for_run(run_id)
         artifacts = self.artifact_repository.list_for_run(run_id)
@@ -153,80 +157,132 @@ class RunnerSyncService:
         idempotency_key = f"{run_id}:{payload_sha256}"
         envelope_id = hashlib.sha256(idempotency_key.encode()).hexdigest()[:32]
         envelope = SyncEnvelope(
-            envelope_id=envelope_id,
-            runner_id=self.runner_id,
-            run_id=run_id,
-            kind="RUN_SNAPSHOT",
-            schema_version=self.SCHEMA_VERSION,
-            idempotency_key=idempotency_key,
-            payload_json=payload_json,
-            payload_sha256=payload_sha256,
-            created_at=self.clock(),
+            envelope_id=envelope_id, runner_id=self.runner_id, run_id=run_id,
+            kind="RUN_SNAPSHOT", schema_version=self.SCHEMA_VERSION,
+            idempotency_key=idempotency_key, payload_json=payload_json,
+            payload_sha256=payload_sha256, created_at=self.clock(),
         )
         item = self.queue_repository.enqueue(envelope)
-        self.event_repository.append(
-            __import__("lib.domain", fromlist=["LifecycleEvent"]).LifecycleEvent(
-                event_id=uuid.uuid4().hex,
-                run_id=run_id,
-                event_type="SYNC_QUEUED",
-                occurred_at=self.clock(),
-                details={"envelope_id": envelope.envelope_id, "idempotency_key": envelope.idempotency_key},
-            )
+        self._record_sync_event(
+            run_id, "SYNC_QUEUED", envelope_id,
+            details={"envelope_id": envelope.envelope_id, "idempotency_key": envelope.idempotency_key},
         )
         return item
 
     def sync_pending(self, transport: SyncTransport, *, limit: int = 20) -> dict[str, int]:
+        if limit < 1:
+            raise ValueError("sync queue limit must be positive")
         now = self.clock()
-        self.queue_repository.recover_expired(now)
+        self.queue_repository.recover_expired(now, max_attempts=self.max_attempts)
         delivered = failed = blocked = 0
         for item in self.queue_repository.list_ready(now, limit):
-            lease_until = now + timedelta(seconds=self.lease_seconds)
-            claimed = self.queue_repository.claim(item.envelope.envelope_id, now, lease_until)
+            claimed_at = self.clock()
+            lease_until = claimed_at + timedelta(seconds=self.lease_seconds)
+            claimed = self.queue_repository.claim(item.envelope.envelope_id, claimed_at, lease_until)
             if claimed is None:
                 continue
+
+            try:
+                self._validate_envelope(claimed.envelope)
+            except ValueError as exc:
+                try:
+                    self.queue_repository.fail(
+                        claimed.envelope.envelope_id, next_attempt_at=claimed_at,
+                        error=str(exc), updated_at=self.clock(), blocked=True,
+                        expected_lease=claimed.leased_at,
+                    )
+                except RepositoryConflictError:
+                    continue
+                blocked += 1
+                self._safe_sync_event(
+                    claimed.envelope.run_id, "SYNC_BLOCKED", claimed.envelope.envelope_id,
+                    attempt=claimed.attempt_count + 1, error=str(exc),
+                )
+                continue
+
             try:
                 ack = transport.publish(claimed.envelope)
                 if not ack.accepted:
                     raise SyncTransportError(ack.message or "transport rejected envelope")
-                self.queue_repository.ack(claimed.envelope.envelope_id, self.clock())
-                delivered += 1
-                self.event_repository.append(
-                    __import__("lib.domain", fromlist=["LifecycleEvent"]).LifecycleEvent(
-                        event_id=uuid.uuid4().hex,
-                        run_id=claimed.envelope.run_id,
-                        event_type="SYNC_DELIVERED",
-                        occurred_at=self.clock(),
-                        details={"envelope_id": claimed.envelope.envelope_id, "remote_id": ack.remote_id},
-                    )
-                )
             except Exception as exc:
                 attempts = claimed.attempt_count + 1
                 blocked_now = attempts >= self.max_attempts
                 delay = min(3600, 2 ** min(attempts, 10))
-                next_attempt = self.clock() + timedelta(seconds=delay)
-                self.queue_repository.fail(
-                    claimed.envelope.envelope_id,
-                    next_attempt_at=next_attempt,
-                    error=str(exc),
-                    updated_at=self.clock(),
-                    blocked=blocked_now,
-                )
+                try:
+                    self.queue_repository.fail(
+                        claimed.envelope.envelope_id,
+                        next_attempt_at=self.clock() + timedelta(seconds=delay),
+                        error=str(exc), updated_at=self.clock(), blocked=blocked_now,
+                        expected_lease=claimed.leased_at,
+                    )
+                except RepositoryConflictError:
+                    continue
                 if blocked_now:
                     blocked += 1
                     event_type = "SYNC_BLOCKED"
                 else:
                     failed += 1
                     event_type = "SYNC_FAILED"
-                self.event_repository.append(
-                    __import__("lib.domain", fromlist=["LifecycleEvent"]).LifecycleEvent(
-                        event_id=uuid.uuid4().hex,
-                        run_id=claimed.envelope.run_id,
-                        event_type=event_type,
-                        occurred_at=self.clock(),
-                        details={"envelope_id": claimed.envelope.envelope_id, "attempt": attempts, "error": str(exc)[:500]},
-                    )
+                self._safe_sync_event(
+                    claimed.envelope.run_id, event_type, claimed.envelope.envelope_id,
+                    attempt=attempts, error=str(exc),
+                )
+                continue
+
+            # Remote acceptance is final. Audit persistence must not downgrade ACKED.
+            try:
+                self.queue_repository.ack(
+                    claimed.envelope.envelope_id, self.clock(),
+                    expected_lease=claimed.leased_at,
+                )
+            except RepositoryConflictError:
+                continue
+            delivered += 1
+            try:
+                self._record_sync_event(
+                    claimed.envelope.run_id, "SYNC_DELIVERED",
+                    claimed.envelope.envelope_id, attempt=claimed.attempt_count + 1,
+                    details={"envelope_id": claimed.envelope.envelope_id, "remote_id": ack.remote_id},
+                )
+            except Exception:
+                logging.exception(
+                    "Remote sync acknowledged but delivery audit event could not be persisted: %s",
+                    claimed.envelope.envelope_id,
                 )
         return {"delivered": delivered, "failed": failed, "blocked": blocked}
+
+    @staticmethod
+    def _validate_envelope(envelope: SyncEnvelope) -> None:
+        digest = hashlib.sha256(envelope.payload_json.encode()).hexdigest()
+        if digest != envelope.payload_sha256:
+            raise ValueError("queued sync payload failed SHA-256 integrity verification")
+        try:
+            payload = json.loads(envelope.payload_json)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"queued sync payload is not valid JSON: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("queued sync payload must be a JSON object")
+
+    def _record_sync_event(self, run_id, event_type, envelope_id, *, attempt=0, details=None):
+        event_id = hashlib.sha256(f"{event_type}:{envelope_id}:{attempt}".encode()).hexdigest()[:32]
+        if any(event.event_id == event_id for event in self.event_repository.list_for_run(run_id)):
+            return
+        self.event_repository.append(
+            LifecycleEvent(
+                event_id=event_id, run_id=run_id, event_type=event_type,
+                occurred_at=self.clock(),
+                details=dict(details or {"envelope_id": envelope_id, "attempt": attempt}),
+            )
+        )
+
+    def _safe_sync_event(self, run_id, event_type, envelope_id, *, attempt, error):
+        try:
+            self._record_sync_event(
+                run_id, event_type, envelope_id, attempt=attempt,
+                details={"envelope_id": envelope_id, "attempt": attempt, "error": error[:500]},
+            )
+        except Exception:
+            logging.exception("Could not persist %s audit event for %s", event_type, envelope_id)
 
     @staticmethod
     def _verify_artifact(artifact: Artifact) -> bool:

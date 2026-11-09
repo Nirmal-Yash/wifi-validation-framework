@@ -11,6 +11,7 @@ on:
       - "alembic.ini"
       - "docs/**"
       - "tests/**"
+      - "ci_tests/**"
       - "lib/security/**"
       - "scripts/netregress_security_audit.py"
       - "scripts/start_dashboard.sh"
@@ -34,6 +35,7 @@ on:
       - "alembic.ini"
       - "docs/**"
       - "tests/**"
+      - "ci_tests/**"
       - "lib/security/**"
       - "scripts/netregress_security_audit.py"
       - "scripts/start_dashboard.sh"
@@ -138,6 +140,9 @@ jobs:
           tests/test_throughput.py
           tests/test_iterations_23_25.py
           tests/test_sync_service.py
+          tests/test_sync_queue.py
+          tests/test_regression_intelligence.py
+          ci_tests/test_release_gate.py
 
   dashboard-startup-smoke:
     name: Dashboard startup, proxy and session smoke test (Node 22.22.2)

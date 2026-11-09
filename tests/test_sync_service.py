@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import pytest
 
 from lib.adapters.fake import FakeDeviceAdapter
 from lib.domain import (
@@ -96,3 +97,53 @@ def test_sync_queue_excludes_its_own_audit_events_for_stable_idempotency(tmp_pat
     second=sync.queue_run(run_id)
     assert first.envelope.idempotency_key == second.envelope.idempotency_key
     assert first.envelope.envelope_id == second.envelope.envelope_id
+    queued_events=[e for e in sync.event_repository.list_for_run(run_id) if e.event_type=="SYNC_QUEUED"]
+    assert len(queued_events) == 1
+
+
+
+def test_non_terminal_run_cannot_be_queued(tmp_path):
+    db=SQLiteDatabase(tmp_path/"sync.db"); db.initialize()
+    service=RunService.from_sqlite(db)
+    run,_=service.create_run(
+        firmware_version="v1.0",lab_id="lab-1",validation_profile="Full",
+        selected_tests=["wifi.latency.threshold"],
+        test_definition_versions={"wifi.latency.threshold":"1.0"},
+        resolved_config={},repository_commit="commit",
+    )
+    sync=RunnerSyncService.from_sqlite(db,runner_id="runner-1")
+    with pytest.raises(ValueError,match="only terminal Runs"):
+        sync.queue_run(run.run_id)
+
+
+def test_corrupt_queued_payload_is_blocked_without_transport_attempt(tmp_path):
+    db=SQLiteDatabase(tmp_path/"sync.db"); db.initialize()
+    run_id=create_run(db)
+    sync=RunnerSyncService.from_sqlite(db,runner_id="runner-1")
+    item=sync.queue_run(run_id)
+    with db.transaction(immediate=True) as connection:
+        connection.execute(
+            "UPDATE sync_queue SET payload_json = ? WHERE envelope_id = ?",
+            ('{"tampered":true}',item.envelope.envelope_id),
+        )
+    transport=FakeTransport(); transport.fail=False
+    result=sync.sync_pending(transport)
+    assert result["blocked"] == 1
+    assert transport.envelopes == []
+    assert sync.queue_repository.get(item.envelope.envelope_id).state.value == "BLOCKED"
+
+
+def test_audit_failure_after_remote_ack_does_not_downgrade_delivery(tmp_path, monkeypatch):
+    db=SQLiteDatabase(tmp_path/"sync.db"); db.initialize()
+    run_id=create_run(db)
+    sync=RunnerSyncService.from_sqlite(db,runner_id="runner-1")
+    item=sync.queue_run(run_id)
+    transport=FakeTransport(); transport.fail=False
+
+    def fail_append(_event):
+        raise RuntimeError("audit store temporarily unavailable")
+
+    monkeypatch.setattr(sync.event_repository,"append",fail_append)
+    result=sync.sync_pending(transport)
+    assert result["delivered"] == 1
+    assert sync.queue_repository.get(item.envelope.envelope_id).state.value == "ACKED"

@@ -14,6 +14,7 @@ from lib.repositories import (
     SQLiteDatabase,
     SQLiteEventRepository,
     SQLiteRunRepository,
+    SQLiteSyncQueueRepository,
     SQLiteTestResultRepository,
 )
 from lib.services.regression_intelligence import RegressionIntelligenceService
@@ -477,13 +478,45 @@ class DashboardQueryService:
                 {"code": item.code, "message": item.message, "test_id": item.test_id}
                 for item in decision.issues
             ],
+            "waived_issues": [
+                {
+                    "issue": {"code": item.issue.code, "message": item.issue.message, "test_id": item.issue.test_id},
+                    "waiver_id": item.waiver_id,
+                    "audit_reference": item.audit_reference,
+                }
+                for item in decision.waived_issues
+            ],
             "current_run_id": current_run_id,
             "baseline_run_id": baseline_run_id,
             "comparability": report.comparability.value,
             "comparability_reason": report.reason,
         }
 
+    def sync_queue(self, limit: int = 50) -> dict[str, Any]:
+        repository = SQLiteSyncQueueRepository(self.database)
+        items = repository.list_recent(limit)
+        return {
+            "summary": repository.summary(),
+            "items": [
+                {
+                    "envelope_id": item.envelope.envelope_id,
+                    "run_id": item.envelope.run_id,
+                    "kind": item.envelope.kind,
+                    "schema_version": item.envelope.schema_version,
+                    "state": item.state.value,
+                    "attempt_count": item.attempt_count,
+                    "next_attempt_at": self._iso(item.next_attempt_at),
+                    "lease_expires_at": self._iso(item.leased_at),
+                    "last_error": item.last_error,
+                    "created_at": self._iso(item.envelope.created_at),
+                    "updated_at": self._iso(item.updated_at),
+                }
+                for item in items
+            ],
+        }
+
     def baselines(self):
+        return [    def baselines(self):
         return [
             {
                 "baseline_id": item.baseline_id,

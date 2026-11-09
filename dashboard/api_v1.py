@@ -540,7 +540,21 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         idempotency_store_response("/api/v1/firmware/rollback/"+device_id,key,request_hash,response_data,200)
         return ok(response_data)
 
+    @api.get("/sync/queue")
+    def sync_queue():
+        denied=require("admin")
+        if denied is not None:
+            return denied
+        try:
+            limit=int(request.args.get("limit",50))
+        except (TypeError, ValueError):
+            return error("INVALID_REQUEST","limit must be an integer from 1 to 200",400)
+        if limit < 1 or limit > 200:
+            return error("INVALID_REQUEST","limit must be between 1 and 200",400)
+        return ok(query.sync_queue(limit))
+
     @api.get("/waivers")
+    def list_waivers():    @api.get("/waivers")
     def list_waivers():
         denied=require("admin")
         if denied is not None:

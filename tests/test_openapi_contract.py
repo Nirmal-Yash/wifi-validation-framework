@@ -9,7 +9,7 @@ def test_openapi_path_keys_are_unique_and_cover_runtime_routes():
     content = SPEC.read_text(encoding="utf-8")
     paths = re.findall(r"^  (/[^\n:]+):", content, flags=re.MULTILINE)
     assert len(paths) == len(set(paths)), "duplicate OpenAPI path key"
-    assert {"/auth/activity", "/readiness", "/runs/{run_id}/release-gate", "/waivers", "/firmware/{device_id}/rollback"} <= set(paths)
+    assert {"/auth/activity", "/readiness", "/runs/{run_id}/release-gate", "/waivers", "/sync/queue", "/firmware/{device_id}/rollback"} <= set(paths)
 
 
 def test_openapi_auth_cookie_and_runtime_protection_match_flask():

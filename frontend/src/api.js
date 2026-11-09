@@ -106,6 +106,7 @@ export const api={
  baselines:()=>request("/baselines"),promoteBaseline:payload=>request("/baselines",{method:"POST",body:JSON.stringify(payload)}),
  promoteExistingBaseline:(id,payload)=>request("/baselines/"+encode(id)+"/promote",{method:"POST",body:JSON.stringify(payload)}),
  waivers:()=>request("/waivers"),
+ syncQueue:(limit=50)=>request("/sync/queue"+query({limit})),
  createWaiver:payload=>request("/waivers",{method:"POST",body:JSON.stringify(payload)}),
  firmwareOperation:payload=>request("/firmware/operations",{method:"POST",body:JSON.stringify(payload)}),
  firmwareRollback:(id,payload)=>request("/firmware/"+encode(id)+"/rollback",{method:"POST",body:JSON.stringify(payload)})

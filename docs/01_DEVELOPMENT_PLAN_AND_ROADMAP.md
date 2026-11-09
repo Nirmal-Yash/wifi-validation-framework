@@ -40,7 +40,7 @@ This B–P programme is the current execution order for the next development sli
 | J | Device and Firmware Lifecycle: adapter capability contracts, image verification, flash/reboot/readiness, rollback and target-specific lifecycle certification | Source hardened; hosted workflow 42472939649 passed 3/3 jobs; physical target flash/reboot/rollback certification outstanding |
 | K | Security and Deployment Hardening: credential handling, auth/RBAC, secure command boundaries, artifact controls, deployment policy and security regression | Source hardening delivered; strict audit, SSRF/API/RBAC/session and artifact-download tests passed workflows 42510776806 and 42511179934 (3/3 jobs); production proxy/secrets, DNS-rebinding and threat-model acceptance remain |
 | L | API, Dashboard and Frontend Completion: typed API contract, consistent errors, pagination, operational UX, authenticated downloads and browser/runtime parity | Source integration and contract tests delivered 2026-11-09; browser/reverse-proxy runtime and protected REAL_LAB acceptance outstanding |
-| M | Regression Intelligence, Release Gate and Offline Operations: comparable baseline logic, metric classification, waiver boundaries, local queue recovery and release decision evidence | In progress; release and queue reliability contracts being hardened; production synchronization/release acceptance outstanding |
+| M | Regression Intelligence, Release Gate and Offline Operations: comparable baseline logic, metric classification, waiver boundaries, local queue recovery and release decision evidence | Source hardening delivered 2026-11-09; hosted CI verification pending; Cloud endpoint and protected release acceptance remain separate |
 | N | Standalone Packaging and Production Certification: reproducible install, upgrade/backup/restore, doctor/manifest, operator runbooks and the full standalone certification matrix | Certification tooling present; clean-install and protected 11-scenario REAL_LAB certification outstanding |
 | O | Cloud/SaaS Expansion and Integration: separate control-plane contracts, tenant/project ownership, outbound synchronization and remote release workflows; begin only after standalone Runner certification | Deferred until Phase N certification; no production PostgreSQL/tenant control plane claimed |
 | P | GitHub Repository Organization and Cleanup: source and docs ownership audit, tests/workflow coverage, dependency hygiene, stale-file/branch cleanup, secret scan, release metadata and final repository freeze | Final phase; not started as a completed repository-wide freeze |
@@ -2835,6 +2835,17 @@ Production readiness is intentionally split into source completeness and executi
 - OpenAPI cookie/readiness contracts and duplicate release-gate path declarations are reconciled, with backend/frontend contract tests added to CI.
 
 Browser/reverse-proxy runtime acceptance and protected REAL_LAB execution remain separate gates.
+
+#### Phase M implementation update — 2026-11-09
+
+- Regression comparison requires a completed, healthy baseline and valid comparison evidence on both sides. Suite signatures normalize semantic TestRegistry IDs against equivalent pytest node IDs.
+- Metric regression direction is explicit: known metrics use their semantic direction; custom metrics require `regression.metric_directions`. Undefined zero-baseline percentage changes and non-finite/non-positive thresholds fail closed as UNVALIDATED.
+- Release acceptance requires every selected test to have a regression classification, PASS status and COMPLETE/NOT_REQUIRED evidence. TEST/RUN/REGRESSION waiver scope is exact; only explicit RELEASE-wide or exact-Run waivers can cross test boundaries.
+- Applied waivers are returned with waiver IDs and audit references and displayed in the Release Gate UI.
+- Offline sync accepts only terminal Run snapshots, verifies payload SHA-256 before publish, uses atomic enqueue/claim/ack/fail and lease compare-and-set, counts expired leases against the retry budget, blocks corrupted envelopes, and preserves ACKED state when audit persistence fails.
+- Admins can inspect a read-only sync queue view. Actual synchronization remains manually invoked, outbound-only and dependent on an operator-configured HTTPS endpoint/token; no Cloud control plane is claimed.
+
+Hosted CI, protected REAL_LAB and production Cloud acceptance remain separate gates.
 
 #### Phase J implementation update — 2026-11-08
 

@@ -177,9 +177,9 @@ The prior release wave established the standalone Runner architecture, but this 
 | Device / firmware | Completed in source | Hash/model/signature validation, explicit authorization, firmware-operation exclusivity and explicit rollback are enforced. |
 | API / security | Implemented | API authorization, CSRF, rate limiting, durable operational idempotency, SSRF/path confinement and structured readiness are present. |
 | RBAC project scoping | Partially operational | Role/project primitives exist, but a durable multi-project entity and end-to-end Run/Device/Lab project association are not yet modeled. |
-| Regression / release gate | Completed in source | Fail-closed release evaluation and scope-aware waivers are implemented. |
-| Frontend | Implemented source surface | React/Vite covers Dashboard, Runs, Run/Test detail, Regression, Performance, Telemetry, Lab Health, Artifacts, Readiness, Baselines, Firmware/rollback and Waivers. Browser/deployment runtime verification remains separate. |
-| Offline synchronization | Implemented | Durable local queue, lease/retry/idempotency semantics remain Runner-authoritative. |
+| Regression / release gate | Hardened in Phase M source | Healthy completed baselines and valid evidence are required; missing classifications/non-PASS required tests fail closed; waiver exceptions are exact-scope and carry audit references. |
+| Frontend | Phase L/M source integration delivered | React/Vite covers Run attempt/release-gate panels, policy-aware metrics, active waivers and admin offline queue visibility; browser/reverse-proxy runtime remains separate. |
+| Offline synchronization | Hardened in Phase M source | Terminal-only snapshots, SHA-256 verification, atomic idempotency/claims, lease CAS, bounded lease recovery and ACK-safe audit behavior; external HTTPS endpoint acceptance remains separate. |
 | Operational recovery | Implemented | Backup/restore, retention, stale-lock recovery, orphan Run recovery and audit-chain integrity services are present. |
 | Documentation / release tooling | Reconciled | Roadmap is restored through Iteration 30 and release/doctor tooling is source-addressed. |
 | REAL_LAB certification | Unverified | Protected GNS3/mac80211_hwsim execution evidence must be run in the dedicated real-lab phase. |
@@ -214,13 +214,25 @@ Iterations 20–30 are source-implemented and the full core/release-readiness CI
 | I | Source implementation present | Physical RF/performance/recovery evidence remains |
 | J | Lifecycle hardened; hosted CI passed | Strict capabilities, OpenWrt profile defaults, env-backed SFTP credentials, image/path validation, full-scope device locking and expected-version rollback verification are source-covered; workflow 42472939649 passed all 3 jobs; real hardware certification remains outstanding |
 | K | Security source hardening delivered; hosted CI passed | Global-address SSRF validation, strict source audit, API/RBAC/session tests and artifact sensitivity/remote-token download controls passed workflow 42511179934 (3/3 jobs); production proxy/secrets, independent dependency scan, DNS-rebinding review and threat-model acceptance remain |
-| L | Substantially implemented | Authenticated browser/runtime and operational workflow acceptance remain |
-| M | Substantially implemented | Production sync endpoint and release-operation acceptance remain |
+| L | Source integration plus validation correction delivered | Combined hosted verification is attached to the Phase M workflow; browser/reverse-proxy and protected REAL_LAB acceptance remain |
+| M | Source hardening delivered 2026-11-09 | Hosted workflow validation pending; actual HTTPS endpoint, protected REAL_LAB and human release approval remain separate |
 | N | Certification tooling present | Clean installation and full protected 11-scenario REAL_LAB certification remain |
 | O | Deferred | No production PostgreSQL repository adapter or tenant control plane claimed |
 | P | Pending final phase | Repository-wide cleanup and final integrity freeze remain |
 
-### Phase G implementation evidence and remaining acceptance
+### Phase M — Regression Intelligence, Release Gate and Offline Operations (2026-11-09)
+
+Phase M source hardening covers the key release and synchronization invariants:
+
+- Baselines must be completed and backed by healthy-lab state. Baseline/current evidence must be COMPLETE or NOT_REQUIRED before metric comparison. Suite compatibility is checked after semantic TestRegistry ID normalization.
+- Metric regression is expressed as degradation, independent of unit labels. Known metrics use explicit lower-/higher-is-better semantics; custom metrics need a persisted `regression.metric_directions` declaration. NaN/Infinity, invalid thresholds and undefined percentage deltas never produce a guessed PASS.
+- Release Gate requires classification and PASS for every selected test, plus valid required evidence. Waivers are exact-scope by default; only RELEASE scope may intentionally apply to an entire release. Suppressed blockers remain visible with waiver ID and audit reference.
+- Offline queue writes/claims/acks/failures are transactional and state/lease guarded. Reusing an idempotency key with changed content conflicts. Expired leases spend the retry budget; corrupt envelopes become BLOCKED before transport; remote acceptance is not undone by later local audit failure.
+- Admin-only queue inspection returns summary and envelope metadata, never raw payload contents. Outbound sync remains manual and requires the configured HTTPS endpoint/token.
+
+Hosted CI cannot replace protected GNS3/mac80211_hwsim execution, production proxy/authentication, external HTTPS sync or human release approval.
+
+## Phase G implementation evidence and remaining acceptance## Phase G implementation evidence and remaining acceptance
 
 Phase G source changes in this delivery:
 - `lib/services/configuration.py`: declared precedence, deep copy, immutable nested results, per-leaf provenance, canonical hash and strict JSON/non-finite validation.

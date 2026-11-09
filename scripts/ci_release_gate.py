@@ -7,6 +7,7 @@ ROOT=Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path: sys.path.insert(0,str(ROOT))
 from lib.repositories import SQLiteDatabase
 from lib.services import RegressionIntelligenceService, RunService, TestRegistry, WaiverService
+from dashboard.query import DashboardQueryService
 from lib.services.release_gate import ReleaseGateEvaluator, ReleaseGateInput
 
 def compile_sources():
@@ -15,16 +16,20 @@ def compile_sources():
 
 def run_core_tests(): subprocess.run([sys.executable,'-m','pytest','ci_tests','-q'],cwd=ROOT,check=True)
 
-def evaluate_run(db_path, baseline_run_id, current_run_id, environment_class):
+def evaluate_run(db_path, baseline_run_id, current_run_id, environment_class=None):
     db=SQLiteDatabase(db_path); db.initialize(); service=RunService.from_sqlite(db); registry=TestRegistry.default()
     if current_run_id is None:
         runs=service.run_repository.list()
         if not runs: raise RuntimeError('no persisted Run exists in release database')
         current_run_id=max(runs, key=lambda run: (run.created_at, run.run_id)).run_id
+    current=service.run_repository.get(current_run_id)
+    if current is None:
+        raise RuntimeError(f"current Run not found: {current_run_id}")
+    query=DashboardQueryService(db)
     report=RegressionIntelligenceService(run_service=service,test_registry=registry).compare_runs(
         baseline_run_id=baseline_run_id,current_run_id=current_run_id,
-        baseline_environment_class=environment_class,current_environment_class=environment_class)
-    current=service.run_repository.get(current_run_id)
+        baseline_environment_class=query.environment_class(baseline_run_id),
+        current_environment_class=query.environment_class(current_run_id))
     attempts=sorted(service.attempt_repository.list_for_run(current_run_id),key=lambda x:x.number)
     results=tuple(service.test_result_repository.list_for_attempt(attempts[-1].attempt_id)) if attempts else ()
     required_list=[]
@@ -44,7 +49,7 @@ def evaluate_run(db_path, baseline_run_id, current_run_id, environment_class):
     return report,decision
 
 def main():
-    p=argparse.ArgumentParser(); p.add_argument('--skip-core-tests',action='store_true'); p.add_argument('--db',type=Path); p.add_argument('--baseline-run-id'); p.add_argument('--current-run-id'); p.add_argument('--environment-class',default='VIRTUAL_WIFI'); p.add_argument('--output',type=Path)
+    p=argparse.ArgumentParser(); p.add_argument('--skip-core-tests',action='store_true'); p.add_argument('--db',type=Path); p.add_argument('--baseline-run-id'); p.add_argument('--current-run-id'); p.add_argument('--output',type=Path)
     a=p.parse_args(); compile_sources()
     if not a.skip_core_tests: run_core_tests()
     if a.baseline_run_id is not None and a.db is None: p.error('--db is required when --baseline-run-id is supplied')
@@ -52,6 +57,7 @@ def main():
     if a.db is not None:
         report,decision=evaluate_run(a.db,a.baseline_run_id,a.current_run_id,a.environment_class)
         payload={'status':decision.status.value,'summary':decision.summary,'issues':[asdict(x) for x in decision.issues],
+                 'waived_issues':[asdict(x) for x in decision.waived_issues],
                  'regression':{'baseline_run_id':report.baseline_run_id,'current_run_id':report.current_run_id,'comparability':report.comparability.value,'reason':report.reason,
                                'assessments':[{'test_id':x.test_id,'classification':x.classification.value,'reason':x.reason} for x in report.assessments]}}
         print(json.dumps(payload,indent=2,sort_keys=True))

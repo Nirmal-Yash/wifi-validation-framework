@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Mapping, Sequence
 
 from lib.domain import (
@@ -24,7 +25,8 @@ class RegressionIntelligenceError(RuntimeError):
     pass
 
 
-LOWER_IS_BETTER_UNITS = frozenset({"ms", "%", "seconds", "sec", "s", "db"})
+LOWER_IS_BETTER_METRICS = ("latency", "rtt", "round_trip", "packet_loss", "loss", "jitter", "recovery_time", "duration", "error_rate", "retransmission", "retry_count")
+HIGHER_IS_BETTER_METRICS = ("throughput", "bandwidth", "goodput", "success_rate", "rssi", "signal_strength", "snr", "data_rate", "tx_rate", "rx_rate")
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,8 +45,8 @@ class RegressionIntelligenceService:
         test_registry: TestRegistry,
         default_threshold_pct: float = 20.0,
     ) -> None:
-        if default_threshold_pct <= 0:
-            raise ValueError("default_threshold_pct must be positive")
+        if not isfinite(float(default_threshold_pct)) or default_threshold_pct <= 0:
+            raise ValueError("default_threshold_pct must be finite and positive")
         self.run_service = run_service
         self.test_registry = test_registry
         self.default_threshold_pct = float(default_threshold_pct)
@@ -173,9 +175,20 @@ class RegressionIntelligenceService:
             self.run_service.test_result_repository.list_for_attempt(latest.attempt_id)
         )
 
-    @staticmethod
-    def _suite_signature(run: Run) -> tuple[tuple[str, str], ...]:
-        return tuple(sorted(run.test_definition_versions.items()))
+    def _suite_signature(self, run: Run) -> tuple[tuple[str, str], ...]:
+        versions: dict[str, set[str]] = {}
+        for selected in run.selected_tests:
+            try:
+                definition = self.test_registry.get(selected)
+            except KeyError:
+                definition = self.test_registry.resolve_or_fallback(selected)
+            versions.setdefault(definition.test_id, set()).add(
+                str(run.test_definition_versions[selected])
+            )
+        return tuple(
+            (test_id, "|".join(sorted(values)))
+            for test_id, values in sorted(versions.items())
+        )
 
     def _compare_context(
         self,
@@ -184,6 +197,12 @@ class RegressionIntelligenceService:
         baseline_environment_class: str | None,
         current_environment_class: str | None,
     ) -> tuple[ComparabilityStatus, str]:
+        if baseline.lifecycle.value != "COMPLETED":
+            return ComparabilityStatus.INCOMPATIBLE, "baseline Run is not completed"
+        if baseline.environment_health is None:
+            return ComparabilityStatus.INSUFFICIENT_CONTEXT, "baseline Run has no persisted healthy-lab result"
+        if baseline.environment_health.value != "HEALTHY":
+            return ComparabilityStatus.INCOMPATIBLE, f"baseline lab health is {baseline.environment_health.value}"
         if baseline.validation_profile != current.validation_profile:
             return ComparabilityStatus.INCOMPATIBLE, "validation profiles differ"
         if baseline.lab_id != current.lab_id:
@@ -225,6 +244,16 @@ class RegressionIntelligenceService:
                 dimensions,
                 flaky,
                 reason="test definition versions differ",
+            )
+        if base.evidence_state.value not in {"COMPLETE", "NOT_REQUIRED"}:
+            return self._assessment(
+                base, curr, RegressionClass.NO_BASELINE, dimensions, flaky,
+                reason=f"baseline evidence is not valid comparison evidence ({base.evidence_state.value})",
+            )
+        if curr.evidence_state.value not in {"COMPLETE", "NOT_REQUIRED"}:
+            return self._assessment(
+                base, curr, RegressionClass.UNVALIDATED, dimensions, flaky,
+                reason=f"current evidence is not valid comparison evidence ({curr.evidence_state.value})",
             )
         if base.status in {
             TestResultStatus.ERROR,
@@ -330,45 +359,47 @@ class RegressionIntelligenceService:
             try:
                 base_value = self._metric_value(base, bm, curr.test_id)
                 current_value = self._metric_value(current, cm, curr.test_id)
+                direction = self._metric_direction(current, curr.test_id, name)
+                threshold_override = threshold_overrides.get((curr.test_id, name))
+                threshold = (
+                    threshold_override
+                    if threshold_override is not None
+                    else self._threshold(current, curr.test_id, name)
+                )
+                threshold = float(threshold)
+                if not isfinite(threshold) or threshold <= 0:
+                    raise RegressionIntelligenceError(
+                        f"regression threshold for {curr.test_id}:{name} must be finite and positive"
+                    )
+                delta = self._delta(base_value.value, current_value.value, direction)
             except Exception as exc:
                 comparisons.append(
                     RegressionMetricComparison(
-                        name,
-                        cm.unit,
-                        None,
-                        None,
-                        None,
-                        None,
-                        RegressionClass.UNVALIDATED,
-                        dimension,
-                        str(exc),
+                        name, cm.unit, None, None, None, None,
+                        RegressionClass.UNVALIDATED, dimension, str(exc),
                     )
                 )
                 continue
 
-            threshold = threshold_overrides.get(
-                (curr.test_id, name),
-                self._threshold(current, curr.test_id, name),
-            )
-            delta = self._delta(
-                base_value.value, current_value.value, cm.unit
-            )
+            if delta is None:
+                comparisons.append(
+                    RegressionMetricComparison(
+                        name, cm.unit, base_value.value, current_value.value,
+                        None, threshold, RegressionClass.UNVALIDATED, dimension,
+                        "percentage change is undefined for a zero baseline",
+                    )
+                )
+                continue
             classification = RegressionClass.UNCHANGED
-            if delta is not None and delta >= threshold:
+            if delta >= threshold:
                 classification = RegressionClass.SOFT_REGRESSION
-            elif delta is not None and delta <= -threshold:
+            elif delta <= -threshold:
                 classification = RegressionClass.IMPROVED
 
             comparisons.append(
                 RegressionMetricComparison(
-                    name,
-                    cm.unit,
-                    base_value.value,
-                    current_value.value,
-                    delta,
-                    threshold,
-                    classification,
-                    dimension,
+                    name, cm.unit, base_value.value, current_value.value,
+                    delta, threshold, classification, dimension,
                 )
             )
 
@@ -392,6 +423,28 @@ class RegressionIntelligenceService:
         )
         return _MetricValue(summary.decision_value, metric.unit)
 
+    @staticmethod
+    def _metric_direction(run: Run, test_id: str, metric_name: str) -> str:
+        regression = run.resolved_config.get("regression", {})
+        directions = regression.get("metric_directions", {}) if isinstance(regression, Mapping) else {}
+        per_test = directions.get(test_id, {}) if isinstance(directions, Mapping) else {}
+        configured = per_test.get(metric_name) if isinstance(per_test, Mapping) else None
+        if configured is not None:
+            value = str(configured).strip().upper().replace("-", "_").replace(" ", "_")
+            if value in {"LOWER_IS_BETTER", "HIGHER_IS_BETTER"}:
+                return value
+            raise RegressionIntelligenceError(
+                f"invalid metric direction for {test_id}:{metric_name}: {configured}"
+            )
+        normalized = metric_name.lower().replace("-", "_")
+        if any(token in normalized for token in LOWER_IS_BETTER_METRICS):
+            return "LOWER_IS_BETTER"
+        if any(token in normalized for token in HIGHER_IS_BETTER_METRICS):
+            return "HIGHER_IS_BETTER"
+        raise RegressionIntelligenceError(
+            f"metric direction is not defined for {test_id}:{metric_name}; configure regression.metric_directions"
+        )
+
     def _threshold(self, run: Run, test_id: str, metric_name: str) -> float:
         regression = run.resolved_config.get("regression", {})
         thresholds = regression.get("thresholds", {}) if isinstance(regression, Mapping) else {}
@@ -402,19 +455,20 @@ class RegressionIntelligenceService:
         if value is None:
             return self.default_threshold_pct
         value = float(value)
-        if value <= 0:
+        if not isfinite(value) or value <= 0:
             raise RegressionIntelligenceError(
                 f"invalid regression threshold for {test_id}:{metric_name}"
             )
         return value
 
     @staticmethod
-    def _delta(base: float, current: float, unit: str) -> float | None:
+    def _delta(base: float, current: float, direction: str) -> float | None:
+        if direction not in {"LOWER_IS_BETTER", "HIGHER_IS_BETTER"}:
+            raise RegressionIntelligenceError(f"unsupported metric direction: {direction}")
         if base == 0:
-            return 0.0 if current == 0 else 100.0
-        if unit.lower() in LOWER_IS_BETTER_UNITS:
-            return round(((current - base) / base) * 100.0, 2)
-        return round(((base - current) / base) * 100.0, 2)
+            return 0.0 if current == 0 else None
+        change = ((current - base) / abs(base)) * 100.0
+        return round(change if direction == "LOWER_IS_BETTER" else -change, 2)
 
     @staticmethod
     def _aggregate_metric_classification(

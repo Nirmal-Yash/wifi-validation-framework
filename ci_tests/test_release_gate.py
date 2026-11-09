@@ -72,3 +72,53 @@ def test_run_scoped_waiver_matches_only_the_selected_run():
     assert not rejected.accepted
     assert any(issue.code == "RUN_NOT_COMPLETED" for issue in rejected.issues)
 
+
+
+
+def test_required_test_without_regression_classification_is_rejected():
+    decision = ReleaseGateEvaluator().evaluate(base(regression_classifications={}))
+    assert not decision.accepted
+    assert any(issue.code == "MISSING_REGRESSION_CLASSIFICATION" for issue in decision.issues)
+
+
+def test_skipped_required_test_is_not_release_eligible():
+    decision = ReleaseGateEvaluator().evaluate(
+        base(test_statuses={"wifi.latency.threshold":"SKIPPED"})
+    )
+    assert not decision.accepted
+    assert any(issue.code == "NON_PASSING_TEST" for issue in decision.issues)
+
+
+def test_exact_test_waiver_is_recorded_with_audit_reference():
+    waiver = ReleaseWaiver(
+        waiver_id="w-exact-test",
+        scope=WaiverScope.TEST,
+        target_id="wifi.latency.threshold",
+        issue_code="NON_PASSING_TEST",
+        reason="approved exception",
+        created_by="admin",
+        created_at=datetime.now(timezone.utc),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        audit_reference="AUD-123",
+    )
+    decision = ReleaseGateEvaluator().evaluate(
+        base(test_statuses={"wifi.latency.threshold":"FAIL"}, waivers=(waiver,))
+    )
+    assert decision.accepted
+    assert len(decision.waived_issues) == 1
+    assert decision.waived_issues[0].waiver_id == "w-exact-test"
+    assert decision.waived_issues[0].audit_reference == "AUD-123"
+
+
+def test_naive_waiver_expiry_is_interpreted_as_utc():
+    waiver = ReleaseWaiver(
+        waiver_id="w-naive",
+        scope=WaiverScope.TEST,
+        target_id="wifi.latency.threshold",
+        issue_code="NON_PASSING_TEST",
+        reason="expired exception",
+        created_by="admin",
+        created_at=datetime(2020,1,1),
+        expires_at=datetime(2020,1,2),
+    )
+    assert waiver.is_active(datetime(2020,1,3,tzinfo=timezone.utc)) is False
