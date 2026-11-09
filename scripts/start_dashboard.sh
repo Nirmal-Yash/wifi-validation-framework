@@ -3,16 +3,6 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "$BASH_SOURCE")/.." && pwd)"
 cd "$ROOT_DIR"
-LOCAL_DIR="$ROOT_DIR/.local"
-if [[ -n "$(printenv NETREGRESS_LOCAL_DIR || true)" ]]; then LOCAL_DIR="$(printenv NETREGRESS_LOCAL_DIR)"; fi
-AUTH_FILE="$LOCAL_DIR/netregress-auth.json"
-SESSION_FILE="$LOCAL_DIR/session-secret"
-MODE="start"
-if [[ $# -eq 1 ]]; then MODE="$1"; fi
-if [[ $# -gt 1 || ( "$MODE" != "start" && "$MODE" != "--reset-owner" ) ]]; then
-  echo "Usage: $0 [--reset-owner]" >&2
-  exit 2
-fi
 
 PYTHON_BIN="python3"
 if [[ -x "$ROOT_DIR/wifi-venv/bin/python" ]]; then
@@ -22,6 +12,49 @@ elif [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
 elif [[ -n "$(printenv PYTHON || true)" ]]; then
   PYTHON_BIN="$(printenv PYTHON)"
 fi
+
+if [[ -e "$ROOT_DIR/.env" || -L "$ROOT_DIR/.env" ]]; then
+  if [[ -L "$ROOT_DIR/.env" || ! -f "$ROOT_DIR/.env" ]]; then
+    echo "ERROR: .env must be a regular file, not a symlink." >&2
+    exit 1
+  fi
+  ENV_MODE="$(stat -c '%a' "$ROOT_DIR/.env")"
+  if (( (8#$ENV_MODE & 077) != 0 )); then
+    echo "ERROR: .env must be owner-readable only (chmod 600 .env)." >&2
+    exit 1
+  fi
+fi
+
+read_dotenv_value() {
+  if [[ ! -f "$ROOT_DIR/.env" ]]; then return 0; fi
+  "$PYTHON_BIN" - "$ROOT_DIR/.env" "$1" <<'PY'
+import sys
+from dotenv import dotenv_values
+values = dotenv_values(sys.argv[1])
+value = values.get(sys.argv[2])
+if value is not None:
+    print(value)
+PY
+}
+
+LOCAL_DIR="$ROOT_DIR/.local"
+if [[ -n "$(printenv NETREGRESS_LOCAL_DIR || true)" ]]; then
+  LOCAL_DIR="$(printenv NETREGRESS_LOCAL_DIR)"
+else
+  LOCAL_ENV_VALUE="$(read_dotenv_value NETREGRESS_LOCAL_DIR)"
+  if [[ -n "$LOCAL_ENV_VALUE" ]]; then LOCAL_DIR="$LOCAL_ENV_VALUE"; fi
+fi
+DOTENV_NETREGRESS_PORT="$(read_dotenv_value NETREGRESS_PORT)"
+DOTENV_NETREGRESS_FRONTEND_PORT="$(read_dotenv_value NETREGRESS_FRONTEND_PORT)"
+AUTH_FILE="$LOCAL_DIR/netregress-auth.json"
+SESSION_FILE="$LOCAL_DIR/session-secret"
+MODE="start"
+if [[ $# -eq 1 ]]; then MODE="$1"; fi
+if [[ $# -gt 1 || ( "$MODE" != "start" && "$MODE" != "--reset-owner" ) ]]; then
+  echo "Usage: $0 [--reset-owner]" >&2
+  exit 2
+fi
+
 
 umask 077
 mkdir -p "$LOCAL_DIR/logs"
@@ -148,9 +181,9 @@ fi
 log_event PASS "Node.js engine compatibility verified for Vite 8 and Vitest 5."
 
 NETREGRESS_PORT="$(printenv NETREGRESS_PORT || true)"
-if [[ -z "$NETREGRESS_PORT" ]]; then NETREGRESS_PORT="5050"; fi
+if [[ -z "$NETREGRESS_PORT" ]]; then NETREGRESS_PORT="${DOTENV_NETREGRESS_PORT:-5050}"; fi
 NETREGRESS_FRONTEND_PORT="$(printenv NETREGRESS_FRONTEND_PORT || true)"
-if [[ -z "$NETREGRESS_FRONTEND_PORT" ]]; then NETREGRESS_FRONTEND_PORT="5173"; fi
+if [[ -z "$NETREGRESS_FRONTEND_PORT" ]]; then NETREGRESS_FRONTEND_PORT="${DOTENV_NETREGRESS_FRONTEND_PORT:-5173}"; fi
 for port_name in NETREGRESS_PORT NETREGRESS_FRONTEND_PORT; do
   if [[ "$port_name" == "NETREGRESS_PORT" ]]; then port_value="$NETREGRESS_PORT"; else port_value="$NETREGRESS_FRONTEND_PORT"; fi
   if [[ ! "$port_value" =~ ^[0-9]+$ ]]; then

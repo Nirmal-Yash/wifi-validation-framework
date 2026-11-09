@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import stat
 from typing import Mapping
 from urllib.parse import unquote
 
@@ -13,6 +14,26 @@ class DatabaseConfigurationError(ValueError):
 
 _DEFAULT_DATABASE = Path("results") / "test_results.db"
 _SQLITE_URL_PREFIXES = ("sqlite+pysqlite:///", "sqlite:///")
+
+
+def _load_secure_dotenv(root: Path) -> None:
+    """Load a private repository .env without overriding explicit process values."""
+    env_file = root / ".env"
+    if env_file.is_symlink():
+        raise DatabaseConfigurationError(".env must be a regular file, not a symlink")
+    if not env_file.is_file():
+        return
+    mode = stat.S_IMODE(env_file.stat().st_mode)
+    if mode & 0o077:
+        raise DatabaseConfigurationError(".env must be owner-readable only; restrict its permissions")
+    try:
+        from dotenv import load_dotenv
+    except ImportError as exc:
+        raise DatabaseConfigurationError("python-dotenv is required to load the private .env file") from exc
+    try:
+        load_dotenv(dotenv_path=env_file, override=False)
+    except OSError as exc:
+        raise DatabaseConfigurationError(f"unable to read .env: {type(exc).__name__}") from exc
 
 
 def _normalise_path(value: str | Path) -> Path:
@@ -66,6 +87,8 @@ def resolve_database_path(
     root = Path(project_root or Path(__file__).resolve().parents[2]).expanduser().resolve(strict=False)
     if path is not None:
         return _normalise_path(path)
+    if environ is None:
+        _load_secure_dotenv(root)
 
     env = os.environ if environ is None else environ
     canonical = (env.get("NETREGRESS_DATABASE_PATH") or "").strip()

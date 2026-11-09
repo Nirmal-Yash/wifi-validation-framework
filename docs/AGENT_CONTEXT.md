@@ -293,7 +293,7 @@ Phase K audit confirmed the existing auth/RBAC, session/CSRF, command policy/red
 
 Remaining K acceptance: HTTPS reverse-proxy cookie/HSTS and trusted client-IP verification; real deployment secret configuration; independent dependency scan and threat-model review; DNS rebinding/connection-time resolution analysis. The source audit reports optional scanner availability; it does not run Bandit, Semgrep or pip-audit itself. Do not imply production deployment or penetration-test certification.
 
-Next phase: **Phase L — API, Dashboard and Frontend Completion**. Audit API/OpenAPI/frontend parity first, then close bounded endpoint and operational workflow gaps, add authenticated browser tests and accessibility checks, and preserve legacy CLI/API compatibility. Do not begin a Cloud tenant model here; Phase O remains deferred until Phase N standalone certification.
+Phase L and Phase M are delivered in the current main history. The next active slice is Phase N — Standalone Packaging and Production Certification; Phase O Cloud/SaaS remains deferred until standalone acceptance, and Phase P remains the final repository organization/cleanup phase.
 
 
 ### Phase K artifact download authorization
@@ -302,3 +302,12 @@ The v1 artifact download route now enforces the stored sensitivity label: PUBLIC
 
 
 Phase K's artifact download authorization correction is verified by workflow [42511179934](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42511179934): PUBLIC/INTERNAL artifacts retain the authenticated-view route; SENSITIVE and unknown classifications require admin; remote clients require a configured bearer token. The backend, frontend and dashboard jobs passed. Remaining deployment checks are trusted-proxy source-IP configuration, cookie/HSTS behavior, production secrets, independent dependency scanning, DNS rebinding and threat-model acceptance.
+
+
+## Current Phase N delivery handoff — 2026-11-09
+
+Live baseline audited: de5cd3b2d2b9412536636c7593bf465eb5d49adc. This delivery introduces the standalone installer, read-only doctor, deterministic v2 source manifest and an execution-class/evidence-aware 11-scenario certification evaluator. The existing Alembic manager and SQLite online backup/restore service remain authoritative.
+
+The Phase N regression tests are included in the hosted backend workflow. Verify the workflow against the exact new commit before calling the changes CI-verified. The working environment could not clone GitHub because DNS/network access to github.com failed and lacked Flask, Netmiko, Paramiko, Scapy and PyShark, so no local backend/frontend execution or real-lab run was performed.
+
+Dependency reproducibility is not fully solved yet: no Python transitive lockfile or frontend npm lockfile exists. Release manifest must continue to report INCOMPLETE_TRANSITIVE_LOCKFILES and production_reproducible=false. The remaining Phase N acceptance gates are clean-machine install/upgrade/backup/restore, production secret/reverse-proxy verification, protected 11-scenario REAL_LAB evidence and target-hardware firmware lifecycle evidence. Phase O must not begin before standalone certification.

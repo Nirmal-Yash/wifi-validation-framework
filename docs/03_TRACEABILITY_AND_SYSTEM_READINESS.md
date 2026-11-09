@@ -455,3 +455,22 @@ Remaining: verify trusted client-IP handling, secure-cookie/HSTS policy behind t
 ### Artifact download authorization hardening — 2026-11-09
 
 The Phase K artifact route now uses persisted `sensitivity_class`: PUBLIC/INTERNAL downloads use the standard authenticated-viewer route; SENSITIVE or unknown classifications require admin authorization. Remote downloads require a configured `NETREGRESS_DASHBOARD_TOKEN` with constant-time bearer comparison even when `NETREGRESS_AUTH_REQUIRED=0`. Results-root containment and SHA-256 verification remain required. Focused route tests cover absent/incorrect/correct remote tokens and OPERATOR-vs-ADMIN authorization. Hosted workflow [42511179934](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42511179934) passed 3/3 jobs, including the full backend API test suite. Reverse-proxy client-IP provenance still requires target deployment verification.
+
+
+## Phase N — Standalone packaging and production certification (2026-11-09)
+
+Live source audit baseline for this delivery: main de5cd3b2d2b9412536636c7593bf465eb5d49adc. The prior hosted workflow [42619974434](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42619974434) completed successfully for that exact baseline. The Phase N changes below require their own workflow result.
+
+### Source implementation
+
+- Standalone install/bootstrap CLI prepares results/reports/captures/backups/diagnostics/certification directories and private local state, with read-only check-only mode, path/symlink checks and fail-closed permissions.
+- RunnerDoctor is a read-only status report. It distinguishes PASS, WARNING, FAIL and NOT_CHECKED; checks required dependencies, configuration/auth setup, private local auth material, runtime paths, SQLite integrity, Alembic revision/schema drift and optional dashboard/lab prerequisites.
+- Release manifest v2 is deterministic for an unchanged checkout, excludes wall-clock generation time, records source commit/tree, runtime compatibility, dependency pin/lockfile state, Alembic revision inventory and tracked file hashes. Manifest verification compares it with the current source.
+- The 11-scenario matrix now carries objective, preconditions, execution method, expected behavior, required evidence types and verification criteria. The strict evaluator checks lifecycle/outcome, controls, required execution classes, current source commit, environment fingerprint, timestamp, command, typed evidence file paths and SHA-256. REAL_LAB and PROTECTED_TARGET also require operator/approval-reference attestations.
+- Existing DatabaseMigrationManager remains the one Alembic authority and existing SQLiteBackupService remains responsible for online backups and integrity checks. Installer/upgrades call these services rather than inventing an alternative schema or backup path.
+
+### Verification boundaries
+
+The focused Phase N regression tests are added to the backend workflow. A green result must be confirmed against the exact Phase N commit before it is described as hosted-CI verified. The local execution environment for this task cannot resolve github.com and does not have the repository's full Python runtime dependencies installed, so local backend/frontend test execution and a local clean clone were not possible.
+
+The manifest reports incomplete transitive dependency locking until a Python lockfile and frontend npm lockfile are committed; it does not set production_reproducible true based only on direct dependency declarations. Source implementation and hardware-free CI do not certify a clean-machine install, reverse-proxy deployment, GNS3/mac80211_hwsim REAL_LAB execution or physical firmware lifecycle. Those acceptance gates remain open until actual evidence is collected.

@@ -18,6 +18,7 @@ on:
       - "scripts/test_dashboard_startup.sh"
       - "scripts/netregress_migrate_legacy.py"
       - "scripts/netregress_db.py"
+      - "scripts/netregress_install.py"
       - "run_all.sh"
       - "tests/test_dashboard_port_contract.py"
       - "tests/test_auth_flow.py"
@@ -42,6 +43,7 @@ on:
       - "scripts/test_dashboard_startup.sh"
       - "scripts/netregress_migrate_legacy.py"
       - "scripts/netregress_db.py"
+      - "scripts/netregress_install.py"
       - "run_all.sh"
       - "tests/test_dashboard_port_contract.py"
       - "tests/test_auth_flow.py"
@@ -142,6 +144,8 @@ jobs:
           tests/test_sync_service.py
           tests/test_sync_queue.py
           tests/test_regression_intelligence.py
+          tests/test_release_readiness.py
+          tests/test_standalone_operations.py
           ci_tests/test_release_gate.py
 
   dashboard-startup-smoke:

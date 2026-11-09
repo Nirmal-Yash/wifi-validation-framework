@@ -338,3 +338,62 @@ def test_test_result_metrics_samples_and_artifacts_roll_back_together(tmp_path):
             ("invalid-artifact",),
         ).fetchone() is None
 
+
+
+def test_database_resolver_loads_secure_repository_dotenv(tmp_path, monkeypatch):
+    expected = tmp_path / "dotenv-runner.sqlite"
+    env_file = tmp_path / ".env"
+    env_file.write_text(f"NETREGRESS_DATABASE_PATH={expected}\n", encoding="utf-8")
+    env_file.chmod(0o600)
+    monkeypatch.delenv("NETREGRESS_DATABASE_PATH", raising=False)
+    monkeypatch.delenv("TEST_DB_PATH", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    assert resolve_database_path(project_root=tmp_path) == expected
+
+
+def test_database_resolver_does_not_override_process_environment_from_dotenv(tmp_path, monkeypatch):
+    dotenv_path = tmp_path / "dotenv.sqlite"
+    explicit_path = tmp_path / "process.sqlite"
+    env_file = tmp_path / ".env"
+    env_file.write_text(f"NETREGRESS_DATABASE_PATH={dotenv_path}\n", encoding="utf-8")
+    env_file.chmod(0o600)
+    monkeypatch.setenv("NETREGRESS_DATABASE_PATH", str(explicit_path))
+    monkeypatch.delenv("TEST_DB_PATH", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    assert resolve_database_path(project_root=tmp_path) == explicit_path
+
+
+def test_database_resolver_rejects_insecure_dotenv_permissions(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text("NETREGRESS_DATABASE_PATH=unsafe.sqlite\n", encoding="utf-8")
+    env_file.chmod(0o644)
+    monkeypatch.delenv("NETREGRESS_DATABASE_PATH", raising=False)
+    monkeypatch.delenv("TEST_DB_PATH", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    with pytest.raises(DatabaseConfigurationError, match="owner-readable only"):
+        resolve_database_path(project_root=tmp_path)
+
+
+def test_database_resolver_rejects_dotenv_symlink(tmp_path, monkeypatch):
+    target = tmp_path / "secrets.env"
+    target.write_text("NETREGRESS_DATABASE_PATH=runner.sqlite\n", encoding="utf-8")
+    target.chmod(0o600)
+    (tmp_path / ".env").symlink_to(target)
+    monkeypatch.delenv("NETREGRESS_DATABASE_PATH", raising=False)
+    monkeypatch.delenv("TEST_DB_PATH", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    with pytest.raises(DatabaseConfigurationError, match="must be a regular file"):
+        resolve_database_path(project_root=tmp_path)
+
+
+def test_explicit_database_path_does_not_load_repository_dotenv(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("NETREGRESS_DATABASE_PATH=unsafe.sqlite\n", encoding="utf-8")
+    env_file.chmod(0o644)
+    explicit = tmp_path / "explicit.sqlite"
+
+    assert resolve_database_path(explicit, project_root=tmp_path) == explicit

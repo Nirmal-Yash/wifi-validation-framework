@@ -49,6 +49,7 @@ Read the canonical documents in this order:
 3. docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md — traceability, audit and readiness
 4. docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md — installation, exact lab reproduction and operations
 5. docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md — architecture decisions and business invariants
+6. docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md — installation, maintenance, recovery and certification operations
 
 Supporting contracts remain separate:
 - docs/EXECUTION_AND_ADAPTERS.md
@@ -57,14 +58,56 @@ Supporting contracts remain separate:
 - docs/PRD.md
 - docs/AGENT_CONTEXT.md
 
-## Current quick start
+## Standalone installation and first startup
+
+Supported Python runtime: 3.11 or newer. The dashboard frontend also requires a Node.js release matching frontend/package.json (currently Node.js 22.22.2+, 24.15+, or 26+).
 
 ~~~bash
 python3 -m venv wifi-venv
 source wifi-venv/bin/activate
-pip install -r requirements.txt
-pytest tests/ -v --firmware-version=v1.0
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+
+# Prepare runtime directories and upgrade the canonical SQLite schema.
+python scripts/netregress_install.py
+
+# Read-only environment and database diagnostics.
+python scripts/netregress_doctor.py
+
+# Start the authenticated local dashboard (first run prompts for OWNER credentials).
+./scripts/start_dashboard.sh
 ~~~
+
+Open the local Vite URL printed by the launcher (default http://127.0.0.1:5173). Press Ctrl+C to stop both frontend and API processes. See docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md for upgrades, backup/restore, release metadata, certification evidence and recovery procedures.
+
+Preflight without creating directories or changing the database:
+
+~~~bash
+python scripts/netregress_install.py --check-only
+~~~
+
+
+## Test execution
+
+Run the full repository test suite from the activated virtual environment:
+
+~~~bash
+python -m pytest tests/ -v --firmware-version=v1.0
+~~~
+
+Run the protected GNS3/mac80211_hwsim suite only on the approved lab host:
+
+~~~bash
+python -m pytest -m real_lab tests/ -v --firmware-version=v1.0
+~~~
+
+Collect protected tests without executing them:
+
+~~~bash
+python -m pytest -m real_lab tests/ --collect-only -q
+~~~
+
+Hardware-free CI, fake-adapter tests and synthetic PCAP fixtures do not replace the protected real-lab execution.
 
 ## Database path configuration
 
@@ -164,3 +207,19 @@ python scripts/netregress_release.py manifest
 ~~~
 
 The release manifest and GitHub Actions gates are source/CI readiness evidence. They do not substitute for protected GNS3/mac80211_hwsim execution or authenticated browser/runtime certification.
+
+## Standalone release and certification
+
+The standalone Runner remains locally authoritative; Cloud/SaaS is not required for local execution. Use the release tools to inspect source readiness and generate a source-bound manifest:
+
+~~~bash
+python scripts/netregress_release.py doctor
+python scripts/netregress_release.py verify
+python scripts/netregress_release.py manifest
+python scripts/netregress_release.py verify-manifest --manifest results/release-manifest.json
+python scripts/netregress_certification.py
+~~~
+
+The manifest is deterministic for an unchanged Git checkout and records the tracked-file inventory and SHA-256 digests. Its production_reproducible field remains false until both Python and frontend transitive dependency lockfiles exist. The current repository does not contain those lockfiles; the direct dependency declarations alone are not a complete lock.
+
+The 11-scenario certification matrix is an execution/evidence gate. Generate the matrix with python scripts/netregress_certification.py; evaluate a scenario-keyed evidence JSON with --evidence. Each required execution must identify the current source commit, a 64-character environment fingerprint, a timezone-aware timestamp, its command, and SHA-256-verified evidence files below results/. REAL_LAB and PROTECTED_TARGET records additionally require operator and approval-reference attestations. A matrix listing or passing hardware-free CI does not certify the protected lab or physical firmware.
