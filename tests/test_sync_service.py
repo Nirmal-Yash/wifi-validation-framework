@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 import pytest
 
 from lib.adapters.fake import FakeDeviceAdapter
@@ -25,7 +26,7 @@ from lib.repositories import (
     SQLiteEventRepository,
 )
 from lib.services import RunService, RunnerSyncService
-from lib.services.sync_service import SyncAck, SyncTransport
+from lib.services.sync_service import HttpSyncTransport, SyncAck, SyncTransport, SyncTransportError
 
 
 class FakeTransport:
@@ -61,6 +62,68 @@ def create_run(db):
     )
     service.complete_run(run.run_id)
     return run.run_id
+
+
+def test_http_sync_transport_does_not_follow_redirects(monkeypatch):
+    observed = {}
+
+    class RedirectResponse:
+        status_code = 302
+        text = "redirect"
+        content = b""
+
+    def post(url, **kwargs):
+        observed["url"] = url
+        observed.update(kwargs)
+        return RedirectResponse()
+
+    monkeypatch.setattr("lib.services.sync_service.requests.post", post)
+    transport = HttpSyncTransport.__new__(HttpSyncTransport)
+    transport.url = "https://collector.example/ingest"
+    transport.bearer_token = "test-token"
+    transport.timeout_sec = 5
+    envelope = SimpleNamespace(
+        payload_json='{"run_id":"run-1"}',
+        idempotency_key="run-1:digest",
+        envelope_id="envelope-1",
+        schema_version="runner-sync.v1",
+    )
+
+    with pytest.raises(SyncTransportError, match="non-retryable sync response 302"):
+        transport.publish(envelope)
+
+    assert observed["allow_redirects"] is False
+    assert observed["headers"]["Authorization"] == "Bearer test-token"
+
+
+def test_http_sync_transport_handles_non_object_ack_body(monkeypatch):
+    class AcceptedResponse:
+        status_code = 202
+        text = ""
+        content = b"[]"
+
+        @staticmethod
+        def json():
+            return []
+
+    monkeypatch.setattr(
+        "lib.services.sync_service.requests.post",
+        lambda *args, **kwargs: AcceptedResponse(),
+    )
+    transport = HttpSyncTransport.__new__(HttpSyncTransport)
+    transport.url = "https://collector.example/ingest"
+    transport.bearer_token = None
+    transport.timeout_sec = 5
+    envelope = SimpleNamespace(
+        payload_json='{"run_id":"run-1"}',
+        idempotency_key="run-1:digest",
+        envelope_id="envelope-1",
+        schema_version="runner-sync.v1",
+    )
+
+    ack = transport.publish(envelope)
+    assert ack.accepted is True
+    assert ack.remote_id is None
 
 
 def test_queue_and_retry_stays_local_when_transport_is_offline(tmp_path):

@@ -70,6 +70,7 @@ class HttpSyncTransport:
                 json=payload,
                 headers=headers,
                 timeout=self.timeout_sec,
+                allow_redirects=False,
             )
         except requests.RequestException as exc:
             raise SyncTransportError(str(exc)) from exc
@@ -77,8 +78,10 @@ class HttpSyncTransport:
             remote_id = None
             if response.content:
                 try:
-                    remote_id = response.json().get("remote_id")
-                except ValueError:
+                    response_body = response.json()
+                    if isinstance(response_body, dict):
+                        remote_id = response_body.get("remote_id")
+                except (TypeError, ValueError):
                     pass
             return SyncAck(True, remote_id=remote_id)
         if response.status_code in {408, 409, 429, 500, 502, 503, 504}:

@@ -130,7 +130,7 @@ class RegressionIntelligenceService:
 
             if base is None:
                 assessments.append(
-                    self._new_test(
+                    self._missing_baseline_result(
                         test_id, baseline_run_id, current_run_id, curr, history
                     )
                 )
@@ -631,23 +631,20 @@ class RegressionIntelligenceService:
             reason="required current TestResult is missing",
         )
 
-    def _new_test(self, test_id, baseline_id, current_id, curr, history):
-        classification = (
-            RegressionClass.NEW_PASS
-            if curr.status is TestResultStatus.PASS
-            else RegressionClass.NEW_FAILURE
-        )
+    def _missing_baseline_result(self, test_id, baseline_id, current_id, curr, history):
+        # Comparable Runs have the same selected suite; a missing historical
+        # TestResult is incomplete baseline evidence, not a newly added test.
         return RegressionAssessment(
             test_id,
             curr.node_id,
             baseline_id,
             current_id,
-            "N/A",
+            "MISSING",
             curr.status.value,
-            classification,
+            RegressionClass.NO_BASELINE,
             self._dimensions(test_id),
             flaky_history=self._flaky(
                 test_id, history.get(test_id, ())
             ),
-            reason="current test has no baseline TestResult",
+            reason="baseline Run has no persisted TestResult for this selected test",
         )

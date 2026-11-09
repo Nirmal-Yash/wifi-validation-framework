@@ -106,6 +106,27 @@ def test_baseline_must_be_completed_and_healthy():
     assert report.comparability.value == "INCOMPATIBLE"
 
 
+def test_missing_baseline_test_result_is_not_classified_as_new_pass():
+    base = run("base")
+    current = run("current")
+    svc = service(
+        base,
+        current,
+        [],
+        [result("current", "current-attempt", TestResultStatus.PASS)],
+    )
+    report = svc.compare_runs(
+        baseline_run_id="base",
+        current_run_id="current",
+        baseline_environment_class="VIRTUAL_WIFI",
+        current_environment_class="VIRTUAL_WIFI",
+    )
+    assessment = report.assessments[0]
+    assert report.comparability.value == "COMPARABLE"
+    assert assessment.classification.value == "NO_BASELINE"
+    assert "no persisted TestResult" in assessment.reason
+
+
 def test_invalid_baseline_evidence_cannot_anchor_regression():
     base = run("base")
     current = run("current")
