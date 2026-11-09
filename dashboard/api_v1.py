@@ -558,7 +558,6 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         } for item in active]})
 
     @api.post("/waivers")
-    def create_waiver():    @api.post("/waivers")
     def create_waiver():
         denied=require("admin")
         if denied is not None: return denied

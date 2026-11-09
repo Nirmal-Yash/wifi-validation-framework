@@ -45,7 +45,7 @@ describe("Registry measurement policy",()=>{
  });
 });
 
-describe("Metric sample representation",()=>describe("Metric sample representation",()=>{
+describe("Metric sample representation",()=>{
   it("includes only valid, finite, non-warm-up numeric samples in summary statistics",()=>{
     const samples=[
       {status:"VALID",value:2},
