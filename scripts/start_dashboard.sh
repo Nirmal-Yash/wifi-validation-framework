@@ -250,9 +250,9 @@ digest = hashlib.sha256()
 for raw_path in sys.argv[1:3]:
     path = pathlib.Path(raw_path)
     digest.update(path.name.encode("utf-8"))
-    digest.update(b"\\0")
+    digest.update(bytes([0]))
     digest.update(path.read_bytes() if path.is_file() else b"<absent>")
-    digest.update(b"\\0")
+    digest.update(bytes([0]))
 digest.update(sys.argv[3].encode("ascii"))
 print(digest.hexdigest())
 PY
@@ -275,7 +275,7 @@ if [[ ! -x "$ROOT_DIR/frontend/node_modules/.bin/vite" ||
     # No committed lockfile exists today; do not generate an unreviewed lock on the checkout.
     (cd "$ROOT_DIR/frontend" && npm install --no-package-lock --no-audit --no-fund --loglevel=warn)
   fi
-  printf '%s\\n' "$EXPECTED_FRONTEND_FINGERPRINT" > "$FRONTEND_DEPS_MARKER"
+  printf '%s\n' "$EXPECTED_FRONTEND_FINGERPRINT" > "$FRONTEND_DEPS_MARKER"
   chmod 600 "$FRONTEND_DEPS_MARKER"
   log_event PASS "Frontend dependency installation completed."
 else

@@ -407,3 +407,5 @@ def test_dashboard_launcher_uses_committed_lock_only_and_fingerprints_install():
     assert "git ls-files --error-unmatch frontend/package-lock.json" in launcher
     assert "npm ci --no-audit" in launcher
     assert "npm install --no-package-lock" in launcher
+    assert 'digest.update(bytes([0]))' in launcher
+    assert r"printf '%s\n'" in launcher
