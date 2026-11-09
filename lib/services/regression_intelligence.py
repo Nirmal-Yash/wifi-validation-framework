@@ -26,7 +26,7 @@ class RegressionIntelligenceError(RuntimeError):
 
 
 LOWER_IS_BETTER_METRICS = ("latency", "rtt", "round_trip", "packet_loss", "loss", "jitter", "recovery_time", "duration", "error_rate", "retransmission", "retry_count")
-HIGHER_IS_BETTER_METRICS = ("throughput", "bandwidth", "goodput", "success_rate", "rssi", "signal_strength", "snr", "data_rate", "tx_rate", "rx_rate")
+HIGHER_IS_BETTER_METRICS = ("throughput", "bandwidth", "goodput", "success_rate", "ping_success", "rssi", "signal_strength", "snr", "data_rate", "tx_rate", "rx_rate")
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,19 +316,25 @@ class RegressionIntelligenceService:
             )
 
         comparisons = []
+        definition = self.test_registry.get(curr.test_id)
         base_metrics = {metric.name: metric for metric in base.metrics}
         current_metrics = {metric.name: metric for metric in curr.metrics}
+        decision_metrics = (definition.decision_metric,) if definition.decision_metric else ()
 
-        for name in sorted(set(base_metrics) | set(current_metrics)):
+        # Diagnostic metrics without a registry decision policy must not affect
+        # release classification. A declared decision metric missing from either
+        # Run is instead a fail-closed, UNVALIDATED comparison.
+        for name in decision_metrics:
             bm = base_metrics.get(name)
             cm = current_metrics.get(name)
             dimension = self._dimensions(curr.test_id)[0]
+            metric_unit = definition.metric_definitions.get(name, "")
 
             if bm is None or cm is None:
                 comparisons.append(
                     RegressionMetricComparison(
                         name,
-                        cm.unit if cm else bm.unit,
+                        cm.unit if cm else bm.unit if bm else metric_unit,
                         None,
                         None,
                         None,

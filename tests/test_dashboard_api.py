@@ -7,6 +7,8 @@ from lib.domain import (
     ArtifactType,
     Criticality,
     EvidenceState,
+    EnvironmentHealthStatus,
+    BusinessOutcome,
     Metric,
     Run,
     Sample,
@@ -136,6 +138,11 @@ def test_regression_and_telemetry_are_read_through_canonical_v1(tmp_path):
     current, current_attempt=create_run(service, "v1.1")
     record(service, baseline, base_attempt, TestResultStatus.PASS, 10)
     record(service, current, current_attempt, TestResultStatus.PASS, 12)
+    for target in (baseline, current):
+        service.begin_lab_health_check(target.run_id)
+        service.record_environment_health(target.run_id, EnvironmentHealthStatus.HEALTHY)
+        service.start_run_after_health(target.run_id)
+        service.complete_run(target.run_id, BusinessOutcome.VALIDATED)
 
     root=tmp_path / "results"
     app=create_app(db_path)

@@ -119,6 +119,32 @@ def test_invalid_baseline_evidence_cannot_anchor_regression():
     assert "baseline evidence" in report.assessments[0].reason
 
 
+def test_missing_registered_decision_metric_is_unvalidated():
+    base = run("base")
+    current = run("current")
+    svc = service(
+        base,
+        current,
+        [result("base", "base-attempt", TestResultStatus.PASS)],
+        [result("current", "current-attempt", TestResultStatus.PASS)],
+    )
+    report = svc.compare_runs(
+        baseline_run_id="base",
+        current_run_id="current",
+        baseline_environment_class="VIRTUAL_WIFI",
+        current_environment_class="VIRTUAL_WIFI",
+    )
+    assessment = report.assessments[0]
+    assert assessment.classification.value == "UNVALIDATED"
+    assert assessment.metric_comparisons[0].classification.value == "UNVALIDATED"
+    assert assessment.metric_comparisons[0].metric_name == "latency"
+
+
+def test_ping_success_metric_direction_is_higher_is_better():
+    svc = RegressionIntelligenceService(run_service=None, test_registry=TestRegistry.default())
+    assert svc._metric_direction(run("base"), "wifi.ping.success", "ping_success") == "HIGHER_IS_BETTER"
+
+
 def test_metric_direction_is_explicit_and_zero_baseline_is_not_guessed():
     from lib.services.regression_intelligence import RegressionIntelligenceError
     assert RegressionIntelligenceService._delta(100, 110, "LOWER_IS_BETTER") == 10.0
