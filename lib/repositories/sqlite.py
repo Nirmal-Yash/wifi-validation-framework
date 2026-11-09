@@ -929,7 +929,6 @@ class SQLiteSyncQueueRepository:
         return [self._to_domain(row) for row in rows]
 
     def list_for_run(self, run_id):
-        with self.database.connection() as connection:    def list_for_run(self, run_id):
         with self.database.connection() as connection:
             rows = connection.execute("SELECT * FROM sync_queue WHERE run_id = ? ORDER BY created_at, envelope_id", (run_id,)).fetchall()
         return [self._to_domain(row) for row in rows]

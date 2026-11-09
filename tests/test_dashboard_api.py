@@ -358,7 +358,7 @@ def test_admin_can_inspect_offline_sync_queue_without_payload_contents(tmp_path)
     assert data["items"] == []
 
 
-def test_waiver_list_returns_only_active_records(tmp_path):def test_waiver_list_returns_only_active_records(tmp_path):
+def test_waiver_list_returns_only_active_records(tmp_path):
     app = make_app(tmp_path / "waivers.sqlite")
     client = app.test_client()
     created = client.post("/api/v1/waivers", json={"scope":"RELEASE","target_id":"*","issue_code":"NO_BASELINE","reason":"approved","expires_at":"2999-01-01T00:00:00+00:00"}, headers={"Idempotency-Key":"phase-l-waiver-create"})

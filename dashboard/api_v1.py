@@ -554,7 +554,6 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         return ok(query.sync_queue(limit))
 
     @api.get("/waivers")
-    def list_waivers():    @api.get("/waivers")
     def list_waivers():
         denied=require("admin")
         if denied is not None:

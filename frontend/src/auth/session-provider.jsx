@@ -19,10 +19,13 @@ export function SessionProvider({children}){
  const expiring=useRef(false);
  const statusRef=useRef(status);
  const channelRef=useRef(null);
+ const sessionEpoch=useRef(0);
 
  useEffect(()=>{statusRef.current=status;},[status]);
 
  const clearLocalSession=useCallback((message="")=>{
+  sessionEpoch.current+=1;
+  statusRef.current="anonymous";
   clearCsrfToken();
   queryClient.clear();
   setUser(null);
@@ -83,19 +86,23 @@ export function SessionProvider({children}){
 
  useEffect(()=>{
   let alive=true;
+  const epoch=++sessionEpoch.current;
   api.me().then(profile=>{
-   if(!alive)return;
+   if(!alive||epoch!==sessionEpoch.current)return;
    if(profile?.username&&profile?.role){
     lastActivity.current=Date.now();
     lastServerActivity.current=Date.now();
+    statusRef.current="authenticated";
     setUser(profile);
     setStatus("authenticated");
    }else{
+    statusRef.current="anonymous";
     setUser(null);
     setStatus("anonymous");
    }
   }).catch(error=>{
-   if(!alive)return;
+   if(!alive||epoch!==sessionEpoch.current)return;
+   statusRef.current="anonymous";
    setUser(null);
    setStatus("anonymous");
    if(error.code!=="UNAUTHENTICATED"&&error.status!==401)setSessionNotice("The Runner API is unavailable. Start the dashboard service and retry.");
@@ -113,13 +120,16 @@ export function SessionProvider({children}){
     lastActivity.current=Date.now();
     setIdleRemaining(IDLE_TIMEOUT_MS);
     setSessionNotice("");
-   }else if(type==="logout"&&statusRef.current==="authenticated"){
+   }else if(type==="logout"){
     clearLocalSession("This session was signed out in another tab.");
-   }else if(type==="login"&&statusRef.current==="anonymous"){
+   }else if(type==="login"&&(statusRef.current==="anonymous"||statusRef.current==="checking")){
+    const epoch=++sessionEpoch.current;
     api.me().then(profile=>{
-     if(!profile?.username||!profile?.role)return;
+     if(epoch!==sessionEpoch.current||!profile?.username||!profile?.role)return;
      lastActivity.current=Date.now();
+     lastServerActivity.current=Date.now();
      setIdleRemaining(IDLE_TIMEOUT_MS);
+     statusRef.current="authenticated";
      setUser(profile);
      setStatus("authenticated");
      setSessionNotice("");

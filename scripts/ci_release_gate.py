@@ -55,7 +55,7 @@ def main():
     if a.baseline_run_id is not None and a.db is None: p.error('--db is required when --baseline-run-id is supplied')
     if a.db is not None and a.baseline_run_id is None: p.error('--baseline-run-id is required when --db is supplied')
     if a.db is not None:
-        report,decision=evaluate_run(a.db,a.baseline_run_id,a.current_run_id,a.environment_class)
+        report,decision=evaluate_run(a.db,a.baseline_run_id,a.current_run_id)
         payload={'status':decision.status.value,'summary':decision.summary,'issues':[asdict(x) for x in decision.issues],
                  'waived_issues':[asdict(x) for x in decision.waived_issues],
                  'regression':{'baseline_run_id':report.baseline_run_id,'current_run_id':report.current_run_id,'comparability':report.comparability.value,'reason':report.reason,

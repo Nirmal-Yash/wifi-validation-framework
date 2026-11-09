@@ -516,7 +516,6 @@ class DashboardQueryService:
         }
 
     def baselines(self):
-        return [    def baselines(self):
         return [
             {
                 "baseline_id": item.baseline_id,
