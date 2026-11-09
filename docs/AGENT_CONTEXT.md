@@ -130,7 +130,7 @@ If the lab cannot be run, say so. Do not represent unit/integration verification
 
 Work directly against the existing `main` branch. Do not create feature, review or temporary branches.
 
-Work directly on `main`; do not create feature, review or temporary branches. Keep each phase free of per-file, micro or scratch commits. When a phase checkpoint is explicitly requested for delivery, package the entire completed phase in exactly one consolidated Conventional Commit on `main` and push once using a fast-forward update. Do not rewrite existing history. Phase L source integration and its validation correction are delivered; Phase M source hardening is delivered pending hosted workflow verification.
+Work directly on `main`; do not create feature, review or temporary branches. Keep each phase free of per-file, micro or scratch commits. When a phase checkpoint is explicitly requested for delivery, package the entire completed phase in exactly one consolidated Conventional Commit on `main` and push once using a fast-forward update. Do not rewrite existing history. Phase L and Phase M source integration passed hosted workflow 42619327281 (backend, frontend/build and dashboard startup jobs 3/3); protected REAL_LAB and production deployment acceptance remain separate.
 
 Update documentation with behavior, data-contract and API changes as each phase is implemented. Keep runtime databases, reports, PCAPs and logs gitignored.
 

@@ -75,7 +75,10 @@ export function OperationsPage({user}){
   try{
    if(confirm==="flash")await mutation.run(()=>api.firmwareOperation({...firmware,compatible_models:firmware.compatible_models.split(",").map(value=>value.trim()).filter(Boolean)}));
    if(confirm==="rollback")await mutation.run(()=>api.firmwareRollback(rollback.device_id,{run_id:rollback.run_id,expected_version:rollback.expected_version,reason:rollback.reason}));
-   if(confirm==="waiver")await mutation.run(()=>api.createWaiver({...waiver,expires_at:waiver.expires_at?new Date(waiver.expires_at).toISOString():null}));
+   if(confirm==="waiver"){
+    await mutation.run(()=>api.createWaiver({...waiver,expires_at:waiver.expires_at?new Date(waiver.expires_at).toISOString():null}));
+    await waiverLoader.reload();
+   }
    setConfirm(null);
   }catch{setConfirm(null);}
  };
