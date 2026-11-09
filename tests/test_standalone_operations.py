@@ -363,3 +363,47 @@ def test_doctor_rejects_local_state_and_credential_symlinks(tmp_path, monkeypatc
     auth = next(check for check in report.checks if check.check_id == "authentication")
     assert auth.status == "FAIL"
     assert "must not be a symlink" in auth.message
+
+
+def test_release_manifest_counts_only_tracked_dependency_lockfiles(tmp_path, monkeypatch):
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (tmp_path / "requirements.txt").write_text("Flask==3.0.0\\n", encoding="utf-8")
+    (frontend / "package.json").write_text(
+        json.dumps({"dependencies": {"react": "19.3.1"}, "devDependencies": {}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "requirements.lock").write_text("Flask==3.0.0\\n", encoding="utf-8")
+    (frontend / "package-lock.json").write_text("{}\\n", encoding="utf-8")
+
+    service = ReleaseManifestService(tmp_path)
+    monkeypatch.setattr(
+        service, "tracked_files",
+        lambda: ("requirements.txt", "frontend/package.json"),
+    )
+    untracked = service._dependency_control()
+    assert untracked["lockfiles_present"] is False
+    assert untracked["python"]["transitive_lockfile"] is None
+    assert untracked["frontend"]["transitive_lockfile"] is None
+
+    monkeypatch.setattr(
+        service, "tracked_files",
+        lambda: (
+            "requirements.txt", "requirements.lock",
+            "frontend/package.json", "frontend/package-lock.json",
+        ),
+    )
+    tracked = service._dependency_control()
+    assert tracked["lockfiles_present"] is True
+    assert tracked["python"]["transitive_lockfile"] == "requirements.lock"
+    assert tracked["frontend"]["transitive_lockfile"] == "frontend/package-lock.json"
+
+
+def test_dashboard_launcher_uses_committed_lock_only_and_fingerprints_install():
+    root = Path(__file__).resolve().parents[1]
+    launcher = (root / "scripts" / "start_dashboard.sh").read_text(encoding="utf-8")
+
+    assert "frontend_install_fingerprint" in launcher
+    assert "git ls-files --error-unmatch frontend/package-lock.json" in launcher
+    assert "npm ci --no-audit" in launcher
+    assert "npm install --no-package-lock" in launcher

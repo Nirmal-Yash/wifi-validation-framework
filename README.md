@@ -49,7 +49,8 @@ Read the canonical documents in this order:
 3. docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md — traceability, audit and readiness
 4. docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md — installation, exact lab reproduction and operations
 5. docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md — architecture decisions and business invariants
-6. docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md — installation, maintenance, recovery and certification operations
+6. docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md — standalone installation, maintenance, recovery and certification operations
+7. docs/UPGRADE_AND_FIRST_RUN_GUIDE.md — upgrade an existing checkout, pull current main, migrate the database, and operate the upgraded Runner
 
 Supporting contracts remain separate:
 - docs/EXECUTION_AND_ADAPTERS.md
@@ -63,7 +64,7 @@ Supporting contracts remain separate:
 Supported Python runtime: 3.11 or newer. The dashboard frontend also requires a Node.js release matching frontend/package.json (currently Node.js 22.22.2+, 24.15+, or 26+).
 
 ~~~bash
-python3 -m venv wifi-venv
+python3.11 -m venv wifi-venv
 source wifi-venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt

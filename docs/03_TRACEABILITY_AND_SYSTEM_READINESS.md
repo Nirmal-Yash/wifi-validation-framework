@@ -172,16 +172,16 @@ The prior release wave established the standalone Runner architecture, but this 
 | Run orchestration | Implemented | Run outcomes and completeness use the latest Attempt and an exact one-to-one match against selected tests; duplicate, missing and unexpected results remain unvalidated. |
 | Evidence | Implemented | TestResult-owned, pytest-node/Attempt-owned, Attempt-wide and Run-wide evidence are scoped explicitly; evidence owned by another test/Attempt, soft-deleted, incomplete, invalid or hash-mismatched cannot satisfy a requirement. |
 | DHCP protocol evidence | Completed in source | DORA, T1 renewal and T2 rebind transaction classification are now correlated from captured DHCP traffic. |
-| EAPOL / Beacon / DNS evidence | Partially operational | Parsers and compatibility wrappers exist with unit coverage; complete production-test live wiring still requires execution-class validation. |
+| EAPOL / Beacon / DNS evidence | Protected test paths source-wired; live acceptance pending | Parsers and protected capture tests are integrated with AP-side monitor/`br0` capture, SFTP/hash verification and Run-scoped evidence. Execute on the protected GNS3/mac80211_hwsim lab before claiming live acceptance. |
 | Telemetry / measurement | Implemented; hosted source/contract verification | Typed immutable WiFi telemetry, source/environment provenance, raw warm-up/measured samples and deterministic statistical evaluation are covered by hosted tests; protected RF claims remain unverified until live lab evidence. |
 | Device / firmware | Completed in source | Hash/model/signature validation, explicit authorization, firmware-operation exclusivity and explicit rollback are enforced. |
 | API / security | Implemented | API authorization, CSRF, rate limiting, durable operational idempotency, SSRF/path confinement and structured readiness are present. |
-| RBAC project scoping | Partially operational | Role/project primitives exist, but a durable multi-project entity and end-to-end Run/Device/Lab project association are not yet modeled. |
+| RBAC project scoping | Standalone single-project operation; multi-project deferred | Local roles and project-scope primitives support the standalone Runner. Durable multi-project ownership and tenant isolation remain full Phase O Cloud/SaaS future scope. |
 | Regression / release gate | Hardened in Phase M source | Healthy completed baselines and valid evidence are required; missing classifications/non-PASS required tests fail closed; waiver exceptions are exact-scope and carry audit references. |
-| Frontend | Phase L/M source integration delivered | React/Vite covers Run attempt/release-gate panels, policy-aware metrics, active waivers and admin offline queue visibility; browser/reverse-proxy runtime remains separate. |
+| Frontend | Phase L/M source integration delivered | React/Vite covers Run attempt/release-gate panels, policy-aware metrics, active waivers and admin offline queue visibility. Hosted launcher/proxy/session smoke passed; production reverse-proxy acceptance remains separate. |
 | Offline synchronization | Hardened in Phase M source | Terminal-only snapshots, SHA-256 verification, atomic idempotency/claims, lease CAS, bounded lease recovery and ACK-safe audit behavior; external HTTPS endpoint acceptance remains separate. |
 | Operational recovery | Implemented | Backup/restore, retention, stale-lock recovery, orphan Run recovery and audit-chain integrity services are present. |
-| Documentation / release tooling | Reconciled | Roadmap is restored through Iteration 30 and release/doctor tooling is source-addressed. |
+| Documentation / release tooling | Source delivered; current runbooks reconciled | Roadmap through Iteration 30, standalone installer, doctor, source manifest, certification evaluator, O/P governance and operator procedures are present. |
 | REAL_LAB certification | Unverified | Protected GNS3/mac80211_hwsim execution evidence must be run in the dedicated real-lab phase. |
 
 ## Phase B — Run and Evidence Correctness (2026-11-03)
@@ -474,3 +474,31 @@ The full Cloud/SaaS programme remains future scope. The combined O/P source slic
 Repository governance cleanup modernizes the legacy run_all.sh and verify_system.py entry points without deleting their names, aligns them to canonical install/release/dashboard commands, strengthens .gitignore, indexes the standalone operator runbook, adds required source/test paths to the release manifest and introduces regression tests for read-only status/cleanup contracts.
 
 Do not claim Cloud receiver, tenant authorization, PostgreSQL, distributed identity/session infrastructure, remote release control or artifact binary transfer. Those remain future Phase O work. Do not claim that transitive dependency locks or clean-machine/REAL_LAB production certification are complete.
+
+
+## Current repository and acceptance audit — 2026-11-09
+
+> **Authority note:** This section supersedes older readiness snapshots and historical gap statements above where they conflict. Historical audit scores and implementation snapshots are retained for traceability; they are not current certification results.
+
+### Current source and hosted-CI state
+
+- The B–P source programme is present on the single `main` branch. Phase A is the historical protected behavioral baseline, not a separate upgrade/install command. Phases B–N are implemented as source/CI slices; Phase O's full Cloud/SaaS control plane remains intentionally deferred; Phase P repository governance is delivered.
+- The bounded Phase O addition is local read-only sync queue status only. Synchronization delivery remains manual, outbound-only, and requires a separately configured approved HTTPS receiver. No Cloud receiver, tenant database, PostgreSQL repository, distributed session service or inbound remote Runner control is included.
+- The latest completed workflow before this documentation reconciliation was [42632716718](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42632716718) on commit `a87bfd136d9ca47bdb5495f5c7aee416da2d191a`: all 3 jobs passed; backend 367 passed / 7 skipped / 16 warnings; frontend 31 passed across 8 files and production build passed; dashboard launcher, Vite proxy and authenticated session smoke passed.
+- The seven skipped cases are protected real-lab operations. Their skip status is not a PASS and does not certify GNS3/mac80211_hwsim, physical RF or firmware.
+- Protected DHCP, EAPOL/Beacon/RSN and DNS capture paths are source-integrated. DHCP T1/T2 still requires a separately approved short-lease lab window; the normal 12-hour lease must not be altered by ordinary setup or CI. EAPOL/Beacon and DNS capture paths still require protected live-lab execution.
+- Phase L/M browser source integration has hosted smoke coverage. That does not verify a production HTTPS reverse proxy, HSTS, secure-cookie behavior, trusted forwarded client IP, production secrets or an independent threat-model review.
+
+### Remaining acceptance work (not represented as source completion)
+
+1. **Dependency reproducibility:** there is no tracked complete Python transitive lockfile or a frontend npm lockfile. Several Python direct dependencies are declared by ranges. The release manifest must continue to set `production_reproducible=false`. Lockfiles must be generated and reviewed for an explicitly supported platform/runtime, followed by clean-machine installs and CI; do not invent a resolver snapshot.
+2. **Clean-machine rehearsal:** install from a clean Ubuntu host, upgrade a copy of an older database, verify automatic and explicit pre-upgrade backups, and rehearse restore with all Runner processes stopped.
+3. **Production deployment/security acceptance:** deploy only behind an independently reviewed HTTPS reverse proxy; validate secure cookies, HSTS, trusted-proxy client-IP configuration, secret provisioning/rotation, firewall boundaries, backups and an independent dependency/threat-model review.
+4. **Protected lab certification:** run the current required real-lab suite on the approved GNS3/mac80211_hwsim host, retain original PCAP/hash/evidence, and complete the operator-approved DHCP renewal/rebind window. Do not substitute synthetic PCAPs or hosted CI.
+5. **Physical target certification:** where a real device adapter is in scope, run authorized image verification, flash, reboot, version verification and rollback on the specified hardware; retain operator and approval evidence. Fake adapters are contract tests only.
+6. **Runner version identity:** the release manifest still reports the Runner application version as not declared. The frontend package version is not a Runner release version.
+7. **Cloud/SaaS:** full Phase O remains future scope until standalone operational acceptance is complete. The standalone Runner does not require Cloud to execute locally.
+
+### Readiness interpretation
+
+`SOURCE_IMPLEMENTED`, `HOSTED_CI_GREEN`, `CLEAN_MACHINE_REHEARSED`, `REAL_LAB_CERTIFIED`, `PHYSICAL_TARGET_CERTIFIED` and `PRODUCTION_RUNTIME_CERTIFIED` are separate states. A release may be source/CI verified while remaining uncertified for live lab, physical target or production deployment.

@@ -240,15 +240,46 @@ if port_is_busy "$NETREGRESS_FRONTEND_PORT"; then
 fi
 log_event PASS "Frontend port $NETREGRESS_FRONTEND_PORT is available."
 
+frontend_install_fingerprint() {
+  "$PYTHON_BIN" - "$ROOT_DIR/frontend/package.json" "$ROOT_DIR/frontend/.npmrc" "$NODE_VERSION" <<'PY'
+import hashlib
+import pathlib
+import sys
+
+digest = hashlib.sha256()
+for raw_path in sys.argv[1:3]:
+    path = pathlib.Path(raw_path)
+    digest.update(path.name.encode("utf-8"))
+    digest.update(b"\\0")
+    digest.update(path.read_bytes() if path.is_file() else b"<absent>")
+    digest.update(b"\\0")
+digest.update(sys.argv[3].encode("ascii"))
+print(digest.hexdigest())
+PY
+}
+
+FRONTEND_DEPS_MARKER="$ROOT_DIR/frontend/node_modules/.netregress-install-fingerprint"
+EXPECTED_FRONTEND_FINGERPRINT="$(frontend_install_fingerprint)"
+INSTALLED_FRONTEND_FINGERPRINT=""
+if [[ -f "$FRONTEND_DEPS_MARKER" ]]; then
+  INSTALLED_FRONTEND_FINGERPRINT="$(cat "$FRONTEND_DEPS_MARKER")"
+fi
+
 if [[ ! -x "$ROOT_DIR/frontend/node_modules/.bin/vite" ||
-      ! -f "$ROOT_DIR/frontend/node_modules/.package-lock.json" ||
-      "$ROOT_DIR/frontend/package.json" -nt "$ROOT_DIR/frontend/node_modules/.package-lock.json" ||
-      "$ROOT_DIR/frontend/.npmrc" -nt "$ROOT_DIR/frontend/node_modules/.package-lock.json" ]]; then
+      "$INSTALLED_FRONTEND_FINGERPRINT" != "$EXPECTED_FRONTEND_FINGERPRINT" ]]; then
   log_event INFO "Frontend dependencies are missing or stale; installing the declared dependency graph."
-  (cd "$ROOT_DIR/frontend" && npm install --no-audit --no-fund --loglevel=warn)
+  if git ls-files --error-unmatch frontend/package-lock.json >/dev/null 2>&1 &&
+     [[ -f "$ROOT_DIR/frontend/package-lock.json" ]]; then
+    (cd "$ROOT_DIR/frontend" && npm ci --no-audit --no-fund --loglevel=warn)
+  else
+    # No committed lockfile exists today; do not generate an unreviewed lock on the checkout.
+    (cd "$ROOT_DIR/frontend" && npm install --no-package-lock --no-audit --no-fund --loglevel=warn)
+  fi
+  printf '%s\\n' "$EXPECTED_FRONTEND_FINGERPRINT" > "$FRONTEND_DEPS_MARKER"
+  chmod 600 "$FRONTEND_DEPS_MARKER"
   log_event PASS "Frontend dependency installation completed."
 else
-  log_event PASS "Frontend dependencies are present and current."
+  log_event PASS "Frontend dependencies match package.json, .npmrc and the active Node.js runtime."
 fi
 
 if [[ ! -f "$AUTH_FILE" ]]; then

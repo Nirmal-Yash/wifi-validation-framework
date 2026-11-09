@@ -198,3 +198,6 @@ def test_documentation_index_includes_standalone_operations():
 
     assert runbook.is_file()
     assert "STANDALONE_INSTALLATION_AND_OPERATIONS.md" in index
+    upgrade_guide = root / "docs" / "UPGRADE_AND_FIRST_RUN_GUIDE.md"
+    assert upgrade_guide.is_file()
+    assert "UPGRADE_AND_FIRST_RUN_GUIDE.md" in index

@@ -2,6 +2,8 @@
 
 ## 1. Purpose
 
+Current operator upgrade and first-run instructions: `docs/UPGRADE_AND_FIRST_RUN_GUIDE.md`.
+
 This is the primary repository context for future engineers and coding agents.
 
 Read order:
@@ -136,13 +138,13 @@ Update documentation with behavior, data-contract and API changes as each phase 
 
 ## 13. Current phase sequence and next step
 
-The authoritative B–P sequence is in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. Phases B–K have source/hosted-CI implementation on `main`; protected real-lab/hardware gates remain distinct from hosted CI. Phase L integrates API/OpenAPI/React and its contract corrections. Phase M hardens baseline comparability, fail-closed release decisions, scoped waiver evidence and offline sync queue recovery.
+The authoritative B–P sequence is in `docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md`. B–N source implementation is delivered; the bounded O/P work is delivered on the single `main` branch. The latest verified pre-guide commit was `a87bfd136d9ca47bdb5495f5c7aee416da2d191a`; hosted workflow [42632716718](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42632716718) passed all three jobs (backend 367 passed / 7 skipped, frontend 31 passed / build passed, dashboard smoke passed). Re-check current `main` and the exact-commit Actions run before later claims. Full Phase O Cloud/SaaS remains future scope; do not introduce a tenant model or inbound control plane in the standalone Runner.
 
 **Phase H source implementation is delivered; its protected live-lab acceptance remains outstanding.** The protocol analyzers enforce DHCP transaction sequencing and destination-based T1/T2 classification, directional/replay-paired EAPOL four-way handshakes, target Beacon identity and valid RSN parsing, and DNS question/five-tuple/time correlation. Protected live capture tests collect EAPOL/Beacon on an AP-side monitor interface sharing the existing AP PHY and DNS on AP `br0`, using foreground Paramiko tcpdump, SFTP, remote/local SHA-256 checks and Run-scoped PCAP/protocol JSON artifacts.
 
 The protected GNS3/mac80211_hwsim execution has not yet been performed in this environment. Phase I source/CI work and Phase J device/firmware lifecycle work may proceed while Phase H live evidence is pending; combined protected acceptance and physical RF/performance/recovery claims still require Phase H live evidence first. The current dnsmasq lease is 12 hours; live T1/T2 testing requires an explicit operator-approved short-lease window and must not mutate the normal lab configuration implicitly. Do not create synthetic evidence for live certification.
 
-The established topology remains phy0=AP, phy1=client, management eth1, WiFi data path wlan0 and AP DHCP/DNS bridge br0. Existing DHCP foreground capture and pytest node IDs remain protected. Provisioning and cleanup remain explicit; no source/CI result substitutes for the real-lab gate. Cloud/SaaS remains deferred until standalone Runner certification; Phase P remains final repository cleanup.
+The established topology remains phy0=AP, phy1=client, management eth1, WiFi data path wlan0 and AP DHCP/DNS bridge br0. Existing DHCP foreground capture and pytest node IDs remain protected. Provisioning and cleanup remain explicit; no source/CI result substitutes for the real-lab gate. Cloud/SaaS remains deferred until standalone Runner certification. Phase P source/governance cleanup is complete. Remaining work is operational acceptance, not another source-phase replay: dependency lockfiles and clean-machine rehearsal, production reverse-proxy/secrets review, protected REAL_LAB evidence and (where applicable) physical target firmware certification. Follow `docs/UPGRADE_AND_FIRST_RUN_GUIDE.md` for current installation and upgrade.
 
 ## 14. Iteration 6 status
 

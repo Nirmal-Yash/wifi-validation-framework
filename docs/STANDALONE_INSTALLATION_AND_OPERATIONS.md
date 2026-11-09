@@ -19,7 +19,7 @@ Optional protected-lab programs include ip, iw, tcpdump, ssh, iperf3 and tshark.
 From the repository root:
 
 ~~~bash
-python3 -m venv wifi-venv
+python3.11 -m venv wifi-venv
 source wifi-venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
@@ -46,9 +46,15 @@ Install the frontend toolchain after Node/npm have been installed:
 
 ~~~bash
 cd frontend
-npm install --no-audit --no-fund
+if [ -f package-lock.json ]; then
+  npm ci --no-audit --no-fund
+else
+  npm install --no-package-lock --no-audit --no-fund
+fi
 cd ..
 ~~~
+
+The current repository does not track `frontend/package-lock.json`; use the no-lock branch above. The dashboard launcher follows the same policy. This avoids creating an unreviewed lockfile on a developer checkout; it does **not** make the dependency graph reproducible. The release manifest continues to report incomplete transitive lockfiles until reviewed Python and npm lockfiles are deliberately committed.
 
 The dashboard launcher also installs frontend dependencies when they are missing or stale. Because the npm lockfile is not present, this is not a transitive-lockfile reproducible install yet.
 
@@ -153,12 +159,17 @@ A successful file copy is not recovery acceptance. Confirm schema state, applica
 
 ## 7. Upgrade procedure
 
-For a source checkout, fetch and fast-forward the intended release; do not merge unrelated local work:
+For an existing source checkout, inspect local changes before pulling. Preserve or reconcile work you need; do not discard it or reset the branch:
 
 ~~~bash
-git fetch origin
+git status --short
+git branch --show-current
+git fetch --prune origin
 git pull --ff-only origin main
+git rev-parse HEAD
 ~~~
+
+The expected branch is `main`. A fresh checkout starts with `git clone https://github.com/Nirmal-Yash/wifi-validation-framework.git`, followed by `git pull --ff-only origin main`.
 
 With the supported virtual environment active, update the declared dependencies:
 

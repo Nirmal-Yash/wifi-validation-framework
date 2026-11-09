@@ -22,6 +22,7 @@ DEFAULT_REQUIRED_PATHS = (
     "docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md",
     "docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md",
     "docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md",
+    "docs/UPGRADE_AND_FIRST_RUN_GUIDE.md",
     "docs/SECURITY_AND_SAAS.md",
     "docs/openapi.yaml",
     "frontend/package.json",
@@ -134,11 +135,15 @@ class ReleaseManifestService:
                     if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", version):
                         frontend_unpinned.append(f"{name}@{version}")
 
+        # Only a lockfile committed to this checkout is part of the release input.
+        # Local npm/pip tooling may create untracked lockfiles; they must not make
+        # a source manifest claim dependency reproducibility.
+        tracked_paths = set(self.tracked_files())
         python_lock = next(
             (
                 name
                 for name in ("requirements.lock", "requirements-full.lock", "uv.lock", "poetry.lock")
-                if (self.root / name).is_file()
+                if name in tracked_paths and (self.root / name).is_file()
             ),
             None,
         )
@@ -146,7 +151,7 @@ class ReleaseManifestService:
             (
                 name
                 for name in ("frontend/package-lock.json", "frontend/pnpm-lock.yaml", "frontend/yarn.lock")
-                if (self.root / name).is_file()
+                if name in tracked_paths and (self.root / name).is_file()
             ),
             None,
         )

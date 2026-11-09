@@ -65,6 +65,8 @@ This document covers **all manual steps** required to set up the virtual lab and
 
 ## 2. Ubuntu 22.04 Base Setup
 
+The current NetRegress Runner requires **Python 3.11 or newer** (hosted backend CI uses Python 3.12). A stock Ubuntu 22.04 image may provide Python 3.10; do not change or replace the OS-managed `/usr/bin/python3` symlink. Install a supported Python 3.11+ interpreter using your approved package or Python installation method, then use that interpreter explicitly when creating the project virtual environment.
+
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y software-properties-common curl wget git vim net-tools
@@ -74,7 +76,7 @@ Verify:
 
 ```bash
 lsb_release -a    # Should show Ubuntu 22.04
-python3 --version # Should show 3.10+
+python3.11 --version # Required by the current Runner (Python 3.11+)
 ```
 
 ---

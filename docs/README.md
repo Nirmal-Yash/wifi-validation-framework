@@ -10,6 +10,7 @@
 | 04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md | Installation, exact lab reproduction, testing, operations, troubleshooting and recovery | Operator/runtime procedure |
 | 05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md | Frozen architecture decisions, product semantics and business invariants | Upstream design/business semantics |
 | STANDALONE_INSTALLATION_AND_OPERATIONS.md | Standalone install, configuration, health, backup/restore, release and certification operations | Standalone operator runbook |
+| UPGRADE_AND_FIRST_RUN_GUIDE.md | Safe upgrade from older checkouts, current-main pull, installation, database migration, first startup, execution and real-world operations | Upgrade / first-run procedure |
 
 ## Separate contracts
 
