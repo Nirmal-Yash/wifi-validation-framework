@@ -447,6 +447,19 @@ def test_dashboard_launcher_uses_committed_lock_only_and_fingerprints_install():
     assert 'digest.update(bytes([0]))' in launcher
     assert r"printf '%s\n'" in launcher
 
+def test_dependency_lock_generator_preserves_backups_and_validates_clean_installs():
+    root = Path(__file__).resolve().parents[1]
+    generator = (root / "scripts" / "generate_dependency_locks.sh").read_text(encoding="utf-8")
+
+    assert "cp -p -- frontend/package-lock.json" in generator
+    assert "results/backups" in generator
+    assert "--generate-hashes" in generator
+    assert "--require-hashes" in generator
+    assert "npm install" in generator
+    assert "--package-lock-only" in generator
+    assert "npm ci --dry-run" in generator
+
+
 def test_lab_reprovision_requires_explicit_test_mode_and_waits_for_clock():
     root = Path(__file__).resolve().parents[1]
     script = (root / "wifi_lab_reprovision_robust.sh").read_text(encoding="utf-8")
