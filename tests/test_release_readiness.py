@@ -21,7 +21,7 @@ def test_doctor_has_core_checks_and_distinguishes_unchecked(tmp_path, monkeypatc
 
 def test_release_manifest_schema_is_stable():
     payload = ReleaseManifestService(Path(__file__).resolve().parents[1]).manifest()
-    assert payload["schema_version"] == "netregress-release-manifest.v2"
+    assert payload["schema_version"] == "netregress-release-manifest.v3"
     assert payload["source"]["commit"]
     assert payload["tracked_file_count"] > 0
     assert payload["required_paths_present"] is True
@@ -31,5 +31,5 @@ def test_release_manifest_schema_is_stable():
     assert payload["application"]["version"] is None
     assert payload["application"]["version_status"] == "NOT_DECLARED_IN_REPOSITORY_METADATA"
     assert payload["dependencies"]["lockfiles_present"] is False
-    assert payload["dependencies"]["python"]["direct_dependencies_pinned"] is False
+    assert payload["dependencies"]["python"]["direct_dependencies_pinned"] is True
     assert payload["production_reproducible"] is False
