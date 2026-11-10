@@ -455,7 +455,7 @@ def test_dependency_lock_generator_preserves_backups_and_validates_clean_install
     assert "results/backups" in generator
     assert "--generate-hashes" in generator
     assert "--require-hashes" in generator
-    assert "npm install" in generator
+    assert 'npm --prefix "$ROOT_DIR/frontend" install' in generator
     assert "--package-lock-only" in generator
     assert "npm ci --dry-run" in generator
 
