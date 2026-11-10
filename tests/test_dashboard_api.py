@@ -145,7 +145,7 @@ def test_regression_and_telemetry_are_read_through_canonical_v1(tmp_path):
         service.complete_run(target.run_id, BusinessOutcome.VALIDATED)
 
     root=tmp_path / "results"
-    app=create_app(db_path)
+    app=make_app(db_path)
     query=app.config["NETREGRESS_QUERY"]
     query.results_root=root
     register_telemetry(db, baseline.run_id, root, "VIRTUAL_WIFI")
@@ -181,7 +181,7 @@ def test_release_gate_is_available_through_canonical_v1(tmp_path):
     service.record_environment_health(current.run_id, __import__("lib.domain", fromlist=["EnvironmentHealthStatus"]).EnvironmentHealthStatus.HEALTHY)
     service.start_run_after_health(current.run_id)
     service.complete_run(current.run_id, __import__("lib.domain", fromlist=["BusinessOutcome"]).BusinessOutcome.VALIDATED)
-    app = create_app(db_path)
+    app = make_app(db_path)
     response = app.test_client().get(
         "/api/v1/runs/" + current.run_id + "/release-gate?baseline_run_id=" + baseline.run_id
     )
@@ -203,7 +203,7 @@ def test_artifact_json_fails_closed_after_integrity_change(tmp_path):
     path=Path(artifact.path)
     path.write_text(path.read_text(encoding="utf-8") + "tampered", encoding="utf-8")
 
-    app=create_app(db_path)
+    app=make_app(db_path)
     app.config["NETREGRESS_QUERY"].results_root=root
     response=app.test_client().get("/api/v1/runs/" + run.run_id + "/telemetry")
     assert response.status_code == 200
@@ -211,12 +211,12 @@ def test_artifact_json_fails_closed_after_integrity_change(tmp_path):
 
 
 def test_legacy_api_surface_remains_available(tmp_path):
-    app=create_app(tmp_path / "db.sqlite")
+    app=make_app(tmp_path / "db.sqlite")
     response=app.test_client().get("/api/results")
     assert response.status_code == 200
 
 def test_operational_mutation_idempotency_is_durable_and_payload_bound(tmp_path):
-    app=create_app(tmp_path / "db.sqlite")
+    app=make_app(tmp_path / "db.sqlite")
     client=app.test_client()
     payload={"scope":"RELEASE","target_id":"*","issue_code":"NON_PASSING_TEST","reason":"approved"}
     first=client.post("/api/v1/waivers",json=payload,headers={"Idempotency-Key":"waiver-test-1"})

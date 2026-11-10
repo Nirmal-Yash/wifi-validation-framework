@@ -42,25 +42,41 @@ GNS3_PROJECT_NAME="${GNS3_PROJECT_NAME:-WiFi-Regression-Lab}"
 usage() {
   cat <<'EOF'
 Usage:
-  ./wifi_lab_reprovision_robust.sh
-  ./wifi_lab_reprovision_robust.sh --setup-only
-  ./wifi_lab_reprovision_robust.sh --repro-test
+  ./wifi_lab_reprovision_robust.sh                         # provision + validate; no pytest
+  ./wifi_lab_reprovision_robust.sh --run-ci-tests          # hardware-free regression tests
+  ./wifi_lab_reprovision_robust.sh --run-real-lab-tests    # protected real_lab tests
+  ./wifi_lab_reprovision_robust.sh --run-full-suite        # every test, including real_lab
+  ./wifi_lab_reprovision_robust.sh --setup-only            # compatibility alias for the default
+  ./wifi_lab_reprovision_robust.sh --repro-test            # destructive runtime reset + full suite
   ./wifi_lab_reprovision_robust.sh --force-normalize-config
   ./wifi_lab_reprovision_robust.sh --help
 
-Default: preflight -> repair/configure local lab -> validate real paths -> run all tests.
---setup-only: preflight -> repair/configure -> validate, but do not run pytest.
---repro-test: stop GNS3 lab nodes, clear runtime WiFi state, reprovision, run full pytest.
+Default: preflight -> repair/configure local lab -> validate real paths; never starts pytest.
+Test execution is opt-in through exactly one --run-* flag.
+--repro-test: stop GNS3 lab nodes, clear runtime WiFi state, reprovision, and run the full suite.
 --force-normalize-config: rewrite configs/*.yaml to lab constants (default: validate only).
 EOF
 }
 
-RUN_TESTS=1
+RUN_TESTS_MODE="none"
+TEST_MODE_SELECTED=0
 FORCE_NORMALIZE_CONFIG=0
 REPRO_TEST=0
+select_test_mode() {
+  if ((TEST_MODE_SELECTED)); then
+    echo "ERROR: Select at most one test mode." >&2
+    usage >&2
+    exit 2
+  fi
+  TEST_MODE_SELECTED=1
+  RUN_TESTS_MODE="$1"
+}
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --setup-only) RUN_TESTS=0 ;;
+    --setup-only) select_test_mode "none" ;;
+    --run-ci-tests) select_test_mode "ci" ;;
+    --run-real-lab-tests) select_test_mode "real-lab" ;;
+    --run-full-suite) select_test_mode "full" ;;
     --repro-test) REPRO_TEST=1 ;;
     --force-normalize-config) FORCE_NORMALIZE_CONFIG=1 ;;
     --help|-h) usage; exit 0 ;;
@@ -69,6 +85,13 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+if ((REPRO_TEST)); then
+  if ((TEST_MODE_SELECTED)) && [[ "$RUN_TESTS_MODE" != "full" ]]; then
+    echo "ERROR: --repro-test cannot be combined with a narrower test mode." >&2
+    exit 2
+  fi
+  RUN_TESTS_MODE="full"
+fi
 
 if [[ $EUID -eq 0 ]]; then
   echo "ERROR: Run as the normal Ubuntu user, not with sudo." >&2
@@ -901,7 +924,7 @@ fi
 require_cmd curl
 command -v apt-get >/dev/null 2>&1 || die "apt-get is unavailable; this script targets Ubuntu hosts."
 missing=()
-for p in docker.io libvirt-clients libvirt-daemon-system iproute2 iputils-ping iw openssh-client python3-venv python3-pip curl; do
+for p in docker.io libvirt-clients libvirt-daemon-system iproute2 iputils-ping iw openssh-client python3-venv python3-pip curl chrony; do
   dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'install ok installed' || missing+=("$p")
 done
 if ((${#missing[@]})); then
@@ -913,8 +936,18 @@ if ((${#missing[@]})); then
   fi
 fi
 
-for c in docker virsh ip iw ping python3 curl; do require_cmd "$c"; done
+for c in docker virsh ip iw ping python3 curl chronyc systemctl timedatectl; do require_cmd "$c"; done
 "${DOCKER[@]}" info >/dev/null 2>&1 || die "Docker daemon is unavailable."
+
+# Chrony must be enabled and synchronized before the Run's BEFORE health snapshot.
+if ((HAVE_SUDO_N)); then
+  sudo -n systemctl enable --now chrony
+else
+  systemctl is-active --quiet chrony || die "Chrony is not active; enable it with: sudo systemctl enable --now chrony"
+fi
+chronyc waitsync 10 0.5 || die "Host clock did not synchronize through Chrony within the bounded 10 checks."
+timedatectl show -p NTPSynchronized --value | grep -qx "yes" \
+  || die "Chrony reported readiness but timedatectl still reports an unsynchronized host clock."
 
 if ! "${VIRSH[@]}" net-info default >/dev/null 2>&1; then
   cat >/tmp/wifi-default.xml <<XML
@@ -1276,7 +1309,7 @@ fi
 dexec "$CLIENT" ip route | grep -Eq "^default[[:space:]]+via[[:space:]]+${LAB_GW}([[:space:]].*)?[[:space:]]+dev[[:space:]]+wlan0([[:space:]]|$)" \
   || die "Client default route via ${LAB_GW} on wlan0 is missing."
 
-if (( RUN_TESTS == 0 )); then
+if [[ "$RUN_TESTS_MODE" == "none" ]]; then
   step "Setup-only completed"
   echo "Client management: ${CLIENT_MGMT_IP}"
   echo "Client WiFi: ${CLIENT_WIFI_IP}"
@@ -1288,10 +1321,25 @@ if (( RUN_TESTS == 0 )); then
 fi
 
 # ---------------------------------------------------------------------------
-# 11. FULL REAL TEST SUITE
+# 11. EXPLICIT TEST EXECUTION
 # ---------------------------------------------------------------------------
-step "Run the complete real regression suite"
-"$PYTHON" -m pytest tests/ -v --firmware-version=v1.0
+case "$RUN_TESTS_MODE" in
+  ci)
+    step "Run hardware-free regression suite"
+    NETREGRESS_CI_MODE=1 "$PYTHON" -m pytest tests/ -m "not real_lab" -v --firmware-version=v1.0
+    ;;
+  real-lab)
+    step "Run protected real_lab regression suite"
+    "$PYTHON" -m pytest -m real_lab tests/ -v --firmware-version=v1.0
+    ;;
+  full)
+    step "Run the complete regression suite"
+    "$PYTHON" -m pytest tests/ -v --firmware-version=v1.0
+    ;;
+  *)
+    die "Unknown test execution mode: $RUN_TESTS_MODE"
+    ;;
+esac
 
 step "Final service and DHCP verification"
 "${VIRSH[@]}" net-dhcp-leases default || true

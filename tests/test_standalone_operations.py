@@ -411,6 +411,20 @@ def test_dashboard_launcher_uses_committed_lock_only_and_fingerprints_install():
     assert 'digest.update(bytes([0]))' in launcher
     assert r"printf '%s\n'" in launcher
 
+def test_lab_reprovision_requires_explicit_test_mode_and_waits_for_clock():
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "wifi_lab_reprovision_robust.sh").read_text(encoding="utf-8")
+
+    assert 'RUN_TESTS_MODE="none"' in script
+    assert "--run-ci-tests" in script
+    assert "--run-real-lab-tests" in script
+    assert "--run-full-suite" in script
+    assert 'systemctl enable --now chrony' in script
+    assert "chronyc waitsync 10 0.5" in script
+    assert 'pytest -m real_lab tests/' in script
+    assert 'NETREGRESS_CI_MODE=1' in script
+
+
 def test_doctor_database_integrity_accepts_relative_database_path(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("NETREGRESS_AUTH_REQUIRED", "0")

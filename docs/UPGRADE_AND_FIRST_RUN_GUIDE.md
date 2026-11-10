@@ -234,14 +234,16 @@ Topology compatibility:
 - `phy0` is AP, `phy1` is client; AP/client data path uses `wlan0`; management remains separate on `eth1` / `10.10.10.30`.
 - DHCP/DNS capture remains on AP bridge `br0`.
 
-Provisioning remains explicit, never automatic on Run preparation:
+Provisioning remains explicit, never automatic on Run preparation. The default (or the compatibility --setup-only option) provisions and validates without running pytest:
 
 ```bash
 ./wifi_lab_reprovision_robust.sh --setup-only
-./wifi_lab_reprovision_robust.sh --repro-test
+./wifi_lab_reprovision_robust.sh --run-ci-tests
+./wifi_lab_reprovision_robust.sh --run-real-lab-tests
+./wifi_lab_reprovision_robust.sh --run-full-suite
 ```
 
-Run as the normal Ubuntu user, not with sudo; use the lab runbook for full reprovision. Preserve foreground Paramiko tcpdump, SFTP transfer and SHA-256 PCAP verification. Do not change the normal 12-hour DHCP lease; T1/T2 capture needs an approved isolated short-lease window and restoration.
+Run as the normal Ubuntu user, not with sudo. --repro-test stops GNS3 nodes and resets runtime Wi-Fi state before running the full suite; use it only with explicit lab-maintenance approval. Preserve foreground Paramiko tcpdump, SFTP transfer and SHA-256 PCAP verification. Preserve foreground Paramiko tcpdump, SFTP transfer and SHA-256 PCAP verification. Do not change the normal 12-hour DHCP lease; T1/T2 capture needs an approved isolated short-lease window and restoration.
 
 ### 8.3 Firmware operations
 

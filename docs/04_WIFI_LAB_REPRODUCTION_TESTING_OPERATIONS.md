@@ -628,13 +628,19 @@ chmod +x wifi_lab_reprovision_robust.sh scripts/audit_gns3_lab.sh
 # Optional audit
 ./scripts/audit_gns3_lab.sh
 
-# Provision + validate only
+# Provision + validate only (default behavior)
 ./wifi_lab_reprovision_robust.sh --setup-only
 
-# Full provision + pytest
-./wifi_lab_reprovision_robust.sh
+# Hardware-free regression suite
+./wifi_lab_reprovision_robust.sh --run-ci-tests
 
-# Reproducibility test (stop nodes, reset hwsim, reprovision, pytest)
+# Protected GNS3/mac80211_hwsim suite
+./wifi_lab_reprovision_robust.sh --run-real-lab-tests
+
+# Entire suite, including protected real-lab tests
+./wifi_lab_reprovision_robust.sh --run-full-suite
+
+# Destructive reproducibility reset (requires explicit lab-maintenance approval)
 ./wifi_lab_reprovision_robust.sh --repro-test
 
 # Rewrite configs if intentionally changed

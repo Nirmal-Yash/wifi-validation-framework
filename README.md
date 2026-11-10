@@ -179,13 +179,16 @@ A restore creates a verified pre-restore copy of the current database. Schema do
 
 ## Lab provisioning
 
+Run as the normal Ubuntu user, not with sudo. The default provisions and validates the lab but does not start pytest. Select one test mode explicitly:
+
 ~~~bash
 ./wifi_lab_reprovision_robust.sh
-./wifi_lab_reprovision_robust.sh --setup-only
-./wifi_lab_reprovision_robust.sh --repro-test
+./wifi_lab_reprovision_robust.sh --run-ci-tests
+./wifi_lab_reprovision_robust.sh --run-real-lab-tests
+./wifi_lab_reprovision_robust.sh --run-full-suite
 ~~~
 
-Run the provisioning script as the normal Ubuntu user, not with sudo.
+--repro-test is a separate destructive recovery operation: it stops GNS3 nodes, resets runtime Wi-Fi state and runs the complete suite. Use it only with explicit lab-maintenance approval.
 
 ## Engineering rules
 

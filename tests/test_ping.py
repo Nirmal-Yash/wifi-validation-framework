@@ -15,7 +15,10 @@ pytestmark = pytest.mark.real_lab
 
 def client_ping(connection_pool, router_ip, count):
     output = connection_pool.send_command(
-        "client_vm", f"ping -c {count} -W 3 {router_ip} 2>&1"
+        "client_vm",
+        f"ping -c {count} -W 3 {router_ip} 2>&1",
+        expect_string=r"(?m)^[^\r\n]*[#$]\s*$",
+        read_timeout=75,
     )
     loss_match = re.search(r"(\d+(?:\.\d+)?)% packet loss", output)
     if not loss_match:
