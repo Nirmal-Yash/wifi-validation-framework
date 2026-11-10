@@ -24,7 +24,7 @@ For an upgrade, pull `main`, install dependencies, run the canonical installer (
 | Database | Local SQLite; Alembic is the only schema migration authority. Non-SQLite `DATABASE_URL` is not enabled in the standalone Runner. |
 | Dashboard | Flask API at 127.0.0.1:5050 and Vite UI at 127.0.0.1:5173 by default. |
 
-**Reproducibility caveat:** no complete Python transitive lockfile or frontend npm lockfile is currently tracked. Several Python direct dependencies are ranges. Installs are CI-tested, but the full resolved graph is not frozen; the manifest must keep `production_reproducible=false` until reviewed lockfiles and clean-machine verification are committed.
+**Reproducibility gate:** release reproducibility requires exact Python direct pins, a hash-locked Python dependency graph, and a tracked npm lockfile whose root metadata and direct dependencies match `frontend/package.json`. A present-but-stale lockfile is rejected by the release manifest. Run `scripts/generate_dependency_locks.sh` to refresh both lockfiles; it backs up an existing local npm lock before regenerating it. The lockfiles must then be reviewed and committed. The manifest keeps `production_reproducible=false` until both are tracked and validated.
 
 ## 3. Upgrade an existing installation
 
@@ -88,7 +88,7 @@ python3.11 -m venv wifi-venv
 source wifi-venv/bin/activate
 python --version
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 python -m pip check
 ```
 
@@ -105,17 +105,23 @@ Use Node.js 22.22.2+, 24.15+ or 26+. Then:
 
 ```bash
 cd frontend
-if [ -f package-lock.json ]; then
-  npm ci --no-audit --no-fund
-else
-  npm install --no-package-lock --no-audit --no-fund
-fi
+npm ci --no-audit --no-fund
 npm test
 npm run build
 cd ..
 ```
 
-The repository currently does not track `frontend/package-lock.json`, so the no-lock branch applies. Do not commit a generated lock unless deliberately reviewed and adopted as the project's reproducibility input. The dashboard launcher follows the same policy.
+A valid, source-controlled `frontend/package-lock.json` is required. Do not bypass it with an unlocked install during normal setup. To refresh locks after intentionally changing dependencies, run `scripts/generate_dependency_locks.sh`, review the diff, and commit both generated lockfiles. The script stores a private backup of any existing local npm lock under `results/backups/`.
+
+### 4.3 Regenerating dependency locks
+
+Run from the repository root with the project virtual environment active and a supported Node/npm runtime:
+
+```bash
+./scripts/generate_dependency_locks.sh
+```
+
+The generator resolves Python dependencies for the CI baseline Python 3.12 with SHA-256 hashes, refreshes the npm lock from the exact committed package manifest, and preserves the previous local npm lock in `results/backups/`. Review the resulting lockfiles, then stage `requirements.lock` and force-add `frontend/package-lock.json` if a local Git exclude rule hides it. Never stage the backup.
 
 ## 5. Configuration and secrets
 

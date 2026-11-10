@@ -106,21 +106,92 @@ class ReleaseManifestService:
                 digest.update(chunk)
         return digest.hexdigest()
 
+    @staticmethod
+    def _canonical_package_name(name: str) -> str:
+        return re.sub(r"[-_.]+", "-", name).lower()
+
+    @classmethod
+    def _parse_pinned_requirements(
+        cls,
+        path: Path,
+        *,
+        require_hashes: bool,
+    ) -> tuple[dict[str, str], list[str], list[str]]:
+        """Parse the project's deliberately simple, exact-pin requirements format."""
+        versions: dict[str, str] = {}
+        errors: list[str] = []
+        unhashed: list[str] = []
+        hashed: set[str] = set()
+        current_package: str | None = None
+        if not path.is_file():
+            return versions, [f"lockfile is missing: {path.name}"], unhashed
+
+        for line_number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("--hash="):
+                if current_package is None:
+                    errors.append(f"line {line_number}: hash is not attached to a package")
+                elif re.fullmatch(r"--hash=sha256:[0-9a-fA-F]{64}", line):
+                    hashed.add(current_package)
+                else:
+                    errors.append(f"line {line_number}: unsupported or malformed package hash")
+                continue
+            if line.startswith("--"):
+                continue
+
+            requirement_line = line.split(" #", 1)[0].strip()
+            requirement_line = requirement_line.removesuffix("\\").strip()
+            match = re.fullmatch(
+                r"([A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[[A-Za-z0-9_,.-]+\])?=="
+                r"([A-Za-z0-9][A-Za-z0-9.!+_-]*)(?:\s*;.*)?",
+                requirement_line,
+            )
+            if not match:
+                errors.append(f"line {line_number}: requirement is not an exact package pin")
+                current_package = None
+                continue
+
+            package_name = cls._canonical_package_name(match.group(1))
+            version = match.group(2)
+            previous = versions.get(package_name)
+            if previous is not None and previous != version:
+                errors.append(f"{package_name}: conflicting locked versions {previous} and {version}")
+            versions[package_name] = version
+            current_package = package_name
+            if not require_hashes and "--hash=" in line:
+                hashed.add(package_name)
+
+        if require_hashes:
+            unhashed = sorted(set(versions) - hashed)
+            if unhashed:
+                errors.append("packages without SHA-256 hashes: " + ", ".join(unhashed))
+        return versions, errors, unhashed
+
     def _dependency_control(self) -> dict[str, Any]:
         requirements_path = self.root / "requirements.txt"
         direct_requirements: list[str] = []
         unpinned_requirements: list[str] = []
+        direct_versions: dict[str, str] = {}
         if requirements_path.is_file():
+            direct_versions, _, _ = self._parse_pinned_requirements(
+                requirements_path, require_hashes=False
+            )
             for raw in requirements_path.read_text(encoding="utf-8").splitlines():
                 line = raw.split("#", 1)[0].strip()
                 if not line or line.startswith(("-", "http:", "https:")):
                     continue
                 direct_requirements.append(line)
                 pin_candidate = line.split(";", 1)[0].strip()
-                if not re.match(r"^[A-Za-z0-9_.-]+(?:\[[^\]]+\])?==[^\s]+$", pin_candidate):
+                if not re.fullmatch(
+                    r"[A-Za-z0-9][A-Za-z0-9_.-]*(?:\[[^\]]+\])?==[^\s]+",
+                    pin_candidate,
+                ):
                     unpinned_requirements.append(line)
 
         package_path = self.root / "frontend" / "package.json"
+        package: dict[str, Any] = {}
         frontend_direct: list[str] = []
         frontend_unpinned: list[str] = []
         frontend_engine = None
@@ -132,40 +203,96 @@ class ReleaseManifestService:
             for section in ("dependencies", "devDependencies"):
                 for name, version in sorted(package.get(section, {}).items()):
                     frontend_direct.append(f"{name}@{version}")
-                    if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", version):
+                    if not isinstance(version, str) or not re.fullmatch(
+                        r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", version
+                    ):
                         frontend_unpinned.append(f"{name}@{version}")
 
-        # Only a lockfile committed to this checkout is part of the release input.
-        # Local npm/pip tooling may create untracked lockfiles; they must not make
-        # a source manifest claim dependency reproducibility.
+        # Only source-controlled locks are release inputs. A local lockfile in
+        # .git/info/exclude must never make the release look reproducible.
         tracked_paths = set(self.tracked_files())
-        python_lock = next(
-            (
-                name
-                for name in ("requirements.lock", "requirements-full.lock", "uv.lock", "poetry.lock")
-                if name in tracked_paths and (self.root / name).is_file()
-            ),
-            None,
+        python_lock = (
+            "requirements.lock"
+            if "requirements.lock" in tracked_paths
+            and (self.root / "requirements.lock").is_file()
+            else None
         )
-        frontend_lock = next(
-            (
-                name
-                for name in ("frontend/package-lock.json", "frontend/pnpm-lock.yaml", "frontend/yarn.lock")
-                if name in tracked_paths and (self.root / name).is_file()
-            ),
-            None,
+        frontend_lock = (
+            "frontend/package-lock.json"
+            if "frontend/package-lock.json" in tracked_paths
+            and (self.root / "frontend/package-lock.json").is_file()
+            else None
         )
+
+        python_lock_errors: list[str] = []
+        python_locked_count = 0
+        if python_lock:
+            locked_versions, python_lock_errors, unhashed = self._parse_pinned_requirements(
+                self.root / python_lock, require_hashes=True
+            )
+            python_locked_count = len(locked_versions)
+            for name, version in sorted(direct_versions.items()):
+                if locked_versions.get(name) != version:
+                    python_lock_errors.append(
+                        f"{name}: requirements.txt pins {version}, lockfile has "
+                        f"{locked_versions.get(name, 'no entry')}"
+                    )
+
+        frontend_lock_errors: list[str] = []
+        frontend_locked_count = 0
+        if frontend_lock:
+            try:
+                lock_payload = json.loads(
+                    (self.root / frontend_lock).read_text(encoding="utf-8")
+                )
+                lock_packages = lock_payload.get("packages")
+                lock_root = lock_packages.get("") if isinstance(lock_packages, dict) else None
+                frontend_locked_count = max(0, len(lock_packages) - 1) if isinstance(lock_packages, dict) else 0
+                if not isinstance(lock_payload.get("lockfileVersion"), int) or lock_payload["lockfileVersion"] < 2:
+                    frontend_lock_errors.append("npm lockfileVersion must be 2 or newer")
+                if not isinstance(lock_root, dict):
+                    frontend_lock_errors.append("npm lockfile is missing packages[''] root metadata")
+                else:
+                    if lock_root.get("name") != package.get("name"):
+                        frontend_lock_errors.append("npm lock root name does not match package.json")
+                    if lock_root.get("version") != package.get("version"):
+                        frontend_lock_errors.append("npm lock root version does not match package.json")
+                    for section in ("dependencies", "devDependencies"):
+                        expected = package.get(section, {})
+                        observed = lock_root.get(section, {})
+                        if expected != observed:
+                            frontend_lock_errors.append(
+                                f"npm lock root {section} do not match package.json"
+                            )
+                        for name, version in expected.items():
+                            installed = lock_packages.get(f"node_modules/{name}") if isinstance(lock_packages, dict) else None
+                            if not isinstance(installed, dict) or installed.get("version") != version:
+                                frontend_lock_errors.append(
+                                    f"{name}: package.json pins {version}, npm lock has "
+                                    f"{installed.get('version', 'no entry') if isinstance(installed, dict) else 'no entry'}"
+                                )
+            except (OSError, ValueError, TypeError) as exc:
+                frontend_lock_errors.append(f"npm lockfile could not be parsed: {type(exc).__name__}")
+
         python_direct_pinned = bool(direct_requirements) and not unpinned_requirements
         frontend_direct_pinned = bool(frontend_direct) and not frontend_unpinned
         lockfiles_present = bool(python_lock and frontend_lock)
         direct_dependencies_pinned = python_direct_pinned and frontend_direct_pinned
-        complete = lockfiles_present and direct_dependencies_pinned
+        lockfiles_valid = (
+            bool(python_lock and frontend_lock)
+            and not python_lock_errors
+            and not frontend_lock_errors
+        )
+        complete = lockfiles_valid and direct_dependencies_pinned
         if not lockfiles_present:
             dependency_status = "INCOMPLETE_TRANSITIVE_LOCKFILES"
         elif not direct_dependencies_pinned:
             dependency_status = "INCOMPLETE_DIRECT_DEPENDENCY_PINS"
+        elif not lockfiles_valid:
+            dependency_status = "LOCKFILE_MISMATCH"
         else:
             dependency_status = "COMPLETE"
+
         return {
             "python": {
                 "requirements_file": "requirements.txt",
@@ -173,6 +300,9 @@ class ReleaseManifestService:
                 "direct_dependencies_pinned": python_direct_pinned,
                 "unpinned_dependencies": unpinned_requirements,
                 "transitive_lockfile": python_lock,
+                "lockfile_valid": bool(python_lock) and not python_lock_errors,
+                "locked_package_count": python_locked_count,
+                "lockfile_errors": sorted(python_lock_errors),
             },
             "frontend": {
                 "package_version": frontend_version,
@@ -181,8 +311,12 @@ class ReleaseManifestService:
                 "direct_dependencies_pinned": frontend_direct_pinned,
                 "unpinned_dependencies": frontend_unpinned,
                 "transitive_lockfile": frontend_lock,
+                "lockfile_valid": bool(frontend_lock) and not frontend_lock_errors,
+                "locked_package_count": frontend_locked_count,
+                "lockfile_errors": sorted(frontend_lock_errors),
             },
             "lockfiles_present": lockfiles_present,
+            "lockfiles_valid": lockfiles_valid,
             "direct_dependencies_pinned": direct_dependencies_pinned,
             "complete": complete,
             "status": dependency_status,
@@ -259,7 +393,7 @@ class ReleaseManifestService:
             "syntax_errors": list(audit.syntax_errors),
         }
         return {
-            "schema_version": "netregress-release-manifest.v2",
+            "schema_version": "netregress-release-manifest.v3",
             "release_track": "standalone-runner",
             "application": {
                 "name": "NetRegress Runner",

@@ -137,7 +137,7 @@ def test_release_manifest_is_deterministic_and_verifiable(tmp_path):
     second = service.manifest()
 
     assert first == second
-    assert first["schema_version"] == "netregress-release-manifest.v2"
+    assert first["schema_version"] == "netregress-release-manifest.v3"
     assert "generated_at" not in first
     assert first["dependencies"]["status"] in {
         "COMPLETE",
@@ -366,16 +366,39 @@ def test_doctor_rejects_local_state_and_credential_symlinks(tmp_path, monkeypatc
     assert "must not be a symlink" in auth.message
 
 
-def test_release_manifest_counts_only_tracked_dependency_lockfiles(tmp_path, monkeypatch):
+def test_release_manifest_requires_tracked_consistent_hashed_lockfiles(tmp_path, monkeypatch):
     frontend = tmp_path / "frontend"
     frontend.mkdir()
     (tmp_path / "requirements.txt").write_text("Flask==3.0.0\\n", encoding="utf-8")
-    (frontend / "package.json").write_text(
-        json.dumps({"dependencies": {"react": "19.3.1"}, "devDependencies": {}}),
+    package = {
+        "name": "fixture-ui",
+        "version": "1.0.0",
+        "dependencies": {"react": "19.3.1"},
+        "devDependencies": {},
+    }
+    (frontend / "package.json").write_text(json.dumps(package), encoding="utf-8")
+    package_lock = {
+        "name": "fixture-ui",
+        "version": "1.0.0",
+        "lockfileVersion": 3,
+        "packages": {
+            "": {
+                "name": "fixture-ui",
+                "version": "1.0.0",
+                "dependencies": {"react": "19.3.1"},
+                "devDependencies": {},
+            },
+            "node_modules/react": {"version": "19.3.1"},
+        },
+    }
+    package_lock_path = frontend / "package-lock.json"
+    package_lock_path.write_text(json.dumps(package_lock), encoding="utf-8")
+    hash_value = "a" * 64
+    (tmp_path / "requirements.lock").write_text(
+        f"Flask==3.0.0 \\\\n    --hash=sha256:{hash_value}\\n"
+        f"Werkzeug==3.0.1 \\\\n    --hash=sha256:{hash_value}\\n",
         encoding="utf-8",
     )
-    (tmp_path / "requirements.lock").write_text("Flask==3.0.0\\n", encoding="utf-8")
-    (frontend / "package-lock.json").write_text("{}\\n", encoding="utf-8")
 
     service = ReleaseManifestService(tmp_path)
     monkeypatch.setattr(
@@ -387,17 +410,25 @@ def test_release_manifest_counts_only_tracked_dependency_lockfiles(tmp_path, mon
     assert untracked["python"]["transitive_lockfile"] is None
     assert untracked["frontend"]["transitive_lockfile"] is None
 
-    monkeypatch.setattr(
-        service, "tracked_files",
-        lambda: (
-            "requirements.txt", "requirements.lock",
-            "frontend/package.json", "frontend/package-lock.json",
-        ),
+    tracked_paths = (
+        "requirements.txt", "requirements.lock",
+        "frontend/package.json", "frontend/package-lock.json",
     )
+    monkeypatch.setattr(service, "tracked_files", lambda: tracked_paths)
     tracked = service._dependency_control()
     assert tracked["lockfiles_present"] is True
+    assert tracked["lockfiles_valid"] is True
+    assert tracked["complete"] is True
+    assert tracked["status"] == "COMPLETE"
     assert tracked["python"]["transitive_lockfile"] == "requirements.lock"
     assert tracked["frontend"]["transitive_lockfile"] == "frontend/package-lock.json"
+
+    package_lock["packages"][""]["version"] = "0.9.0"
+    package_lock_path.write_text(json.dumps(package_lock), encoding="utf-8")
+    mismatched = service._dependency_control()
+    assert mismatched["complete"] is False
+    assert mismatched["status"] == "LOCKFILE_MISMATCH"
+    assert mismatched["frontend"]["lockfile_errors"]
 
 
 def test_dashboard_launcher_uses_committed_lock_only_and_fingerprints_install():
