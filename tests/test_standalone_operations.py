@@ -394,9 +394,14 @@ def test_release_manifest_requires_tracked_consistent_hashed_lockfiles(tmp_path,
     package_lock_path = frontend / "package-lock.json"
     package_lock_path.write_text(json.dumps(package_lock), encoding="utf-8")
     hash_value = "a" * 64
+    lock_lines = [
+        "Flask==3.0.0 " + chr(92),
+        f"    --hash=sha256:{hash_value}",
+        "Werkzeug==3.0.1 " + chr(92),
+        f"    --hash=sha256:{hash_value}",
+    ]
     (tmp_path / "requirements.lock").write_text(
-        f"Flask==3.0.0 \\\\n    --hash=sha256:{hash_value}\\n"
-        f"Werkzeug==3.0.1 \\\\n    --hash=sha256:{hash_value}\\n",
+        "\n".join(lock_lines) + "\n",
         encoding="utf-8",
     )
 
