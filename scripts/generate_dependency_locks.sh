@@ -57,10 +57,10 @@ TEMP_LOCK="$(mktemp "$ROOT_DIR/.requirements.lock.XXXXXX")"
 cleanup() { rm -f -- "$TEMP_LOCK"; }
 trap cleanup EXIT
 
-echo "Resolving hash-locked Python dependencies for Python 3.12..."
+echo "Resolving hash-locked Python dependencies for minimum supported Python 3.11..."
 "$PIP_COMPILE" \
   --resolver=backtracking \
-  --python-version=3.12 \
+  --python-version=3.11 \
   --generate-hashes \
   --allow-unsafe \
   --output-file="$TEMP_LOCK" \

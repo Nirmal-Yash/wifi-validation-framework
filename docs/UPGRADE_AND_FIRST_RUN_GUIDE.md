@@ -121,7 +121,7 @@ Run from the repository root with the project virtual environment active and a s
 ./scripts/generate_dependency_locks.sh
 ```
 
-The generator resolves Python dependencies for the CI baseline Python 3.12 with SHA-256 hashes, refreshes the npm lock from the exact committed package manifest, and preserves the previous local npm lock in `results/backups/`. Review the resulting lockfiles, then stage `requirements.lock` and force-add `frontend/package-lock.json` if a local Git exclude rule hides it. Never stage the backup.
+The generator resolves Python dependencies for the minimum supported Python 3.11 with SHA-256 hashes, refreshes the npm lock from the exact committed package manifest, and preserves the previous local npm lock in `results/backups/`. The resulting Python lock is then dry-run validated using the active venv. Review the resulting lockfiles, then stage `requirements.lock` and force-add `frontend/package-lock.json` if a local Git exclude rule hides it. Never stage the backup.
 
 ## 5. Configuration and secrets
 

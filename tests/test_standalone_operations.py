@@ -454,6 +454,7 @@ def test_dependency_lock_generator_preserves_backups_and_validates_clean_install
     assert "cp -p -- frontend/package-lock.json" in generator
     assert "results/backups" in generator
     assert "--generate-hashes" in generator
+    assert "--python-version=3.11" in generator
     assert "--require-hashes" in generator
     assert 'npm --prefix "$ROOT_DIR/frontend" install' in generator
     assert "--package-lock-only" in generator
