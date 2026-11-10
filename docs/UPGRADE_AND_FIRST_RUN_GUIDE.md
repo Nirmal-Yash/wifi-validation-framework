@@ -121,7 +121,7 @@ Run from the repository root with the project virtual environment active and a s
 ./scripts/generate_dependency_locks.sh
 ```
 
-The generator resolves Python dependencies for the minimum supported Python 3.11 with SHA-256 hashes, refreshes the npm lock from the exact committed package manifest, and preserves the previous local npm lock in `results/backups/`. The resulting Python lock is then dry-run validated using the active venv. Review the resulting lockfiles, then stage `requirements.lock` and force-add `frontend/package-lock.json` if a local Git exclude rule hides it. Never stage the backup.
+The generator uses `uv` to run pinned `pip-tools==7.6.2` under an actual Python 3.11 interpreter (downloading that interpreter when needed), so dependency markers are resolved for the minimum supported Python rather than the active runtime. If `uv` is not already available, the script installs it into the active project venv; `pip-tools` runs in uv's isolated tool environment. It generates SHA-256 hashes, refreshes the npm lock from the exact committed package manifest, and preserves the previous local npm lock in `results/backups/`. The resulting Python lock is dry-run validated using the active venv. Review the resulting lockfiles, then stage `requirements.lock` and force-add `frontend/package-lock.json` if a local Git exclude rule hides it. Never stage the backup.
 
 ## 5. Configuration and secrets
 

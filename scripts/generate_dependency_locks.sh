@@ -43,13 +43,15 @@ if [[ -f requirements.lock ]]; then
   echo "Previous Python lock preserved at: $BACKUP_PATH"
 fi
 
-if ! "$PYTHON_BIN" -m pip show pip-tools >/dev/null 2>&1; then
-  "$PYTHON_BIN" -m pip install --disable-pip-version-check pip-tools
-fi
 PYTHON_DIR="$("$PYTHON_BIN" -c 'import sys; print(sys.prefix)')"
-PIP_COMPILE="$PYTHON_DIR/bin/pip-compile"
-if [[ ! -x "$PIP_COMPILE" ]]; then
-  echo "ERROR: pip-compile was not installed beside the active Python." >&2
+UV_BIN="$(command -v uv || true)"
+if [[ -z "$UV_BIN" ]]; then
+  echo "Installing uv into the active project virtual environment..."
+  "$PYTHON_BIN" -m pip install --disable-pip-version-check "uv>=0.8,<1"
+  UV_BIN="$PYTHON_DIR/bin/uv"
+fi
+if [[ ! -x "$UV_BIN" ]]; then
+  echo "ERROR: uv is required to provision the Python 3.11 lock-generation runtime." >&2
   exit 1
 fi
 
@@ -58,9 +60,12 @@ cleanup() { rm -f -- "$TEMP_LOCK"; }
 trap cleanup EXIT
 
 echo "Resolving hash-locked Python dependencies for minimum supported Python 3.11..."
-"$PIP_COMPILE" \
+"$UV_BIN" run \
+  --python 3.11 \
+  --with "pip-tools==7.6.2" \
+  --no-project \
+  -- python -m piptools compile \
   --resolver=backtracking \
-  --python-version=3.11 \
   --generate-hashes \
   --allow-unsafe \
   --output-file="$TEMP_LOCK" \
