@@ -243,7 +243,7 @@ Provisioning remains explicit, never automatic on Run preparation. The default (
 ./wifi_lab_reprovision_robust.sh --run-full-suite
 ```
 
-Run as the normal Ubuntu user, not with sudo. --repro-test stops GNS3 nodes and resets runtime Wi-Fi state before running the full suite; use it only with explicit lab-maintenance approval. Preserve foreground Paramiko tcpdump, SFTP transfer and SHA-256 PCAP verification. Preserve foreground Paramiko tcpdump, SFTP transfer and SHA-256 PCAP verification. Do not change the normal 12-hour DHCP lease; T1/T2 capture needs an approved isolated short-lease window and restoration.
+Run as the normal Ubuntu user, not with sudo. --repro-test stops GNS3 nodes and resets runtime Wi-Fi state before running the full suite; use it only with explicit lab-maintenance approval. Preserve foreground Paramiko tcpdump, SFTP transfer and SHA-256 PCAP verification. Do not change the normal 12-hour DHCP lease; T1/T2 capture needs an approved isolated short-lease window and restoration.
 
 ### 8.3 Firmware operations
 

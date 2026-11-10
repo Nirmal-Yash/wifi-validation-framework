@@ -595,28 +595,59 @@ class LabHealthService:
 
     def _check_clock(self):
         started = time.monotonic()
+        chrony_result = None
+        chrony_error = None
+        try:
+            # Chrony may need a few seconds after reboot. Wait boundedly before
+            # sampling timedatectl; timedatectl remains the authoritative status.
+            chrony_result = self.local_runner.execute(
+                "lab_host",
+                ["chronyc", "waitsync", "10", "0.5"],
+                command_category="lab_health",
+                idempotent=True,
+            )
+        except Exception as exc:
+            # Keep compatibility with hosts using another NTP implementation,
+            # or where chronyc is not installed. timedatectl decides the status.
+            chrony_error = f"{type(exc).__name__}: {exc}"
+
         result = self.local_runner.execute(
             "lab_host",
             ["timedatectl", "show", "-p", "NTPSynchronized", "--value"],
             command_category="lab_health",
             idempotent=True,
         )
-        duration = result.duration_ms
+        duration = result.duration_ms + (chrony_result.duration_ms if chrony_result else 0)
         if result.transport_error or result.exit_code != 0:
             return (
                 HealthObservationStatus.UNKNOWN,
                 duration,
                 "Clock synchronization could not be determined",
-                {"output": result.stdout, "error": result.transport_error},
-                {"transport": result.transport},
+                {
+                    "output": result.stdout,
+                    "error": result.transport_error,
+                    "chrony_waitsync_exit_code": chrony_result.exit_code if chrony_result else None,
+                    "chrony_waitsync_error": chrony_error,
+                },
+                {
+                    "transport": result.transport,
+                    "chrony_transport": chrony_result.transport if chrony_result else None,
+                },
             )
         synchronized = result.stdout.strip().lower() == "yes"
         return (
             HealthObservationStatus.HEALTHY if synchronized else HealthObservationStatus.DEGRADED,
             duration,
             "Host clock is synchronized" if synchronized else "Host clock is not synchronized",
-            {"ntp_synchronized": synchronized},
-            {"transport": result.transport},
+            {
+                "ntp_synchronized": synchronized,
+                "chrony_waitsync_exit_code": chrony_result.exit_code if chrony_result else None,
+                "chrony_waitsync_error": chrony_error,
+            },
+            {
+                "transport": result.transport,
+                "chrony_transport": chrony_result.transport if chrony_result else None,
+            },
         )
 
     @staticmethod

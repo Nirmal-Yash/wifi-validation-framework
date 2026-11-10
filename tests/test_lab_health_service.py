@@ -110,6 +110,34 @@ def test_lab_health_snapshot_is_healthy_and_persisted(tmp_path):
     assert Path(artifacts.calls[0]["path"]).exists()
 
 
+def test_clock_health_waits_for_bounded_chrony_readiness_before_sampling_timedatectl(tmp_path):
+    class OrderedClockRunner(FakeRunner):
+        def __init__(self):
+            self.clock_commands = []
+
+        def execute(self, target, command, **kwargs):
+            command_text = command if isinstance(command, str) else " ".join(command)
+            if target == "lab_host" and (
+                command_text.startswith("chronyc waitsync")
+                or command_text.startswith("timedatectl ")
+            ):
+                self.clock_commands.append(command_text)
+            return super().execute(target, command, **kwargs)
+
+    runner = OrderedClockRunner()
+    service, _, _ = make_service(tmp_path, runner)
+    snapshot = service.check(phase="BEFORE")
+
+    assert snapshot.overall_status is EnvironmentHealthStatus.HEALTHY
+    assert runner.clock_commands == [
+        "chronyc waitsync 10 0.5",
+        "timedatectl show -p NTPSynchronized --value",
+    ]
+    clock = next(item for item in snapshot.observations if item.component == "clock")
+    assert clock.details["ntp_synchronized"] is True
+    assert clock.details["chrony_waitsync_exit_code"] == 0
+
+
 def test_required_health_failure_creates_diagnostic_evidence(tmp_path):
     class FailingRunner(FakeRunner):
         def execute(self, target, command, **kwargs):
