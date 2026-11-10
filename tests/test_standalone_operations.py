@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sqlite3
 import shutil
 import subprocess
 import uuid
@@ -409,3 +410,18 @@ def test_dashboard_launcher_uses_committed_lock_only_and_fingerprints_install():
     assert "npm install --no-package-lock" in launcher
     assert 'digest.update(bytes([0]))' in launcher
     assert r"printf '%s\n'" in launcher
+
+def test_doctor_database_integrity_accepts_relative_database_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("NETREGRESS_AUTH_REQUIRED", "0")
+
+    database = Path("results") / "test_results.db"
+    database.parent.mkdir(parents=True)
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE doctor_path_probe (id INTEGER PRIMARY KEY)")
+
+    report = RunnerDoctor(tmp_path).run(database=database)
+    checks = {check.check_id: check for check in report.checks}
+
+    assert checks["database:integrity"].status == "PASS"
+    assert "integrity_check=ok" in checks["database:integrity"].message

@@ -108,7 +108,7 @@ def test_run_launch_is_idempotent(tmp_path,monkeypatch):
     monkeypatch.setenv("NETREGRESS_AUTH_USERS_JSON",_json.dumps([{"username":"admin","password_hash":AuthManager.password_hash("pw"),"role":"OWNER","projects":["*"]}]))
     monkeypatch.setenv("NETREGRESS_SESSION_SECRET","session-secret")
     calls=[]
-    monkeypatch.setattr(RunProcessManager,"start",lambda self,**kwargs:(calls.append(1) or RunProcessHandle(123,("fake","pytest"))))
+    monkeypatch.setattr(RunProcessManager,"start",lambda self,**kwargs:(calls.append(1) or RunProcessHandle(123,("fake","pytest"),str(tmp_path/"fake.log"))))
     client=create_app(tmp_path/"api.db").test_client()
     login=client.post("/api/v1/auth/login",json={"username":"admin","password":"pw"})
     csrf=login.get_json()["data"]["csrf_token"]

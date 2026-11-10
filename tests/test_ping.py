@@ -75,7 +75,7 @@ def test_packet_loss_within_threshold(connection_pool, params, metric_logger, ru
     for iteration in range(warmups + samples):
         result = client_ping(connection_pool, router_ip, count)
         metric_logger.log(
-            result["packet_loss_pct"], "%", name="packet_loss",
+            result["packet_loss_pct"], "percent", name="packet_loss",
             warmup=iteration < warmups, metadata={"iteration": iteration},
         )
     summary = _decision_summary(metric_logger, run_context, request, "packet_loss")

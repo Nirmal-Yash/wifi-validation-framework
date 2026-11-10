@@ -32,6 +32,11 @@ from lib.services import RunService
 
 
 def test_sqlite_database_uses_canonical_environment_path(tmp_path, monkeypatch):
+    from lib.repositories import database_config
+
+    # Isolate this precedence test from the developer's private repository .env.
+    monkeypatch.setattr(database_config, "_load_secure_dotenv", lambda root: None)
+
     expected = tmp_path / "runner.sqlite"
     monkeypatch.setenv("NETREGRESS_DATABASE_PATH", str(expected))
     monkeypatch.delenv("TEST_DB_PATH", raising=False)

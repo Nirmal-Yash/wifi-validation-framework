@@ -343,7 +343,7 @@ class RunnerDoctor:
             add("database:schema", "NOT_CHECKED", "schema migration state cannot be checked before database initialization")
         elif db_path is not None:
             try:
-                connection = sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True, timeout=5)
+                connection = sqlite3.connect(db_path.resolve(strict=False).as_uri() + "?mode=ro", uri=True, timeout=5)
                 try:
                     row = connection.execute("PRAGMA integrity_check").fetchone()
                     integrity = str(row[0]) if row else "no result"
