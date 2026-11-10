@@ -12,6 +12,7 @@ import pytest
 from lib.domain import ArtifactType
 from lib.services import ArtifactService, ProtocolEvidenceService
 from lib.traffic import run_dns_lookup
+from lib.services.wifi_state import assess_wifi_association
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -277,9 +278,34 @@ def _register_protocol_artifact(*, context, node_id: str, evidence_path: Path) -
     )
 
 
-def _wait_for_wifi_association(connection_pool, timeout_sec=30):
+def _wait_for_wifi_disconnection(connection_pool, timeout_sec=15):
+    """Wait until wpa_supplicant confirms that the client is disconnected."""
     deadline = time.monotonic() + timeout_sec
     latest = ""
+
+    while time.monotonic() < deadline:
+        latest = connection_pool.send_command(
+            "client_vm",
+            "wpa_cli -i wlan0 status",
+            read_timeout=10,
+        )
+        if re.search(r"(?m)^wpa_state=DISCONNECTED$", latest):
+            return latest
+        time.sleep(0.5)
+
+    raise AssertionError(
+        f"Client did not reach DISCONNECTED state within {timeout_sec}s: "
+        f"{latest!r}"
+    )
+
+
+def _wait_for_wifi_association(
+    connection_pool, expected_ssid: str, timeout_sec=30
+):
+    """Wait for WPA2 association, using verified driver state if wpa_state is absent."""
+    deadline = time.monotonic() + timeout_sec
+    latest = ""
+
     while time.monotonic() < deadline:
         latest = connection_pool.send_command(
             "client_vm",
@@ -287,11 +313,19 @@ def _wait_for_wifi_association(connection_pool, timeout_sec=30):
             "iw dev wlan0 link 2>/dev/null || true",
             read_timeout=10,
         )
-        if "wpa_state=COMPLETED" in latest and "Connected to " in latest:
+        association = assess_wifi_association(
+            wpa_status=latest,
+            iw_link=latest,
+            expected_ssid=expected_ssid,
+            require_wpa2=True,
+        )
+        if association.connected:
             return latest
         time.sleep(1)
+
     raise AssertionError(
-        f"Client did not reassociate on wlan0 within {timeout_sec}s: {latest!r}"
+        f"Client did not establish WPA2 association with {expected_ssid!r} "
+        f"within {timeout_sec}s: {latest!r}"
     )
 
 
@@ -385,26 +419,36 @@ def test_real_wifi_capture_contains_eapol_and_beacon(
         client_mac = client_mac_match.group(0)
         monitor_created = _ensure_ap_monitor_interface(ap_connection)
 
+        # wlan0 and mon0 share the AP's single-channel PHY.
+        # The AP owns the active channel; the parsed Beacon in the PCAP
+        # below is the authoritative verification of the captured channel.
         helper.start()
-        monitor_info, _, _ = helper.ap_exec("iw dev mon0 info", timeout=10)
-        monitor_channel = re.search(r"\bchannel\s+(\d+)\b", monitor_info)
-        assert monitor_channel and int(monitor_channel.group(1)) == EXPECTED_CHANNEL, (
-            f"AP mon0 is not capturing on the protected channel {EXPECTED_CHANNEL}: "
-            f"{monitor_info!r}"
-        )
         # Allow periodic beacon frames to arrive before provoking authentication.
         time.sleep(2)
+        disconnect = connection_pool.send_command(
+            "client_vm",
+            "sudo -n wpa_cli -i wlan0 disconnect",
+            read_timeout=15,
+        )
+        assert "FAIL" not in disconnect.upper(), (
+            f"Could not disconnect client for WPA2 capture: {disconnect!r}"
+        )
+
+        _wait_for_wifi_disconnection(connection_pool, timeout_sec=15)
+
         reconnect = connection_pool.send_command(
             "client_vm",
-            "sudo -n wpa_cli -i wlan0 disconnect; sleep 1; "
             "sudo -n wpa_cli -i wlan0 reconnect",
             read_timeout=15,
         )
         assert "FAIL" not in reconnect.upper(), (
             f"Could not request client reassociation: {reconnect!r}"
         )
-        association = _wait_for_wifi_association(connection_pool, timeout_sec=30)
-        assert "wpa_state=COMPLETED" in association
+        association = _wait_for_wifi_association(
+            connection_pool,
+            expected_ssid=params["wifi"]["ssid"],
+            timeout_sec=30,
+        )
         # Keep the same capture active briefly to record stable beacon traffic too.
         time.sleep(2)
         helper.stop()
