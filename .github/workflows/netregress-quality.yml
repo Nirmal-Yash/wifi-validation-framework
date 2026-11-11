@@ -161,6 +161,9 @@ jobs:
           tests/test_release_readiness.py
           tests/test_standalone_operations.py
           tests/test_repository_governance.py
+          tests/test_platform_foundation.py
+          tests/test_product_resources.py
+          tests/test_project_scope_persistence.py
           ci_tests/test_release_gate.py
 
   dashboard-startup-smoke:

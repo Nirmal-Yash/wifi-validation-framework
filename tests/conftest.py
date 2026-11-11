@@ -364,6 +364,7 @@ def pytest_collection_finish(session):
         device_identity={"device_id": os.getenv("NETREGRESS_DEVICE_ID", "client_vm")},
         topology=params.get("network", {}),
         source_run_id=os.getenv("NETREGRESS_SOURCE_RUN_ID") or None,
+        project_id=os.getenv("NETREGRESS_PROJECT_ID") or None,
     )
     run, attempt = orchestration.run, orchestration.attempt
     session.config._netregress_resource_lease = orchestration.lease

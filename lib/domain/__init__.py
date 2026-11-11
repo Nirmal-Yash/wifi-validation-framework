@@ -77,6 +77,7 @@ __all__ = [
     "Lab",
     "Organization",
     "Project",
+    "ProjectMembership",
     "ResourceStatus",
     "ResourceValidationError",
     "new_resource_id",
@@ -101,4 +102,4 @@ from .sync import SyncEnvelope, SyncQueueItem, SyncState
 
 from .operations import FailureClass, ReleaseWaiver, WaiverScope
 from .firmware import FirmwareOperationState
-from .resources import Lab, Organization, Project, ResourceStatus, ResourceValidationError, new_resource_id
+from .resources import Lab, Organization, Project, ProjectMembership, ResourceStatus, ResourceValidationError, new_resource_id

@@ -90,3 +90,19 @@ class Lab:
             raise ResourceValidationError("lab updated_at cannot precede created_at")
         if isinstance(self.topology_version, bool) or not isinstance(self.topology_version, int) or self.topology_version < 1:
             raise ResourceValidationError("topology_version must be a positive integer")
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectMembership:
+    username: str
+    project_id: str
+    role: str
+    created_at: datetime
+    created_by: str
+
+    def __post_init__(self) -> None:
+        _required(self.username, "username")
+        _required(self.project_id, "project_id")
+        _required(self.created_by, "created_by")
+        if not isinstance(self.role, str) or self.role not in {"OWNER", "ADMIN", "OPERATOR", "VIEWER"}:
+            raise ResourceValidationError("membership role is not supported")

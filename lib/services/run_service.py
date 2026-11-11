@@ -202,6 +202,7 @@ class RunService:
         resolved_config: Mapping[str, Any],
         repository_commit: str,
         source_run_id: str | None = None,
+        project_id: str | None = None,
     ) -> tuple[Run, Attempt]:
         if source_run_id is not None:
             source_run = self.run_repository.get(source_run_id)
@@ -209,6 +210,10 @@ class RunService:
                 raise DomainValidationError(f"source Run does not exist: {source_run_id}")
             if source_run.lifecycle not in _terminal_states():
                 raise DomainValidationError("only terminal Runs can be used as retry sources")
+            if project_id is None:
+                project_id = source_run.project_id
+            elif project_id != source_run.project_id:
+                raise DomainValidationError("retry Run must retain its source Project ownership")
         if not selected_tests:
             raise DomainValidationError("cannot create a run with no selected tests")
         if set(selected_tests) != set(test_definition_versions):
@@ -233,6 +238,7 @@ class RunService:
             repository_commit=repository_commit,
             lifecycle=RunLifecycle.QUEUED,
             source_run_id=source_run_id,
+            project_id=project_id,
             created_at=now,
         )
         run_created_event = LifecycleEvent(

@@ -72,6 +72,7 @@ class RunOrchestrator:
         device_identity=None,
         topology=None,
         source_run_id=None,
+        project_id=None,
     ) -> RunExecutionSession:
         configuration = self.resolver.resolve(
             defaults=defaults,
@@ -116,6 +117,7 @@ class RunOrchestrator:
                 resolved_config=redact_configuration(configuration.values),
                 repository_commit=repository_commit,
                 source_run_id=source_run_id,
+                project_id=project_id,
             )
             run = self.run_service.transition(run.run_id, RunLifecycle.PREPARING)
             fingerprint = self.fingerprint_service.capture(

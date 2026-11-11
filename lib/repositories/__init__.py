@@ -11,6 +11,7 @@ from .interfaces import (
     SyncQueueRepository,
 )
 from .resource_interfaces import LabRepository, OrganizationRepository, ProjectRepository
+from .membership_interfaces import ProjectMembershipRepository
 from .database_config import DatabaseConfigurationError, resolve_database_path
 from .sqlite import (
     SQLiteArtifactRepository,
@@ -44,6 +45,7 @@ __all__ = [
     "LabRepository",
     "OrganizationRepository",
     "ProjectRepository",
+    "ProjectMembershipRepository",
     "SQLiteArtifactRepository",
     "SQLiteAttemptRepository",
     "SQLiteBaselineRepository",
@@ -56,6 +58,7 @@ __all__ = [
     "SQLiteLabRepository",
     "SQLiteOrganizationRepository",
     "SQLiteProjectRepository",
+    "SQLiteProjectMembershipRepository",
 ]
 
 from .sqlite import SQLiteWaiverRepository
@@ -68,3 +71,5 @@ from .database_migrations import (
 )
 
 from .resource_sqlite import SQLiteLabRepository, SQLiteOrganizationRepository, SQLiteProjectRepository
+
+from .membership_sqlite import SQLiteProjectMembershipRepository

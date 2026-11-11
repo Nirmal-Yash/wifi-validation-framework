@@ -32,7 +32,7 @@ from lib.domain import (
 )
 from .interfaces import RepositoryConflictError
 
-SCHEMA_VERSION = "13"
+SCHEMA_VERSION = "14"
 
 
 def _dt(value: datetime | None) -> str | None:
@@ -155,8 +155,8 @@ class SQLiteRunRepository:
                 test_definition_versions_json, resolved_config_json,
                 configuration_hash, repository_commit, lifecycle, outcome,
                 environment_health, environment_snapshot_id, config_snapshot_id,
-                created_at, started_at, completed_at, provenance, failure_class, failure_reason, execution_pid, source_run_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                created_at, started_at, completed_at, provenance, failure_class, failure_reason, execution_pid, source_run_id, project_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 run.run_id,
                 run.display_id,
@@ -181,6 +181,7 @@ class SQLiteRunRepository:
                 run.failure_reason,
                 run.execution_pid,
                 run.source_run_id,
+                run.project_id,
             ),
         )
 
@@ -351,6 +352,7 @@ class SQLiteRunRepository:
                 failure_reason=row["failure_reason"],
                 execution_pid=row["execution_pid"],
                 source_run_id=row["source_run_id"],
+                project_id=row["project_id"],
             )
 
     

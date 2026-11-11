@@ -322,6 +322,7 @@ class Run:
     completed_at: datetime | None = None
     provenance: str = "NATIVE"
     source_run_id: str | None = None
+    project_id: str | None = None
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -339,6 +340,8 @@ class Run:
             _require_text("source_run_id", self.source_run_id)
             if self.source_run_id == self.run_id:
                 raise DomainValidationError("a Run cannot be its own source Run")
+        if self.project_id is not None:
+            _require_text("project_id", self.project_id)
         if not self.selected_tests:
             raise DomainValidationError("run must contain at least one selected test")
         if set(self.selected_tests) != set(self.test_definition_versions):
