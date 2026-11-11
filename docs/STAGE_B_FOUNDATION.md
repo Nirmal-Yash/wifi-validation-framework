@@ -15,7 +15,7 @@ This remains a local-first Runner. Stage B does not create a Cloud receiver, rem
 
 ### B1 — Ownership persistence and migration (implemented checkpoint)
 
-- Add `project_id` to the Run domain and SQLite persistence as a nullable, restrictive foreign key to Projects.
+- Add `project_id` to the Run domain and SQLite persistence as a nullable owner reference. Database triggers require the Project to exist and the selected Lab to belong to that Project without rebuilding the legacy Runs table.
 - Preserve all pre-existing Runs with `project_id = NULL`; never assign historical Runs to a made-up Project.
 - Preserve Project ownership on retries; callers cannot move a retry into a different Project.
 - Add durable `project_memberships` keyed by username and Project, with OWNER/ADMIN/OPERATOR/VIEWER role validation and actor/time provenance.

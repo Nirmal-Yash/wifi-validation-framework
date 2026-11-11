@@ -81,6 +81,12 @@ EXPECTED_TABLE_COLUMNS = {
     "project_memberships": ("username", "project_id", "role", "created_at", "created_by"),
 }
 
+EXPECTED_TRIGGERS = (
+    "trg_runs_project_scope_insert",
+    "trg_runs_project_scope_update",
+    "trg_projects_prevent_delete_with_runs",
+)
+
 EXPECTED_INDEXES = (
     "idx_attempts_run",
     "idx_results_attempt",
@@ -115,7 +121,6 @@ EXPECTED_FOREIGN_KEYS = {
     ("sync_queue", "run_id", "runs", "run_id"),
     ("projects", "organization_id", "organizations", "organization_id"),
     ("labs", "project_id", "projects", "project_id"),
-    ("runs", "project_id", "projects", "project_id"),
     ("project_memberships", "project_id", "projects", "project_id"),
 }
 
@@ -128,6 +133,7 @@ class SchemaDriftReport:
     missing_foreign_keys: tuple[str, ...] = ()
     foreign_key_violations: tuple[str, ...] = ()
     metadata_errors: tuple[str, ...] = ()
+    missing_triggers: tuple[str, ...] = ()
 
     @property
     def is_clean(self) -> bool:
@@ -138,6 +144,7 @@ class SchemaDriftReport:
             self.missing_foreign_keys,
             self.foreign_key_violations,
             self.metadata_errors,
+            self.missing_triggers,
         ))
 
     def as_dict(self) -> dict:
@@ -149,6 +156,7 @@ class SchemaDriftReport:
             "missing_foreign_keys": list(self.missing_foreign_keys),
             "foreign_key_violations": list(self.foreign_key_violations),
             "metadata_errors": list(self.metadata_errors),
+            "missing_triggers": list(self.missing_triggers),
         }
 
 
@@ -206,6 +214,16 @@ def inspect_sqlite_schema(
         for row in connection.execute("PRAGMA foreign_key_check").fetchall()
     ) if tables else ()
 
+    actual_triggers = {
+        row["name"]
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger'"
+        ).fetchall()
+    }
+    missing_triggers = [
+        name for name in EXPECTED_TRIGGERS if name not in actual_triggers
+    ]
+
     metadata_errors = []
     if current_revision != head_revision:
         metadata_errors.append(
@@ -239,4 +257,5 @@ def inspect_sqlite_schema(
         missing_foreign_keys=tuple(sorted(missing_foreign_keys)),
         foreign_key_violations=violations,
         metadata_errors=tuple(metadata_errors),
+        missing_triggers=tuple(sorted(missing_triggers)),
     )

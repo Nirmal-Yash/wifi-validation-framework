@@ -30,20 +30,20 @@ def _times():
     return created, created + timedelta(seconds=1)
 
 
-def _workspace(database):
+def _workspace(database, suffix=""):
     organizations = SQLiteOrganizationRepository(database)
     projects = SQLiteProjectRepository(database)
     labs = SQLiteLabRepository(database)
     created, updated = _times()
     organization = Organization(
-        new_resource_id(), "network-team", "Network Team", created, updated
+        new_resource_id(), "network-team" + suffix, "Network Team" + suffix, created, updated
     )
     project = Project(
         new_resource_id(), organization.organization_id,
-        "wifi-lab", "WiFi Validation", created, updated,
+        "wifi-lab" + suffix, "WiFi Validation" + suffix, created, updated,
     )
     lab = Lab(
-        new_resource_id(), project.project_id, "reference-lab",
+        new_resource_id(), project.project_id, "reference-lab" + suffix,
         "gns3", created, updated,
     )
     organizations.save(organization)
@@ -150,3 +150,26 @@ def test_run_cannot_reference_a_nonexistent_project(tmp_path):
             repository_commit="test-commit",
             project_id="not-a-project",
         )
+
+
+
+def test_run_must_reference_a_lab_in_the_same_project(tmp_path):
+    database = SQLiteDatabase(tmp_path / "cross-project-lab.sqlite")
+    database.initialize()
+    _, project_a, _ = _workspace(database)
+    _, project_b, lab_b = _workspace(database, "-secondary")
+    service = RunService.from_sqlite(database)
+
+    with pytest.raises(sqlite3.IntegrityError, match="lab must belong to its project"):
+        service.create_run(
+            firmware_version="v1.0",
+            lab_id=lab_b.lab_id,
+            validation_profile="Smoke",
+            selected_tests=["wifi.latency.threshold"],
+            test_definition_versions={"wifi.latency.threshold": "1.0"},
+            resolved_config={},
+            repository_commit="test-commit",
+            project_id=project_a.project_id,
+        )
+
+    assert service.run_repository.list() == []
