@@ -284,7 +284,7 @@ TestResult, its metrics, raw samples and associated artifact references are inse
 
 ### Scope boundary
 
-Historical phase note: Phase C established path and transaction primitives; Phase D handled legacy-table import/compatibility; Phase E completed Alembic migration authority, schema-version governance and schema drift enforcement. The current SQLite schema is governed by Alembic head `20261111_04` (schema version 13), with additive Organization/Project/Lab tables introduced after the original Runner schema. Runner records and evidence remain in their existing tables.
+Historical phase note: Phase C established path and transaction primitives; Phase D handled legacy-table import/compatibility; Phase E completed Alembic migration authority, schema-version governance and schema drift enforcement. The current SQLite schema is governed by Alembic head `20261112_05` (schema version 14), with additive Organization/Project/Lab and ProjectMembership tables plus nullable Run ownership introduced after the original Runner schema. Runner records and evidence remain in their existing tables.
 
 ### Phase D — legacy compatibility and historical import
 
