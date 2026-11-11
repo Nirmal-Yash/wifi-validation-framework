@@ -61,13 +61,15 @@ Supporting contracts remain separate:
 
 ## Standalone installation and first startup
 
-Supported Python runtime: 3.11 or newer. The dashboard frontend also requires a Node.js release matching frontend/package.json (currently Node.js 22.22.2+, 24.15+, or 26+).
+Supported Python runtime: 3.11 or newer. Python packages install from the tracked SHA-256 hash lock (requirements.lock); the dashboard frontend also requires a Node.js release matching frontend/package.json (currently Node.js 22.22.2+, 24.15+, or 26+).
 
 ~~~bash
 python3.11 -m venv wifi-venv
 source wifi-venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
+
+# Install the exact frontend dependency graph.
+(cd frontend && npm ci --no-audit --no-fund)
 
 # Prepare runtime directories and upgrade the canonical SQLite schema.
 python scripts/netregress_install.py

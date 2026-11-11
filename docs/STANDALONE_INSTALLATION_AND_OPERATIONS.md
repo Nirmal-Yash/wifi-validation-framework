@@ -8,11 +8,11 @@ This guide describes the current standalone Runner behavior. SQLite remains the 
 - Node.js version permitted by frontend/package.json (currently ^22.22.2 || ^24.15.0 || >=26.0.0) and npm for the React/Vite dashboard.
 - Git for source-bound release manifest operations.
 - Linux is the supported environment for the protected GNS3/mac80211_hwsim lab and its operational scripts.
-- Required Python packages are declared in requirements.txt.
+- Direct Python dependencies are declared in requirements.txt and the fully resolved, SHA-256 hash-locked graph is in the tracked requirements.lock.
 
 Optional protected-lab programs include ip, iw, tcpdump, ssh, iperf3 and tshark. They are checked only when the doctor is invoked with --include-lab-tools; a workstation-only Runner does not need to pretend those checks were performed.
 
-**Dependency reproducibility limitation:** this repository currently has neither a complete Python transitive lockfile nor a frontend npm lockfile. requirements.txt and frontend/package.json declare direct dependencies, but the resolved transitive graph is not fully frozen. The release manifest explicitly reports this as INCOMPLETE_TRANSITIVE_LOCKFILES and sets production_reproducible to false. Do not describe this checkout as fully reproducible until both lockfiles are committed and verified with clean-machine installs.
+**Dependency reproducibility contract:** normal Python installation requires the tracked SHA-256 hash lock `requirements.lock`; normal frontend installation requires the tracked `frontend/package-lock.json` and uses `npm ci`. The release manifest checks both lockfiles against their direct dependency manifests and reports reproducibility as complete only when both tracked locks are valid. No unlocked fallback is permitted.
 
 ## 2. Clean installation
 
@@ -21,8 +21,7 @@ From the repository root:
 ~~~bash
 python3.11 -m venv wifi-venv
 source wifi-venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 python scripts/netregress_install.py
 ~~~
 
@@ -46,17 +45,11 @@ Install the frontend toolchain after Node/npm have been installed:
 
 ~~~bash
 cd frontend
-if [ -f package-lock.json ]; then
-  npm ci --no-audit --no-fund
-else
-  npm install --no-package-lock --no-audit --no-fund
-fi
+npm ci --no-audit --no-fund
 cd ..
 ~~~
 
-The current repository does not track `frontend/package-lock.json`; use the no-lock branch above. The dashboard launcher follows the same policy. This avoids creating an unreviewed lockfile on a developer checkout; it does **not** make the dependency graph reproducible. The release manifest continues to report incomplete transitive lockfiles until reviewed Python and npm lockfiles are deliberately committed.
-
-The dashboard launcher also installs frontend dependencies when they are missing or stale. Because the npm lockfile is not present, this is not a transitive-lockfile reproducible install yet.
+The tracked npm lockfile is mandatory. The dashboard launcher verifies that it is a regular tracked file, includes it in the dependency fingerprint, and uses only `npm ci` when frontend dependencies are missing or stale. Missing or untracked locks cause a clear failure; unlocked installation is disabled.
 
 ## 3. Configuration and first-time authentication
 
@@ -174,10 +167,8 @@ The expected branch is `main`. A fresh checkout starts with `git clone https://g
 With the supported virtual environment active, update the declared dependencies:
 
 ~~~bash
-python -m pip install -r requirements.txt
-cd frontend
-npm install --no-audit --no-fund
-cd ..
+python -m pip install --require-hashes -r requirements.lock
+(cd frontend && npm ci --no-audit --no-fund)
 ~~~
 
 Review the release notes and current environment before upgrading a production or protected-lab operator. Stop the dashboard launcher, active Runner workers and pytest processes before schema maintenance; the migration lock serializes migrations but does not quiesce active product Runs. Create an explicit backup:
@@ -313,7 +304,7 @@ Phase O Cloud/SaaS remains deferred until the standalone Runner is operationally
 
 ## 13. Repository compatibility entry points
 
-The root run_all.sh name remains supported. It creates/activates the project virtual environment, installs declared dependencies, invokes the canonical standalone installer, runs the full pytest suite, and then starts the authenticated dashboard launcher. Set RUN_DASHBOARD=0 to stop after the test suite:
+The root run_all.sh name remains supported. It creates/activates the project virtual environment, installs Python dependencies from requirements.lock with hash enforcement, invokes the canonical standalone installer, runs the full pytest suite, and then starts the authenticated dashboard launcher. Set RUN_DASHBOARD=0 to stop after the test suite:
 
 ~~~bash
 RUN_DASHBOARD=0 ./run_all.sh

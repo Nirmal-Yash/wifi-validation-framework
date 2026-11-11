@@ -422,9 +422,8 @@ cd wifi-validation-framework
 python3 -m venv wifi-venv
 source wifi-venv/bin/activate
 
-# Install Python dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
+# Install Python dependencies from the committed SHA-256 hash lock
+python -m pip install --require-hashes -r requirements.lock
 
 # Create results directories
 mkdir -p results/reports results/captures
@@ -535,7 +534,7 @@ sudo usermod -aG wireshark $USER
 git clone https://github.com/Nirmal-Yash/wifi-validation-framework.git
 cd wifi-validation-framework
 python3 -m venv wifi-venv && source wifi-venv/bin/activate
-pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.lock
 mkdir -p results/reports results/captures
 
 # Run

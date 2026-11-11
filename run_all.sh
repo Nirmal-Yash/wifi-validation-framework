@@ -11,8 +11,12 @@ fi
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
 
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+if ! git ls-files --error-unmatch requirements.lock >/dev/null 2>&1 ||
+   [[ ! -f requirements.lock || -L requirements.lock ]]; then
+  echo "ERROR: requirements.lock must exist as a regular tracked file. Restore the committed lockfile before installing." >&2
+  exit 1
+fi
+python -m pip install --require-hashes -r requirements.lock
 
 python scripts/netregress_install.py
 

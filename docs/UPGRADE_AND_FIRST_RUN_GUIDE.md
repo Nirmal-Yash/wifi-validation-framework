@@ -87,7 +87,6 @@ python3.11 --version
 python3.11 -m venv wifi-venv
 source wifi-venv/bin/activate
 python --version
-python -m pip install --upgrade pip
 python -m pip install --require-hashes -r requirements.lock
 python -m pip check
 ```

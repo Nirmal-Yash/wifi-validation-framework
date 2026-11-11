@@ -139,10 +139,9 @@ def test_release_manifest_is_deterministic_and_verifiable(tmp_path):
     assert first == second
     assert first["schema_version"] == "netregress-release-manifest.v3"
     assert "generated_at" not in first
-    assert first["dependencies"]["status"] in {
-        "COMPLETE",
-        "INCOMPLETE_TRANSITIVE_LOCKFILES",
-    }
+    assert first["dependencies"]["lockfiles_present"] is True
+    assert first["dependencies"]["lockfiles_valid"] is True
+    assert first["dependencies"]["status"] == "COMPLETE"
     assert first["application"]["version"] is None
     assert first["application"]["version_status"] == "NOT_DECLARED_IN_REPOSITORY_METADATA"
     assert first["application"]["frontend_package_version"]
@@ -396,7 +395,8 @@ def test_release_manifest_requires_tracked_consistent_hashed_lockfiles(tmp_path,
     hash_value = "a" * 64
     lock_lines = [
         "Flask==3.0.0 " + chr(92),
-        f"    --hash=sha256:{hash_value}",
+        f"    --hash=sha256:{hash_value} " + chr(92),
+        f"    --hash=sha256:{'b' * 64}",
         "Werkzeug==3.0.1 " + chr(92),
         f"    --hash=sha256:{hash_value}",
     ]
@@ -441,11 +441,36 @@ def test_dashboard_launcher_uses_committed_lock_only_and_fingerprints_install():
     launcher = (root / "scripts" / "start_dashboard.sh").read_text(encoding="utf-8")
 
     assert "frontend_install_fingerprint" in launcher
-    assert "git ls-files --error-unmatch frontend/package-lock.json" in launcher
+    assert "ls-files --error-unmatch frontend/package-lock.json" in launcher
+    assert '"$ROOT_DIR/frontend/package-lock.json"' in launcher
     assert "npm ci --no-audit" in launcher
-    assert "npm install --no-package-lock" in launcher
+    assert "npm install --no-package-lock" not in launcher
     assert 'digest.update(bytes([0]))' in launcher
     assert r"printf '%s\n'" in launcher
+
+def test_python_install_entry_points_require_tracked_hash_lock():
+    root = Path(__file__).resolve().parents[1]
+    run_all = (root / "run_all.sh").read_text(encoding="utf-8")
+    reprovision = (root / "wifi_lab_reprovision_robust.sh").read_text(encoding="utf-8")
+
+    for script in (run_all, reprovision):
+        assert "ls-files --error-unmatch requirements.lock" in script
+        assert "--require-hashes" in script
+        assert "requirements.lock" in script
+        assert "pip install -r requirements.txt" not in script
+        assert "pip install --upgrade pip" not in script
+
+
+def test_quality_workflow_installs_only_from_committed_lockfiles():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github" / "workflows" / "netregress-quality.yml").read_text(encoding="utf-8")
+
+    assert "python -m pip install --require-hashes -r requirements.lock" in workflow
+    assert "npm ci --no-audit --no-fund" in workflow
+    assert "python -m pip install -r requirements.txt" not in workflow
+    assert "npm install --no-audit --no-fund" not in workflow
+    assert "requirements.lock" in workflow
+
 
 def test_dependency_lock_generator_preserves_backups_and_validates_clean_installs():
     root = Path(__file__).resolve().parents[1]

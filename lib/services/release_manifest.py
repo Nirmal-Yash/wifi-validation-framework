@@ -131,9 +131,12 @@ class ReleaseManifestService:
             if not line or line.startswith("#"):
                 continue
             if line.startswith("--hash="):
+                # pip-compile appends a continuation backslash when a package
+                # has multiple hashes. Remove it before validating each hash.
+                hash_line = line.removesuffix("\\").strip()
                 if current_package is None:
                     errors.append(f"line {line_number}: hash is not attached to a package")
-                elif re.fullmatch(r"--hash=sha256:[0-9a-fA-F]{64}", line):
+                elif re.fullmatch(r"--hash=sha256:[0-9a-fA-F]{64}", hash_line):
                     hashed.add(current_package)
                 else:
                     errors.append(f"line {line_number}: unsupported or malformed package hash")

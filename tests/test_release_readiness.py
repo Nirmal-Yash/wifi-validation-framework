@@ -30,6 +30,11 @@ def test_release_manifest_schema_is_stable():
     assert "production_reproducible" in payload
     assert payload["application"]["version"] is None
     assert payload["application"]["version_status"] == "NOT_DECLARED_IN_REPOSITORY_METADATA"
-    assert payload["dependencies"]["lockfiles_present"] is False
-    assert payload["dependencies"]["python"]["direct_dependencies_pinned"] is True
-    assert payload["production_reproducible"] is False
+    dependencies = payload["dependencies"]
+    assert dependencies["lockfiles_present"] is True
+    assert dependencies["lockfiles_valid"] is True
+    assert dependencies["status"] == "COMPLETE"
+    assert dependencies["python"]["direct_dependencies_pinned"] is True
+    assert payload["production_reproducible"] is (
+        payload["release_ready"] and dependencies["complete"]
+    )

@@ -1041,9 +1041,12 @@ echo "Management gateway ${MGMT_GW}/24 present on ${LAB_BRIDGE}."
 # 3. PYTHON + LOCAL REPOSITORY BASELINE
 # ---------------------------------------------------------------------------
 step "Repair Python dependencies and required local repository configuration"
-"$PYTHON" -m pip -q install --upgrade pip setuptools wheel
 [[ -f "$REPO_ROOT/requirements.txt" ]] || die "requirements.txt is missing."
-"$PYTHON" -m pip -q install -r "$REPO_ROOT/requirements.txt"
+if ! git -C "$REPO_ROOT" ls-files --error-unmatch requirements.lock >/dev/null 2>&1 ||
+   [[ ! -f "$REPO_ROOT/requirements.lock" || -L "$REPO_ROOT/requirements.lock" ]]; then
+  die "requirements.lock must exist as a regular tracked file. Refusing an unlocked Python dependency installation."
+fi
+"$PYTHON" -m pip install --require-hashes -r "$REPO_ROOT/requirements.lock"
 "$PYTHON" -m pip check
 
 for f in configs/devices.yaml configs/test_params.yaml configs/topology.yaml pytest.ini; do backup_once "$REPO_ROOT/$f"; done

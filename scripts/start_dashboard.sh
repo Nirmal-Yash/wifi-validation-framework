@@ -180,6 +180,14 @@ if (( NODE_SUPPORTED == 0 )); then
 fi
 log_event PASS "Node.js engine compatibility verified for Vite 8 and Vitest 5."
 
+if ! git -C "$ROOT_DIR" ls-files --error-unmatch frontend/package-lock.json >/dev/null 2>&1 ||
+   [[ ! -f "$ROOT_DIR/frontend/package-lock.json" || -L "$ROOT_DIR/frontend/package-lock.json" ]]; then
+  log_event FAIL "A regular tracked frontend/package-lock.json is required."
+  echo "ERROR: frontend/package-lock.json is missing, untracked, or not a regular file. Restore the committed lockfile; unlocked npm installation is disabled." >&2
+  exit 1
+fi
+log_event PASS "Tracked frontend npm lockfile verified."
+
 NETREGRESS_PORT="$(printenv NETREGRESS_PORT || true)"
 if [[ -z "$NETREGRESS_PORT" ]]; then NETREGRESS_PORT="${DOTENV_NETREGRESS_PORT:-5050}"; fi
 NETREGRESS_FRONTEND_PORT="$(printenv NETREGRESS_FRONTEND_PORT || true)"
@@ -241,19 +249,19 @@ fi
 log_event PASS "Frontend port $NETREGRESS_FRONTEND_PORT is available."
 
 frontend_install_fingerprint() {
-  "$PYTHON_BIN" - "$ROOT_DIR/frontend/package.json" "$ROOT_DIR/frontend/.npmrc" "$NODE_VERSION" <<'PY'
+  "$PYTHON_BIN" - "$ROOT_DIR/frontend/package.json" "$ROOT_DIR/frontend/package-lock.json" "$ROOT_DIR/frontend/.npmrc" "$NODE_VERSION" <<'PY'
 import hashlib
 import pathlib
 import sys
 
 digest = hashlib.sha256()
-for raw_path in sys.argv[1:3]:
+for raw_path in sys.argv[1:4]:
     path = pathlib.Path(raw_path)
     digest.update(path.name.encode("utf-8"))
     digest.update(bytes([0]))
     digest.update(path.read_bytes() if path.is_file() else b"<absent>")
     digest.update(bytes([0]))
-digest.update(sys.argv[3].encode("ascii"))
+digest.update(sys.argv[4].encode("ascii"))
 print(digest.hexdigest())
 PY
 }
@@ -267,14 +275,8 @@ fi
 
 if [[ ! -x "$ROOT_DIR/frontend/node_modules/.bin/vite" ||
       "$INSTALLED_FRONTEND_FINGERPRINT" != "$EXPECTED_FRONTEND_FINGERPRINT" ]]; then
-  log_event INFO "Frontend dependencies are missing or stale; installing the declared dependency graph."
-  if git ls-files --error-unmatch frontend/package-lock.json >/dev/null 2>&1 &&
-     [[ -f "$ROOT_DIR/frontend/package-lock.json" ]]; then
-    (cd "$ROOT_DIR/frontend" && npm ci --no-audit --no-fund --loglevel=warn)
-  else
-    # No committed lockfile exists today; do not generate an unreviewed lock on the checkout.
-    (cd "$ROOT_DIR/frontend" && npm install --no-package-lock --no-audit --no-fund --loglevel=warn)
-  fi
+  log_event INFO "Frontend dependencies are missing or stale; installing from the committed npm lockfile."
+  (cd "$ROOT_DIR/frontend" && npm ci --no-audit --no-fund --loglevel=warn)
   printf '%s\n' "$EXPECTED_FRONTEND_FINGERPRINT" > "$FRONTEND_DEPS_MARKER"
   chmod 600 "$FRONTEND_DEPS_MARKER"
   log_event PASS "Frontend dependency installation completed."
