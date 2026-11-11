@@ -153,8 +153,14 @@ class EnvironmentFingerprintService:
 
     @staticmethod
     def _interfaces() -> tuple[str, ...]:
-        path = Path("/sys/class/net")
+        """Enumerate host interfaces through the portable socket API."""
         try:
-            return tuple(sorted(item.name for item in path.iterdir()))
-        except OSError:
-            return ()
+            return tuple(sorted(name for _index, name in socket.if_nameindex()))
+        except (AttributeError, NotImplementedError, OSError):
+            # Preserve the legacy Linux fallback if a platform's socket stack
+            # does not expose interface enumeration.
+            path = Path("/sys/class/net")
+            try:
+                return tuple(sorted(item.name for item in path.iterdir()))
+            except OSError:
+                return ()

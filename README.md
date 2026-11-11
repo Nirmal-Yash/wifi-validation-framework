@@ -44,13 +44,14 @@ The historical 11/11 result must not be interpreted as the expected collection c
 
 Read the canonical documents in this order:
 
-1. docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md — development order, historical phases and roadmap
-2. docs/02_SYSTEM_ARCHITECTURE_DATA_API.md — backend architecture, data model and API
-3. docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md — traceability, audit and readiness
-4. docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md — installation, exact lab reproduction and operations
-5. docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md — architecture decisions and business invariants
-6. docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md — standalone installation, maintenance, recovery and certification operations
-7. docs/UPGRADE_AND_FIRST_RUN_GUIDE.md — upgrade an existing checkout, pull current main, migrate the database, and operate the upgraded Runner
+1. docs/STAGE_A_FOUNDATION.md — Stage A baseline, compatibility guarantees, platform abstraction, product shell and resource persistence foundation
+2. docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md — development order, historical phases and roadmap
+3. docs/02_SYSTEM_ARCHITECTURE_DATA_API.md — backend architecture, data model and API
+4. docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md — traceability, audit and readiness
+5. docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md — installation, exact lab reproduction and operations
+6. docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md — architecture decisions and business invariants
+7. docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md — standalone installation, maintenance, recovery and certification operations
+8. docs/UPGRADE_AND_FIRST_RUN_GUIDE.md — upgrade an existing checkout, pull current main, migrate the database, and operate the upgraded Runner
 
 Supporting contracts remain separate:
 - docs/EXECUTION_AND_ADAPTERS.md

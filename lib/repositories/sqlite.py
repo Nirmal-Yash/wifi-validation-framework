@@ -32,7 +32,7 @@ from lib.domain import (
 )
 from .interfaces import RepositoryConflictError
 
-SCHEMA_VERSION = "12"
+SCHEMA_VERSION = "13"
 
 
 def _dt(value: datetime | None) -> str | None:

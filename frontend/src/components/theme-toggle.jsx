@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from "react";
 import {Moon,Sun} from "lucide-react";
 import {Button} from "@/components/ui/button";
-function getTheme(){try{const stored=localStorage.getItem("netregress-theme");if(stored==="light"||stored==="dark")return stored;}catch{}return window.matchMedia?.("(prefers-color-scheme: light)").matches?"light":"dark";}
+function getTheme(){try{const stored=localStorage.getItem("netregress-theme");if(stored==="light"||stored==="dark")return stored;}catch{}return "light";}
 export function ThemeToggle(){
  const[theme,setTheme]=useState(getTheme);
  useEffect(()=>{document.documentElement.dataset.theme=theme;try{localStorage.setItem("netregress-theme",theme);}catch{}},[theme]);

@@ -4,6 +4,7 @@
 
 | Document | Purpose | Authority |
 |---|---|---|
+| STAGE_A_FOUNDATION.md | P00–P03 baseline audit, compatibility rules, platform foundation, product-shell redesign and initial resource persistence | Stage A implementation/compatibility record |
 | 01_DEVELOPMENT_PLAN_AND_ROADMAP.md | Implementation order, historical phases, current iterations, roadmap and completion gates | Development order/status |
 | 02_SYSTEM_ARCHITECTURE_DATA_API.md | Backend architecture, persistence model, data ownership and API contracts | Technical/data/API contract |
 | 03_TRACEABILITY_AND_SYSTEM_READINESS.md | Requirement traceability, current state, completeness audit and release readiness | Verification/readiness |

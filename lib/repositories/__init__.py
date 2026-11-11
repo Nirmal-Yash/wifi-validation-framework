@@ -10,6 +10,7 @@ from .interfaces import (
     TestResultRepository,
     SyncQueueRepository,
 )
+from .resource_interfaces import LabRepository, OrganizationRepository, ProjectRepository
 from .database_config import DatabaseConfigurationError, resolve_database_path
 from .sqlite import (
     SQLiteArtifactRepository,
@@ -40,6 +41,9 @@ __all__ = [
     "RunRepository",
     "TestResultRepository",
     "SyncQueueRepository",
+    "LabRepository",
+    "OrganizationRepository",
+    "ProjectRepository",
     "SQLiteArtifactRepository",
     "SQLiteAttemptRepository",
     "SQLiteBaselineRepository",
@@ -49,6 +53,9 @@ __all__ = [
     "SQLiteTestResultRepository",
     "SQLiteSyncQueueRepository",
     "SQLiteWaiverRepository",
+    "SQLiteLabRepository",
+    "SQLiteOrganizationRepository",
+    "SQLiteProjectRepository",
 ]
 
 from .sqlite import SQLiteWaiverRepository
@@ -59,3 +66,5 @@ from .database_migrations import (
     DatabaseSchemaDriftError,
     MultipleMigrationHeadsError,
 )
+
+from .resource_sqlite import SQLiteLabRepository, SQLiteOrganizationRepository, SQLiteProjectRepository

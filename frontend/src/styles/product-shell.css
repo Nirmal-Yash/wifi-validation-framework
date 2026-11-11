@@ -1,0 +1,131 @@
+/* Product shell polish. Feature pages continue to own their own data contracts. */
+.sidebar {
+  width: var(--nr-sidebar-expanded);
+  min-width: var(--nr-sidebar-expanded);
+  box-shadow: 5px 0 24px rgba(15, 35, 65, 0.035);
+}
+[data-sidebar-provider][data-state="collapsed"] .sidebar {
+  width: var(--nr-sidebar-collapsed);
+  min-width: var(--nr-sidebar-collapsed);
+}
+.sidebar-header {
+  height: 76px;
+  padding-inline: 17px;
+}
+.brand-mark {
+  width: 39px;
+  height: 39px;
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.19), 0 7px 18px rgba(35,82,145,.18);
+}
+.brand-wordmark strong {
+  font-size: 14px;
+  letter-spacing: -.035em;
+}
+.brand-wordmark small {
+  font-size: 8px;
+  letter-spacing: .15em;
+}
+.workspace-card {
+  margin: 15px 13px 10px;
+  padding: 11px;
+  border-radius: var(--nr-radius-md);
+  box-shadow: var(--nr-shadow-soft);
+}
+.sidebar-group {
+  margin-block: 7px 18px;
+}
+.sidebar-group-label {
+  padding: 9px 11px;
+  font-size: 9px;
+  letter-spacing: .145em;
+}
+.sidebar-menu {
+  gap: 4px;
+}
+.sidebar-menu-button {
+  min-height: 41px;
+  padding-inline: 12px;
+  border-radius: 10px;
+  font-size: 11.5px;
+}
+.sidebar-menu-button:focus-visible,
+.profile-trigger:focus-visible,
+.theme-toggle:focus-visible {
+  outline: 0;
+  box-shadow: var(--nr-focus-ring);
+}
+.sidebar-footer {
+  padding: 14px;
+}
+.topbar {
+  height: 66px;
+  padding-inline: var(--nr-page-gutter);
+}
+.breadcrumbs {
+  gap: 10px;
+}
+.breadcrumbs strong {
+  font-weight: 720;
+}
+.content-body {
+  max-width: var(--nr-content-max);
+  min-height: calc(100vh - 102px);
+  padding: 31px var(--nr-page-gutter) 48px;
+}
+.content-intro {
+  margin-bottom: 27px;
+}
+.content-intro h1 {
+  font-size: clamp(25px, 2.15vw, 33px);
+  letter-spacing: -.052em;
+}
+.content-intro p {
+  font-size: 12px;
+}
+.page-content {
+  animation: nr-page-in .22s ease-out both;
+}
+@keyframes nr-page-in {
+  from { opacity: .72; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.app-footer {
+  padding-inline: var(--nr-page-gutter);
+  padding-bottom: 18px;
+}
+:root[data-theme="light"] .sidebar {
+  box-shadow: 5px 0 28px rgba(28, 47, 75, .045);
+}
+:root[data-theme="light"] .workspace-card {
+  background: linear-gradient(145deg, #ffffff, #f7f9fc);
+}
+:root[data-theme="dark"] .workspace-card {
+  background: linear-gradient(145deg, #111a27, #0e141e);
+}
+@media (max-width: 1100px) {
+  .sidebar { width: 246px; min-width: 246px; }
+  [data-sidebar-provider][data-state="collapsed"] .sidebar {
+    width: var(--nr-sidebar-collapsed);
+    min-width: var(--nr-sidebar-collapsed);
+  }
+  .content-body { padding-top: 25px; }
+}
+@media (max-width: 900px) {
+  .sidebar { width: 270px; min-width: 270px; }
+  .topbar { height: 60px; }
+  .content-body { min-height: calc(100vh - 96px); padding-top: 22px; }
+}
+@media (max-width: 640px) {
+  .topbar { gap: 8px; padding-inline: 14px; }
+  .breadcrumbs { gap: 6px; font-size: 10px; }
+  .topbar-end { gap: 7px; }
+  .local-pill, .topbar-divider { display: none; }
+  .profile-copy { display: none; }
+  .content-body { padding: 20px 15px 34px; }
+  .content-intro { align-items: flex-start; flex-direction: column; gap: 10px; margin-bottom: 19px; }
+  .app-footer { padding-inline: 15px; font-size: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-content { animation: none; }
+}

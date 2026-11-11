@@ -75,6 +75,9 @@ EXPECTED_TABLE_COLUMNS = {
         "waiver_id", "scope", "target_id", "issue_code", "reason",
         "created_by", "created_at", "expires_at", "audit_reference", "active",
     ),
+    "organizations": ("organization_id", "slug", "name", "status", "created_at", "updated_at"),
+    "projects": ("project_id", "organization_id", "slug", "name", "status", "created_at", "updated_at"),
+    "labs": ("lab_id", "project_id", "name", "provider_id", "topology_version", "status", "created_at", "updated_at"),
 }
 
 EXPECTED_INDEXES = (
@@ -86,6 +89,8 @@ EXPECTED_INDEXES = (
     "idx_sync_queue_ready",
     "idx_sync_queue_run",
     "idx_waivers_target",
+    "idx_projects_organization",
+    "idx_labs_project",
 )
 
 EXPECTED_FOREIGN_KEYS = {
@@ -105,6 +110,8 @@ EXPECTED_FOREIGN_KEYS = {
     ("lifecycle_events", "test_result_id", "test_results", "test_result_id"),
     ("run_baselines", "baseline_run_id", "runs", "run_id"),
     ("sync_queue", "run_id", "runs", "run_id"),
+    ("projects", "organization_id", "organizations", "organization_id"),
+    ("labs", "project_id", "projects", "project_id"),
 }
 
 
@@ -213,9 +220,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "12":
+        if metadata.get("version") != "13":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '12'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '13'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

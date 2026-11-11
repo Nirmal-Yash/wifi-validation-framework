@@ -74,6 +74,12 @@ __all__ = [
     "SyncEnvelope",
     "SyncQueueItem",
     "SyncState",
+    "Lab",
+    "Organization",
+    "Project",
+    "ResourceStatus",
+    "ResourceValidationError",
+    "new_resource_id",
 ]
 
 from .protocol_evidence import (
@@ -95,3 +101,4 @@ from .sync import SyncEnvelope, SyncQueueItem, SyncState
 
 from .operations import FailureClass, ReleaseWaiver, WaiverScope
 from .firmware import FirmwareOperationState
+from .resources import Lab, Organization, Project, ResourceStatus, ResourceValidationError, new_resource_id

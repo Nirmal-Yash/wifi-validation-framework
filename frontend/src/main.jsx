@@ -6,6 +6,8 @@ import SessionExpiryDialog from "@/auth/session-dialog";
 import {TooltipProvider} from "@/components/ui/tooltip";
 import App from "@/App";
 import "@/styles.css";
+import "@/styles/tokens.css";
+import "@/styles/product-shell.css";
 
 export const queryClient=new QueryClient({
  defaultOptions:{

@@ -73,3 +73,14 @@ def test_non_finite_observations_are_rejected(tmp_path):
             configuration_hash="cfg",
             observations={"temperature": float("nan")},
         )
+
+
+
+def test_interfaces_use_cross_platform_socket_enumeration(monkeypatch):
+    from lib.services.environment_fingerprint import EnvironmentFingerprintService
+
+    monkeypatch.setattr(
+        "lib.services.environment_fingerprint.socket.if_nameindex",
+        lambda: [(2, "wlan0"), (1, "lo"), (3, "eth0")],
+    )
+    assert EnvironmentFingerprintService._interfaces() == ("eth0", "lo", "wlan0")

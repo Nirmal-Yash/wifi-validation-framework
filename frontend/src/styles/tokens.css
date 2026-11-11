@@ -1,0 +1,17 @@
+/* NetRegress product design tokens — shared by all feature modules. */
+:root {
+  --nr-sidebar-expanded: 270px;
+  --nr-sidebar-collapsed: 76px;
+  --nr-content-max: 1720px;
+  --nr-page-gutter: clamp(18px, 2.25vw, 34px);
+  --nr-radius-sm: 8px;
+  --nr-radius-md: 12px;
+  --nr-radius-lg: 16px;
+  --nr-shadow-soft: 0 8px 28px rgba(22, 35, 55, 0.055);
+  --nr-shadow-raised: 0 14px 42px rgba(22, 35, 55, 0.10);
+  --nr-focus-ring: 0 0 0 3px color-mix(in srgb, var(--ring) 24%, transparent);
+}
+:root[data-theme="dark"] {
+  --nr-shadow-soft: 0 8px 28px rgba(0, 0, 0, 0.18);
+  --nr-shadow-raised: 0 14px 42px rgba(0, 0, 0, 0.28);
+}

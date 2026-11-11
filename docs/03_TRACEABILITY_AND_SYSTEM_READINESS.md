@@ -168,7 +168,7 @@ The prior release wave established the standalone Runner architecture, but this 
 
 | Area | State | Audit interpretation |
 |---|---|---|
-| Domain / persistence | Implemented | Normalized Run/Attempt/TestResult/Artifact model; Alembic head 20261105_03 governs SQLite schema version 12, with physical schema drift checks and pre-upgrade backup/recovery. |
+| Domain / persistence | Implemented | Normalized Run/Attempt/TestResult/Artifact model plus the initial Organization/Project/Lab ownership model; Alembic head 20261111_04 governs SQLite schema version 13, with physical schema drift checks and pre-upgrade backup/recovery. Existing Runner records remain in place. |
 | Run orchestration | Implemented | Run outcomes and completeness use the latest Attempt and an exact one-to-one match against selected tests; duplicate, missing and unexpected results remain unvalidated. |
 | Evidence | Implemented | TestResult-owned, pytest-node/Attempt-owned, Attempt-wide and Run-wide evidence are scoped explicitly; evidence owned by another test/Attempt, soft-deleted, incomplete, invalid or hash-mismatched cannot satisfy a requirement. |
 | DHCP protocol evidence | Completed in source | DORA, T1 renewal and T2 rebind transaction classification are now correlated from captured DHCP traffic. |
