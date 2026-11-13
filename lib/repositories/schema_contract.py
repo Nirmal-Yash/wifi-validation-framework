@@ -90,6 +90,9 @@ EXPECTED_TABLE_COLUMNS = {
     "audit_events": ("audit_id", "actor_username", "action", "resource_type", "resource_id", "details_json", "occurred_at"),
     "managed_credentials": ("credential_id", "project_id", "device_id", "label", "credential_type", "username", "secret_provider", "secret_reference", "status", "verification_status", "last_verified_at", "verification_summary", "rotated_at", "created_at", "updated_at", "created_by", "updated_by"),
     "configuration_schemas": ("schema_record_id", "project_id", "schema_id", "version", "name", "definition_json", "status", "created_at", "created_by"),
+    "configuration_profiles": ("profile_id", "project_id", "name", "description", "scope_type", "scope_id", "schema_record_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
+    "configuration_revisions": ("revision_id", "profile_id", "schema_record_id", "revision_number", "values_json", "configuration_hash", "provenance_json", "parent_revision_id", "status", "created_at", "created_by", "published_at", "published_by"),
+    "configuration_assignments": ("assignment_id", "project_id", "target_type", "target_id", "profile_id", "revision_id", "assigned_at", "assigned_by"),
 }
 
 EXPECTED_TRIGGERS = (
@@ -100,6 +103,9 @@ EXPECTED_TRIGGERS = (
     "trg_audit_events_no_delete",
     "trg_managed_credentials_no_delete",
     "trg_configuration_schemas_no_delete",
+    "trg_configuration_revisions_immutable",
+    "trg_configuration_revisions_no_delete",
+    "trg_configuration_assignments_no_delete",
 )
 
 EXPECTED_INDEXES = (
@@ -126,6 +132,9 @@ EXPECTED_INDEXES = (
     "idx_audit_events_resource",
     "idx_credentials_project_device_status",
     "idx_configuration_schemas_project_schema",
+    "idx_configuration_profiles_project_scope",
+    "idx_configuration_revisions_profile_number",
+    "idx_configuration_assignments_target",
 )
 
 EXPECTED_FOREIGN_KEYS = {
@@ -148,6 +157,14 @@ EXPECTED_FOREIGN_KEYS = {
     ("projects", "organization_id", "organizations", "organization_id"),
     ("managed_credentials", "project_id", "projects", "project_id"),
     ("configuration_schemas", "project_id", "projects", "project_id"),
+    ("configuration_profiles", "project_id", "projects", "project_id"),
+    ("configuration_profiles", "schema_record_id", "configuration_schemas", "schema_record_id"),
+    ("configuration_revisions", "profile_id", "configuration_profiles", "profile_id"),
+    ("configuration_revisions", "schema_record_id", "configuration_schemas", "schema_record_id"),
+    ("configuration_revisions", "parent_revision_id", "configuration_revisions", "revision_id"),
+    ("configuration_assignments", "project_id", "projects", "project_id"),
+    ("configuration_assignments", "profile_id", "configuration_profiles", "profile_id"),
+    ("configuration_assignments", "revision_id", "configuration_revisions", "revision_id"),
     ("labs", "project_id", "projects", "project_id"),
     ("project_memberships", "project_id", "projects", "project_id"),
     ("role_permissions", "role_id", "roles", "role_id"),
@@ -277,9 +294,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "17":
+        if metadata.get("version") != "18":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '17'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '18'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

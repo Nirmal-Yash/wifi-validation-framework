@@ -16,7 +16,7 @@ Implemented: additive migration `20261113_08` (schema version 17), Project-scope
 
 ## P13 — Configuration Revision and Resolution
 
-Planned: immutable hash-addressed revisions, validated publishing, provenance, safe rollback as a new revision, deterministic resolution and legacy YAML import with inline-secret rejection.
+Implemented: Project/Lab/Device-scoped profiles, validated draft revisions, canonical SHA-256 hashes, provenance, append-only revision content, publish, rollback as a new draft revision, target assignments, effective-value preview through the existing `ConfigurationResolver`, and safe YAML import with inline secret-field rejection. Assignment persists the selected published revision; it does not directly configure a physical device. Provider apply/reconciliation remains in Stage D.
 
 ## P14 — Configuration Management Frontend
 
