@@ -11,6 +11,9 @@ from typing import Any,Callable
 from functools import wraps
 from flask import Blueprint,jsonify,request,session,send_file,current_app
 from lib.platform import platform_adapter_for
+from lib.services.configuration_schema_registry import (
+    ConfigurationSchemaError, ConfigurationSchemaNotFound, ConfigurationSchemaRegistry,
+)
 from lib.services.credential_vault import (
     CredentialVaultError, CredentialVaultNotFound, CredentialVaultPolicyError,
     CredentialVaultService,
@@ -46,6 +49,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         query.database,platform_adapter.create_secret_store(),
         secret_provider=platform_adapter.descriptor.family.value,
     )
+    configuration_schemas=ConfigurationSchemaRegistry(query.database)
     organization_repository=SQLiteOrganizationRepository(query.database)
     project_repository=SQLiteProjectRepository(query.database)
     lab_repository=SQLiteLabRepository(query.database)
@@ -1652,6 +1656,54 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         if not result["secret_deleted"]:
             result["warning"]="Credential is revoked, but the provider did not confirm deletion of the underlying secret."
         return ok(result)
+
+
+    @api.get("/configuration/schemas")
+    def list_configuration_schemas():
+        project_id=str(request.args.get("project_id","")).strip()
+        if not project_id:
+            return error("INVALID_REQUEST","project_id query parameter is required",400)
+        denied=require_permission("configurations.read",project_id=project_id)
+        if denied is not None:
+            return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND","Project not found",404)
+        return ok({"items":configuration_schemas.list(project_id)})
+
+    @api.post("/configuration/schemas")
+    def register_configuration_schema():
+        payload=request.get_json(silent=True) or {}
+        project_id=str(payload.get("project_id","")).strip()
+        denied=require_permission("configurations.manage",project_id=project_id)
+        if denied is not None:
+            return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND","Project not found",404)
+        try:
+            definition=payload.get("definition")
+            if not isinstance(definition,dict):
+                raise ConfigurationSchemaError("definition must be a JSON schema object")
+            canonical=json.dumps(definition,sort_keys=True,separators=(",",":"),ensure_ascii=False,allow_nan=False)
+            idem_payload={
+                "project_id":project_id,"schema_id":payload.get("schema_id"),
+                "version":payload.get("version"),"name":payload.get("name"),
+                "definition_sha256":hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+            }
+            key,request_hash,cached,security_error=idempotency_preflight("/api/v1/configuration/schemas",idem_payload)
+            if security_error is not None:
+                return security_error
+            if cached is not None:
+                return jsonify(cached.response),cached.status_code
+            item=configuration_schemas.register(
+                project_id=project_id,schema_id=payload.get("schema_id"),
+                version=payload.get("version"),name=payload.get("name"),
+                definition=definition,
+                actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except (ConfigurationSchemaError,TypeError,ValueError) as exc:
+            return error("INVALID_CONFIGURATION_SCHEMA",str(exc),400)
+        idempotency_store_response("/api/v1/configuration/schemas",key,request_hash,item,201)
+        return ok(item),201
 
     return api
 

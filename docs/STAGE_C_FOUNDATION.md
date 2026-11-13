@@ -12,7 +12,7 @@ Adds Project/device-scoped credential metadata, opaque OS-vault references, secr
 
 ## P12 — Configuration Schema Registry
 
-Planned: registered typed schemas, schema versioning, value validation and compatibility with the existing resolver. Profiles must not embed secrets; they may reference credential IDs.
+Implemented: additive migration `20261113_08` (schema version 17), Project-scoped versioned schema definitions, a bounded JSON-Schema-like type registry, deterministic validation errors and `configurations.read/manage` permissions. The API supports listing and registering schema versions. Schemas reject unsupported keywords, open-ended object properties and sensitive credential-like property names. The existing configuration resolver remains unchanged; profile and revision lifecycle is P13.
 
 ## P13 — Configuration Revision and Resolution
 
