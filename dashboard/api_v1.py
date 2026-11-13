@@ -10,6 +10,11 @@ from werkzeug.security import check_password_hash
 from typing import Any,Callable
 from functools import wraps
 from flask import Blueprint,jsonify,request,session,send_file,current_app
+from lib.platform import platform_adapter_for
+from lib.services.credential_vault import (
+    CredentialVaultError, CredentialVaultNotFound, CredentialVaultPolicyError,
+    CredentialVaultService,
+)
 from lib.repositories import (
     SQLiteDatabase, SQLiteOrganizationRepository, SQLiteProjectRepository,
     SQLiteLabRepository, SQLiteProjectMembershipRepository, RepositoryConflictError,
@@ -36,6 +41,11 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     idempotency_store=IdempotencyStore(query.database)
     login_limiter=LoginRateLimiter()
     identity=IdentityStore(query.database)
+    platform_adapter=platform_adapter_for()
+    credential_vault=CredentialVaultService(
+        query.database,platform_adapter.create_secret_store(),
+        secret_provider=platform_adapter.descriptor.family.value,
+    )
     organization_repository=SQLiteOrganizationRepository(query.database)
     project_repository=SQLiteProjectRepository(query.database)
     lab_repository=SQLiteLabRepository(query.database)
@@ -1450,6 +1460,199 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
                  json.dumps({"username":username},sort_keys=True),now),
             )
         return ok({"removed":True,"username":username,"project_id":project_id})
+
+    def _credential_actor() -> str:
+        return str((session.get("netregress_user") or {}).get("username","local"))
+
+    def _credential_ssh_verifier(record, secret):
+        credential_type=record.get("credential_type")
+        if credential_type not in {"SSH_PASSWORD","SSH_PRIVATE_KEY"}:
+            return "UNAVAILABLE","This credential type has no configured protocol verification adapter."
+        try:
+            device=load_devices().get(str(record["device_id"]))
+            if not isinstance(device,dict):
+                return "UNAVAILABLE","The selected device is not present in the configured device inventory."
+            host=str(device.get("host","")).strip()
+            username=str(record.get("username") or device.get("username") or "").strip()
+            port=int(device.get("port",22))
+            if not host or not username or not 1 <= port <= 65535:
+                return "UNAVAILABLE","The selected device is missing its host, username or valid SSH port."
+            import io
+            import paramiko
+            pkey=None
+            password=None
+            if credential_type=="SSH_PASSWORD":
+                password=secret
+            else:
+                key_classes=[
+                    getattr(paramiko,"Ed25519Key",None),
+                    getattr(paramiko,"ECDSAKey",None),
+                    getattr(paramiko,"RSAKey",None),
+                    getattr(paramiko,"DSSKey",None),
+                ]
+                for key_class in key_classes:
+                    if key_class is None:
+                        continue
+                    try:
+                        pkey=key_class.from_private_key(io.StringIO(secret))
+                        break
+                    except Exception:
+                        continue
+                if pkey is None:
+                    return "FAILED","The stored private key could not be parsed; encrypted keys are not supported by this verifier."
+            client=paramiko.SSHClient()
+            client.load_system_host_keys()
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
+            try:
+                client.connect(
+                    hostname=host,port=port,username=username,password=password,pkey=pkey,
+                    allow_agent=False,look_for_keys=False,timeout=6,auth_timeout=6,banner_timeout=6,
+                )
+                _stdin,stdout,_stderr=client.exec_command("true",timeout=6)
+                exit_code=stdout.channel.recv_exit_status()
+                if exit_code==0:
+                    return "VERIFIED","SSH authentication and the harmless read-only health probe succeeded."
+                return "FAILED","SSH connected, but the read-only health probe returned a non-zero status."
+            finally:
+                client.close()
+        except Exception as exc:
+            return "FAILED","SSH verification failed ("+type(exc).__name__+"); check reachability, credentials and trusted host keys."
+
+    @api.get("/credentials")
+    def list_managed_credentials():
+        project_id=str(request.args.get("project_id","")).strip()
+        if not project_id:
+            return error("INVALID_REQUEST","project_id query parameter is required",400)
+        denied=require_permission("credentials.read",project_id=project_id)
+        if denied is not None:
+            return denied
+        device_id=str(request.args.get("device_id","")).strip() or None
+        return ok({"items":credential_vault.list(project_id,device_id=device_id)})
+
+    @api.post("/credentials")
+    def create_managed_credential():
+        payload=request.get_json(silent=True) or {}
+        project_id=str(payload.get("project_id","")).strip()
+        denied=require_permission("credentials.manage",project_id=project_id)
+        if denied is not None:
+            return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND","Project not found",404)
+        if not isinstance(payload.get("secret"),str):
+            return error("INVALID_REQUEST","secret is required",400)
+        idem_payload={
+            "project_id":project_id,"device_id":payload.get("device_id"),
+            "label":payload.get("label"),"credential_type":payload.get("credential_type"),
+            "username":payload.get("username"),
+            "secret_sha256":hashlib.sha256(payload["secret"].encode("utf-8")).hexdigest(),
+        }
+        key,request_hash,cached,security_error=idempotency_preflight("/api/v1/credentials",idem_payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            item=credential_vault.create(
+                project_id=project_id,device_id=payload.get("device_id"),
+                label=payload.get("label"),credential_type=payload.get("credential_type"),
+                username=payload.get("username"),secret=payload["secret"],actor=_credential_actor(),
+            )
+        except (ValueError,CredentialVaultPolicyError) as exc:
+            return error("INVALID_REQUEST",str(exc),400)
+        except CredentialVaultNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except CredentialVaultError as exc:
+            return error("CREDENTIAL_STORE_UNAVAILABLE",str(exc),503)
+        idempotency_store_response("/api/v1/credentials",key,request_hash,item,201)
+        return ok(item),201
+
+    @api.post("/credentials/<credential_id>/rotate")
+    def rotate_managed_credential(credential_id):
+        item=credential_vault.get(credential_id)
+        if item is None:
+            return error("NOT_FOUND","Credential not found",404)
+        denied=require_permission("credentials.manage",project_id=item["project_id"])
+        if denied is not None:
+            return denied
+        payload=request.get_json(silent=True) or {}
+        secret=payload.get("secret")
+        if not isinstance(secret,str):
+            return error("INVALID_REQUEST","secret is required",400)
+        idem_payload={
+            "credential_id":credential_id,
+            "secret_sha256":hashlib.sha256(secret.encode("utf-8")).hexdigest(),
+            "username":payload.get("username"),
+        }
+        key,request_hash,cached,security_error=idempotency_preflight("/api/v1/credentials/"+credential_id+"/rotate",idem_payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            updated=credential_vault.rotate(
+                credential_id,secret=secret,username=payload.get("username"),actor=_credential_actor(),
+            )
+        except (ValueError,CredentialVaultPolicyError) as exc:
+            return error("INVALID_REQUEST",str(exc),400)
+        except CredentialVaultNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except CredentialVaultError as exc:
+            return error("CREDENTIAL_ROTATION_FAILED",str(exc),409)
+        idempotency_store_response("/api/v1/credentials/"+credential_id+"/rotate",key,request_hash,updated,200)
+        return ok(updated)
+
+    @api.post("/credentials/<credential_id>/verify")
+    def verify_managed_credential(credential_id):
+        item=credential_vault.get(credential_id)
+        if item is None:
+            return error("NOT_FOUND","Credential not found",404)
+        denied=require_permission("credentials.verify",project_id=item["project_id"])
+        if denied is not None:
+            return denied
+        idem_payload={"credential_id":credential_id,"operation":"verify"}
+        key,request_hash,cached,security_error=idempotency_preflight("/api/v1/credentials/"+credential_id+"/verify",idem_payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            result=credential_vault.verify(
+                credential_id,actor=_credential_actor(),verifier=_credential_ssh_verifier,
+            )
+        except CredentialVaultNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except CredentialVaultPolicyError as exc:
+            return error("INVALID_TRANSITION",str(exc),409)
+        except CredentialVaultError as exc:
+            return error("CREDENTIAL_VERIFICATION_FAILED",str(exc),409)
+        idempotency_store_response("/api/v1/credentials/"+credential_id+"/verify",key,request_hash,result,200)
+        return ok(result)
+
+    @api.delete("/credentials/<credential_id>")
+    def revoke_managed_credential(credential_id):
+        item=credential_vault.get(credential_id)
+        if item is None:
+            return error("NOT_FOUND","Credential not found",404)
+        denied=require_permission("credentials.manage",project_id=item["project_id"])
+        if denied is not None:
+            return denied
+        idem_payload={"credential_id":credential_id,"operation":"revoke"}
+        key,request_hash,cached,security_error=idempotency_preflight("/api/v1/credentials/"+credential_id+"/revoke",idem_payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            result=credential_vault.revoke(credential_id,actor=_credential_actor())
+        except CredentialVaultPolicyError as exc:
+            return error("INVALID_TRANSITION",str(exc),409)
+        except CredentialVaultError as exc:
+            return error("CREDENTIAL_REVOCATION_FAILED",str(exc),409)
+        idempotency_store_response("/api/v1/credentials/"+credential_id+"/revoke",key,request_hash,result,200)
+        if not result["secret_deleted"]:
+            result["warning"]="Credential is revoked, but the provider did not confirm deletion of the underlying secret."
+        return ok(result)
+
     return api
 
 def create_query(database_path:str|Path)->DashboardQueryService:return DashboardQueryService(SQLiteDatabase(database_path))

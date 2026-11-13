@@ -234,7 +234,14 @@ class CredentialVaultService:
         if record is None:
             raise CredentialVaultNotFound("credential not found")
         if record["status"] == "REVOKED":
-            return {"credential": self._serialize(record), "secret_deleted": True}
+            try:
+                remaining = self.secret_store.get(record["secret_reference"])
+                if remaining is None:
+                    return {"credential": self._serialize(record), "secret_deleted": True}
+                deleted = bool(self.secret_store.delete(record["secret_reference"]))
+                return {"credential": self._serialize(record), "secret_deleted": deleted}
+            except Exception:
+                return {"credential": self._serialize(record), "secret_deleted": False}
         actor = self._safe_actor(actor)
         now = self._now()
         with self.database.transaction(immediate=True) as connection:
@@ -277,7 +284,7 @@ class CredentialVaultService:
                 status = str(result_status).upper()
                 if status not in {"VERIFIED", "FAILED", "UNAVAILABLE"}:
                     raise ValueError("verifier returned an invalid status")
-                summary = str(result_summary)[:240]
+                summary = str(result_summary).replace(secret, "[redacted]")[:240]
         except Exception as exc:
             status = "UNAVAILABLE"
             summary = "Credential verification could not run (" + type(exc).__name__ + ")."

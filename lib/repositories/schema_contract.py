@@ -123,7 +123,6 @@ EXPECTED_INDEXES = (
     "idx_audit_events_time",
     "idx_audit_events_resource",
     "idx_credentials_project_device_status",
-    "uq_credentials_project_device_label",
 )
 
 EXPECTED_FOREIGN_KEYS = {
