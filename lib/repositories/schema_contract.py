@@ -88,6 +88,7 @@ EXPECTED_TABLE_COLUMNS = {
     "invitation_tokens": ("token_hash", "username", "created_at", "expires_at", "created_by", "consumed_at"),
     "password_reset_tokens": ("token_hash", "username", "created_at", "expires_at", "created_by", "consumed_at"),
     "audit_events": ("audit_id", "actor_username", "action", "resource_type", "resource_id", "details_json", "occurred_at"),
+    "managed_credentials": ("credential_id", "project_id", "device_id", "label", "credential_type", "username", "secret_provider", "secret_reference", "status", "verification_status", "last_verified_at", "verification_summary", "rotated_at", "created_at", "updated_at", "created_by", "updated_by"),
 }
 
 EXPECTED_TRIGGERS = (
@@ -96,6 +97,7 @@ EXPECTED_TRIGGERS = (
     "trg_projects_prevent_delete_with_runs",
     "trg_audit_events_no_update",
     "trg_audit_events_no_delete",
+    "trg_managed_credentials_no_delete",
 )
 
 EXPECTED_INDEXES = (
@@ -120,6 +122,8 @@ EXPECTED_INDEXES = (
     "idx_password_reset_user",
     "idx_audit_events_time",
     "idx_audit_events_resource",
+    "idx_credentials_project_device_status",
+    "uq_credentials_project_device_label",
 )
 
 EXPECTED_FOREIGN_KEYS = {
@@ -140,6 +144,7 @@ EXPECTED_FOREIGN_KEYS = {
     ("run_baselines", "baseline_run_id", "runs", "run_id"),
     ("sync_queue", "run_id", "runs", "run_id"),
     ("projects", "organization_id", "organizations", "organization_id"),
+    ("managed_credentials", "project_id", "projects", "project_id"),
     ("labs", "project_id", "projects", "project_id"),
     ("project_memberships", "project_id", "projects", "project_id"),
     ("role_permissions", "role_id", "roles", "role_id"),
@@ -269,9 +274,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "15":
+        if metadata.get("version") != "16":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '15'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '16'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")
