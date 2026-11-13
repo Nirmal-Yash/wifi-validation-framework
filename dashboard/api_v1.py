@@ -351,8 +351,8 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         denied=require("view",project_id=requested,global_scope=requested is None)
         if denied is not None:
             return denied
-        project_ids=None if wildcard else (
-            (requested,) if requested else identity.project_ids_for_user(str(raw.get("username","")))
+        project_ids=(requested,) if requested else (
+            None if wildcard else identity.project_ids_for_user(str(raw.get("username","")))
         )
         if not wildcard and not project_ids:
             return error("FORBIDDEN","no active Project memberships are assigned to this account",403)
@@ -494,6 +494,8 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
                 "NETREGRESS_SOURCE_RUN_ID": run_id,
                 "NETREGRESS_DATABASE_PATH": str(query.database.path.resolve()),
                 "TEST_DB_PATH": str(query.database.path.resolve()),
+                "NETREGRESS_LAB_ID": run.lab_id,
+                **({"NETREGRESS_PROJECT_ID": run.project_id} if run.project_id else {}),
             },
         )
         response_data={"source_run_id":run_id,"process_id":handle.pid,"command":list(handle.command),"status":"STARTED"}
@@ -558,8 +560,8 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         denied=require("view",project_id=project_id,global_scope=not run_id and not project_id)
         if denied is not None:
             return denied
-        project_ids=None if wildcard else (
-            (project_id,) if project_id else identity.project_ids_for_user(str(raw.get("username","")))
+        project_ids=(project_id,) if project_id else (
+            None if wildcard else identity.project_ids_for_user(str(raw.get("username","")))
         )
         try:
             page=max(1,int(request.args.get("page","1")))

@@ -8,7 +8,7 @@ import {navigate} from "../router";
 import {useAsyncLoader} from "../hooks";
 import {formatDate,summarizeRunOutcomes} from "../utils";
 import {Button,DataTable,EmptyState,ErrorState,InlineNotice,LoadingState,OutcomeBreakdown,Section,StatCard,StatusBadge} from "../components/ui";
-import {canExecute} from "../utils";
+import {canPerform} from "../permissions";
 
 export default function DashboardPage({user}){
  const runs=useAsyncLoader(()=>api.runs({limit:8}),[],{refreshMs:10000});
@@ -31,7 +31,7 @@ export default function DashboardPage({user}){
     <div className="hero-metadata"><span><Database size={14} aria-hidden="true"/>{total.toLocaleString()} persisted Runs</span><span><Clock3 size={14} aria-hidden="true"/>Last activity {lastRun?formatDate(lastRun.created_at):"not recorded"}</span></div>
    </div>
    <div className="dashboard-hero-actions">
-    {canExecute(user?.role)?<Button onClick={()=>navigate("/runs?launch=1")}><Play size={15} aria-hidden="true"/>Start a Run<ArrowUpRight size={14} aria-hidden="true"/></Button>:null}
+    {canPerform(user,"runs.execute")?<Button onClick={()=>navigate("/runs?launch=1")}><Play size={15} aria-hidden="true"/>Start a Run<ArrowUpRight size={14} aria-hidden="true"/></Button>:null}
     <Button variant="outline" onClick={()=>navigate("/runs")}>Run history<ArrowUpRight size={14} aria-hidden="true"/></Button>
     <Button variant="ghost" onClick={()=>navigate("/artifacts")}><FileText size={15} aria-hidden="true"/>Evidence</Button>
    </div>

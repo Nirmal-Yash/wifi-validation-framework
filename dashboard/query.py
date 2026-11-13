@@ -142,6 +142,7 @@ class DashboardQueryService:
             )
         payload = {
             "run_id": run.run_id,
+            "project_id": run.project_id,
             "source_run_id": run.source_run_id,
             "display_id": run.display_id,
             "firmware_version": run.firmware_version,

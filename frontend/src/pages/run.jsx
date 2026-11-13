@@ -4,7 +4,8 @@ import {api} from "../api";
 import {Tabs,TabsContent,TabsList,TabsTrigger} from "@/components/ui/tabs";
 import {navigate} from "../router";
 import {useAsyncLoader,useMutation} from "../hooks";
-import {canExecute,formatBytes,formatDate,formatDuration,terminalStatuses} from "../utils";
+import {formatBytes,formatDate,formatDuration,terminalStatuses} from "../utils";
+import {canPerform} from "../permissions";
 import {ArtifactLink,Button,ConfirmDialog,DataTable,EmptyState,ErrorState,InlineNotice,JsonPanel,KeyValueGrid,LoadingState,Section,StatCard,StatusBadge} from "../components/ui";
 const tabs=[
  {id:"summary",label:"Summary",Icon:LayoutDashboard},
@@ -32,13 +33,13 @@ export default function RunDetailPage({runId,user}){
  const mutation=useMutation();
  if(runLoader.loading&&!runLoader.data)return<LoadingState label="Loading Run…"/>;
  if(runLoader.error&&!runLoader.data)return<ErrorState error={runLoader.error} onRetry={runLoader.reload}/>;
- const run=runLoader.data,tests=testsLoader.data?.items||[],health=healthLoader.data?.items||run.health||[],telemetry=telemetryLoader.data?.items||[],artifacts=artifactsLoader.data?.items||run.artifacts||[],counts=run.test_counts||{},canOperate=canExecute(user.role),isActive=!terminalStatuses.has(run.lifecycle_status);
+ const run=runLoader.data,tests=testsLoader.data?.items||[],health=healthLoader.data?.items||run.health||[],telemetry=telemetryLoader.data?.items||[],artifacts=artifactsLoader.data?.items||run.artifacts||[],counts=run.test_counts||{},canOperate=canPerform(user,"runs.execute"),isActive=!terminalStatuses.has(run.lifecycle_status);
  const statusCounts=tests.reduce((acc,test)=>{const status=String(test.status||"UNKNOWN").toUpperCase();acc[status]=(acc[status]||0)+1;return acc;},{});
  const passed=counts.pass??statusCounts.PASS??0,totalTests=counts.total??tests.length,blocked=counts.blocked??statusCounts.BLOCKED??0,unvalidated=counts.unvalidated??statusCounts.UNVALIDATED??0;
  const passPercent=totalTests?Math.min(100,(passed/totalTests)*100):0;
  const summaryItems=[
   {label:"Lifecycle",value:<StatusBadge value={run.lifecycle_status}/>},{label:"Business outcome",value:<StatusBadge value={run.business_outcome}/>},
-  {label:"Firmware",value:run.firmware_version},{label:"Device",value:run.device_id},{label:"Lab",value:run.lab_id},{label:"Profile",value:run.validation_profile},
+  {label:"Project",value:run.project_id||"Unscoped legacy Run"},{label:"Firmware",value:run.firmware_version},{label:"Device",value:run.device_id},{label:"Lab",value:run.lab_id},{label:"Profile",value:run.validation_profile},
   {label:"Environment",value:run.environment_class},{label:"Environment health",value:<StatusBadge value={run.environment_health}/>},{label:"Failure class",value:<StatusBadge value={run.failure_class}/>},
   {label:"Created",value:formatDate(run.created_at)},{label:"Started",value:formatDate(run.started_at)},{label:"Completed",value:formatDate(run.completed_at)},
   {label:"Duration",value:formatDuration(run.started_at,run.completed_at)},{label:"Configuration hash",value:run.configuration_hash||"—"}

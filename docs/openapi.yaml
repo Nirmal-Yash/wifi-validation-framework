@@ -280,7 +280,12 @@ components:
       properties: {username: {type: string}, password: {type: string, format: password}}
     RunLaunchRequest:
       type: object
-      properties: {firmware_version: {type: string, default: v1.0}, tests: {type: array, items: {type: string}}}
+      description: Project and Lab are required for membership-scoped users; wildcard local administrators may omit them for legacy unscoped execution.
+      properties:
+        firmware_version: {type: string, default: v1.0}
+        tests: {type: array, items: {type: string}}
+        project_id: {type: string, minLength: 1}
+        lab_id: {type: string, minLength: 1}
     BaselinePromotionRequest:
       type: object
       required: [run_id]

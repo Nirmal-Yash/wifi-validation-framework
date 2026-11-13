@@ -271,7 +271,7 @@ def inspect_sqlite_schema(
             )
         if metadata.get("version") != "15":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '14'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '15'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

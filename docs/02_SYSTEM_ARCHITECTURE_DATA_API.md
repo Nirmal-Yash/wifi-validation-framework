@@ -284,7 +284,7 @@ TestResult, its metrics, raw samples and associated artifact references are inse
 
 ### Scope boundary
 
-Historical phase note: Phase C established path and transaction primitives; Phase D handled legacy-table import/compatibility; Phase E completed Alembic migration authority, schema-version governance and schema drift enforcement. The current SQLite schema is governed by Alembic head `20261112_05` (schema version 14), with additive Organization/Project/Lab and ProjectMembership tables plus nullable Run ownership introduced after the original Runner schema. Runner records and evidence remain in their existing tables.
+Historical phase note: Phase C established path and transaction primitives; Phase D handled legacy-table import/compatibility; Phase E completed Alembic migration authority, schema-version governance and schema drift enforcement. Stage B added Organization/Project/Lab ownership, ProjectMembership and nullable Run ownership in `20261112_05`, then persistent local identity, Global/Project roles, permissions, hashed sessions and token lifecycle records, and append-only audit events in `20261113_06`. The current SQLite schema is governed by Alembic head `20261113_06` (schema version 15). Project ownership remains nullable for preserved historical Runs; new membership-scoped Run launches require a valid Project/Lab pair.
 
 ### Phase D — legacy compatibility and historical import
 
@@ -398,7 +398,7 @@ Cloud disconnection must not alter a technical outcome already observed locally.
 
 This repository remains the Runner/Core validation engine.
 
-The future Cloud backend owns Organization, Project, identity, release policy, baseline promotion workflow, waivers and Cloud history.
+The standalone Runner now persists local Organization/Project/Lab workspaces, local user identities, scoped Project memberships and local role/permission assignments for its authenticated dashboard. The future Cloud backend remains the cross-Runner business authority for centrally managed Organization/Project identity, tenant isolation, release policy, baseline promotion workflow, waivers and Cloud history.
 
 The Runner owns lab/device execution and raw evidence.
 
@@ -986,7 +986,7 @@ Versioned API responses use:
 - success: {data: ...};
 - error: {error: {code, message, details}}.
 
-The Phase 8 dashboard is read-only. State-changing Run/baseline operations remain service-layer capabilities until authenticated/RBAC API actions are introduced.
+Historical note: the original Phase 8 dashboard was read-only. The current versioned API includes authenticated, CSRF-protected and permission-checked workspace, account, role, membership and Run operations; the React frontend presents those capabilities but the backend remains authoritative.
 
 
 ## 24A. Phase 8 collection behavior
@@ -1033,4 +1033,4 @@ The Runner currently provides an outbound-only synchronization seam: immutable R
 python scripts/netregress_sync.py --status
 ~~~
 
-The command is operational visibility only. It does not transfer artifacts or Run snapshots, create a remote identity, authorize a Project, or prove that a remote receiver accepted data. Cloud ownership, Project/tenant authorization, short-lived Runner credentials, remote schema negotiation and human release workflows remain future Phase O contracts.
+The command is operational visibility only. It does not transfer artifacts or Run snapshots, create a remote identity, or prove that a remote receiver accepted data. Local Project membership and Run authorization are enforced by the standalone identity/API layer; cross-Runner Cloud tenant authorization, short-lived Runner credentials, remote schema negotiation and human release workflows remain future Phase O contracts.

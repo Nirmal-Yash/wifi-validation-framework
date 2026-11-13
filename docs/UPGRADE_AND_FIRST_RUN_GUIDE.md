@@ -197,6 +197,22 @@ Reset OWNER and rotate the session secret (invalidates existing sessions):
 python scripts/netregress_doctor.py --check-dashboard
 ```
 
+## 7.1 Identity, workspace and Project-scoped execution
+
+The Stage B schema head is Alembic revision `20261113_06` (SQLite schema version `15`). Existing local bootstrap accounts are migrated into persistent identity records on successful login. The configured local OWNER remains the bootstrap administrator; subsequent account state, roles and sessions are database-backed.
+
+After signing in:
+
+1. Open **Projects & labs** and create an Organization, Project and Lab. A Lab record identifies the provider and target scope; creating that record does not provision or mutate a GNS3 project.
+2. Open **Users & roles** and invite the required accounts. Invitation tokens are one-time values returned to the administrator; no email delivery service is configured, so deliver them through an approved secure channel.
+3. In **Projects & labs**, assign each active/invited user a Project role. Global permissions and Project permissions are intersected; a Project role cannot grant authority the account does not have globally.
+4. Open **Validation runs** and select an active Project and one of its active Labs before starting a Run. The API checks the caller's current membership and verifies the Lab belongs to the selected Project. The identifiers are passed into the pytest Run bootstrap and persisted as Project ownership.
+5. Revoke membership from **Projects & labs** when access should end. The API rechecks membership on requests, so the revocation applies to subsequent workspace and Run operations; revoke sessions as well when immediate account-wide sign-out is required.
+
+Account activation and password-reset tokens are single-use and time-limited. Administrators should copy and deliver them securely; the plaintext tokens are not stored in the database. The audit history is append-only at the SQLite boundary.
+
+The local-first deployment does not include outbound invitation email, an external identity provider, a remote control plane or a Cloud/SaaS service. Runner/lab process management remains Linux-oriented; Windows-native Runner process management is a separate future platform scope.
+
 ## 8. Execute and validate
 
 ### 8.1 Hardware-free regression

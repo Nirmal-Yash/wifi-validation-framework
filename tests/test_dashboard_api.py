@@ -270,6 +270,7 @@ def test_retry_api_starts_new_process_with_source_run_lineage(tmp_path, monkeypa
         "NETREGRESS_SOURCE_RUN_ID": source.run_id,
         "NETREGRESS_DATABASE_PATH": str(db_path.resolve()),
         "TEST_DB_PATH": str(db_path.resolve()),
+        "NETREGRESS_LAB_ID": source.lab_id,
     }
 
 

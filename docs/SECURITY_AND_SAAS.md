@@ -249,12 +249,12 @@ The final release wave adds content-addressed release inventory, tracked-artifac
 
 The local React client does not store session credentials or CSRF material in localStorage/sessionStorage. It uses the same-origin, signed Flask session cookie (`netregress_session`, HttpOnly, SameSite=Lax; Secure is required in HTTPS deployment), restores identity from `/api/v1/auth/me`, obtains a session-bound CSRF token from `/api/v1/auth/csrf`, and sends it on mutations. Client-side idle policy warns at 27 minutes and signs out at 30 minutes; the Flask permanent-session lifetime remains 1 hour and refreshes on requests. Logout and expiry clear in-memory CSRF state and query cache.
 
-The UI permission matrix is a presentation control only. Server-side `AuthManager.authorize`, API guards, project scope, CSRF, login rate limiting, idempotency and artifact confinement remain authoritative. Owner/Admin-only governance controls are not exposed to Operators or Viewers. UI security never grants any role additional backend capabilities.
+The UI permission matrix is a presentation control only. The persistent identity service, database-backed role/permission assignments, API permission checks, Project scope, CSRF, login rate limiting, idempotency and artifact confinement remain authoritative. Project permissions are intersected with Global permissions; Project roles cannot elevate global authority. Owner/Admin-only governance controls are not exposed to users lacking the corresponding permission codes. UI security never grants any role additional backend capabilities.
 
  
 ### Project-scope enforcement note
 
-Project membership is not equivalent to role membership. Empty project lists remain empty and do not become a wildcard. A user with a named project scope is denied by the API when a request does not carry a verifiable project identifier. The current Run persistence/query model does not yet expose project IDs, so only explicit wildcard-scoped local accounts can use the unfiltered Run APIs. This is intentionally fail-closed; project-scoped query filtering is a separate backend capability that must be added before assigning named-project users to production workloads.
+Project membership is distinct from Global role assignment. Empty membership lists remain empty and never become a wildcard. A user with named Project memberships can access only those Projects: the API resolves Run, Lab and Artifact ownership, filters Run/Artifact/metric/baseline queries by authorized Project IDs, and denies requests whose resource scope cannot be verified. Run summary/detail responses include `project_id`; Run history supports an explicit Project filter. New Run launch by membership-scoped users requires an active Project and a Lab that belongs to it; retry preserves the source Run's Project and Lab. Historical Runs with NULL Project ownership remain unscoped and are not silently assigned to a Project.
 
  
 ### Session inactivity enforcement
@@ -264,11 +264,11 @@ The browser warning is a usability layer; the Flask API is authoritative. The cl
 
 ### Legacy-interface project boundary
 
-The older Flask/Jinja dashboard does not carry a project ID on its Run or evidence queries. It therefore permits only explicit wildcard-scoped identities and returns 403 for named or empty project scopes. The React API uses the same fail-closed rule for endpoints without project context. This is a temporary safe restriction, not project-level multi-tenancy.
+The older Flask/Jinja dashboard does not carry a Project ID on its Run or evidence queries. It therefore permits only explicit wildcard-scoped identities and returns 403 for named or empty Project scopes. The React API is the supported multi-Project workspace interface; backend routes fail closed when a requested resource's Project ownership cannot be established.
 
 
 ## 29. Current standalone and future Cloud boundary — 2026-11-09
 
 The present repository implements the Runner side of outbound-only synchronization: local content-addressed Run envelopes, SQLite queue state, idempotency, retry leases, payload integrity and an HTTPS transport. Local operators can inspect aggregate queue state with python scripts/netregress_sync.py --status; this command is read-only and never contacts a remote service.
 
-The receiving Cloud service and its business authority are not implemented here. Organization/Project identity, tenant authorization, short-lived Runner credentials, remote schema negotiation, Cloud-side release policy, PostgreSQL and remote command/control remain future scope. Do not infer tenant isolation or Cloud readiness from a successful local sync queue test.
+The receiving Cloud service and its business authority are not implemented here. Local Organization/Project/Lab records, local user identity and Project-level authorization are implemented in the standalone Runner, but centrally managed cross-Runner organization identity, Cloud tenant isolation, short-lived Runner credentials, remote schema negotiation, Cloud-side release policy, PostgreSQL and remote command/control remain future scope. Do not infer Cloud tenant isolation or Cloud readiness from local Project scoping or a successful sync queue test.

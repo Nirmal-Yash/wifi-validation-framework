@@ -159,7 +159,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "14"
+        ).fetchone()[0] == "15"
 
 
 def test_schema_drift_is_reported_without_silent_repair(tmp_path):
@@ -286,7 +286,20 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
     path = tmp_path / "previous-alembic-head.sqlite"
     SQLiteDatabase(path).initialize()
     with sqlite3.connect(path) as connection:
-        # Recreate a true pre-resource-schema 20260924_02 database.
+        # Recreate a genuine pre-Stage-B 20260924_02 database. The helper
+        # starts from the current schema so every later table, index and
+        # trigger must be removed before rewinding the recorded Alembic head.
+        connection.execute("DROP TRIGGER trg_audit_events_no_update")
+        connection.execute("DROP TRIGGER trg_audit_events_no_delete")
+        connection.execute("DROP TABLE audit_events")
+        connection.execute("DROP TABLE password_reset_tokens")
+        connection.execute("DROP TABLE invitation_tokens")
+        connection.execute("DROP TABLE user_sessions")
+        connection.execute("DROP TABLE role_assignments")
+        connection.execute("DROP TABLE role_permissions")
+        connection.execute("DROP TABLE permissions")
+        connection.execute("DROP TABLE roles")
+        connection.execute("DROP TABLE users")
         connection.execute("DROP INDEX idx_project_memberships_project")
         connection.execute("DROP TABLE project_memberships")
         connection.execute("DROP INDEX idx_runs_project_created")
@@ -321,7 +334,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "14"
+        ).fetchone()[0] == "15"
 
 
 def test_database_operator_cli_commands(tmp_path):

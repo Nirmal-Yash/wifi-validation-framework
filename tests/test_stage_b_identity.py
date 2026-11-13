@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
 from dashboard.app import create_app
-from lib.domain.resources import Organization, Project, ProjectMembership, new_resource_id
+from lib.domain import RunLifecycle
+from lib.domain.resources import Lab, Organization, Project, ProjectMembership, new_resource_id
 from lib.repositories import (
     SQLiteDatabase,
     SQLiteOrganizationRepository,
     SQLiteProjectMembershipRepository,
     SQLiteProjectRepository,
+    SQLiteLabRepository,
 )
 from lib.security import AuthManager, Role, UserRecord
+from lib.services import RunService
 from lib.services.identity import IdentityPolicyError, IdentityStore
 
 
@@ -187,6 +191,7 @@ def _owner_client(tmp_path):
         json={"username": "owner", "password": PASSWORD},
     )
     assert login.status_code == 200
+    assert login.get_json()["data"]["workspace_scope"] == "WILDCARD"
     return app, client, login.get_json()["data"]["csrf_token"]
 
 
@@ -298,3 +303,257 @@ def test_last_project_owner_cannot_be_demoted_or_removed(tmp_path):
             username="owner", project_id=project.project_id,
             new_role_id="project_viewer", actor="owner",
         )
+
+
+
+def test_scoped_run_launch_requires_project_and_matching_lab_and_honors_revocation(
+    tmp_path, monkeypatch
+):
+    app, owner, owner_csrf = _owner_client(tmp_path)
+    owner_headers = {"X-CSRF-Token": owner_csrf}
+
+    invited = owner.post(
+        "/api/v1/identity/invitations",
+        headers=owner_headers,
+        json={
+            "username": "scoped-operator",
+            "email": "scoped-operator@example.test",
+            "display_name": "Scoped Operator",
+            "global_role_id": "global_operator",
+        },
+    )
+    assert invited.status_code == 201
+    invitation_token = invited.get_json()["data"]["invitation_token"]
+    activation = app.test_client().post(
+        "/api/v1/auth/invitations/accept",
+        json={"token": invitation_token, "password": "operator-password-2026!"},
+    )
+    assert activation.status_code == 200
+
+    organization = owner.post(
+        "/api/v1/workspace/organizations",
+        headers=owner_headers,
+        json={"slug": "run-scope-org", "name": "Run Scope Organization"},
+    )
+    assert organization.status_code == 201
+    organization_id = organization.get_json()["data"]["organization_id"]
+
+    def create_project(slug, name):
+        response = owner.post(
+            "/api/v1/workspace/projects",
+            headers=owner_headers,
+            json={"organization_id": organization_id, "slug": slug, "name": name},
+        )
+        assert response.status_code == 201
+        return response.get_json()["data"]["project_id"]
+
+    project_id = create_project("scoped-project", "Scoped Project")
+    other_project_id = create_project("other-project", "Other Project")
+
+    def create_lab(project_id, name, provider_id):
+        response = owner.post(
+            f"/api/v1/workspace/projects/{project_id}/labs",
+            headers=owner_headers,
+            json={"name": name, "provider_id": provider_id},
+        )
+        assert response.status_code == 201
+        return response.get_json()["data"]["lab_id"]
+
+    lab_id = create_lab(project_id, "Scoped Lab", "gns3")
+    other_lab_id = create_lab(other_project_id, "Other Lab", "gns3")
+
+    member = owner.post(
+        f"/api/v1/workspace/projects/{project_id}/members",
+        headers=owner_headers,
+        json={"username": "scoped-operator", "role": "OPERATOR"},
+    )
+    assert member.status_code == 201
+
+    operator = app.test_client()
+    login = operator.post(
+        "/api/v1/auth/login",
+        json={"username": "scoped-operator", "password": "operator-password-2026!"},
+    )
+    assert login.status_code == 200
+    operator_headers = {"X-CSRF-Token": login.get_json()["data"]["csrf_token"]}
+
+    missing_scope = operator.post(
+        "/api/v1/runs",
+        headers={**operator_headers, "Idempotency-Key": "run-scope-missing-01"},
+        json={"firmware_version": "v1.0", "tests": ["wifi.latency.threshold"]},
+    )
+    assert missing_scope.status_code == 400
+    assert missing_scope.get_json()["error"]["code"] == "PROJECT_AND_LAB_REQUIRED"
+
+    launches = []
+
+    def capture_launch(self, *, tests=None, firmware_version="v1.0", env=None):
+        launches.append(
+            {
+                "tests": tuple(tests or ()),
+                "firmware_version": firmware_version,
+                "env": dict(env or {}),
+            }
+        )
+        return SimpleNamespace(pid=43210, command=("python", "-m", "pytest"))
+
+    monkeypatch.setattr("dashboard.api_v1.RunProcessManager.start", capture_launch)
+
+    launch = operator.post(
+        "/api/v1/runs",
+        headers={**operator_headers, "Idempotency-Key": "run-scope-valid-0001"},
+        json={
+            "firmware_version": "v2.4.1",
+            "tests": ["wifi.latency.threshold"],
+            "project_id": project_id,
+            "lab_id": lab_id,
+        },
+    )
+    assert launch.status_code == 202
+    assert launches == [
+        {
+            "tests": ("wifi.latency.threshold",),
+            "firmware_version": "v2.4.1",
+            "env": {
+                "NETREGRESS_RUN_REQUESTED_BY": "scoped-operator",
+                "NETREGRESS_PROJECT_ID": project_id,
+                "NETREGRESS_LAB_ID": lab_id,
+            },
+        }
+    ]
+
+    mismatched_lab = operator.post(
+        "/api/v1/runs",
+        headers={**operator_headers, "Idempotency-Key": "run-scope-mismatch-01"},
+        json={
+            "firmware_version": "v1.0",
+            "tests": ["wifi.latency.threshold"],
+            "project_id": project_id,
+            "lab_id": other_lab_id,
+        },
+    )
+    assert mismatched_lab.status_code == 400
+    assert mismatched_lab.get_json()["error"]["code"] == "INVALID_LAB_SCOPE"
+
+    outside_project = operator.post(
+        "/api/v1/runs",
+        headers={**operator_headers, "Idempotency-Key": "run-scope-outside-01"},
+        json={
+            "firmware_version": "v1.0",
+            "tests": ["wifi.latency.threshold"],
+            "project_id": other_project_id,
+            "lab_id": other_lab_id,
+        },
+    )
+    assert outside_project.status_code == 403
+
+    revoked = owner.delete(
+        f"/api/v1/workspace/projects/{project_id}/members/scoped-operator",
+        headers=owner_headers,
+    )
+    assert revoked.status_code == 200
+    after_revocation = operator.post(
+        "/api/v1/runs",
+        headers={**operator_headers, "Idempotency-Key": "run-scope-revoked-01"},
+        json={
+            "firmware_version": "v1.0",
+            "tests": ["wifi.latency.threshold"],
+            "project_id": project_id,
+            "lab_id": lab_id,
+        },
+    )
+    assert after_revocation.status_code == 403
+    assert len(launches) == 1
+
+
+
+def test_retry_preserves_source_project_and_lab_context(tmp_path, monkeypatch):
+    database, identity = _new_store(tmp_path)
+    identity.ensure_bootstrap_user(
+        "owner", AuthManager.password_hash(PASSWORD), "OWNER"
+    )
+    project = _create_project(database)
+    now = datetime.now(timezone.utc)
+    lab = Lab(new_resource_id(), project.project_id, "Retry Lab", "gns3", now, now)
+    SQLiteLabRepository(database).save(lab)
+
+    other_now = datetime.now(timezone.utc)
+    other_org = Organization(new_resource_id(), "identity-other-org", "Identity Other Org", other_now, other_now)
+    other_project = Project(
+        new_resource_id(), other_org.organization_id,
+        "identity-other-project", "Identity Other Project", other_now, other_now,
+    )
+    SQLiteOrganizationRepository(database).save(other_org)
+    SQLiteProjectRepository(database).save(other_project)
+    other_lab = Lab(new_resource_id(), other_project.project_id, "Other Lab", "gns3", other_now, other_now)
+    SQLiteLabRepository(database).save(other_lab)
+
+    service = RunService.from_sqlite(database)
+    other_run, _ = service.create_run(
+        firmware_version="v1.0",
+        lab_id=other_lab.lab_id,
+        validation_profile="Full",
+        selected_tests=["wifi.latency.threshold"],
+        test_definition_versions={"wifi.latency.threshold": "1.0"},
+        resolved_config={},
+        repository_commit="stage-b-test",
+        project_id=other_project.project_id,
+    )
+    source, _ = service.create_run(
+        firmware_version="v2.4.1",
+        lab_id=lab.lab_id,
+        validation_profile="Full",
+        selected_tests=["wifi.latency.threshold"],
+        test_definition_versions={"wifi.latency.threshold": "1.0"},
+        resolved_config={},
+        repository_commit="stage-b-test",
+        project_id=project.project_id,
+    )
+    service.transition(source.run_id, RunLifecycle.PREPARING)
+    service.transition(source.run_id, RunLifecycle.RUNNING)
+    service.transition(source.run_id, RunLifecycle.COMPLETED)
+
+    app = create_app(database.path, auth_manager=AuthManager((), required=False))
+    app.config.update(TESTING=True)
+    captured = {}
+
+    def capture_retry(self, *, tests=None, firmware_version="v1.0", env=None):
+        captured.update(
+            tests=tuple(tests or ()),
+            firmware_version=firmware_version,
+            env=dict(env or {}),
+        )
+        return SimpleNamespace(pid=54321, command=("python", "-m", "pytest"))
+
+    monkeypatch.setattr("dashboard.api_v1.RunProcessManager.start", capture_retry)
+    client = app.test_client()
+    detail = client.get(f"/api/v1/runs/{source.run_id}")
+    assert detail.status_code == 200
+    assert detail.get_json()["data"]["project_id"] == project.project_id
+    history = client.get("/api/v1/runs")
+    assert history.status_code == 200
+    assert {item["project_id"] for item in history.get_json()["data"]["items"]} == {
+        project.project_id, other_project.project_id,
+    }
+    filtered_history = client.get("/api/v1/runs?project_id=" + project.project_id)
+    assert filtered_history.status_code == 200
+    assert [item["project_id"] for item in filtered_history.get_json()["data"]["items"]] == [
+        project.project_id,
+    ]
+
+    response = client.post(
+        f"/api/v1/runs/{source.run_id}/retry",
+        headers={"Idempotency-Key": "stage-b-retry-scope-0001"},
+    )
+    assert response.status_code == 202
+    assert captured == {
+        "tests": ("wifi.latency.threshold",),
+        "firmware_version": "v2.4.1",
+        "env": {
+            "NETREGRESS_SOURCE_RUN_ID": source.run_id,
+            "NETREGRESS_DATABASE_PATH": str(database.path.resolve()),
+            "TEST_DB_PATH": str(database.path.resolve()),
+            "NETREGRESS_LAB_ID": lab.lab_id,
+            "NETREGRESS_PROJECT_ID": project.project_id,
+        },
+    }

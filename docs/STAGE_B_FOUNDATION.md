@@ -38,12 +38,15 @@ This implementation extends the Stage B1 Organization → Project → Lab and me
 - Versioned APIs for Organization, Project, Lab and Project membership management.
 - Persisted parent/child checks and Project ownership resolution for resource-bearing routes.
 - Project membership is read during authorization; revocation affects the next API request.
-- Project scope is applied to Run, test, telemetry, health, regression, artifact, baseline and firmware operations.
+- Project scope is applied to Run, test, telemetry, health, regression, artifact, baseline and firmware operations. Retry operations inherit the source Run's Project and Lab rather than silently falling back to the default Lab.
+- The Run launch API requires Project and Lab identifiers for membership-scoped accounts, verifies the Lab belongs to the selected Project, and passes the identifiers into the pytest bootstrap. Wildcard local administrators retain the legacy unscoped API compatibility path.
 - Historical Runs with no Project remain unowned; no synthetic workspace is assigned.
 
 ### P09 — Frontend administration
 - Organization → Project → Lab workspace page.
 - Project membership and custom Project role administration.
+- Run launch selects an active Project and one of its active Labs; Run history exposes and filters by Project ID, while Run detail displays the ownership boundary.
+- Dashboard launch and Run cancel/retry controls use effective permission codes, including custom roles, rather than only legacy role labels.
 - Account invitation and lifecycle controls.
 - Global role and permission editor, permission registry and audit history.
 - Invitation activation and password-reset pages.
@@ -58,7 +61,9 @@ This implementation extends the Stage B1 Organization → Project → Lab and me
 - No cloud identity provider, email delivery provider, remote control plane or automatic GNS3 provisioning is introduced. Invitation/reset tokens are returned once for secure manual delivery.
 
 ## Verification gates
-The code includes focused identity lifecycle and workspace authorization tests, schema migration assertions and frontend permission tests. Completion remains conditional on hosted backend/frontend CI passing after this commit. CI tests do not replace protected REAL_LAB, GNS3 or physical firmware evidence.
+The acceptance suite covers account bootstrap and wildcard-scope persistence, invitation activation, token consumption, password reset, server-side session revocation, global and Project permission intersection, last Global/Project Owner safeguards, append-only audit events, membership revocation, Project/Lab Run launch validation, cross-Project denial, Run response ownership serialization and retry Project/Lab inheritance. Migration fixtures represent the historical schema being rewound and remove later-revision objects before resetting revision metadata.
+
+Stage B is complete only after the backend regression suite, API security suite, frontend tests/build and dashboard startup/session smoke test pass in hosted CI. Hardware-dependent REAL_LAB/GNS3 and physical firmware evidence remains a separate protected validation gate.
 
 ## Operational note
 Apply the normal database backup and Alembic upgrade procedure before running the new version against an existing SQLite database. Start with a configured Global Owner account, sign in once to bootstrap persistent identity, then create an Organization, Project and Lab before assigning scoped users.
