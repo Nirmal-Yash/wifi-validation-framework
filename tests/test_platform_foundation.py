@@ -11,6 +11,7 @@ from lib.platform import (
     PlatformFamily,
     SecretStoreError,
     SecretServiceSecretStore,
+    WindowsCredentialManagerSecretStore,
     SubprocessExecutor,
     UnavailableSecretStore,
     describe_platform,
@@ -107,8 +108,8 @@ def test_windows_adapter_fails_closed_for_private_state_and_secrets(tmp_path):
     adapter = platform_adapter_for(describe_platform("Windows"))
     with pytest.raises(PlatformCapabilityError, match="ACL verification"):
         adapter.ensure_private_directory(tmp_path / "private")
-    with pytest.raises(SecretStoreError, match="Credential Manager"):
-        adapter.create_secret_store().get("router-password")
+    with pytest.raises(SecretStoreError, match="available only on Windows"):
+        adapter.create_secret_store()
     assert adapter.provider_availability("hwsim").available is False
 
 

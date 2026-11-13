@@ -84,9 +84,7 @@ class WindowsPlatformAdapter:
         return SubprocessExecutor()
 
     def create_secret_store(self) -> SecretStore:
-        return UnavailableSecretStore(
-            "Windows Credential Manager integration is not implemented; credential operations are disabled."
-        )
+        return WindowsCredentialManagerSecretStore()
 
     def ensure_private_directory(self, path: str | Path) -> Path:
         raise PlatformCapabilityError(
