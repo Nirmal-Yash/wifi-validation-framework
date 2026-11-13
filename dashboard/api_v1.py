@@ -14,6 +14,10 @@ from lib.platform import platform_adapter_for
 from lib.services.configuration_schema_registry import (
     ConfigurationSchemaError, ConfigurationSchemaNotFound, ConfigurationSchemaRegistry,
 )
+from lib.services.performance_policy_service import (
+    PerformancePolicyEngine, PerformancePolicyError, PerformancePolicyNotFound, PerformancePolicyService,
+)
+from lib.domain.models import Metric, Sample
 from lib.services.configuration_profile_service import (
     ConfigurationProfileError, ConfigurationProfileNotFound, ConfigurationProfileService,
 )
@@ -54,6 +58,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     )
     configuration_schemas=ConfigurationSchemaRegistry(query.database)
     configuration_profiles=ConfigurationProfileService(query.database,configuration_schemas)
+    performance_policies=PerformancePolicyService(query.database)
     organization_repository=SQLiteOrganizationRepository(query.database)
     project_repository=SQLiteProjectRepository(query.database)
     lab_repository=SQLiteLabRepository(query.database)
@@ -1903,6 +1908,148 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             return error("INVALID_YAML_CONFIGURATION",str(exc),400)
         idempotency_store_response(scope,key,request_hash,revision,201)
         return ok(revision),201
+
+
+    @api.get("/performance/policies")
+    def list_performance_policy_profiles():
+        project_id=str(request.args.get("project_id","")).strip()
+        if not project_id: return error("INVALID_REQUEST","project_id query parameter is required",400)
+        denied=require_permission("performance.read",project_id=project_id)
+        if denied is not None: return denied
+        if project_repository.get(project_id) is None: return error("NOT_FOUND","Project not found",404)
+        return ok({"items":performance_policies.list_profiles(project_id)})
+
+    @api.post("/performance/policies")
+    def create_performance_policy_profile():
+        payload=request.get_json(silent=True) or {}
+        project_id=str(payload.get("project_id","")).strip()
+        denied=require_permission("performance.manage",project_id=project_id)
+        if denied is not None: return denied
+        if project_repository.get(project_id) is None: return error("NOT_FOUND","Project not found",404)
+        scope_type=str(payload.get("scope_type","PROJECT")).upper()
+        scope_id=payload.get("scope_id",project_id)
+        idem_payload={"project_id":project_id,"name":payload.get("name"),"description":payload.get("description"),
+                      "scope_type":scope_type,"scope_id":scope_id}
+        key,request_hash,cached,security_error=idempotency_preflight("/api/v1/performance/policies",idem_payload)
+        if security_error is not None: return security_error
+        if cached is not None: return jsonify(cached.response),cached.status_code
+        try:
+            item=performance_policies.create_profile(
+                project_id=project_id,name=payload.get("name"),description=payload.get("description",""),
+                scope_type=scope_type,scope_id=scope_id,actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except PerformancePolicyNotFound as exc: return error("NOT_FOUND",str(exc),404)
+        except PerformancePolicyError as exc: return error("INVALID_PERFORMANCE_POLICY",str(exc),400)
+        idempotency_store_response("/api/v1/performance/policies",key,request_hash,item,201)
+        return ok(item),201
+
+    @api.get("/performance/policies/<profile_id>/revisions")
+    def list_performance_policy_revisions(profile_id):
+        profile=performance_policies.get_profile(profile_id)
+        if profile is None: return error("NOT_FOUND","Performance policy profile not found",404)
+        denied=require_permission("performance.read",project_id=profile["project_id"])
+        if denied is not None: return denied
+        return ok({"items":performance_policies.list_revisions(profile_id)})
+
+    @api.post("/performance/policies/<profile_id>/revisions")
+    def create_performance_policy_revision(profile_id):
+        profile=performance_policies.get_profile(profile_id)
+        if profile is None: return error("NOT_FOUND","Performance policy profile not found",404)
+        denied=require_permission("performance.manage",project_id=profile["project_id"])
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        definition=payload.get("definition")
+        idem_payload={"profile_id":profile_id,"definition":definition}
+        key,request_hash,cached,security_error=idempotency_preflight("/api/v1/performance/policies/"+profile_id+"/revisions",idem_payload)
+        if security_error is not None: return security_error
+        if cached is not None: return jsonify(cached.response),cached.status_code
+        try:
+            revision=performance_policies.create_revision(
+                profile_id,definition=definition,actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except PerformancePolicyNotFound as exc: return error("NOT_FOUND",str(exc),404)
+        except PerformancePolicyError as exc: return error("INVALID_PERFORMANCE_POLICY",str(exc),400)
+        idempotency_store_response("/api/v1/performance/policies/"+profile_id+"/revisions",key,request_hash,revision,201)
+        return ok(revision),201
+
+    @api.post("/performance/policies/<profile_id>/publish")
+    def publish_performance_policy_revision(profile_id):
+        profile=performance_policies.get_profile(profile_id)
+        if profile is None: return error("NOT_FOUND","Performance policy profile not found",404)
+        denied=require_permission("performance.publish",project_id=profile["project_id"])
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        revision_id=str(payload.get("revision_id","")).strip()
+        scope="/api/v1/performance/policies/"+profile_id+"/publish"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,{"revision_id":revision_id})
+        if security_error is not None: return security_error
+        if cached is not None: return jsonify(cached.response),cached.status_code
+        try:
+            revision=performance_policies.publish(profile_id,revision_id,actor=str((session.get("netregress_user") or {}).get("username","local")))
+        except PerformancePolicyNotFound as exc: return error("NOT_FOUND",str(exc),404)
+        except PerformancePolicyError as exc: return error("INVALID_TRANSITION",str(exc),409)
+        idempotency_store_response(scope,key,request_hash,revision,200)
+        return ok(revision)
+
+    @api.post("/performance/policies/<profile_id>/assign")
+    def assign_performance_policy_revision(profile_id):
+        profile=performance_policies.get_profile(profile_id)
+        if profile is None: return error("NOT_FOUND","Performance policy profile not found",404)
+        denied=require_permission("performance.publish",project_id=profile["project_id"])
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        revision_id=str(payload.get("revision_id","")).strip()
+        lab_id=str(payload.get("lab_id","")).strip()
+        scope="/api/v1/performance/policies/"+profile_id+"/assign"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,{"revision_id":revision_id,"lab_id":lab_id})
+        if security_error is not None: return security_error
+        if cached is not None: return jsonify(cached.response),cached.status_code
+        try:
+            assignment=performance_policies.assign(
+                profile_id,revision_id,lab_id=lab_id,
+                actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except PerformancePolicyNotFound as exc: return error("NOT_FOUND",str(exc),404)
+        except PerformancePolicyError as exc: return error("INVALID_ASSIGNMENT",str(exc),400)
+        idempotency_store_response(scope,key,request_hash,assignment,200)
+        return ok(assignment)
+
+    @api.get("/performance/assignments")
+    def list_performance_policy_assignments():
+        project_id=str(request.args.get("project_id","")).strip()
+        if not project_id: return error("INVALID_REQUEST","project_id query parameter is required",400)
+        denied=require_permission("performance.read",project_id=project_id)
+        if denied is not None: return denied
+        return ok({"items":performance_policies.list_assignments(project_id)})
+
+    @api.post("/performance/evaluate")
+    def evaluate_performance_policy():
+        payload=request.get_json(silent=True) or {}
+        revision_id=str(payload.get("revision_id","")).strip()
+        revision=performance_policies.get_revision(revision_id)
+        if revision is None: return error("NOT_FOUND","Performance policy revision not found",404)
+        profile=performance_policies.get_profile(revision["policy_profile_id"])
+        denied=require_permission("performance.read",project_id=profile["project_id"])
+        if denied is not None: return denied
+        raw_metrics=payload.get("metrics")
+        if not isinstance(raw_metrics,list): return error("INVALID_REQUEST","metrics must be an array",400)
+        try:
+            metrics=[]
+            for raw in raw_metrics:
+                if not isinstance(raw,dict) or not isinstance(raw.get("samples"),list):
+                    raise PerformancePolicyError("each metric must include a samples array")
+                samples=tuple(Sample(
+                    value=item.get("value"),status=str(item.get("status","VALID")),
+                    warmup=bool(item.get("warmup",False)),retried=bool(item.get("retried",False)),
+                ) for item in raw["samples"] if isinstance(item,dict))
+                metrics.append(Metric(
+                    name=str(raw.get("name","")),unit=str(raw.get("unit","")),
+                    samples=samples,authoritative=bool(raw.get("authoritative",False)),
+                ))
+            result=performance_policies.evaluate(revision_id,metrics)
+        except (PerformancePolicyError,TypeError,ValueError) as exc:
+            return error("INVALID_PERFORMANCE_DATA",str(exc),400)
+        return ok(result)
 
     return api
 

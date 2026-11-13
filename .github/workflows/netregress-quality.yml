@@ -140,6 +140,7 @@ jobs:
           tests/test_credential_vault.py
           tests/test_configuration_schema_registry.py
           tests/test_configuration_profile_service.py
+          tests/test_performance_policy_engine.py
           tests/test_configuration_schema_registry.py
           tests/test_command_runner.py
           tests/test_run_process.py

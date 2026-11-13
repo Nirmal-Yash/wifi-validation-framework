@@ -24,7 +24,7 @@ Planned: Project/device/lab configuration workflows using the existing React she
 
 ## P15 — Performance Policy Engine
 
-Planned: Project/lab-scoped versioned thresholds and deterministic evaluation over eligible measurements. Metric units, threshold direction, sample sufficiency and warm-up exclusion remain explicit.
+Implemented: Project/Lab-scoped policy profiles, immutable versioned revisions, SHA-256 policy hashes, publish/assign lifecycle and an evaluator built on the existing `MeasurementPolicyEvaluator`. It enforces metric units, lower-/higher-is-better ordering, aggregate selection, minimum eligible samples, valid-status selection, retry policy and automatic warm-up exclusion. Evaluations return PASS/WARNING/FAIL/INSUFFICIENT_DATA/INVALID_DATA, effective thresholds and reasons. Physical Run snapshot integration remains a later end-to-end gate.
 
 ## P16 — Performance Policy Frontend
 
