@@ -11,6 +11,7 @@ import TestDetailPage from "@/pages/test";
 import {RegressionPage,PerformancePage,TelemetryPage} from "@/pages/quality";
 import {ArtifactsPage,LabHealthPage,ReadinessPage,BaselinesPage,OperationsPage} from "@/pages/system";
 import {WorkspacePage,AdministrationPage,AccountAccessPage} from "@/pages/admin";
+import {CredentialsPage,ConfigurationPage} from "@/pages/configuration";
 import {Button,LoadingState,Section} from "@/components/ui";
 import {useSession} from "@/auth/session-provider";
 import {canAccessRoute} from "@/permissions";
@@ -65,6 +66,8 @@ export default function App(){
   case"operations":page=<OperationsPage user={user}/>;break;
   case"readiness":page=<ReadinessPage/>;break;
   case"workspace":page=<WorkspacePage user={user}/>;break;
+  case"credentials":page=<CredentialsPage user={user}/>;break;
+  case"configuration":page=<ConfigurationPage user={user}/>;break;
   case"administration":page=<AdministrationPage user={user}/>;break;
   default:page=<NotFound/>;break;
  }

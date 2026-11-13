@@ -1,7 +1,7 @@
 import React from "react";
 import {
  Activity,BarChart3,ChevronDown,ChevronRight,ClipboardList,FileArchive,
- FileCheck2,GitCompare,LayoutDashboard,LogOut,SlidersHorizontal,Wifi,ShieldCheck,Users,
+ FileCheck2,GitCompare,LayoutDashboard,LogOut,SlidersHorizontal,Wifi,ShieldCheck,Users,KeyRound,Settings2,
 } from "lucide-react";
 import {navigate} from "@/router";
 import {canAdmin,canExecute,canPerform} from "@/permissions";
@@ -20,6 +20,10 @@ const navGroups=[
   ["artifacts","/artifacts","Evidence library",FileArchive],
   ["readiness","/readiness","System readiness",ShieldCheck],
   ["workspace","/workspace","Projects & labs",LayoutDashboard],
+ ]},
+ {title:"Configuration",items:[
+  ["credentials","/credentials","Credentials",KeyRound],
+  ["configuration","/configuration","Configuration profiles",Settings2],
  ]},
  {title:"Quality",items:[
   ["regressions","/regressions","Regression analysis",GitCompare],
@@ -47,6 +51,8 @@ const pageMeta={
  telemetry:{section:"Quality",title:"WiFi telemetry",description:"Explore environment-aware network observations from persisted evidence."},
  "lab-health":{section:"Quality",title:"Lab health",description:"Inspect read-only snapshots of the execution environment."},
  administration:{section:"Administration",title:"Users and roles",description:"Administer local accounts, scoped roles, permissions and audit history."},
+ credentials:{section:"Configuration",title:"Credential vault",description:"Store device credentials outside the database, verify SSH access, rotate secrets and revoke access."},
+ configuration:{section:"Configuration",title:"Configuration profiles",description:"Manage typed schemas, versioned profiles, published revisions, assignments and effective configuration previews."},
  baselines:{section:"Governance",title:"Baselines",description:"Promote trusted Run evidence into reusable validation baselines."},
  operations:{section:"Governance",title:"Operations",description:"Perform explicitly authorized firmware and release-governance actions."},
 };

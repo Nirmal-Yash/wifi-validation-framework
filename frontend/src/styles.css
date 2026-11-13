@@ -638,3 +638,22 @@ tr.clickable-row:hover{background:var(--accent)}
 
 /* Keep an obvious path to expand the desktop sidebar after it is collapsed. */
 [data-sidebar-provider][data-state="collapsed"] .sidebar-header .sidebar-trigger{display:inline-flex}
+
+
+/* Stage C credential and configuration management surfaces. */
+.module-intro{display:flex;align-items:flex-start;gap:13px;padding:15px 17px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+.module-intro-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:var(--surface-2);color:var(--primary);flex:0 0 auto}
+.module-intro strong{font-size:12px;color:var(--foreground)}
+.module-intro p{margin:4px 0 0;color:var(--muted-foreground);font-size:10px;line-height:1.55;max-width:760px}
+.config-toolbar{display:flex;align-items:end;gap:20px;flex-wrap:wrap}
+.config-toolbar .field{width:min(360px,100%)}
+.context-caption,.table-secondary{font-size:9px;color:var(--muted-foreground)}
+.table-secondary{margin-top:3px}
+.credential-actions{display:grid;gap:6px;min-width:230px}
+.credential-rotate{display:flex;gap:5px;align-items:center}
+.credential-rotate input{min-width:90px;width:140px;min-height:30px;border:1px solid var(--input);border-radius:7px;padding:5px 8px;background:var(--surface-2);color:var(--foreground);font-size:10px}
+.config-preview{margin-top:12px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface-2)}
+.config-preview-meta{display:grid;gap:4px;padding:11px 13px;border-bottom:1px solid var(--border);font-size:10px}
+.config-preview-meta span{font-size:9px;color:var(--muted-foreground);overflow-wrap:anywhere}
+.config-preview pre{margin:0;padding:13px;max-height:360px;overflow:auto;font-size:10px;line-height:1.55;color:var(--foreground)}
+@media(max-width:760px){.credential-actions{min-width:190px}.credential-rotate input{width:110px}.config-toolbar .field{width:100%}}

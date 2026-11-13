@@ -83,6 +83,25 @@ const query=params=>{
  const search=new URLSearchParams();
  Object.entries(params||{}).forEach(([key,value])=>{if(value!==undefined&&value!==null&&value!=="")search.set(key,String(value));});
  const value=search.toString();return value?"?"+value:"";
+
+ credentials:(projectId,deviceId)=>request("/credentials"+query({project_id:projectId,device_id:deviceId})),
+ createCredential:payload=>request("/credentials",{method:"POST",body:JSON.stringify(payload)}),
+ rotateCredential:(id,payload)=>request("/credentials/"+encode(id)+"/rotate",{method:"POST",body:JSON.stringify(payload)}),
+ verifyCredential:id=>request("/credentials/"+encode(id)+"/verify",{method:"POST",body:"{}"}),
+ revokeCredential:id=>request("/credentials/"+encode(id),{method:"DELETE"}),
+ configurationSchemas:projectId=>request("/configuration/schemas"+query({project_id:projectId})),
+ registerConfigurationSchema:payload=>request("/configuration/schemas",{method:"POST",body:JSON.stringify(payload)}),
+ configurationProfiles:projectId=>request("/configuration/profiles"+query({project_id:projectId})),
+ createConfigurationProfile:payload=>request("/configuration/profiles",{method:"POST",body:JSON.stringify(payload)}),
+ configurationRevisions:id=>request("/configuration/profiles/"+encode(id)+"/revisions"),
+ createConfigurationRevision:(id,payload)=>request("/configuration/profiles/"+encode(id)+"/revisions",{method:"POST",body:JSON.stringify(payload)}),
+ publishConfigurationRevision:(id,payload)=>request("/configuration/profiles/"+encode(id)+"/publish",{method:"POST",body:JSON.stringify(payload)}),
+ rollbackConfigurationRevision:(id,payload)=>request("/configuration/profiles/"+encode(id)+"/rollback",{method:"POST",body:JSON.stringify(payload)}),
+ applyConfigurationRevision:(id,payload)=>request("/configuration/profiles/"+encode(id)+"/apply",{method:"POST",body:JSON.stringify(payload)}),
+ configurationAssignments:projectId=>request("/configuration/assignments"+query({project_id:projectId})),
+ resolveConfiguration:payload=>request("/configuration/resolve",{method:"POST",body:JSON.stringify(payload)}),
+ importConfigurationYaml:payload=>request("/configuration/import-yaml",{method:"POST",body:JSON.stringify(payload)}),
+
 };
 export const api={
  health:()=>request("/health"),readiness:()=>request("/readiness"),
