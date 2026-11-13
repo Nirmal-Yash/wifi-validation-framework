@@ -14,6 +14,9 @@ from lib.platform import platform_adapter_for
 from lib.services.configuration_schema_registry import (
     ConfigurationSchemaError, ConfigurationSchemaNotFound, ConfigurationSchemaRegistry,
 )
+from lib.services.configuration_profile_service import (
+    ConfigurationProfileError, ConfigurationProfileNotFound, ConfigurationProfileService,
+)
 from lib.services.credential_vault import (
     CredentialVaultError, CredentialVaultNotFound, CredentialVaultPolicyError,
     CredentialVaultService,
@@ -50,6 +53,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         secret_provider=platform_adapter.descriptor.family.value,
     )
     configuration_schemas=ConfigurationSchemaRegistry(query.database)
+    configuration_profiles=ConfigurationProfileService(query.database,configuration_schemas)
     organization_repository=SQLiteOrganizationRepository(query.database)
     project_repository=SQLiteProjectRepository(query.database)
     lab_repository=SQLiteLabRepository(query.database)
@@ -1704,6 +1708,201 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             return error("INVALID_CONFIGURATION_SCHEMA",str(exc),400)
         idempotency_store_response("/api/v1/configuration/schemas",key,request_hash,item,201)
         return ok(item),201
+
+
+    def _configuration_actor() -> str:
+        return str((session.get("netregress_user") or {}).get("username","local"))
+
+    def _configuration_profile_permission(profile_id,permission):
+        item=configuration_profiles.get_profile(profile_id)
+        if item is None:
+            return None,error("NOT_FOUND","Configuration profile not found",404)
+        denied=require_permission(permission,project_id=item["project_id"])
+        if denied is not None:
+            return item,denied
+        return item,None
+
+    @api.get("/configuration/profiles")
+    def list_configuration_profiles():
+        project_id=str(request.args.get("project_id","")).strip()
+        if not project_id:
+            return error("INVALID_REQUEST","project_id query parameter is required",400)
+        denied=require_permission("configurations.read",project_id=project_id)
+        if denied is not None: return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND","Project not found",404)
+        return ok({"items":configuration_profiles.list_profiles(project_id)})
+
+    @api.post("/configuration/profiles")
+    def create_configuration_profile():
+        payload=request.get_json(silent=True) or {}
+        project_id=str(payload.get("project_id","")).strip()
+        denied=require_permission("configurations.manage",project_id=project_id)
+        if denied is not None: return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND","Project not found",404)
+        scope_type=str(payload.get("scope_type","PROJECT")).upper()
+        scope_id=str(payload.get("scope_id",project_id))
+        if scope_type=="DEVICE" and scope_id not in load_devices():
+            return error("NOT_FOUND","Device is not present in the configured device inventory",404)
+        idem_payload={
+            "project_id":project_id,"name":payload.get("name"),"description":payload.get("description"),
+            "scope_type":scope_type,"scope_id":scope_id,"schema_record_id":payload.get("schema_record_id"),
+        }
+        key,request_hash,cached,security_error=idempotency_preflight("/api/v1/configuration/profiles",idem_payload)
+        if security_error is not None: return security_error
+        if cached is not None: return jsonify(cached.response),cached.status_code
+        try:
+            item=configuration_profiles.create_profile(
+                project_id=project_id,name=payload.get("name"),description=payload.get("description",""),
+                scope_type=scope_type,scope_id=scope_id,schema_record_id=payload.get("schema_record_id"),
+                actor=_configuration_actor(),device_exists=(scope_type=="DEVICE" and scope_id in load_devices()),
+            )
+        except ConfigurationProfileNotFound as exc: return error("NOT_FOUND",str(exc),404)
+        except (ConfigurationProfileError,ValueError) as exc: return error("INVALID_CONFIGURATION_PROFILE",str(exc),400)
+        idempotency_store_response("/api/v1/configuration/profiles",key,request_hash,item,201)
+        return ok(item),201
+
+    @api.get("/configuration/profiles/<profile_id>/revisions")
+    def list_configuration_revisions(profile_id):
+        item,denied=_configuration_profile_permission(profile_id,"configurations.read")
+        if denied is not None: return denied
+        return ok({"items":configuration_profiles.list_revisions(profile_id)})
+
+    @api.post("/configuration/profiles/<profile_id>/revisions")
+    def create_configuration_revision(profile_id):
+        item,denied=_configuration_profile_permission(profile_id,"configurations.manage")
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        values=payload.get("values")
+        if not isinstance(values,dict):
+            return error("INVALID_REQUEST","values must be a JSON object",400)
+        idem_payload={"profile_id":profile_id,"values":values,"provenance":payload.get("provenance")}
+        key,request_hash,cached,security_error=idempotency_preflight("/api/v1/configuration/profiles/"+profile_id+"/revisions",idem_payload)
+        if security_error is not None: return security_error
+        if cached is not None: return jsonify(cached.response),cached.status_code
+        try:
+            revision=configuration_profiles.create_revision(
+                profile_id,values=values,provenance=payload.get("provenance"),actor=_configuration_actor(),
+            )
+        except ConfigurationProfileNotFound as exc: return error("NOT_FOUND",str(exc),404)
+        except (ConfigurationProfileError,ConfigurationSchemaError,ValueError) as exc:
+            return error("INVALID_CONFIGURATION",str(exc),400)
+        idempotency_store_response("/api/v1/configuration/profiles/"+profile_id+"/revisions",key,request_hash,revision,201)
+        return ok(revision),201
+
+    @api.post("/configuration/profiles/<profile_id>/publish")
+    def publish_configuration_revision(profile_id):
+        item,denied=_configuration_profile_permission(profile_id,"configurations.publish")
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        revision_id=str(payload.get("revision_id","")).strip()
+        if not revision_id: return error("INVALID_REQUEST","revision_id is required",400)
+        scope="/api/v1/configuration/profiles/"+profile_id+"/publish"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,{"revision_id":revision_id})
+        if security_error is not None: return security_error
+        if cached is not None: return jsonify(cached.response),cached.status_code
+        try:
+            revision=configuration_profiles.publish(profile_id,revision_id,actor=_configuration_actor())
+        except ConfigurationProfileNotFound as exc: return error("NOT_FOUND",str(exc),404)
+        except ConfigurationProfileError as exc: return error("INVALID_TRANSITION",str(exc),409)
+        idempotency_store_response(scope,key,request_hash,revision,200)
+        return ok(revision)
+
+    @api.post("/configuration/profiles/<profile_id>/rollback")
+    def rollback_configuration_revision(profile_id):
+        item,denied=_configuration_profile_permission(profile_id,"configurations.manage")
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        source_id=str(payload.get("source_revision_id","")).strip()
+        if not source_id: return error("INVALID_REQUEST","source_revision_id is required",400)
+        scope="/api/v1/configuration/profiles/"+profile_id+"/rollback"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,{"source_revision_id":source_id})
+        if security_error is not None: return security_error
+        if cached is not None: return jsonify(cached.response),cached.status_code
+        try:
+            revision=configuration_profiles.rollback(profile_id,source_id,actor=_configuration_actor())
+        except ConfigurationProfileNotFound as exc: return error("NOT_FOUND",str(exc),404)
+        except (ConfigurationProfileError,ConfigurationSchemaError) as exc: return error("INVALID_ROLLBACK",str(exc),409)
+        idempotency_store_response(scope,key,request_hash,revision,201)
+        return ok(revision),201
+
+    @api.post("/configuration/profiles/<profile_id>/apply")
+    def assign_configuration_revision(profile_id):
+        item,denied=_configuration_profile_permission(profile_id,"configurations.publish")
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        revision_id=str(payload.get("revision_id","")).strip()
+        target_type=str(payload.get("target_type","")).strip().upper()
+        target_id=str(payload.get("target_id","")).strip()
+        if target_type=="DEVICE" and target_id not in load_devices():
+            return error("NOT_FOUND","Device is not present in the configured device inventory",404)
+        scope="/api/v1/configuration/profiles/"+profile_id+"/apply"
+        idem_payload={"revision_id":revision_id,"target_type":target_type,"target_id":target_id}
+        key,request_hash,cached,security_error=idempotency_preflight(scope,idem_payload)
+        if security_error is not None: return security_error
+        if cached is not None: return jsonify(cached.response),cached.status_code
+        try:
+            assignment=configuration_profiles.apply(
+                profile_id,revision_id,target_type=target_type,target_id=target_id,actor=_configuration_actor(),
+            )
+        except ConfigurationProfileNotFound as exc: return error("NOT_FOUND",str(exc),404)
+        except ConfigurationProfileError as exc: return error("INVALID_ASSIGNMENT",str(exc),400)
+        idempotency_store_response(scope,key,request_hash,assignment,200)
+        return ok(assignment)
+
+    @api.get("/configuration/assignments")
+    def list_configuration_assignments():
+        project_id=str(request.args.get("project_id","")).strip()
+        if not project_id: return error("INVALID_REQUEST","project_id query parameter is required",400)
+        denied=require_permission("configurations.read",project_id=project_id)
+        if denied is not None: return denied
+        return ok({"items":configuration_profiles.list_assignments(project_id)})
+
+    @api.post("/configuration/resolve")
+    def resolve_effective_configuration():
+        payload=request.get_json(silent=True) or {}
+        project_id=str(payload.get("project_id","")).strip()
+        denied=require_permission("configurations.read",project_id=project_id)
+        if denied is not None: return denied
+        lab_id=str(payload.get("lab_id","")).strip() or None
+        device_id=str(payload.get("device_id","")).strip() or None
+        if lab_id:
+            lab=lab_repository.get(lab_id)
+            if lab is None or lab.project_id!=project_id:
+                return error("NOT_FOUND","Lab not found in this Project",404)
+        if device_id and device_id not in load_devices():
+            return error("NOT_FOUND","Device is not present in the configured device inventory",404)
+        try:
+            result=configuration_profiles.resolve(project_id,lab_id=lab_id,device_id=device_id)
+        except (ValueError,ConfigurationProfileError) as exc:
+            return error("CONFIGURATION_RESOLUTION_FAILED",str(exc),400)
+        return ok(result)
+
+    @api.post("/configuration/import-yaml")
+    def import_configuration_yaml():
+        payload=request.get_json(silent=True) or {}
+        profile_id=str(payload.get("profile_id","")).strip()
+        item,denied=_configuration_profile_permission(profile_id,"configurations.manage")
+        if denied is not None: return denied
+        raw_yaml=payload.get("yaml_text")
+        if not isinstance(raw_yaml,str):
+            return error("INVALID_REQUEST","yaml_text is required",400)
+        scope="/api/v1/configuration/profiles/"+profile_id+"/import-yaml"
+        idem_payload={"profile_id":profile_id,"yaml_sha256":hashlib.sha256(raw_yaml.encode("utf-8")).hexdigest()}
+        key,request_hash,cached,security_error=idempotency_preflight(scope,idem_payload)
+        if security_error is not None: return security_error
+        if cached is not None: return jsonify(cached.response),cached.status_code
+        try:
+            imported=ConfigurationProfileService.import_yaml(raw_yaml)
+            revision=configuration_profiles.create_revision(
+                profile_id,values=imported["values"],provenance=imported["provenance"],actor=_configuration_actor(),
+            )
+        except ConfigurationProfileNotFound as exc: return error("NOT_FOUND",str(exc),404)
+        except (ConfigurationProfileError,ConfigurationSchemaError,ValueError) as exc:
+            return error("INVALID_YAML_CONFIGURATION",str(exc),400)
+        idempotency_store_response(scope,key,request_hash,revision,201)
+        return ok(revision),201
 
     return api
 

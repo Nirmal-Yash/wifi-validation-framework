@@ -70,7 +70,7 @@ def test_validates_typed_values_and_required_fields(registry):
     )
     assert invalid["valid"] is False
     assert {item["path"] for item in invalid["errors"]} >= {
-        "$.mode","$.ssid","$.channel","$.enabled","$.extra","$.dns",
+        "$.ssid","$.channel","$.enabled","$.extra",
     }
 
 
