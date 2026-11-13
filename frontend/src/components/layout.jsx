@@ -1,10 +1,10 @@
 import React from "react";
 import {
  Activity,BarChart3,ChevronDown,ChevronRight,ClipboardList,FileArchive,
- FileCheck2,GitCompare,LayoutDashboard,LogOut,SlidersHorizontal,Wifi,ShieldCheck,
+ FileCheck2,GitCompare,LayoutDashboard,LogOut,SlidersHorizontal,Wifi,ShieldCheck,Users,
 } from "lucide-react";
 import {navigate} from "@/router";
-import {canAdmin,canExecute} from "@/permissions";
+import {canAdmin,canExecute,canPerform} from "@/permissions";
 import {DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuLabel,DropdownMenuSeparator,DropdownMenuTrigger} from "@/components/ui/dropdown-menu";
 import {
  Sidebar,SidebarContent,SidebarFooter,SidebarGroup,SidebarGroupLabel,
@@ -19,12 +19,16 @@ const navGroups=[
   ["runs","/runs","Validation runs",ClipboardList],
   ["artifacts","/artifacts","Evidence library",FileArchive],
   ["readiness","/readiness","System readiness",ShieldCheck],
+  ["workspace","/workspace","Projects & labs",LayoutDashboard],
  ]},
  {title:"Quality",items:[
   ["regressions","/regressions","Regression analysis",GitCompare],
   ["performance","/performance","Performance",BarChart3],
   ["telemetry","/telemetry","WiFi telemetry",Wifi],
   ["lab-health","/lab-health","Lab health",Activity],
+ ]},
+ {title:"Administration",items:[
+  ["administration","/administration","Users & roles",Users],
  ]},
  {title:"Governance",items:[
   ["baselines","/baselines","Baselines",FileCheck2],
@@ -42,6 +46,7 @@ const pageMeta={
  performance:{section:"Quality",title:"Performance",description:"Track valid measurements over time without mixing metrics or units."},
  telemetry:{section:"Quality",title:"WiFi telemetry",description:"Explore environment-aware network observations from persisted evidence."},
  "lab-health":{section:"Quality",title:"Lab health",description:"Inspect read-only snapshots of the execution environment."},
+ administration:{section:"Administration",title:"Users and roles",description:"Administer local accounts, scoped roles, permissions and audit history."},
  baselines:{section:"Governance",title:"Baselines",description:"Promote trusted Run evidence into reusable validation baselines."},
  operations:{section:"Governance",title:"Operations",description:"Perform explicitly authorized firmware and release-governance actions."},
 };
@@ -70,7 +75,7 @@ export default function AppShell({user,routeName,onLogout,children}){
  const meta=pageMeta[routeName]||{section:"Workspace",title:"Runner",description:"NetRegress standalone validation operations."};
  const visibleGroups=navGroups.map(group=>({
   ...group,
-  items:group.items.filter(([key])=>key!=="baselines"||canAdmin(user.role)).filter(([key])=>key!=="operations"||canExecute(user.role)),
+  items:group.items.filter(([key])=>key!=="baselines"||canPerform(user,"baselines.manage")).filter(([key])=>key!=="operations"||canExecute(user)).filter(([key])=>key!=="administration"||canPerform(user,"users.read")||canPerform(user,"roles.read")||canPerform(user,"permissions.read")||canPerform(user,"audit.read")),
  })).filter(group=>group.items.length);
  const activeKey=routeName==="run"||routeName==="test"?"runs":routeName;
  const go=(event,href)=>{event.preventDefault();navigate(href);};

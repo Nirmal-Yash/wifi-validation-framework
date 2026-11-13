@@ -79,12 +79,23 @@ EXPECTED_TABLE_COLUMNS = {
     "projects": ("project_id", "organization_id", "slug", "name", "status", "created_at", "updated_at"),
     "labs": ("lab_id", "project_id", "name", "provider_id", "topology_version", "status", "created_at", "updated_at"),
     "project_memberships": ("username", "project_id", "role", "created_at", "created_by"),
+    "users": ("username", "email", "display_name", "password_hash", "status", "workspace_scope", "created_at", "updated_at", "created_by", "activated_at", "password_changed_at"),
+    "roles": ("role_id", "name", "scope_type", "description", "is_system", "created_at", "updated_at", "created_by"),
+    "permissions": ("code", "resource", "action", "description"),
+    "role_permissions": ("role_id", "permission_code"),
+    "role_assignments": ("username", "role_id", "scope_type", "scope_id", "created_at", "created_by"),
+    "user_sessions": ("session_hash", "username", "created_at", "last_seen_at", "expires_at", "revoked_at"),
+    "invitation_tokens": ("token_hash", "username", "created_at", "expires_at", "created_by", "consumed_at"),
+    "password_reset_tokens": ("token_hash", "username", "created_at", "expires_at", "created_by", "consumed_at"),
+    "audit_events": ("audit_id", "actor_username", "action", "resource_type", "resource_id", "details_json", "occurred_at"),
 }
 
 EXPECTED_TRIGGERS = (
     "trg_runs_project_scope_insert",
     "trg_runs_project_scope_update",
     "trg_projects_prevent_delete_with_runs",
+    "trg_audit_events_no_update",
+    "trg_audit_events_no_delete",
 )
 
 EXPECTED_INDEXES = (
@@ -100,6 +111,15 @@ EXPECTED_INDEXES = (
     "idx_labs_project",
     "idx_runs_project_created",
     "idx_project_memberships_project",
+    "idx_users_status",
+    "uq_users_email",
+    "idx_role_assignments_role",
+    "idx_role_assignments_scope",
+    "idx_user_sessions_user",
+    "idx_invitation_user",
+    "idx_password_reset_user",
+    "idx_audit_events_time",
+    "idx_audit_events_resource",
 )
 
 EXPECTED_FOREIGN_KEYS = {
@@ -122,6 +142,12 @@ EXPECTED_FOREIGN_KEYS = {
     ("projects", "organization_id", "organizations", "organization_id"),
     ("labs", "project_id", "projects", "project_id"),
     ("project_memberships", "project_id", "projects", "project_id"),
+    ("role_permissions", "role_id", "roles", "role_id"),
+    ("role_permissions", "permission_code", "permissions", "code"),
+    ("role_assignments", "role_id", "roles", "role_id"),
+    ("user_sessions", "username", "users", "username"),
+    ("invitation_tokens", "username", "users", "username"),
+    ("password_reset_tokens", "username", "users", "username"),
 }
 
 
@@ -243,7 +269,7 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "14":
+        if metadata.get("version") != "15":
             metadata_errors.append(
                 f"schema_meta.version is {metadata.get('version')!r}; expected '14'"
             )

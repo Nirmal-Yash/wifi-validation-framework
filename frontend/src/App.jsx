@@ -10,6 +10,7 @@ import RunDetailPage from "@/pages/run";
 import TestDetailPage from "@/pages/test";
 import {RegressionPage,PerformancePage,TelemetryPage} from "@/pages/quality";
 import {ArtifactsPage,LabHealthPage,ReadinessPage,BaselinesPage,OperationsPage} from "@/pages/system";
+import {WorkspacePage,AdministrationPage,AccountAccessPage} from "@/pages/admin";
 import {Button,LoadingState,Section} from "@/components/ui";
 import {useSession} from "@/auth/session-provider";
 import {canAccessRoute} from "@/permissions";
@@ -40,12 +41,13 @@ export default function App(){
  const routeState=useRoute();
  const route=routeFor(routeState.value);
  const{status,user,login,logout,sessionNotice,clearNotice}=useSession();
+ if(route.name==="account-access")return <AccountAccessPage mode={route.mode}/>;
  if(status==="checking")return <div className="boot-screen"><LoadingState label="Restoring secure Runner session…"/></div>;
  if(status==="anonymous"||status==="authenticating"){
   const unavailable=sessionNotice?.includes("API is unavailable");
   return unavailable?<RunnerUnavailable message={sessionNotice}/>:<LoginPage onLogin={login} notice={sessionNotice} onDismissNotice={clearNotice}/>;
  }
- if(route.name!=="not-found"&&!canAccessRoute(user?.role,route.name)){
+ if(route.name!=="not-found"&&!canAccessRoute(user,route.name)){
   return <AppShell user={user} routeName="dashboard" onLogout={logout}><Forbidden/></AppShell>;
  }
  let page;
@@ -62,6 +64,8 @@ export default function App(){
   case"baselines":page=<BaselinesPage user={user}/>;break;
   case"operations":page=<OperationsPage user={user}/>;break;
   case"readiness":page=<ReadinessPage/>;break;
+  case"workspace":page=<WorkspacePage user={user}/>;break;
+  case"administration":page=<AdministrationPage user={user}/>;break;
   default:page=<NotFound/>;break;
  }
  return <AppShell user={user} routeName={route.name} onLogout={logout}>{page}</AppShell>;

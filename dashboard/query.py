@@ -59,10 +59,13 @@ class DashboardQueryService:
         return value.isoformat() if value is not None else None
 
     def runs(self, *, firmware=None, lab=None, profile=None, status=None,
-             outcome=None, page=1, limit=50) -> dict[str, Any]:
+             outcome=None, page=1, limit=50, project_ids=None) -> dict[str, Any]:
         runs = self.run_repository.list()
+        allowed_projects = None if project_ids is None else set(project_ids)
         filtered = []
         for run in runs:
+            if allowed_projects is not None and run.project_id not in allowed_projects:
+                continue
             if firmware and run.firmware_version != firmware:
                 continue
             if lab and run.lab_id != lab:
@@ -282,9 +285,12 @@ class DashboardQueryService:
             for result in self._latest_results(run_id)
         ]
 
-    def metrics_history(self, test_id: str):
+    def metrics_history(self, test_id: str, project_ids=None):
         rows = []
+        allowed_projects = None if project_ids is None else set(project_ids)
         for run in self.run_repository.list():
+            if allowed_projects is not None and run.project_id not in allowed_projects:
+                continue
             for result in self._latest_results(run.run_id):
                 if result.test_id != test_id:
                     continue
@@ -316,8 +322,19 @@ class DashboardQueryService:
             return []
         return self.result_repository.list_for_attempt(attempts[-1].attempt_id)
 
-    def artifacts(self, run_id=None, artifact_type=None, page=1, limit=50):
-        items = self.artifact_repository.list_for_run(run_id) if run_id else self.artifact_repository.list_all()
+    def artifacts(self, run_id=None, artifact_type=None, page=1, limit=50, project_ids=None):
+        if run_id:
+            items = self.artifact_repository.list_for_run(run_id)
+        elif project_ids is None:
+            items = self.artifact_repository.list_all()
+        else:
+            allowed = set(project_ids)
+            run_ids = [item.run_id for item in self.run_repository.list() if item.project_id in allowed]
+            items = [
+                artifact
+                for selected_run_id in run_ids
+                for artifact in self.artifact_repository.list_for_run(selected_run_id)
+            ]
         if artifact_type:
             items = [item for item in items if item.artifact_type.value == artifact_type]
         page = max(1, int(page))
@@ -515,7 +532,15 @@ class DashboardQueryService:
             ],
         }
 
-    def baselines(self):
+    def baselines(self, project_ids=None):
+        allowed = None if project_ids is None else set(project_ids)
+        items = self.baseline_repository.list_active()
+        if allowed is not None:
+            owned_runs = {
+                run.run_id for run in self.run_repository.list()
+                if run.project_id in allowed
+            }
+            items = [item for item in items if item.baseline_run_id in owned_runs]
         return [
             {
                 "baseline_id": item.baseline_id,
@@ -530,7 +555,7 @@ class DashboardQueryService:
                 "promoted_at": self._iso(item.promoted_at),
                 "provenance": item.provenance,
             }
-            for item in self.baseline_repository.list_active()
+            for item in items
         ]
 
     def latest_lab_health(self, lab_id: str):

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: NetRegress Runner API
-  version: 1.1.0
+  version: 1.2.0
 servers:
   - url: /api/v1
 security:
@@ -17,6 +17,157 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LoginRequest'}}}}
       responses: {"200": {description: Authenticated}, "401": {description: Invalid credentials}}
   /auth/logout: {post: {responses: {"200": {description: Logged out}}}}
+  /auth/invitations/accept:
+    post:
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: {type: string}
+                password: {type: string, minLength: 12}
+      responses: {"200": {description: Invitation accepted}, "400": {description: Invalid or expired token}}
+  /auth/password-resets/complete:
+    post:
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: {type: string}
+                password: {type: string, minLength: 12}
+      responses: {"200": {description: Password reset and sessions revoked}, "400": {description: Invalid or expired token}}
+  /identity/users:
+    get: {responses: {"200": {description: Persistent account directory}}}
+  /identity/invitations:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, display_name, global_role_id]
+              properties:
+                username: {type: string}
+                email: {type: string, format: email}
+                display_name: {type: string}
+                global_role_id: {type: string}
+      responses: {"201": {description: User invitation with one-time token}}
+  /identity/users/{username}:
+    patch:
+      parameters: [{$ref: '#/components/parameters/Username'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: {type: string, enum: [ACTIVE, SUSPENDED, DEACTIVATED]}
+      responses: {"200": {description: Account status updated}}
+  /identity/users/{username}/password-reset:
+    post:
+      parameters: [{$ref: '#/components/parameters/Username'}]
+      responses: {"200": {description: One-time password reset token}}
+  /identity/users/{username}/sessions/revoke:
+    post:
+      parameters: [{$ref: '#/components/parameters/Username'}]
+      responses: {"200": {description: Sessions revoked}}
+  /identity/roles:
+    get: {responses: {"200": {description: Global and Project roles}}}
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, scope_type]
+              properties:
+                name: {type: string}
+                scope_type: {type: string, enum: [GLOBAL, PROJECT]}
+                description: {type: string}
+      responses: {"201": {description: Custom role created}}
+  /identity/permissions:
+    get: {responses: {"200": {description: Permission registry}}}
+  /identity/roles/{role_id}/permissions:
+    put:
+      parameters: [{$ref: '#/components/parameters/RoleId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permissions]
+              properties:
+                permissions: {type: array, items: {type: string}}
+      responses: {"200": {description: Role permissions replaced}}
+  /identity/users/{username}/role:
+    put:
+      parameters: [{$ref: '#/components/parameters/Username'}]
+      responses: {"200": {description: Global role assigned}}
+  /identity/projects/{project_id}/users/{username}/role:
+    put:
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {$ref: '#/components/parameters/Username'}
+      responses: {"200": {description: Project role assigned}}
+  /identity/audit:
+    get: {responses: {"200": {description: Append-only audit events}}}
+  /workspace/organizations:
+    get: {responses: {"200": {description: Organizations visible to current session}}}
+    post:
+      responses: {"201": {description: Organization created}}
+  /workspace/organizations/{organization_id}:
+    patch:
+      parameters: [{$ref: '#/components/parameters/OrganizationId'}]
+      responses: {"200": {description: Organization updated}}
+  /workspace/projects:
+    get: {responses: {"200": {description: Projects visible to current session}}}
+    post:
+      responses: {"201": {description: Project created and creator assigned as Project Owner}}
+  /workspace/projects/{project_id}:
+    get:
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses: {"200": {description: Project detail and Labs}}
+    patch:
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses: {"200": {description: Project updated}}
+  /workspace/projects/{project_id}/labs:
+    get:
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses: {"200": {description: Project Labs}}
+    post:
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses: {"201": {description: Lab created}}
+  /workspace/labs/{lab_id}:
+    patch:
+      parameters: [{$ref: '#/components/parameters/LabId'}]
+      responses: {"200": {description: Lab updated}}
+  /workspace/projects/{project_id}/members:
+    get:
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses: {"200": {description: Project memberships}}
+    post:
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses: {"201": {description: Project membership created}}
+  /workspace/projects/{project_id}/members/{username}:
+    delete:
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {$ref: '#/components/parameters/Username'}
+      responses: {"200": {description: Project membership revoked}}
   /auth/me: {get: {responses: {"200": {description: Current user}}}}
   /auth/activity: {post: {responses: {"200": {description: Authenticated activity heartbeat}}}}
   /runs:
@@ -87,6 +238,31 @@ paths:
         "400": {description: Invalid request or rollback verification failed}
 components:
   parameters:
+    Username:
+      name: username
+      in: path
+      required: true
+      schema: {type: string}
+    RoleId:
+      name: role_id
+      in: path
+      required: true
+      schema: {type: string}
+    ProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: {type: string}
+    OrganizationId:
+      name: organization_id
+      in: path
+      required: true
+      schema: {type: string}
+    LabId:
+      name: lab_id
+      in: path
+      required: true
+      schema: {type: string}
     IdempotencyKey:
       name: Idempotency-Key
       in: header

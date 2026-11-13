@@ -12,6 +12,10 @@ export function routeFor(pathname=window.location.pathname){
   if(path==="/baselines")return{name:"baselines"};
   if(path==="/operations")return{name:"operations"};
   if(path==="/readiness")return{name:"readiness"};
+  if(path==="/workspace")return{name:"workspace"};
+  if(path==="/administration")return{name:"administration"};
+  if(path==="/activate")return{name:"account-access",mode:"activate"};
+  if(path==="/reset-password")return{name:"account-access",mode:"reset"};
   return{name:"not-found"};
 }
 export function navigate(to){window.history.pushState({},"",to);window.dispatchEvent(new PopStateEvent("popstate"));}

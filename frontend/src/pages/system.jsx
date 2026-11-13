@@ -64,7 +64,7 @@ export function BaselinesPage(){
 }
 export function OperationsPage({user}){
  const mutation=useMutation(),[confirm,setConfirm]=useState(null),[firmware,setFirmware]=useState({run_id:"",device_id:"",image_path:"",version:"",reason:"",compatible_models:"",expected_sha256:"",signature_path:""}),[rollback,setRollback]=useState({device_id:"",run_id:"",expected_version:"",reason:""}),[waiver,setWaiver]=useState({scope:"RELEASE",target_id:"",issue_code:"",reason:"",expires_at:""});
- const administrator=canAdmin(user?.role);
+ const administrator=canAdmin(user);
  const waiverLoader=useAsyncLoader(()=>administrator?api.waivers():Promise.resolve({items:[]}),[administrator],{enabled:administrator});
  const syncQueueLoader=useAsyncLoader(()=>administrator?api.syncQueue(50):Promise.resolve({summary:{},items:[]}),[administrator],{enabled:administrator,refreshMs:30000});
  const update=(setter,state,key,value)=>setter({...state,[key]:value});
