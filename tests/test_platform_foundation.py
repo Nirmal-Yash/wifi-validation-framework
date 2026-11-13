@@ -185,3 +185,50 @@ def test_packaged_user_data_override_contains_default_results(tmp_path):
     assert paths.data_dir == user_data
     assert paths.results_dir == user_data / "Results"
     assert paths.database_path == user_data / "Results" / "test_results.db"
+
+
+
+def test_windows_credential_manager_store_round_trip_and_isolation():
+    class FakeCredentialApi:
+        def __init__(self):
+            self.values = {}
+        def write(self, target, secret):
+            self.values[target] = secret
+        def read(self, target):
+            return self.values.get(target)
+        def delete(self, target):
+            return self.values.pop(target, None) is not None
+
+    api = FakeCredentialApi()
+    store = WindowsCredentialManagerSecretStore(api=api)
+    assert store.get("router-password") is None
+    store.set("router-password", "pässword-安全")
+    assert store.get("router-password") == "pässword-安全"
+    assert api.values == {"NetRegress/router-password": "pässword-安全"}
+    assert store.delete("router-password") is True
+    assert store.delete("router-password") is False
+
+
+def test_windows_credential_manager_validates_names_and_secret_size():
+    store = WindowsCredentialManagerSecretStore(api=object())
+    with pytest.raises(ValueError, match="safe identifier"):
+        store.get("../credential")
+    with pytest.raises(ValueError, match="non-empty"):
+        store.set("credential", "")
+    with pytest.raises(ValueError, match="limit"):
+        store.set("credential", "x" * (store.MAX_SECRET_BYTES + 1))
+
+
+def test_windows_credential_manager_wraps_provider_failures_without_secret_echo():
+    class BrokenApi:
+        def write(self, target, secret):
+            raise RuntimeError("provider exploded")
+        def read(self, target):
+            raise RuntimeError("provider exploded")
+        def delete(self, target):
+            raise RuntimeError("provider exploded")
+
+    store = WindowsCredentialManagerSecretStore(api=BrokenApi())
+    with pytest.raises(SecretStoreError, match="RuntimeError") as error:
+        store.set("credential", "never-echo-this-value")
+    assert "never-echo-this-value" not in str(error.value)

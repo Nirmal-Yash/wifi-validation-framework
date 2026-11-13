@@ -158,9 +158,9 @@ The new automated coverage includes:
 
 - Source-checkout and packaged path resolution.
 - Windows and Linux host capability reporting.
-- Fail-closed handling of unavailable Windows credential and ACL adapters.
+- Windows Credential Manager generic-secret operations and fail-closed handling of unavailable private-directory ACL enforcement.
 - Argument-vector process execution and direct-child termination.
-- Secret Service use of stdin rather than argv.
+- Linux Secret Service use of stdin rather than argv.\n- Windows Credential Manager CRUD via the native Win32 API, with UTF-8 round trips, identifier validation and provider-failure redaction.
 - Cross-platform network-interface enumeration for environment fingerprints.
 - Resource identity/validation, ownership persistence, duplicate conflicts and missing-parent rejection.
 - Alembic head/schema-drift verification against version 13.
@@ -180,7 +180,7 @@ The protected real-lab test command is intentionally not part of routine Stage A
 
 Stage A does not deliver:
 
-- Native Windows installation, desktop packaging or Credential Manager.
+- Native Windows installation and desktop packaging. Credential storage is available through Windows Credential Manager; secure Windows private-directory ACL setup remains explicitly fail-closed pending its dedicated adapter.
 - A Tauri desktop shell or bundled backend runtime.
 - A Windows replacement for Linux process-group identity supervision.
 - Native Windows `mac80211_hwsim`, hostapd or wpa_supplicant lab simulation.
@@ -193,6 +193,6 @@ These are later product phases. The current Runner remains operationally authori
 
 ## 8. Stage A compatibility statement
 
-Stage A is accepted only when existing CLI and route contracts remain available, the original lab topology and capture implementation are unchanged, all schema changes are additive and Alembic-managed, resource ownership constraints are enforced by SQLite, and new platform adapters fail closed instead of simulating unsupported OS security behavior.
+Stage A is accepted only when existing CLI and route contracts remain available, the original lab topology and capture implementation are unchanged, all schema changes are additive and Alembic-managed, resource ownership constraints are enforced by SQLite, and platform adapters fail closed instead of simulating unsupported OS security behavior.
 
 CI status and protected lab acceptance must be recorded separately; neither should be inferred from the other.

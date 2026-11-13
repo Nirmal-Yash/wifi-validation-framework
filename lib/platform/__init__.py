@@ -20,7 +20,7 @@ from .contracts import (
 from .detection import describe_platform, platform_family_for
 from .paths import ApplicationPaths, resolve_application_paths
 from .process import ManagedSubprocess, SubprocessExecutor
-from .secrets import SecretServiceSecretStore, UnavailableSecretStore
+from .secrets import SecretServiceSecretStore, UnavailableSecretStore, WindowsCredentialManagerSecretStore
 
 __all__ = [
     "ApplicationPaths",
@@ -40,7 +40,7 @@ __all__ = [
     "SubprocessExecutor",
     "UnsupportedPlatformAdapter",
     "UnavailableSecretStore",
-    "WindowsPlatformAdapter",
+    "WindowsCredentialManagerSecretStore",\n    "WindowsPlatformAdapter",
     "describe_platform",
     "platform_adapter_for",
     "platform_family_for",

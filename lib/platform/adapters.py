@@ -14,7 +14,7 @@ from .contracts import (
 )
 from .detection import describe_platform
 from .process import SubprocessExecutor
-from .secrets import SecretServiceSecretStore, UnavailableSecretStore
+from .secrets import SecretServiceSecretStore, UnavailableSecretStore, WindowsCredentialManagerSecretStore
 
 
 class LinuxPlatformAdapter:
@@ -71,7 +71,7 @@ class LinuxPlatformAdapter:
 
 
 class WindowsPlatformAdapter:
-    """Windows host adapter; ACL and Credential Manager integration are pending."""
+    """Windows host adapter with native Credential Manager secret storage."""
 
     def __init__(self, descriptor: PlatformDescriptor | None = None) -> None:
         self._descriptor = descriptor or describe_platform("Windows")
