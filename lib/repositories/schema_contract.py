@@ -89,6 +89,7 @@ EXPECTED_TABLE_COLUMNS = {
     "password_reset_tokens": ("token_hash", "username", "created_at", "expires_at", "created_by", "consumed_at"),
     "audit_events": ("audit_id", "actor_username", "action", "resource_type", "resource_id", "details_json", "occurred_at"),
     "managed_credentials": ("credential_id", "project_id", "device_id", "label", "credential_type", "username", "secret_provider", "secret_reference", "status", "verification_status", "last_verified_at", "verification_summary", "rotated_at", "created_at", "updated_at", "created_by", "updated_by"),
+    "configuration_schemas": ("schema_record_id", "project_id", "schema_id", "version", "name", "definition_json", "status", "created_at", "created_by"),
 }
 
 EXPECTED_TRIGGERS = (
@@ -98,6 +99,7 @@ EXPECTED_TRIGGERS = (
     "trg_audit_events_no_update",
     "trg_audit_events_no_delete",
     "trg_managed_credentials_no_delete",
+    "trg_configuration_schemas_no_delete",
 )
 
 EXPECTED_INDEXES = (
@@ -123,6 +125,7 @@ EXPECTED_INDEXES = (
     "idx_audit_events_time",
     "idx_audit_events_resource",
     "idx_credentials_project_device_status",
+    "idx_configuration_schemas_project_schema",
 )
 
 EXPECTED_FOREIGN_KEYS = {
@@ -144,6 +147,7 @@ EXPECTED_FOREIGN_KEYS = {
     ("sync_queue", "run_id", "runs", "run_id"),
     ("projects", "organization_id", "organizations", "organization_id"),
     ("managed_credentials", "project_id", "projects", "project_id"),
+    ("configuration_schemas", "project_id", "projects", "project_id"),
     ("labs", "project_id", "projects", "project_id"),
     ("project_memberships", "project_id", "projects", "project_id"),
     ("role_permissions", "role_id", "roles", "role_id"),
