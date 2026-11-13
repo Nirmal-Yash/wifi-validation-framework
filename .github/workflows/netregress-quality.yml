@@ -137,6 +137,7 @@ jobs:
           tests/test_legacy_migration.py
           tests/test_db_helper_compatibility.py
           tests/test_schema_migrations.py
+          tests/test_credential_vault.py
           tests/test_command_runner.py
           tests/test_run_process.py
           tests/test_configuration_resolver.py

@@ -289,6 +289,9 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         # Recreate a genuine pre-Stage-B 20260924_02 database. The helper
         # starts from the current schema so every later table, index and
         # trigger must be removed before rewinding the recorded Alembic head.
+        connection.execute("DROP TRIGGER trg_managed_credentials_no_delete")
+        connection.execute("DROP INDEX idx_credentials_project_device_status")
+        connection.execute("DROP TABLE managed_credentials")
         connection.execute("DROP TRIGGER trg_audit_events_no_update")
         connection.execute("DROP TRIGGER trg_audit_events_no_delete")
         connection.execute("DROP TABLE audit_events")
