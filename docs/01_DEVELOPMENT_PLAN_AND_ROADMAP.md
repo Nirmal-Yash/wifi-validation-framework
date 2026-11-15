@@ -55,9 +55,9 @@ Stage D — Device Management and Topology Studio — is an additional product-s
 |---|---|---|
 | P17 | Device Inventory Domain and API | Implemented in Stage D source checkpoint |
 | P18 | Device Management Frontend | Implemented in Stage D source checkpoint |
-| P19 | Canonical Topology Model and immutable revisions | Defined; topology delivery checkpoint |
-| P20 | Visual Topology Canvas and node editor | Defined; topology delivery checkpoint |
-| P21 | Interfaces, ports and link editor | Defined; topology delivery checkpoint |
+| P19 | Canonical Topology Model and immutable revisions | Implemented; immutable revision and validation tests |
+| P20 | Visual Topology Canvas and node editor | Implemented; local authoring and persisted coordinates |
+| P21 | Interfaces, ports and link editor | Implemented; exact adapter/port occupancy validation |
 | P22 | GNS3 provider project/template/node lifecycle | Defined; topology delivery checkpoint |
 | P23 | GNS3 provider link lifecycle | Defined; topology delivery checkpoint |
 | P24 | Explicit apply, reconciliation and device configuration provider seam | Defined; topology delivery checkpoint |

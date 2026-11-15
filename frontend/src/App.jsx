@@ -13,6 +13,7 @@ import {ArtifactsPage,LabHealthPage,ReadinessPage,BaselinesPage,OperationsPage} 
 import {WorkspacePage,AdministrationPage,AccountAccessPage} from "@/pages/admin";
 import {CredentialsPage,ConfigurationPage} from "@/pages/configuration";
 import DevicesPage from "@/pages/devices";
+import TopologyStudioPage from "@/pages/topologies";
 import {Button,LoadingState,Section} from "@/components/ui";
 import {useSession} from "@/auth/session-provider";
 import {canAccessRoute} from "@/permissions";
@@ -70,6 +71,7 @@ export default function App(){
   case"credentials":page=<CredentialsPage user={user}/>;break;
   case"configuration":page=<ConfigurationPage user={user}/>;break;
   case"devices":page=<DevicesPage user={user}/>;break;
+  case"topologies":page=<TopologyStudioPage user={user}/>;break;
   case"administration":page=<AdministrationPage user={user}/>;break;
   default:page=<NotFound/>;break;
  }

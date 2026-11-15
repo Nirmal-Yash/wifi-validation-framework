@@ -15,6 +15,7 @@ from lib.services.configuration_schema_registry import (
     ConfigurationSchemaError, ConfigurationSchemaNotFound, ConfigurationSchemaRegistry,
 )
 from lib.services.device_inventory import DeviceInventoryService, DeviceInventoryError, DeviceInventoryNotFound
+from lib.services.topology_studio import TopologyStudioService, TopologyStudioError, TopologyStudioNotFound
 from lib.services.performance_policy_service import (
     PerformancePolicyEngine, PerformancePolicyError, PerformancePolicyNotFound, PerformancePolicyService,
 )
@@ -61,6 +62,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     configuration_profiles=ConfigurationProfileService(query.database,configuration_schemas)
     performance_policies=PerformancePolicyService(query.database)
     device_inventory=DeviceInventoryService(query.database)
+    topology_studio=TopologyStudioService(query.database)
     organization_repository=SQLiteOrganizationRepository(query.database)
     project_repository=SQLiteProjectRepository(query.database)
     lab_repository=SQLiteLabRepository(query.database)
@@ -2167,6 +2169,118 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         except (PerformancePolicyError,TypeError,ValueError) as exc:
             return error("INVALID_PERFORMANCE_DATA",str(exc),400)
         return ok(result)
+
+
+
+    @api.get("/topologies")
+    def list_topology_profiles():
+        project_id=str(request.args.get("project_id","")).strip()
+        if not project_id:
+            return error("INVALID_REQUEST","project_id query parameter is required",400)
+        denied=require_permission("topology.read",project_id=project_id)
+        if denied is not None:
+            return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND","Project not found",404)
+        return ok({"items":topology_studio.list_profiles(project_id)})
+
+    @api.post("/topologies")
+    def create_topology_profile():
+        payload=request.get_json(silent=True) or {}
+        if not isinstance(payload,dict):
+            return error("INVALID_REQUEST","topology profile payload must be a JSON object",400)
+        project_id=str(payload.get("project_id","")).strip()
+        denied=require_permission("topology.manage",project_id=project_id)
+        if denied is not None:
+            return denied
+        scope="/api/v1/topologies"
+        request_data={"project_id":project_id,"name":payload.get("name"),"description":payload.get("description"),
+                      "scope_type":payload.get("scope_type","PROJECT"),"scope_id":payload.get("scope_id")}
+        key,request_hash,cached,security_error=idempotency_preflight(scope,request_data)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            profile=topology_studio.create_profile(
+                project_id=project_id,name=payload.get("name"),description=payload.get("description",""),
+                scope_type=payload.get("scope_type","PROJECT"),scope_id=payload.get("scope_id"),
+                actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except TopologyStudioNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except TopologyStudioError as exc:
+            return error("INVALID_TOPOLOGY_PROFILE",str(exc),400)
+        idempotency_store_response(scope,key,request_hash,profile,201)
+        return ok(profile),201
+
+    @api.get("/topologies/<profile_id>/revisions")
+    def list_topology_revisions(profile_id):
+        profile=topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND","Topology profile not found",404)
+        denied=require_permission("topology.read",project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        return ok({"items":topology_studio.list_revisions(profile_id)})
+
+    @api.post("/topologies/<profile_id>/revisions")
+    def create_topology_revision(profile_id):
+        profile=topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND","Topology profile not found",404)
+        denied=require_permission("topology.manage",project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        payload=request.get_json(silent=True) or {}
+        definition=payload.get("definition") if isinstance(payload,dict) else None
+        scope="/api/v1/topologies/"+profile_id+"/revisions"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,{"profile_id":profile_id,"definition":definition})
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            revision=topology_studio.create_revision(
+                profile_id,definition=definition,
+                actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except TopologyStudioNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except TopologyStudioError as exc:
+            return error("INVALID_TOPOLOGY",str(exc),400)
+        idempotency_store_response(scope,key,request_hash,revision,201)
+        return ok(revision),201
+
+    @api.post("/topologies/<profile_id>/publish")
+    def publish_topology_revision(profile_id):
+        profile=topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND","Topology profile not found",404)
+        denied=require_permission("topology.publish",project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        payload=request.get_json(silent=True) or {}
+        revision_id=str(payload.get("revision_id","")).strip() if isinstance(payload,dict) else ""
+        if not revision_id:
+            return error("INVALID_REQUEST","revision_id is required",400)
+        scope="/api/v1/topologies/"+profile_id+"/publish"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,{"revision_id":revision_id})
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            revision=topology_studio.publish(
+                profile_id,revision_id,
+                actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except TopologyStudioNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except TopologyStudioError as exc:
+            return error("INVALID_TRANSITION",str(exc),409)
+        idempotency_store_response(scope,key,request_hash,revision,200)
+        return ok(revision)
 
     return api
 

@@ -46,6 +46,13 @@ describe("NetRegress RBAC presentation matrix",()=>{
   expect(canPerform("OPERATOR","devices.manage")).toBe(false);
   expect(canAccessRoute("VIEWER","devices")).toBe(true);
  });
+ it("maps topology permissions to built-in roles",()=>{
+  expect(canPerform("VIEWER","topology.read")).toBe(true);
+  expect(canPerform("OPERATOR","topology.read")).toBe(true);
+  expect(canPerform("ADMIN","topology.manage")).toBe(true);
+  expect(canPerform("OWNER","topology.publish")).toBe(true);
+  expect(canPerform("OPERATOR","topology.manage")).toBe(false);
+ });
  it("fails closed for unknown roles, permissions and routes",()=>{
   expect(canPerform("UNKNOWN","view")).toBe(false);
   expect(canPerform("OWNER","unknown")).toBe(false);

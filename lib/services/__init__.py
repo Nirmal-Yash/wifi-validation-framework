@@ -126,6 +126,9 @@ _EXPORTS = {
     "DeviceInventoryService": (".device_inventory", "DeviceInventoryService"),
     "DeviceInventoryError": (".device_inventory", "DeviceInventoryError"),
     "DeviceInventoryNotFound": (".device_inventory", "DeviceInventoryNotFound"),
+    "TopologyStudioService": (".topology_studio", "TopologyStudioService"),
+    "TopologyStudioError": (".topology_studio", "TopologyStudioError"),
+    "TopologyStudioNotFound": (".topology_studio", "TopologyStudioNotFound"),
 }
 
 __all__ = tuple(_EXPORTS)

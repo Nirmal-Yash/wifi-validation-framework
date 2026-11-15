@@ -33,15 +33,15 @@ Delivered in the first Stage D source slice. The React workspace filters invento
 
 ### P19 — Canonical Topology Model
 
-The canonical topology document contains named nodes and links. Each node has a stable logical ID, display name, provider template reference, type and bounded canvas coordinates. Each link identifies two nodes and exact adapter/port numbers. Definitions reject duplicate IDs, dangling references, self-links, duplicate endpoints, occupied ports, unsupported node types, unsafe properties and credential-like fields. Revisions are immutable and content-hashed. Topology JSON never contains a credential or secret.
+Implemented: additive Alembic migration `20261115_12` adds Project/Lab topology profiles and immutable revisions. Canonical JSON is normalized before hashing with SHA-256. Validation enforces stable logical node/link IDs, supported node types, provider template references, bounded coordinates, valid endpoints, adapter/port ranges, occupied-port uniqueness and secret-shaped property rejection. Published revision content cannot be edited or deleted; changes create a new draft revision. Topology JSON never contains a credential or secret.
 
 ### P20 — Visual Topology Canvas
 
-The canvas is a React authoring surface for draft topology data. Node movement and connection editing modify a local draft only until the user saves a revision. The canvas does not contact GNS3 while being opened, moved or previewed. Stable logical node IDs are independent of provider-generated GNS3 node IDs.
+Implemented: React Topology Studio provides a local SVG canvas, node palette, node selection, drag positioning, labels, template references and immutable revision save. Canvas edits remain local until a draft revision is saved. Opening, dragging, previewing and publishing do not contact GNS3. Stable logical node IDs remain independent of provider-generated IDs.
 
 ### P21 — Interface, Port and Link Editor
 
-Links use typed source/target logical node IDs and adapter/port numbers. The service validates that both endpoints exist, endpoint references are distinct, and no port is occupied more than once in the same topology. A published revision cannot be edited; changes create a new draft revision.
+Implemented: the canvas includes an explicit link editor for source/target logical node, adapter and port. The canonical service validates both endpoints, rejects self-links and enforces one link per adapter/port. Link edits are part of the next immutable draft revision; published revisions remain unchanged.
 
 ### P22 — GNS3 Provider — Node Lifecycle
 
@@ -71,4 +71,7 @@ Configuration deployment is restricted to supported device/configuration adapter
 
 - P17 Device Inventory Domain/API: implemented in Stage D commit 1.
 - P18 Device Management Frontend: implemented in Stage D commit 1.
-- P19–P24: defined here and delivered by the subsequent Stage D topology/provider commit.
+- P19 Canonical Topology Model: implemented and regression-tested.
+- P20 Visual Topology Canvas: implemented as a local-only authoring surface.
+- P21 Adapter/Port/Link Editor: implemented with server-side port-occupancy validation.
+- P22–P24 GNS3 provider, link lifecycle, explicit apply and reconciliation: next delivery checkpoint.

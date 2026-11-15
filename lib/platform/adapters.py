@@ -139,16 +139,23 @@ $rules = @($verified.Access | ForEach-Object {
         existed = target.exists()
         if existed and not target.is_dir():
             raise PlatformCapabilityError("Windows private directory path exists but is not a directory")
+        created = False
         try:
-            attributes = getattr(target.stat(), "st_file_attributes", 0)
-        except OSError as exc:
-            raise PlatformCapabilityError("Windows private directory could not be inspected safely") from exc
-        if attributes & 0x400:
-            raise PlatformCapabilityError("Windows private directory must not be a reparse point")
-        created = not existed
-        try:
-            if created:
-                target.mkdir(parents=True, exist_ok=False)
+            if not existed:
+                try:
+                    target.mkdir(parents=True, exist_ok=False)
+                    created = True
+                except FileExistsError:
+                    # A concurrent creator wins; verify its ACL rather than replacing it.
+                    created = False
+            if target.is_symlink() or not target.is_dir():
+                raise PlatformCapabilityError("Windows private directory must be a real directory")
+            try:
+                attributes = getattr(target.lstat(), "st_file_attributes", 0)
+            except OSError as exc:
+                raise PlatformCapabilityError("Windows private directory could not be inspected safely") from exc
+            if attributes & 0x400:
+                raise PlatformCapabilityError("Windows private directory must not be a reparse point")
             executable = self._executable or shutil.which("powershell.exe") or shutil.which("powershell")
             if not executable:
                 raise PlatformCapabilityError("Windows ACL verification requires Windows PowerShell; refusing private state access")

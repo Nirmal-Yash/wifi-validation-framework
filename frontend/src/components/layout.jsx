@@ -1,6 +1,6 @@
 import React from "react";
 import {
- Activity,BarChart3,ChevronDown,ChevronRight,ClipboardList,FileArchive,
+ Activity,BarChart3,ChevronDown,ChevronRight,ClipboardList,FileArchive,Workflow,
  FileCheck2,GitCompare,LayoutDashboard,LogOut,SlidersHorizontal,Wifi,ShieldCheck,Users,KeyRound,Settings2,Router,
 } from "lucide-react";
 import {navigate} from "@/router";
@@ -25,6 +25,7 @@ const navGroups=[
   ["credentials","/credentials","Credentials",KeyRound],
   ["configuration","/configuration","Configuration profiles",Settings2],
   ["devices","/devices","Device inventory",Router],
+  ["topologies","/topologies","Topology studio",Workflow],
  ]},
  {title:"Quality",items:[
   ["regressions","/regressions","Regression analysis",GitCompare],
@@ -55,6 +56,7 @@ const pageMeta={
  credentials:{section:"Configuration",title:"Credential vault",description:"Store device credentials outside the database, verify SSH access, rotate secrets and revoke access."},
  configuration:{section:"Configuration",title:"Configuration profiles",description:"Manage typed schemas, versioned profiles, published revisions, assignments and effective configuration previews."},
  devices:{section:"Configuration",title:"Device inventory",description:"Manage Project/Lab-scoped network devices and link each device to an OS-vault credential reference."},
+ topologies:{section:"Configuration",title:"Topology studio",description:"Design versioned network topologies with logical nodes, adapters, ports and links before any explicit provider apply."},
  baselines:{section:"Governance",title:"Baselines",description:"Promote trusted Run evidence into reusable validation baselines."},
  operations:{section:"Governance",title:"Operations",description:"Perform explicitly authorized firmware and release-governance actions."},
 };
