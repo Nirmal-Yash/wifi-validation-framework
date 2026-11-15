@@ -123,6 +123,9 @@ _EXPORTS = {
     "DoctorCheck": (".doctor", "DoctorCheck"),
     "DoctorReport": (".doctor", "DoctorReport"),
     "RunnerDoctor": (".doctor", "RunnerDoctor"),
+    "DeviceInventoryService": (".device_inventory", "DeviceInventoryService"),
+    "DeviceInventoryError": (".device_inventory", "DeviceInventoryError"),
+    "DeviceInventoryNotFound": (".device_inventory", "DeviceInventoryNotFound"),
 }
 
 __all__ = tuple(_EXPORTS)

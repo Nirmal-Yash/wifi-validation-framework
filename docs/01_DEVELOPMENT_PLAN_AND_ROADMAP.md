@@ -10,6 +10,8 @@ Companion canonical documents:
 - docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md
 - docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
 - docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md
+- docs/STAGE_C_FOUNDATION.md
+- docs/STAGE_D_FOUNDATION.md
 
 ## 1. Authority and development rules
 
@@ -44,6 +46,21 @@ This B–P programme is the current execution order for the next development sli
 | N | Standalone Packaging and Production Certification: reproducible install, upgrade/backup/restore, doctor/manifest, operator runbooks and the full standalone certification matrix | Source implementation delivered in 80831042; hosted workflow 42629371133 passed 3/3 jobs, including 360 backend tests (7 skipped), 35 API security tests and 31 frontend tests. Dependency lockfiles, clean-machine rehearsal, production proxy acceptance, protected REAL_LAB and physical firmware evidence remain open |
 | O | Cloud/SaaS Expansion and Integration: separate control-plane contracts, tenant/project ownership, outbound synchronization and remote release workflows; begin only after standalone Runner certification | Future scope. Combined O/P adds only local read-only sync-queue visibility over the existing outbound-only transport; no Cloud receiver, tenant model, PostgreSQL or remote-control feature is implemented |
 | P | GitHub Repository Organization and Cleanup: source and docs ownership audit, tests/workflow coverage, dependency hygiene, stale-file/branch cleanup, secret scan, release metadata and final repository freeze | Source/governance cleanup delivered in `a87bfd1`; hosted workflow [42632716718](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42632716718) passed all 3 jobs and the single-branch/no-open-PR audit passed. No history rewrite or compatibility-file deletion |
+
+### Additional Stage D implementation track — P17–P24
+
+Stage D — Device Management and Topology Studio — is an additional product-stage programme created after Stage C. It is intentionally distinct from the historical Phase D row above (legacy compatibility and historical migration). Its authoritative phase contracts and safety gates are documented in docs/STAGE_D_FOUNDATION.md.
+
+| Phase | Scope | Status |
+|---|---|---|
+| P17 | Device Inventory Domain and API | Implemented in Stage D source checkpoint |
+| P18 | Device Management Frontend | Implemented in Stage D source checkpoint |
+| P19 | Canonical Topology Model and immutable revisions | Defined; topology delivery checkpoint |
+| P20 | Visual Topology Canvas and node editor | Defined; topology delivery checkpoint |
+| P21 | Interfaces, ports and link editor | Defined; topology delivery checkpoint |
+| P22 | GNS3 provider project/template/node lifecycle | Defined; topology delivery checkpoint |
+| P23 | GNS3 provider link lifecycle | Defined; topology delivery checkpoint |
+| P24 | Explicit apply, reconciliation and device configuration provider seam | Defined; topology delivery checkpoint |
 
 #### Phase C — implementation contract
 

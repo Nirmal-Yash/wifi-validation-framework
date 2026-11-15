@@ -46,6 +46,8 @@ Read the canonical documents in this order:
 
 1. docs/STAGE_A_FOUNDATION.md — Stage A baseline, compatibility guarantees, platform abstraction, product shell and resource persistence foundation
 2. docs/STAGE_B_FOUNDATION.md — Stage B project ownership, membership, API and workspace checkpoints
+3. docs/STAGE_C_FOUNDATION.md — credentials, configuration and performance policy foundations
+4. docs/STAGE_D_FOUNDATION.md — Device Inventory and Topology Studio programme (P17–P24)
 3. docs/01_DEVELOPMENT_PLAN_AND_ROADMAP.md — development order, historical phases and roadmap
 4. docs/02_SYSTEM_ARCHITECTURE_DATA_API.md — backend architecture, data model and API
 5. docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md — traceability, audit and readiness

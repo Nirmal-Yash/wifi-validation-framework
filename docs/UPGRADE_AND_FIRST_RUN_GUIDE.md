@@ -7,7 +7,7 @@ This procedure upgrades an existing install or prepares a clean checkout of the 
 The phases are source history, not a sequence of installers:
 
 - **Phase A** is the historical protected Wi-Fi behavioral baseline (`436026eba597b2c6ae2e291a9cd8054b70ebbf7c`, historically 11/11 real-lab tests). It is not a setup command and has not been re-certified on every later revision.
-- **Phases B–N** are implemented source/CI slices covering Run and evidence correctness, canonical SQLite persistence, legacy migration, Alembic schema governance, process reliability, configuration/resource orchestration, protocol evidence, telemetry/performance, device/firmware lifecycle, security, API/dashboard/frontend, regression/release/offline operations and standalone packaging.
+- **Phases B–P** are the completed source/CI programme for Run/evidence, persistence, process reliability, execution, security, API/frontend, release operations, standalone packaging and repository governance. The separate Stage C P10–P16 and Stage D P17–P24 product tracks extend the workspace with credentials/configuration/performance policies, managed devices and topology/provider workflows.
 - **Phase O** full Cloud/SaaS remains future scope. The delivered bounded addition is local read-only sync-queue status only. There is no Cloud receiver, tenant database, PostgreSQL service, distributed sessions or inbound remote Runner control.
 - **Phase P** repository organization and compatibility cleanup is delivered. Legacy command names remain as wrappers; history was not rewritten.
 

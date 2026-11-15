@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import os
 import shutil
 import stat
+import subprocess
+from typing import Callable
 
 from .contracts import (
     PlatformCapabilityError,
@@ -73,8 +77,14 @@ class LinuxPlatformAdapter:
 class WindowsPlatformAdapter:
     """Windows host adapter with native Credential Manager secret storage."""
 
-    def __init__(self, descriptor: PlatformDescriptor | None = None) -> None:
+    def __init__(
+        self, descriptor: PlatformDescriptor | None = None, *,
+        runner: Callable[..., subprocess.CompletedProcess] | None = None,
+        executable: str | None = None,
+    ) -> None:
         self._descriptor = descriptor or describe_platform("Windows")
+        self._runner = runner or subprocess.run
+        self._executable = executable
 
     @property
     def descriptor(self) -> PlatformDescriptor:
@@ -86,10 +96,98 @@ class WindowsPlatformAdapter:
     def create_secret_store(self) -> SecretStore:
         return WindowsCredentialManagerSecretStore()
 
+    _ACL_SCRIPT = r"""
+$ErrorActionPreference = 'Stop'
+$path = $env:NETREGRESS_PRIVATE_DIRECTORY
+if ([string]::IsNullOrWhiteSpace($path)) { throw 'directory path is missing' }
+$current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+if ($null -eq $current) { throw 'current user SID is unavailable' }
+if ($env:NETREGRESS_ACL_CREATE -eq '1') {
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.SetOwner($current)
+    $rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+        $current,
+        [System.Security.AccessControl.FileSystemRights]::FullControl,
+        [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit,
+        [System.Security.AccessControl.PropagationFlags]::None,
+        [System.Security.AccessControl.AccessControlType]::Allow
+    )
+    [void]$acl.AddAccessRule($rule)
+    Set-Acl -LiteralPath $path -AclObject $acl
+}
+$verified = Get-Acl -LiteralPath $path
+$ownerSid = $verified.Owner
+try { $ownerSid = ([System.Security.Principal.NTAccount]$verified.Owner).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $ownerSid = [string]$verified.Owner }
+$rules = @($verified.Access | ForEach-Object {
+    $sid = $_.IdentityReference
+    try { $sid = $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $sid = [string]$_.IdentityReference }
+    @{
+        sid = [string]$sid
+        allow = ($_.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow)
+        full_control = ($_.FileSystemRights -eq [System.Security.AccessControl.FileSystemRights]::FullControl)
+        inherited = [bool]$_.IsInherited
+    }
+})
+@{ owner = [string]$ownerSid; current_sid = [string]$current.Value; protected = [bool]$verified.AreAccessRulesProtected; rules = $rules } | ConvertTo-Json -Compress -Depth 4
+"""
+
     def ensure_private_directory(self, path: str | Path) -> Path:
-        raise PlatformCapabilityError(
-            "Windows private-directory ACL verification is not implemented; refusing to create a credential or state directory."
-        )
+        target = Path(path).expanduser()
+        if target.is_symlink():
+            raise PlatformCapabilityError("Windows private directory must not be a symbolic link")
+        existed = target.exists()
+        if existed and not target.is_dir():
+            raise PlatformCapabilityError("Windows private directory path exists but is not a directory")
+        try:
+            attributes = getattr(target.stat(), "st_file_attributes", 0)
+        except OSError as exc:
+            raise PlatformCapabilityError("Windows private directory could not be inspected safely") from exc
+        if attributes & 0x400:
+            raise PlatformCapabilityError("Windows private directory must not be a reparse point")
+        created = not existed
+        try:
+            if created:
+                target.mkdir(parents=True, exist_ok=False)
+            executable = self._executable or shutil.which("powershell.exe") or shutil.which("powershell")
+            if not executable:
+                raise PlatformCapabilityError("Windows ACL verification requires Windows PowerShell; refusing private state access")
+            environment = os.environ.copy()
+            environment["NETREGRESS_PRIVATE_DIRECTORY"] = str(target.resolve(strict=True))
+            environment["NETREGRESS_ACL_CREATE"] = "1" if created else "0"
+            try:
+                result = self._runner(
+                    [executable, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", self._ACL_SCRIPT],
+                    capture_output=True, text=True, timeout=15, check=False, env=environment,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise PlatformCapabilityError("Windows ACL verification could not be executed safely") from exc
+            if result.returncode != 0:
+                raise PlatformCapabilityError("Windows ACL verification failed; refusing private state access")
+            try:
+                payload = json.loads(result.stdout)
+            except (TypeError, ValueError) as exc:
+                raise PlatformCapabilityError("Windows ACL verification returned an invalid result") from exc
+            rules = payload.get("rules") if isinstance(payload, dict) else None
+            if (
+                payload.get("owner") != payload.get("current_sid")
+                or not payload.get("protected")
+                or not isinstance(rules, list)
+                or len(rules) != 1
+                or rules[0].get("sid") != payload.get("current_sid")
+                or rules[0].get("allow") is not True
+                or rules[0].get("full_control") is not True
+                or rules[0].get("inherited") is not False
+            ):
+                raise PlatformCapabilityError("Windows directory ACL is not private to the current user; refusing access")
+            return target.resolve(strict=True)
+        except Exception:
+            if created:
+                try:
+                    target.rmdir()
+                except OSError:
+                    pass
+            raise
 
     def provider_availability(
         self, provider_id: str, executable: str | None = None

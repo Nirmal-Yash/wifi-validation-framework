@@ -233,3 +233,59 @@ def test_windows_credential_manager_wraps_provider_failures_without_secret_echo(
     with pytest.raises(SecretStoreError, match="RuntimeError") as error:
         store.set("credential", "never-echo-this-value")
     assert "never-echo-this-value" not in str(error.value)
+
+def test_windows_private_directory_sets_and_verifies_current_user_acl(tmp_path):
+    import json
+    import subprocess
+    from lib.platform.adapters import WindowsPlatformAdapter
+
+    observed = {}
+    payload = {
+        "owner": "S-1-5-21-42",
+        "current_sid": "S-1-5-21-42",
+        "protected": True,
+        "rules": [{
+            "sid": "S-1-5-21-42", "allow": True,
+            "full_control": True, "inherited": False,
+        }],
+    }
+
+    def fake_run(command, **kwargs):
+        observed["command"] = command
+        observed["environment"] = kwargs["env"]
+        return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
+
+    target = tmp_path / "private-state"
+    platform = WindowsPlatformAdapter(
+        describe_platform("Windows"), runner=fake_run, executable="powershell-test"
+    )
+    assert platform.ensure_private_directory(target) == target.resolve()
+    assert target.is_dir()
+    assert observed["environment"]["NETREGRESS_ACL_CREATE"] == "1"
+    assert observed["environment"]["NETREGRESS_PRIVATE_DIRECTORY"] == str(target.resolve())
+    assert "Set-Acl" in observed["command"][-1]
+    assert "Get-Acl" in observed["command"][-1]
+
+
+def test_windows_private_directory_rejects_inherited_or_broad_acl(tmp_path):
+    import json
+    import subprocess
+    from lib.platform.adapters import WindowsPlatformAdapter
+
+    unsafe = {
+        "owner": "S-1-5-21-42", "current_sid": "S-1-5-21-42",
+        "protected": False,
+        "rules": [{"sid": "BUILTIN\\Users", "allow": True, "full_control": True, "inherited": True}],
+    }
+
+    def fake_run(command, **kwargs):
+        return subprocess.CompletedProcess(command, 0, json.dumps(unsafe), "")
+
+    target = tmp_path / "existing-private-state"
+    target.mkdir()
+    adapter = WindowsPlatformAdapter(
+        describe_platform("Windows"), runner=fake_run, executable="powershell-test"
+    )
+    with pytest.raises(PlatformCapabilityError, match="ACL is not private"):
+        adapter.ensure_private_directory(target)
+    assert target.is_dir()

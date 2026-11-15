@@ -9,7 +9,7 @@ export const ROUTE_PERMISSIONS=Object.freeze({
  artifacts:["workspace.read"],readiness:["workspace.read"],regressions:["workspace.read"],
  performance:["workspace.read"],telemetry:["workspace.read"],"lab-health":["workspace.read"],
  baselines:["baselines.manage"],operations:["runs.execute","firmware.manage"],
- workspace:["workspace.read"],
+ workspace:["workspace.read"],devices:["devices.read"],
  credentials:["credentials.read"],configuration:["configurations.read"],
  administration:["users.read","roles.read","permissions.read","audit.read"],
 });
@@ -24,6 +24,7 @@ const LEGACY_PERMISSION_ALIAS=Object.freeze({
  "credentials.read":"view","credentials.manage":"admin","credentials.verify":"execute",
  "configurations.read":"view","configurations.manage":"admin","configurations.publish":"admin",
  "performance.read":"view","performance.manage":"admin","performance.publish":"admin",
+ "devices.read":"view","devices.manage":"admin","devices.operate":"admin",
 });
 export function canPerform(subject,permission){
  if(subject&&typeof subject==="object"&&Array.isArray(subject.permissions)){

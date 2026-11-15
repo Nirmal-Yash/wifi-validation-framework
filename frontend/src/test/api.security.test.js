@@ -101,6 +101,30 @@ describe("Runner API session and CSRF client",()=>{
   ]);
  });
 
+ it("exposes the Project/Lab device inventory endpoints",async()=>{
+  const device={device_id:"dev-1",project_id:"project 1",lab_id:"lab 1"};
+  const fetchMock=vi.fn()
+   .mockResolvedValueOnce(success({items:[device]}))
+   .mockResolvedValueOnce(success(device))
+   .mockResolvedValueOnce(success({csrf_token:"device-csrf"}))
+   .mockResolvedValueOnce(success(device))
+   .mockResolvedValueOnce(success({...device,name:"Updated"}));
+  vi.stubGlobal("fetch",fetchMock);
+  await api.devices("project 1","lab 1");
+  await api.device("device/1");
+  await api.createDevice({project_id:"project 1",lab_id:"lab 1"});
+  await api.updateDevice("device/1",{name:"Updated"});
+  expect(fetchMock.mock.calls.map(call=>call[0])).toEqual([
+   "/api/v1/devices?project_id=project+1&lab_id=lab+1&status=ACTIVE",
+   "/api/v1/devices/device%2F1",
+   "/api/v1/auth/csrf",
+   "/api/v1/devices",
+   "/api/v1/devices/device%2F1",
+  ]);
+  expect(fetchMock.mock.calls[3][1].headers["X-CSRF-Token"]).toBe("device-csrf");
+  expect(fetchMock.mock.calls[4][1].method).toBe("PATCH");
+ });
+
  it("rejects non-JSON proxy errors instead of interpreting them as API data",async()=>{
   vi.stubGlobal("fetch",vi.fn().mockResolvedValueOnce(response(null,502,"text/html")));
   await expect(api.health()).rejects.toMatchObject({status:502,code:"INVALID_API_RESPONSE"});

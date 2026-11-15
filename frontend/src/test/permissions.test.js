@@ -38,6 +38,14 @@ describe("NetRegress RBAC presentation matrix",()=>{
   expect(canPerform({role:"OWNER",permissions:["performance.read"]},"performance.read")).toBe(true);
   expect(canPerform({role:"OWNER",permissions:["performance.read"]},"performance.publish")).toBe(false);
  });
+ it("maps legacy roles to Stage D device inventory permissions",()=>{
+  expect(canPerform("VIEWER","devices.read")).toBe(true);
+  expect(canPerform("OPERATOR","devices.read")).toBe(true);
+  expect(canPerform("ADMIN","devices.manage")).toBe(true);
+  expect(canPerform("OWNER","devices.operate")).toBe(true);
+  expect(canPerform("OPERATOR","devices.manage")).toBe(false);
+  expect(canAccessRoute("VIEWER","devices")).toBe(true);
+ });
  it("fails closed for unknown roles, permissions and routes",()=>{
   expect(canPerform("UNKNOWN","view")).toBe(false);
   expect(canPerform("OWNER","unknown")).toBe(false);

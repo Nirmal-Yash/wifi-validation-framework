@@ -93,6 +93,7 @@ EXPECTED_TABLE_COLUMNS = {
     "configuration_profiles": ("profile_id", "project_id", "name", "description", "scope_type", "scope_id", "schema_record_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "configuration_revisions": ("revision_id", "profile_id", "schema_record_id", "revision_number", "values_json", "configuration_hash", "provenance_json", "parent_revision_id", "status", "created_at", "created_by", "published_at", "published_by"),
     "configuration_assignments": ("assignment_id", "project_id", "target_type", "target_id", "profile_id", "revision_id", "assigned_at", "assigned_by"),
+    "devices": ("device_id", "project_id", "lab_id", "device_key", "name", "device_type", "host", "port", "vendor", "model", "username", "credential_id", "capabilities_json", "metadata_json", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "performance_policy_profiles": ("policy_profile_id", "project_id", "name", "description", "scope_type", "scope_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "performance_policy_revisions": ("revision_id", "policy_profile_id", "revision_number", "policy_json", "policy_hash", "status", "created_at", "created_by", "published_at", "published_by"),
     "performance_policy_assignments": ("assignment_id", "project_id", "lab_id", "policy_profile_id", "revision_id", "assigned_at", "assigned_by"),
@@ -109,6 +110,9 @@ EXPECTED_TRIGGERS = (
     "trg_configuration_revisions_immutable",
     "trg_configuration_revisions_no_delete",
     "trg_configuration_assignments_no_delete",
+    "trg_devices_credential_scope_insert",
+    "trg_devices_credential_scope_update",
+    "trg_devices_no_delete",
     "trg_performance_policy_revisions_immutable",
     "trg_performance_policy_revisions_no_delete",
     "trg_performance_policy_assignments_no_delete",
@@ -141,6 +145,9 @@ EXPECTED_INDEXES = (
     "idx_configuration_profiles_project_scope",
     "idx_configuration_revisions_profile_number",
     "idx_configuration_assignments_target",
+    "idx_devices_project_lab_status",
+    "idx_devices_credential",
+    "uq_labs_project_lab",
     "idx_performance_policy_profiles_project_scope",
     "idx_performance_policy_revisions_profile_number",
     "idx_performance_policy_assignments_lab",
@@ -174,6 +181,9 @@ EXPECTED_FOREIGN_KEYS = {
     ("configuration_assignments", "project_id", "projects", "project_id"),
     ("configuration_assignments", "profile_id", "configuration_profiles", "profile_id"),
     ("configuration_assignments", "revision_id", "configuration_revisions", "revision_id"),
+    ("devices", "credential_id", "managed_credentials", "credential_id"),
+    ("devices", "project_id", "labs", "project_id"),
+    ("devices", "lab_id", "labs", "lab_id"),
     ("performance_policy_profiles", "project_id", "projects", "project_id"),
     ("performance_policy_revisions", "policy_profile_id", "performance_policy_profiles", "policy_profile_id"),
     ("performance_policy_assignments", "project_id", "projects", "project_id"),
@@ -308,9 +318,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "19":
+        if metadata.get("version") != "20":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '19'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '20'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

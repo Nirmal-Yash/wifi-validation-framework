@@ -14,6 +14,7 @@ from lib.platform import platform_adapter_for
 from lib.services.configuration_schema_registry import (
     ConfigurationSchemaError, ConfigurationSchemaNotFound, ConfigurationSchemaRegistry,
 )
+from lib.services.device_inventory import DeviceInventoryService, DeviceInventoryError, DeviceInventoryNotFound
 from lib.services.performance_policy_service import (
     PerformancePolicyEngine, PerformancePolicyError, PerformancePolicyNotFound, PerformancePolicyService,
 )
@@ -59,6 +60,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     configuration_schemas=ConfigurationSchemaRegistry(query.database)
     configuration_profiles=ConfigurationProfileService(query.database,configuration_schemas)
     performance_policies=PerformancePolicyService(query.database)
+    device_inventory=DeviceInventoryService(query.database)
     organization_repository=SQLiteOrganizationRepository(query.database)
     project_repository=SQLiteProjectRepository(query.database)
     lab_repository=SQLiteLabRepository(query.database)
@@ -1561,6 +1563,90 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
                 client.close()
         except Exception as exc:
             return "FAILED","SSH verification failed ("+type(exc).__name__+"); check reachability, credentials and trusted host keys."
+
+
+    @api.get("/devices")
+    def list_managed_devices():
+        project_id=str(request.args.get("project_id","")).strip()
+        if not project_id:
+            return error("INVALID_REQUEST","project_id query parameter is required",400)
+        denied=require_permission("devices.read",project_id=project_id)
+        if denied is not None:
+            return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND","Project not found",404)
+        lab_id=str(request.args.get("lab_id","")).strip() or None
+        status=str(request.args.get("status","ACTIVE")).strip().upper() or None
+        if lab_id:
+            lab=lab_repository.get(lab_id)
+            if lab is None or lab.project_id!=project_id:
+                return error("NOT_FOUND","Lab not found in this Project",404)
+        if status not in {None,"ACTIVE","ARCHIVED"}:
+            return error("INVALID_REQUEST","status must be ACTIVE or ARCHIVED",400)
+        return ok({"items":device_inventory.list(project_id,lab_id=lab_id,status=status)})
+
+    @api.post("/devices")
+    def create_managed_device():
+        payload=request.get_json(silent=True) or {}
+        if not isinstance(payload,dict):
+            return error("INVALID_REQUEST","device payload must be a JSON object",400)
+        project_id=str(payload.get("project_id","")).strip()
+        denied=require_permission("devices.manage",project_id=project_id)
+        if denied is not None:
+            return denied
+        key,request_hash,cached,security_error=idempotency_preflight("/api/v1/devices",payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            item=device_inventory.create(
+                payload,actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except DeviceInventoryNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except DeviceInventoryError as exc:
+            return error("INVALID_DEVICE",str(exc),400)
+        idempotency_store_response("/api/v1/devices",key,request_hash,item,201)
+        return ok(item),201
+
+    @api.get("/devices/<device_id>")
+    def get_managed_device(device_id):
+        item=device_inventory.get(device_id)
+        if item is None:
+            return error("NOT_FOUND","Device not found",404)
+        denied=require_permission("devices.read",project_id=item["project_id"])
+        if denied is not None:
+            return denied
+        return ok(item)
+
+    @api.patch("/devices/<device_id>")
+    def update_managed_device(device_id):
+        item=device_inventory.get(device_id)
+        if item is None:
+            return error("NOT_FOUND","Device not found",404)
+        denied=require_permission("devices.manage",project_id=item["project_id"])
+        if denied is not None:
+            return denied
+        payload=request.get_json(silent=True) or {}
+        if not isinstance(payload,dict):
+            return error("INVALID_REQUEST","device update must be a JSON object",400)
+        scope="/api/v1/devices/"+device_id
+        key,request_hash,cached,security_error=idempotency_preflight(scope,payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            updated=device_inventory.update(
+                device_id,payload,actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except DeviceInventoryNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except DeviceInventoryError as exc:
+            return error("INVALID_DEVICE",str(exc),400)
+        idempotency_store_response(scope,key,request_hash,updated,200)
+        return ok(updated)
 
     @api.get("/credentials")
     def list_managed_credentials():

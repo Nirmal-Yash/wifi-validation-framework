@@ -15,7 +15,9 @@ Read order:
 6. 04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md
 7. FRONTEND_DESIGN.md
 8. 03_TRACEABILITY_AND_SYSTEM_READINESS.md
-9. source files directly related to the change
+9. docs/STAGE_C_FOUNDATION.md
+10. docs/STAGE_D_FOUNDATION.md
+11. source files directly related to the change
 
 ## 2. Protected baseline
 

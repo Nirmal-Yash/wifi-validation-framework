@@ -506,3 +506,19 @@ Do not claim Cloud receiver, tenant authorization, PostgreSQL, distributed ident
 ### Readiness interpretation
 
 `SOURCE_IMPLEMENTED`, `HOSTED_CI_GREEN`, `CLEAN_MACHINE_REHEARSED`, `REAL_LAB_CERTIFIED`, `PHYSICAL_TARGET_CERTIFIED` and `PRODUCTION_RUNTIME_CERTIFIED` are separate states. A release may be source/CI verified while remaining uncertified for live lab, physical target or production deployment.
+
+
+
+## Stage D — Device Management and Topology Studio (P17–P24)
+
+Stage D is a separate product-stage track after Stage C; it does not replace the historical Phase D legacy-migration work.
+
+| Requirement | Implementation | Verification |
+|---|---|---|
+| P10 Windows private directory ACL closure | lib/platform/adapters.py WindowsPlatformAdapter.ensure_private_directory | mocked ACL create/verify and fail-closed tests in tests/test_platform_foundation.py |
+| P17 Project/Lab device records | lib/services/device_inventory.py, Alembic 20261115_11, /api/v1/devices | tests/test_device_inventory.py, schema drift and FK contract |
+| P18 inventory UI and vault link | frontend/src/pages/devices.jsx, shared API client and devices.* RBAC | frontend route, permissions and API client tests |
+| P13 provider deployment | deferred to P24; assignment remains desired state until the provider apply record is created | explicit Stage D provider apply test gate |
+| P16 Run metric evaluation evidence | retained as Stage E P28 | no synthetic evaluation/persistence claim |
+
+Device inventory is distinct from the legacy YAML device map. Existing test IDs, configs/*.yaml, shell compatibility and protected capture behavior are preserved. CI using mocked adapters does not constitute protected GNS3 or physical Wi-Fi certification.
