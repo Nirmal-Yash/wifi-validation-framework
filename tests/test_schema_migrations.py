@@ -289,6 +289,15 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         # Recreate a genuine pre-Stage-B 20260924_02 database. The helper
         # starts from the current schema so every later table, index and
         # trigger must be removed before rewinding the recorded Alembic head.
+        # Remove the Stage D topology layer too, so this fixture truly represents
+        # the historical 20260924_02 baseline before the forward migration chain.
+        connection.execute("DROP TRIGGER trg_topology_profiles_no_delete")
+        connection.execute("DROP TRIGGER trg_topology_revisions_immutable")
+        connection.execute("DROP TRIGGER trg_topology_revisions_no_delete")
+        connection.execute("DROP INDEX idx_topology_revisions_profile_number")
+        connection.execute("DROP INDEX idx_topology_profiles_project_scope")
+        connection.execute("DROP TABLE topology_revisions")
+        connection.execute("DROP TABLE topology_profiles")
         connection.execute("DROP TRIGGER trg_devices_no_delete")
         connection.execute("DROP TRIGGER trg_devices_credential_scope_update")
         connection.execute("DROP TRIGGER trg_devices_credential_scope_insert")

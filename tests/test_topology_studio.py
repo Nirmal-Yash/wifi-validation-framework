@@ -34,7 +34,10 @@ def test_canonical_topology_is_order_independent_and_hashed():
     (lambda d:d["nodes"].append(dict(d["nodes"][0])),"duplicated"),
     (lambda d:d["links"][0].update(target_node_id="missing"),"unknown logical node"),
     (lambda d:d["links"][0].update(target_node_id="router-a"),"itself"),
-    (lambda d:d["links"][0].update(target_port=0),"occupied"),
+    (lambda d: (
+        d["nodes"].append({"id": "client-a", "name": "Client A", "node_type": "CLIENT", "template_id": "tpl-client", "x": 700, "y": 180}),
+        d["links"].append({"id": "link-b", "source_node_id": "router-a", "source_adapter": 0, "source_port": 0, "target_node_id": "client-a", "target_adapter": 0, "target_port": 0}),
+    ), "occupied"),
     (lambda d:d["nodes"][0].update(properties={"api_token":"never"}),"credential-like"),
     (lambda d:d["nodes"][0].update(template_id="../unsafe"),"unsupported characters"),
 ])
