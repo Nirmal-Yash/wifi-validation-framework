@@ -74,4 +74,4 @@ Configuration deployment is restricted to supported device/configuration adapter
 - P19 Canonical Topology Model: implemented and regression-tested.
 - P20 Visual Topology Canvas: implemented as a local-only authoring surface.
 - P21 Adapter/Port/Link Editor: implemented with server-side port-occupancy validation.
-- P22–P24 GNS3 provider lifecycle, topology apply/reconciliation and controlled device configuration: implemented. Mock-backed CI covers provider contracts and an OpenWrt UCI adapter. Live GNS3/OpenWrt hardware acceptance and Windows lock portability remain release gates.
+- P22–P24 GNS3 provider lifecycle, topology apply/reconciliation and controlled device configuration: implemented, including dashboard REST routes, frontend API methods, provider workflow UI, idempotency and route-level mocked integration coverage. CI validates the provider contracts and dashboard wiring; it does not substitute for live GNS3/OpenWrt hardware acceptance. Windows lock portability remains a separate platform-release gate.

@@ -16,6 +16,9 @@ from lib.services.configuration_schema_registry import (
 )
 from lib.services.device_inventory import DeviceInventoryService, DeviceInventoryError, DeviceInventoryNotFound
 from lib.services.topology_studio import TopologyStudioService, TopologyStudioError, TopologyStudioNotFound
+from lib.services.topology_apply import (
+    TopologyApplyConflict, TopologyApplyError, TopologyApplyNotFound, TopologyApplyService,
+)
 from lib.services.performance_policy_service import (
     PerformancePolicyEngine, PerformancePolicyError, PerformancePolicyNotFound, PerformancePolicyService,
 )
@@ -68,6 +71,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     performance_policies=PerformancePolicyService(query.database)
     device_inventory=DeviceInventoryService(query.database)
     topology_studio=TopologyStudioService(query.database)
+    topology_apply=TopologyApplyService(query.database,credential_vault,topology_studio)
     organization_repository=SQLiteOrganizationRepository(query.database)
     project_repository=SQLiteProjectRepository(query.database)
     lab_repository=SQLiteLabRepository(query.database)
@@ -2364,6 +2368,221 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             return error("INVALID_TRANSITION",str(exc),409)
         idempotency_store_response(scope,key,request_hash,revision,200)
         return ok(revision)
+
+
+    def _topology_actor() -> str:
+        return str((session.get("netregress_user") or {}).get("username", "local"))
+
+    def _provider_lab_scope(lab_id: str, permission: str):
+        lab = lab_repository.get(lab_id)
+        if lab is None:
+            return None, error("NOT_FOUND", "Lab not found", 404)
+        denied = require_permission(permission, project_id=lab.project_id)
+        if denied is not None:
+            return None, denied
+        return lab, None
+
+    def _topology_profile_scope(profile_id: str, permission: str):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return None, error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission(permission, project_id=profile["project_id"])
+        if denied is not None:
+            return None, denied
+        if profile.get("scope_type") != "LAB" or not profile.get("lab_id"):
+            return None, error("INVALID_TOPOLOGY_SCOPE", "Provider operations require a Lab-scoped topology profile", 409)
+        return profile, None
+
+    @api.get("/labs/<lab_id>/provider-binding")
+    def get_topology_provider_binding(lab_id):
+        _lab, denied = _provider_lab_scope(lab_id, "topology.read")
+        if denied is not None:
+            return denied
+        return ok({"binding": topology_apply.get_binding(lab_id)})
+
+    @api.put("/labs/<lab_id>/provider-binding")
+    def put_topology_provider_binding(lab_id):
+        _lab, denied = _provider_lab_scope(lab_id, "topology.provider.manage")
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error("INVALID_REQUEST", "provider binding must be a JSON object", 400)
+        fields = {
+            "endpoint_url": str(payload.get("endpoint_url", "")).strip(),
+            "gns3_project_id": str(payload.get("gns3_project_id", "")).strip(),
+            "controller_device_id": str(payload.get("controller_device_id", "")).strip(),
+            "credential_id": str(payload.get("credential_id", "")).strip(),
+        }
+        if not all(fields.values()):
+            return error("INVALID_REQUEST", "endpoint, GNS3 project, controller Device and API_TOKEN credential are required", 400)
+        scope = "/api/v1/labs/" + lab_id + "/provider-binding"
+        key, request_hash, cached, security_error = idempotency_preflight(scope, {"lab_id": lab_id, **fields})
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            binding = topology_apply.bind(lab_id, **fields, actor=_topology_actor())
+        except TopologyApplyNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except TopologyApplyConflict as exc:
+            return error("PROVIDER_BINDING_BLOCKED", str(exc), 409)
+        except TopologyApplyError as exc:
+            return error("PROVIDER_BINDING_FAILED", str(exc), 400)
+        result = {"binding": binding}
+        idempotency_store_response(scope, key, request_hash, result, 200)
+        return ok(result)
+
+    @api.delete("/labs/<lab_id>/provider-binding")
+    def delete_topology_provider_binding(lab_id):
+        _lab, denied = _provider_lab_scope(lab_id, "topology.provider.manage")
+        if denied is not None:
+            return denied
+        scope = "/api/v1/labs/" + lab_id + "/provider-binding/archive"
+        key, request_hash, cached, security_error = idempotency_preflight(scope, {"lab_id": lab_id, "action": "ARCHIVE"})
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            binding = topology_apply.archive_binding(lab_id, actor=_topology_actor())
+        except TopologyApplyNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except TopologyApplyError as exc:
+            return error("PROVIDER_BINDING_ARCHIVE_FAILED", str(exc), 409)
+        result = {"binding": binding}
+        idempotency_store_response(scope, key, request_hash, result, 200)
+        return ok(result)
+
+    @api.get("/labs/<lab_id>/provider-catalog")
+    def get_topology_provider_catalog(lab_id):
+        _lab, denied = _provider_lab_scope(lab_id, "topology.read")
+        if denied is not None:
+            return denied
+        try:
+            result = topology_apply.catalog(lab_id, actor=_topology_actor())
+        except TopologyApplyNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except TopologyApplyConflict as exc:
+            return error("PROVIDER_CATALOG_BLOCKED", str(exc), 409)
+        except TopologyApplyError as exc:
+            return error("PROVIDER_CATALOG_FAILED", str(exc), 502)
+        return ok(result)
+
+    @api.post("/topologies/<profile_id>/plan")
+    def plan_topology_apply(profile_id):
+        _profile, denied = _topology_profile_scope(profile_id, "topology.read")
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error("INVALID_REQUEST", "topology plan request must be a JSON object", 400)
+        revision_id = str(payload.get("revision_id", "")).strip()
+        if not revision_id:
+            return error("INVALID_REQUEST", "revision_id is required", 400)
+        try:
+            result = topology_apply.plan(profile_id, revision_id, actor=_topology_actor())
+        except TopologyApplyNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except TopologyApplyConflict as exc:
+            return error("TOPOLOGY_PLAN_BLOCKED", str(exc), 409)
+        except TopologyApplyError as exc:
+            return error("TOPOLOGY_PLAN_FAILED", str(exc), 502)
+        return ok(result)
+
+    @api.post("/topologies/<profile_id>/apply")
+    def apply_topology_revision(profile_id):
+        _profile, denied = _topology_profile_scope(profile_id, "topology.apply")
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error("INVALID_REQUEST", "topology apply request must be a JSON object", 400)
+        revision_id = str(payload.get("revision_id", "")).strip()
+        expected_sha256 = str(payload.get("expected_sha256", "")).strip().lower()
+        confirmed = payload.get("confirmed")
+        if not revision_id or len(expected_sha256) != 64:
+            return error("INVALID_REQUEST", "revision_id and expected_sha256 are required", 400)
+        scope = "/api/v1/topologies/" + profile_id + "/apply"
+        request_data = {
+            "profile_id": profile_id, "revision_id": revision_id,
+            "expected_sha256": expected_sha256, "confirmed": confirmed,
+        }
+        key, request_hash, cached, security_error = idempotency_preflight(scope, request_data)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            result = topology_apply.apply(
+                profile_id, revision_id, expected_sha256=expected_sha256,
+                confirmed=confirmed, actor=_topology_actor(),
+            )
+        except TopologyApplyNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except TopologyApplyConflict as exc:
+            return error("TOPOLOGY_APPLY_BLOCKED", str(exc), 409, {"plan": exc.plan})
+        except TopologyApplyError as exc:
+            return error("TOPOLOGY_APPLY_FAILED", str(exc), 502)
+        idempotency_store_response(scope, key, request_hash, result, 200)
+        return ok(result)
+
+    @api.get("/topologies/<profile_id>/reconciliation")
+    def reconcile_topology_revision(profile_id):
+        _profile, denied = _topology_profile_scope(profile_id, "topology.read")
+        if denied is not None:
+            return denied
+        revision_id = str(request.args.get("revision_id", "")).strip()
+        if not revision_id:
+            return error("INVALID_REQUEST", "revision_id query parameter is required", 400)
+        try:
+            result = topology_apply.reconcile(profile_id, revision_id, actor=_topology_actor())
+        except TopologyApplyNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except TopologyApplyConflict as exc:
+            return error("TOPOLOGY_RECONCILIATION_BLOCKED", str(exc), 409)
+        except TopologyApplyError as exc:
+            return error("TOPOLOGY_RECONCILIATION_FAILED", str(exc), 502)
+        return ok(result)
+
+    @api.get("/topologies/<profile_id>/applies")
+    def list_topology_applies(profile_id):
+        profile, denied = _topology_profile_scope(profile_id, "topology.read")
+        if denied is not None:
+            return denied
+        return ok({"items": topology_apply.list_applies(profile["lab_id"])})
+
+    @api.post("/topologies/<profile_id>/nodes/<logical_node_id>/<action>")
+    def operate_topology_node(profile_id, logical_node_id, action):
+        _profile, denied = _topology_profile_scope(profile_id, "topology.provider.operate")
+        if denied is not None:
+            return denied
+        normalized_action = str(action or "").upper()
+        if normalized_action not in {"START", "STOP"}:
+            return error("INVALID_NODE_ACTION", "node action must be start or stop", 400)
+        payload = request.get_json(silent=True)
+        if payload is not None and not isinstance(payload, dict):
+            return error("INVALID_REQUEST", "node operation body must be a JSON object", 400)
+        scope = "/api/v1/topologies/" + profile_id + "/nodes/" + logical_node_id + "/" + normalized_action.lower()
+        request_data = {"profile_id": profile_id, "logical_node_id": logical_node_id, "action": normalized_action}
+        key, request_hash, cached, security_error = idempotency_preflight(scope, request_data)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            result = topology_apply.operate_node(
+                profile_id, logical_node_id, action=normalized_action, actor=_topology_actor(),
+            )
+        except TopologyApplyNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except TopologyApplyConflict as exc:
+            return error("PROVIDER_NODE_OPERATION_BLOCKED", str(exc), 409)
+        except TopologyApplyError as exc:
+            return error("PROVIDER_NODE_OPERATION_FAILED", str(exc), 502)
+        idempotency_store_response(scope, key, request_hash, result, 200)
+        return ok(result)
 
     return api
 

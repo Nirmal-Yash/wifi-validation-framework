@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
+import shlex
 
 import pytest
 
@@ -47,13 +48,16 @@ class FakeCommandRunner:
 
     def execute_script(self, script, *, timeout):
         self.commands.append(("script", script, timeout))
-        import re
-        match = re.search(r"uci -q get '([^']+)'", script)
-        if match:
-            return SimpleNamespace(
-                transport_succeeded=True, exit_code=0,
-                stdout=self.values.get(match.group(1), ""), stderr="",
-            )
+        for line in script.splitlines():
+            try:
+                tokens = shlex.split(line)
+            except ValueError:
+                continue
+            if len(tokens) == 4 and tokens[:3] == ["uci", "-q", "get"]:
+                return SimpleNamespace(
+                    transport_succeeded=True, exit_code=0,
+                    stdout=self.values.get(tokens[3], ""), stderr="",
+                )
         return SimpleNamespace(transport_succeeded=True, exit_code=0, stdout="", stderr="")
 
     def close(self):

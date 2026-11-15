@@ -284,3 +284,98 @@ def test_published_revision_hash_must_match_and_confirmation_is_mandatory(apply_
             expected_sha256="0" * 64, confirmed=True, actor="owner",
         )
     assert state["nodes"] == [] and state["links"] == []
+
+
+def test_topology_provider_dashboard_routes_are_wired_and_idempotent(apply_stack, monkeypatch):
+    from dashboard import api_v1 as api_module
+    from dashboard.app import create_app
+    from lib.security import AuthManager
+
+    database, store, _service, profile, revision, binding, state = apply_stack
+
+    class FakeAdapter:
+        descriptor = type("Descriptor", (), {"family": type("Family", (), {"value": "test-os-vault"})()})()
+
+        def create_secret_store(self):
+            return store
+
+    monkeypatch.setattr(api_module, "platform_adapter_for", lambda: FakeAdapter())
+    app = create_app(database.path, auth_manager=AuthManager((), required=False))
+    client = app.test_client()
+
+    current_binding = client.get("/api/v1/labs/lab-1/provider-binding")
+    assert current_binding.status_code == 200
+    assert current_binding.get_json()["data"]["binding"]["binding_id"] == binding["binding_id"]
+
+    catalog = client.get("/api/v1/labs/lab-1/provider-catalog")
+    assert catalog.status_code == 200
+    assert len(catalog.get_json()["data"]["catalog"]["templates"]) == 2
+
+    planned = client.post(
+        "/api/v1/topologies/" + profile["profile_id"] + "/plan",
+        json={"revision_id": revision["revision_id"]},
+        headers={"Idempotency-Key": "topology-dashboard-plan-01"},
+    )
+    assert planned.status_code == 200
+    assert planned.get_json()["data"]["plan"]["can_apply"] is True
+    assert state["nodes"] == [] and state["links"] == []
+
+    payload = {
+        "revision_id": revision["revision_id"],
+        "expected_sha256": revision["content_sha256"],
+        "confirmed": True,
+    }
+    headers = {"Idempotency-Key": "topology-dashboard-apply-01"}
+    applied = client.post(
+        "/api/v1/topologies/" + profile["profile_id"] + "/apply",
+        json=payload,
+        headers=headers,
+    )
+    assert applied.status_code == 200
+    apply_id = applied.get_json()["data"]["apply_id"]
+    assert applied.get_json()["data"]["status"] == "APPLIED"
+
+    repeated = client.post(
+        "/api/v1/topologies/" + profile["profile_id"] + "/apply",
+        json=payload,
+        headers=headers,
+    )
+    assert repeated.status_code == 200
+    assert repeated.get_json()["data"]["apply_id"] == apply_id
+    assert len(state["nodes"]) == 2 and len(state["links"]) == 1
+
+    reconciled = client.get(
+        "/api/v1/topologies/" + profile["profile_id"] + "/reconciliation"
+        + "?revision_id=" + revision["revision_id"]
+    )
+    assert reconciled.status_code == 200
+    assert reconciled.get_json()["data"]["status"] == "IN_SYNC"
+
+    started = client.post(
+        "/api/v1/topologies/" + profile["profile_id"] + "/nodes/router-a/start",
+        json={}, headers={"Idempotency-Key": "topology-node-start-01"},
+    )
+    assert started.status_code == 200
+    assert started.get_json()["data"]["status"] == "started"
+    stopped = client.post(
+        "/api/v1/topologies/" + profile["profile_id"] + "/nodes/router-a/stop",
+        json={}, headers={"Idempotency-Key": "topology-node-stop-01"},
+    )
+    assert stopped.status_code == 200
+    assert stopped.get_json()["data"]["status"] == "stopped"
+
+    history = client.get("/api/v1/topologies/" + profile["profile_id"] + "/applies")
+    assert history.status_code == 200
+    assert [item["apply_id"] for item in history.get_json()["data"]["items"]] == [apply_id]
+    assert "transient-provider-secret" not in json.dumps({
+        "binding": current_binding.get_json(), "catalog": catalog.get_json(),
+        "plan": planned.get_json(), "apply": applied.get_json(), "history": history.get_json(),
+    })
+
+    archived = client.delete(
+        "/api/v1/labs/lab-1/provider-binding",
+        headers={"Idempotency-Key": "topology-binding-archive-01"},
+    )
+    assert archived.status_code == 200
+    assert archived.get_json()["data"]["binding"]["status"] == "ARCHIVED"
+    assert client.get("/api/v1/labs/lab-1/provider-binding").get_json()["data"]["binding"] is None
