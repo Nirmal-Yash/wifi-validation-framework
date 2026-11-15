@@ -46,6 +46,14 @@ describe("NetRegress RBAC presentation matrix",()=>{
   expect(canPerform("OPERATOR","devices.manage")).toBe(false);
   expect(canAccessRoute("VIEWER","devices")).toBe(true);
  });
+ it("limits configuration deployment to Admin and Owner roles",()=>{
+  expect(canPerform("VIEWER","configurations.read")).toBe(true);
+  expect(canPerform("OPERATOR","configurations.read")).toBe(true);
+  expect(canPerform("ADMIN","configurations.deploy")).toBe(true);
+  expect(canPerform("OWNER","configurations.deploy")).toBe(true);
+  expect(canPerform("OPERATOR","configurations.deploy")).toBe(false);
+  expect(canPerform({role:"OWNER",permissions:["configurations.read"]},"configurations.deploy")).toBe(false);
+ });
  it("maps topology permissions to built-in roles",()=>{
   expect(canPerform("VIEWER","topology.read")).toBe(true);
   expect(canPerform("OPERATOR","topology.read")).toBe(true);

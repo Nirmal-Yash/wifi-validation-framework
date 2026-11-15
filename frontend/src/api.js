@@ -112,6 +112,10 @@ export const api={
  configurationAssignments:projectId=>request("/configuration/assignments"+query({project_id:projectId})),
  resolveConfiguration:payload=>request("/configuration/resolve",{method:"POST",body:JSON.stringify(payload)}),
  importConfigurationYaml:payload=>request("/configuration/import-yaml",{method:"POST",body:JSON.stringify(payload)}),
+
+ configurationDeploymentPlan:(profileId,payload)=>request("/configuration/profiles/"+encode(profileId)+"/deploy-plan",{method:"POST",body:JSON.stringify(payload)}),
+ deployConfiguration:(profileId,payload)=>request("/configuration/profiles/"+encode(profileId)+"/deploy",{method:"POST",body:JSON.stringify(payload)}),
+ configurationDeploymentHistory:deviceId=>request("/configuration/devices/"+encode(deviceId)+"/deployments"),
  performancePolicies:projectId=>request("/performance/policies"+query({project_id:projectId})),
  createPerformancePolicy:payload=>request("/performance/policies",{method:"POST",body:JSON.stringify(payload)}),
  performanceRevisions:id=>request("/performance/policies/"+encode(id)+"/revisions"),

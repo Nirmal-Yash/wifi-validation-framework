@@ -135,3 +135,32 @@ def test_credential_provider_failure_is_sanitized(vault):
             credential_type="SSH_PASSWORD", username="root", secret="private-secret", actor="owner",
         )
     assert "private-secret" not in str(error.value)
+
+
+def test_secret_is_available_only_to_a_scoped_transient_consumer(vault):
+    database, store, service = vault
+    item = create_sample(service, secret="only-in-os-store")
+    received = {}
+
+    result = service.use_secret(
+        item["credential_id"], project_id="project-1", device_id="ap-1",
+        credential_type="SSH_PASSWORD", actor="operator",
+        consumer=lambda record, secret: received.update({
+            "credential_id": record["credential_id"], "secret": secret,
+        }) or {"verified": True},
+    )
+    assert result == {"verified": True}
+    assert received == {"credential_id": item["credential_id"], "secret": "only-in-os-store"}
+    assert "only-in-os-store" not in repr(item)
+    with database.connection() as connection:
+        actions = [row[0] for row in connection.execute(
+            "SELECT action FROM audit_events ORDER BY occurred_at"
+        ).fetchall()]
+    assert "CREDENTIAL_USED" in actions
+    with pytest.raises(CredentialVaultPolicyError, match="scope"):
+        service.use_secret(
+            item["credential_id"], project_id="project-2", device_id="ap-1",
+            credential_type="SSH_PASSWORD", actor="operator",
+            consumer=lambda record, secret: {"unexpected": True},
+        )
+    assert len(store.values) == 1

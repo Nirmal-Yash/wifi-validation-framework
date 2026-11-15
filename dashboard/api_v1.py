@@ -23,6 +23,10 @@ from lib.domain.models import Metric, Sample
 from lib.services.configuration_profile_service import (
     ConfigurationProfileError, ConfigurationProfileNotFound, ConfigurationProfileService,
 )
+from lib.services.configuration_deployer import (
+    ConfigurationDeploymentConflict, ConfigurationDeploymentError,
+    ConfigurationDeploymentNotFound, ConfigurationDeploymentService,
+)
 from lib.services.credential_vault import (
     CredentialVaultError, CredentialVaultNotFound, CredentialVaultPolicyError,
     CredentialVaultService,
@@ -60,6 +64,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     )
     configuration_schemas=ConfigurationSchemaRegistry(query.database)
     configuration_profiles=ConfigurationProfileService(query.database,configuration_schemas)
+    configuration_deployer=ConfigurationDeploymentService(query.database,configuration_profiles,credential_vault)
     performance_policies=PerformancePolicyService(query.database)
     device_inventory=DeviceInventoryService(query.database)
     topology_studio=TopologyStudioService(query.database)
@@ -2027,6 +2032,84 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             return error("INVALID_YAML_CONFIGURATION",str(exc),400)
         idempotency_store_response(scope,key,request_hash,revision,201)
         return ok(revision),201
+
+
+    @api.post("/configuration/profiles/<profile_id>/deploy-plan")
+    def plan_configuration_deployment(profile_id):
+        profile=configuration_profiles.get_profile(profile_id)
+        if profile is None: return error("NOT_FOUND","Configuration profile not found",404)
+        denied=require_permission("configurations.read",project_id=profile["project_id"])
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        if not isinstance(payload,dict): return error("INVALID_REQUEST","deployment plan must be a JSON object",400)
+        try:
+            plan=configuration_deployer.plan(
+                profile_id,str(payload.get("revision_id","")).strip(),
+                device_id=str(payload.get("device_id","")).strip(),
+                ssh_credential_id=str(payload.get("ssh_credential_id","")).strip(),
+                wifi_psk_credential_id=str(payload.get("wifi_psk_credential_id","")).strip(),
+                actor=_configuration_actor(),
+            )
+        except ConfigurationDeploymentNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except ConfigurationDeploymentConflict as exc:
+            return error("DEPLOYMENT_PLAN_BLOCKED",str(exc),409)
+        except ConfigurationDeploymentError as exc:
+            return error("DEPLOYMENT_PLAN_FAILED",str(exc),400)
+        return ok({"plan":plan})
+
+    @api.post("/configuration/profiles/<profile_id>/deploy")
+    def deploy_configuration_revision(profile_id):
+        profile=configuration_profiles.get_profile(profile_id)
+        if profile is None: return error("NOT_FOUND","Configuration profile not found",404)
+        denied=require_permission("configurations.deploy",project_id=profile["project_id"])
+        if denied is not None: return denied
+        payload=request.get_json(silent=True) or {}
+        if not isinstance(payload,dict): return error("INVALID_REQUEST","deployment request must be a JSON object",400)
+        revision_id=str(payload.get("revision_id","")).strip()
+        device_id=str(payload.get("device_id","")).strip()
+        ssh_credential_id=str(payload.get("ssh_credential_id","")).strip()
+        wifi_psk_credential_id=str(payload.get("wifi_psk_credential_id","")).strip()
+        expected_sha256=str(payload.get("expected_sha256","")).strip().lower()
+        confirmed=payload.get("confirmed")
+        if not all((revision_id,device_id,ssh_credential_id,wifi_psk_credential_id)) or len(expected_sha256)!=64:
+            return error("INVALID_REQUEST","revision, Device, credential IDs and configuration hash are required",400)
+        scope="/api/v1/configuration/profiles/"+profile_id+"/deploy"
+        idem_payload={
+            "profile_id":profile_id,"revision_id":revision_id,"device_id":device_id,
+            "ssh_credential_id":ssh_credential_id,"wifi_psk_credential_id":wifi_psk_credential_id,
+            "expected_sha256":expected_sha256,"confirmed":confirmed,
+        }
+        key,request_hash,cached,security_error=idempotency_preflight(scope,idem_payload)
+        if security_error is not None: return security_error
+        if cached is not None: return jsonify(cached.response),cached.status_code
+        try:
+            result=configuration_deployer.deploy(
+                profile_id,revision_id,device_id=device_id,
+                ssh_credential_id=ssh_credential_id,wifi_psk_credential_id=wifi_psk_credential_id,
+                expected_sha256=expected_sha256,confirmed=confirmed,actor=_configuration_actor(),
+            )
+        except ConfigurationDeploymentNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except ConfigurationDeploymentConflict as exc:
+            return error("DEPLOYMENT_BLOCKED",str(exc),409)
+        except ConfigurationDeploymentError as exc:
+            return error("DEPLOYMENT_FAILED",str(exc),502)
+        idempotency_store_response(scope,key,request_hash,result,200)
+        return ok(result)
+
+    @api.get("/configuration/devices/<device_id>/deployments")
+    def list_device_configuration_deployments(device_id):
+        device=device_inventory.get(device_id)
+        if device is None: return error("NOT_FOUND","Device not found",404)
+        denied=require_permission("configurations.read",project_id=device["project_id"])
+        if denied is not None: return denied
+        try:
+            limit=int(request.args.get("limit","25"))
+        except ValueError:
+            return error("INVALID_REQUEST","limit must be an integer",400)
+        return ok({"items":configuration_deployer.list_deployments(device_id,limit=limit)})
+
 
 
     @api.get("/performance/policies")

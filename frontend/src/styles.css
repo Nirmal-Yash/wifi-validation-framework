@@ -657,3 +657,14 @@ tr.clickable-row:hover{background:var(--accent)}
 .config-preview-meta span{font-size:9px;color:var(--muted-foreground);overflow-wrap:anywhere}
 .config-preview pre{margin:0;padding:13px;max-height:360px;overflow:auto;font-size:10px;line-height:1.55;color:var(--foreground)}
 @media(max-width:760px){.credential-actions{min-width:190px}.credential-rotate input{width:110px}.config-toolbar .field{width:100%}}
+
+
+/* Stage D provider and physical-device deployment surfaces. */
+.deployment-plan,.provider-plan{display:grid;gap:10px;margin-top:12px;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)}
+.deployment-plan h4,.provider-plan h4{margin:0;font-size:12px;color:var(--foreground)}
+.deployment-plan pre,.provider-plan pre{margin:0;padding:12px;max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--foreground);font-size:10px;line-height:1.55}
+.confirm-operation{display:flex;align-items:flex-start;gap:9px;padding:11px;border:1px solid var(--border);border-radius:8px;color:var(--foreground);font-size:10px;line-height:1.5}
+.confirm-operation input{margin-top:1px;accent-color:var(--primary)}
+.inline-node-operation{display:inline-flex;align-items:center;gap:6px;margin:4px 10px 4px 0;padding:6px 8px;border:1px solid var(--border);border-radius:8px}
+.inline-node-operation strong{font-size:10px}
+@media(max-width:760px){.deployment-plan,.provider-plan{padding:10px}.confirm-operation{font-size:9px}.inline-node-operation{flex-wrap:wrap}}

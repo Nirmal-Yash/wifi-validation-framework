@@ -92,6 +92,20 @@ const DEFAULT_SCHEMA=JSON.stringify({
  properties:{ssid:{type:"string",minLength:1,maxLength:32},channel:{type:"integer",minimum:1,maximum:165},country:{type:"string"}},
 },null,2);
 const DEFAULT_VALUES=JSON.stringify({ssid:"LabNet",channel:36,country:"IN"},null,2);
+const OPENWRT_WIFI_SCHEMA=JSON.stringify({
+ type:"object",
+ required:["radio_section","interface_section","ssid","country","channel","encryption","enabled"],
+ additionalProperties:false,
+ properties:{
+  radio_section:{type:"string",minLength:5,maxLength:7},
+  interface_section:{type:"string",minLength:1,maxLength:32},
+  ssid:{type:"string",minLength:1,maxLength:32},
+  country:{type:"string",minLength:2,maxLength:2},
+  channel:{type:"integer",minimum:1,maximum:196},
+  encryption:{type:"string",enum:["psk2","sae","psk-mixed"]},
+  enabled:{type:"boolean"},
+ },
+},null,2);
 export function ConfigurationPage({user}){
  const {projects,projectId,setProjectId}=useProjectSelection();
  const schemas=useAsyncLoader(()=>api.configurationSchemas(projectId),[projectId],{enabled:Boolean(projectId),queryKey:"configuration-schemas"});
@@ -107,10 +121,24 @@ export function ConfigurationPage({user}){
  const [target,setTarget]=useState({target_type:"LAB",target_id:""});
  const [preview,setPreview]=useState(null);
  const [notice,setNotice]=useState("");
- const [error,setError]=useState("");
+ const [deploymentCredentials,setDeploymentCredentials]=useState({ssh_credential_id:"",wifi_psk_credential_id:""});
+ const [deploymentPlan,setDeploymentPlan]=useState(null);
+ const [deploymentRecord,setDeploymentRecord]=useState(null);
+ const [deploymentConfirmed,setDeploymentConfirmed]=useState(false);
+ const [deploymentBusy,setDeploymentBusy]=useState(false);
+ const [deploymentError,setDeploymentError]=useState("");
  const selectedSchema=(schemas.data?.items||[]).find(item=>item.schema_record_id===profileForm.schema_record_id);
  const selectedProfileRecord=(profiles.data?.items||[]).find(item=>item.profile_id===selectedProfile);
  const revisions=useAsyncLoader(()=>api.configurationRevisions(selectedProfile),[selectedProfile],{enabled:Boolean(selectedProfile),queryKey:"configuration-revisions"});
+ const selectedDeviceId=selectedProfileRecord?.scope_type==="DEVICE"?selectedProfileRecord.scope_id:"";
+ const devices=useAsyncLoader(()=>api.devices(projectId,undefined,"ACTIVE"),[projectId],{enabled:Boolean(projectId),queryKey:"configuration-deploy-devices"});
+ const selectedDevice=(devices.data?.items||[]).find(item=>item.device_id===selectedDeviceId);
+ const deviceCredentials=useAsyncLoader(()=>selectedDeviceId?api.credentials(projectId,selectedDeviceId):Promise.resolve({items:[]}),[projectId,selectedDeviceId],{enabled:Boolean(projectId&&selectedDeviceId),queryKey:"configuration-device-credentials"});
+ const deviceCredentialRows=deviceCredentials.data?.items||[];
+ const sshCredentialRows=deviceCredentialRows.filter(item=>item.credential_type==="SSH_PASSWORD"&&item.status==="ACTIVE");
+ const wifiCredentialRows=deviceCredentialRows.filter(item=>item.credential_type==="WIFI_PSK"&&item.status==="ACTIVE");
+ const selectedRevision=(revisions.data?.items||[]).find(item=>item.revision_id===revisionId);
+ const deploymentHistory=useAsyncLoader(()=>selectedDeviceId?api.configurationDeploymentHistory(selectedDeviceId):Promise.resolve({items:[]}),[selectedDeviceId],{enabled:Boolean(selectedDeviceId),queryKey:"configuration-deployment-history"});
  useEffect(()=>{
   if(!profileForm.schema_record_id&&(schemas.data?.items||[]).length){
    const item=schemas.data.items[0];setProfileForm(current=>({...current,schema_record_id:item.schema_record_id}));
@@ -119,6 +147,17 @@ export function ConfigurationPage({user}){
  useEffect(()=>{
   if(!selectedProfile&&(profiles.data?.items||[]).length)setSelectedProfile(profiles.data.items[0].profile_id);
  },[profiles.data,selectedProfile]);
+ useEffect(()=>{
+  setDeploymentPlan(null);setDeploymentRecord(null);setDeploymentConfirmed(false);setDeploymentError("");
+  setDeploymentCredentials({ssh_credential_id:"",wifi_psk_credential_id:""});
+ },[selectedProfile,selectedDeviceId,revisionId]);
+ useEffect(()=>{
+  if(!selectedDeviceId)return;
+  setDeploymentCredentials({
+   ssh_credential_id:sshCredentialRows[0]?.credential_id||"",
+   wifi_psk_credential_id:wifiCredentialRows[0]?.credential_id||"",
+  });
+ },[selectedDeviceId,deviceCredentials.data]);
  async function perform(action,success,refresh=true){
   setError("");setNotice("");setPreview(null);
   try{
@@ -154,9 +193,49 @@ export function ConfigurationPage({user}){
   const result=await perform(()=>api.rollbackConfigurationRevision(selectedProfile,{source_revision_id:source}),"Rollback draft created from the selected historical revision.");
   if(result?.revision_id)setRevisionId(result.revision_id);
  }
+ const canDeployDevice=canPerform(user,"configurations.deploy");
+ async function buildDeploymentPlan(){
+  setDeploymentError("");setDeploymentPlan(null);setDeploymentRecord(null);setDeploymentConfirmed(false);
+  if(!selectedProfile||!selectedRevision||selectedRevision.status!=="PUBLISHED"||!selectedDeviceId){
+   setDeploymentError("Select a published revision from a Device-scoped profile first.");return;
+  }
+  if(!deploymentCredentials.ssh_credential_id||!deploymentCredentials.wifi_psk_credential_id){
+   setDeploymentError("Select the active same-device SSH and Wi-Fi PSK credentials.");return;
+  }
+  setDeploymentBusy(true);
+  try{
+   const response=await api.configurationDeploymentPlan(selectedProfile,{
+    revision_id:revisionId,device_id:selectedDeviceId,
+    ssh_credential_id:deploymentCredentials.ssh_credential_id,
+    wifi_psk_credential_id:deploymentCredentials.wifi_psk_credential_id,
+   });
+   setDeploymentPlan(response.plan);
+  }catch(exc){setDeploymentError(exc.message||"Configuration deployment plan failed.");}
+  finally{setDeploymentBusy(false);}
+ }
+ async function deploySelectedConfiguration(){
+  if(!deploymentPlan||!deploymentConfirmed||!canDeployDevice){
+   setDeploymentError("Review the deployment plan and explicitly confirm the device change.");return;
+  }
+  setDeploymentBusy(true);setDeploymentError("");setDeploymentRecord(null);
+  try{
+   const result=await api.deployConfiguration(selectedProfile,{
+    revision_id:revisionId,device_id:selectedDeviceId,
+    ssh_credential_id:deploymentCredentials.ssh_credential_id,
+    wifi_psk_credential_id:deploymentCredentials.wifi_psk_credential_id,
+    expected_sha256:deploymentPlan.configuration_hash,confirmed:true,
+   });
+   setDeploymentRecord(result);
+   setDeploymentConfirmed(false);
+   await Promise.all([assignments.reload(),deploymentHistory.reload()]);
+   setNotice("Device configuration was deployed and verified.");
+  }catch(exc){setDeploymentError(exc.message||"Device configuration deployment failed.");await deploymentHistory.reload().catch(()=>null);}
+  finally{setDeploymentBusy(false);}
+ }
+
  async function applyRevision(){
   if(!selectedProfile||!revisionId){setError("Select a published revision to assign.");return;}
-  const result=await perform(()=>api.applyConfigurationRevision(selectedProfile,{revision_id:revisionId,...target}),"Published revision assigned. Provider deployment is a later topology/provisioning operation.");
+  const result=await perform(()=>api.applyConfigurationRevision(selectedProfile,{revision_id:revisionId,...target}),"Published revision assigned for use by the configuration resolver. This does not send commands to the Device.");
   if(result?.assignment_id)setRevisionId(result.revision_id);
  }
  async function importYaml(event){
@@ -181,12 +260,13 @@ export function ConfigurationPage({user}){
   {key:"actions",label:"Actions",render:item=><div className="button-row"><Button size="sm" variant="outline" onClick={()=>{setRevisionId(item.revision_id);setValuesText(JSON.stringify(item.values,null,2));}}>Select</Button>{item.status==="PUBLISHED"?<Button size="sm" variant="ghost" onClick={()=>rollback(item.revision_id)}>Rollback</Button>:null}</div>},
  ];
  return <div className="page-stack">
-  <div className="module-intro"><div className="module-intro-icon"><Settings2 size={19}/></div><div><strong>Versioned, schema-validated configuration</strong><p>Published revisions are immutable. Rollback creates a new revision. Applying a profile assigns its published version; it does not configure a physical device until provider workflows are delivered.</p></div></div>
+  <div className="module-intro"><div className="module-intro-icon"><Settings2 size={19}/></div><div><strong>Versioned, schema-validated configuration</strong><p>Published revisions are immutable. Assignment updates the configuration resolver; physical device deployment is a separate, explicitly confirmed operation supported only by a validated device adapter.</p></div></div>
   <Section title="Project and scope" subtitle="Schemas and profiles are isolated by Project.">
    <div className="config-toolbar"><ProjectPicker projects={projects} projectId={projectId} onChange={value=>{setProjectId(value);setSelectedProfile("");setRevisionId("");setPreview(null);}}/><span className="context-caption">{(schemas.data?.items||[]).length} schemas · {(profiles.data?.items||[]).length} profiles</span></div>
   </Section>
   <PageNotice notice={notice}/>{error?<InlineNotice tone="danger">{error}</InlineNotice>:null}
   {canPerform(user,"configurations.manage")?<Section title="Schema registry" subtitle="Register a typed object schema. Sensitive secret-like fields and open-ended properties are rejected.">
+   <div className="button-row"><Button type="button" variant="outline" onClick={()=>setSchemaForm({schema_id:"openwrt.wifi.v1",name:"OpenWrt Wi-Fi v1",definition:OPENWRT_WIFI_SCHEMA})}>Load supported OpenWrt Wi-Fi schema</Button></div>
    <form className="form-grid" onSubmit={registerSchema}>
     <Field label="Schema ID"><input value={schemaForm.schema_id} onChange={event=>setSchemaForm({...schemaForm,schema_id:event.target.value})} required/></Field>
     <Field label="Schema name"><input value={schemaForm.name} onChange={event=>setSchemaForm({...schemaForm,name:event.target.value})} required/></Field>
@@ -221,6 +301,63 @@ export function ConfigurationPage({user}){
     {canPerform(user,"configurations.publish")?<Button variant="outline" disabled={!selectedProfile||!revisionId||mutation.loading} onClick={applyRevision}><UploadCloud size={14}/>Assign selected revision</Button>:null}
    </div>
   </Section>
+  <Section title="Supported Device deployment" subtitle="Push only a validated published revision through a fixed adapter. Assignment alone never sends commands.">
+   {selectedProfileRecord?.scope_type!=="DEVICE"?<InlineNotice tone="info">Select a Device-scoped profile whose target is a registered OpenWrt Router to use the OpenWrt Wi-Fi deployment adapter.</InlineNotice>:<>
+    <div className="context-caption">{selectedDevice?.name||selectedDeviceId} · {selectedDevice?.vendor||"Unknown vendor"} · {selectedDevice?.host||"Device unavailable"} · {selectedDevice?.status||"Not active"}</div>
+    {!selectedDevice?<InlineNotice tone="danger">The target Device is not present as an active inventory record in this Project.</InlineNotice>:null}
+    {selectedDevice&&(String(selectedDevice.vendor||"").toLowerCase()!=="openwrt"||selectedDevice.device_type!=="ROUTER")?<InlineNotice tone="warning">This device is not a supported OpenWrt Router. No command adapter will run.</InlineNotice>:null}
+    <div className="form-grid">
+     <Field label="SSH password credential" required>
+      <select value={deploymentCredentials.ssh_credential_id} onChange={event=>{setDeploymentCredentials(value=>({...value,ssh_credential_id:event.target.value}));setDeploymentPlan(null);setDeploymentConfirmed(false);}}>
+       <option value="">Select active same-device SSH credential</option>
+       {sshCredentialRows.map(item=><option key={item.credential_id} value={item.credential_id}>{item.label}</option>)}
+      </select>
+     </Field>
+     <Field label="Wi-Fi PSK credential" required>
+      <select value={deploymentCredentials.wifi_psk_credential_id} onChange={event=>{setDeploymentCredentials(value=>({...value,wifi_psk_credential_id:event.target.value}));setDeploymentPlan(null);setDeploymentConfirmed(false);}}>
+       <option value="">Select active same-device Wi-Fi PSK</option>
+       {wifiCredentialRows.map(item=><option key={item.credential_id} value={item.credential_id}>{item.label}</option>)}
+      </select>
+     </Field>
+    </div>
+    {deviceCredentials.error?<InlineNotice tone="danger">{deviceCredentials.error.message}</InlineNotice>:null}
+    {!sshCredentialRows.length||!wifiCredentialRows.length?<InlineNotice tone="info">Create both an SSH_PASSWORD and a WIFI_PSK entry in the Credentials workspace, attached to this exact Device. The PSK is not part of the configuration JSON.</InlineNotice>:null}
+    {deploymentError?<InlineNotice tone="danger">{deploymentError}</InlineNotice>:null}
+    <div className="button-row">
+     <Button variant="outline" onClick={buildDeploymentPlan} loading={deploymentBusy}
+      disabled={!selectedDevice||selectedDevice.status!=="ACTIVE"||!selectedRevision||selectedRevision.status!=="PUBLISHED"||!deploymentCredentials.ssh_credential_id||!deploymentCredentials.wifi_psk_credential_id}>
+      Build read-only deployment plan
+     </Button>
+    </div>
+    {deploymentPlan?<div className="deployment-plan">
+     <h4>OpenWrt deployment plan</h4>
+     <p><StatusBadge value="READY"/> {deploymentPlan.adapter} · {deploymentPlan.device_name}</p>
+     <div className="context-caption">Configuration SHA-256 · {deploymentPlan.configuration_hash}</div>
+     <pre>{JSON.stringify({
+      target:deploymentPlan.target,
+      non_secret_values:deploymentPlan.non_secret_values,
+      operations:deploymentPlan.operations,
+     },null,2)}</pre>
+     {canDeployDevice?<label className="confirm-operation">
+      <input type="checkbox" checked={deploymentConfirmed} onChange={event=>setDeploymentConfirmed(event.target.checked)}/>
+      I understand this changes the physical router’s wireless settings and may disconnect clients. I explicitly authorize this deployment.
+     </label>:<InlineNotice tone="info">Your role can inspect this plan but cannot deploy configuration to a physical Device.</InlineNotice>}
+     {canDeployDevice?<div className="button-row"><Button onClick={deploySelectedConfiguration} loading={deploymentBusy} disabled={!deploymentConfirmed}>Confirm and deploy to Device</Button></div>:null}
+    </div>:null}
+    {deploymentRecord?<div className="deployment-plan">
+     <h4>Deployment result · {deploymentRecord.deployment_id}</h4>
+     <p><StatusBadge value={deploymentRecord.status}/> {deploymentRecord.result?.verified_fields?.length||0} settings verified by read-back</p>
+     <div className="context-caption">Configuration SHA-256 · {deploymentRecord.configuration_hash}</div>
+    </div>:null}
+    <DataTable caption="Device deployment history" columns={[
+     {key:"deployment_id",label:"Deployment",render:item=><code>{item.deployment_id}</code>},
+     {key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>},
+     {key:"revision_id",label:"Revision"},
+     {key:"created_at",label:"Started",render:item=>new Date(item.created_at).toLocaleString()},
+    ]} rows={deploymentHistory.data?.items||[]} rowKey={item=>item.deployment_id} emptyTitle="No device deployments" emptyMessage="A successful or attempted deployment will be retained here."/>
+   </>}
+  </Section>
+
   {canPerform(user,"configurations.manage")?<Section title="Import legacy YAML" subtitle="Imports are parsed with safe_load and rejected when they contain inline secret fields.">
    <form className="form-grid" onSubmit={importYaml}>
     <Field label="YAML source" className="full-width"><textarea rows={7} value={yamlText} onChange={event=>setYamlText(event.target.value)} placeholder={"ssid: LabNet\nchannel: 36"}/></Field>

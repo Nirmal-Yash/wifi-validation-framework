@@ -140,6 +140,8 @@ jobs:
           tests/test_credential_vault.py
           tests/test_device_inventory.py
           tests/test_topology_studio.py
+          tests/test_topology_apply.py
+          tests/test_configuration_deployer.py
           tests/test_configuration_schema_registry.py
           tests/test_configuration_profile_service.py
           tests/test_performance_policy_engine.py

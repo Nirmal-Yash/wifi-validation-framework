@@ -32,12 +32,45 @@ export default function TopologyStudioPage({user}){
  const nodes=definition.nodes||[];
  const links=definition.links||[];
  const selectedRevision=revisionRows.find(item=>item.revision_id===revisionId)||null;
+ const activeProfile=profileRows.find(item=>item.profile_id===profileId)||null;
+ const activeLabId=activeProfile?.scope_type==="LAB"?activeProfile.lab_id:"";
+ const [bindingForm,setBindingForm]=useState({endpoint_url:"http://127.0.0.1:3080",gns3_project_id:"",controller_device_id:"",credential_id:""});
+ const providerBinding=useAsyncLoader(()=>activeLabId?api.topologyProviderBinding(activeLabId):Promise.resolve({binding:null}),[activeLabId],{enabled:Boolean(activeLabId),queryKey:"topology-provider-binding"});
+ const providerDevices=useAsyncLoader(()=>activeLabId&&projectId?api.devices(projectId,activeLabId,"ACTIVE"):Promise.resolve({items:[]}),[activeLabId,projectId],{enabled:Boolean(activeLabId&&projectId),queryKey:"topology-provider-devices"});
+ const providerCredentials=useAsyncLoader(()=>bindingForm.controller_device_id?api.credentials(projectId,bindingForm.controller_device_id):Promise.resolve({items:[]}),[projectId,bindingForm.controller_device_id],{enabled:Boolean(projectId&&bindingForm.controller_device_id),queryKey:"topology-provider-credentials"});
+ const [providerCatalog,setProviderCatalog]=useState(null);
+ const [providerPlan,setProviderPlan]=useState(null);
+ const [reconciliation,setReconciliation]=useState(null);
+ const [lastApply,setLastApply]=useState(null);
+ const [confirmApply,setConfirmApply]=useState(false);
+ const [providerBusy,setProviderBusy]=useState(false);
+ const [providerError,setProviderError]=useState("");
  const selectedNodeRecord=nodes.find(item=>item.id===selectedNode)||null;
  const canManage=canPerform(user,"topology.manage");
  const canPublish=canPerform(user,"topology.publish");
+ const canManageProvider=canPerform(user,"topology.provider.manage");
+ const canOperateProvider=canPerform(user,"topology.provider.operate");
+ const canApplyTopology=canPerform(user,"topology.apply");
+ const binding=providerBinding.data?.binding||null;
+ const deviceRows=providerDevices.data?.items||[];
+ const credentialRows=(providerCredentials.data?.items||[]).filter(item=>item.credential_type==="API_TOKEN"&&item.status==="ACTIVE");
 
  useEffect(()=>{if(!projectId&&projectRows.length)setProjectId(projectRows[0].project_id);},[projects.data,projectId]);
  useEffect(()=>{if(!profileId&&profileRows.length)setProfileId(profileRows[0].profile_id);},[profiles.data,profileId]);
+ useEffect(()=>{
+  setProviderCatalog(null);setProviderPlan(null);setReconciliation(null);setLastApply(null);
+  setConfirmApply(false);setProviderError("");
+  setBindingForm({endpoint_url:"http://127.0.0.1:3080",gns3_project_id:"",controller_device_id:"",credential_id:""});
+ },[activeLabId]);
+ useEffect(()=>{
+  const item=providerBinding.data?.binding;
+  if(item)setBindingForm({endpoint_url:item.endpoint_url,gns3_project_id:item.gns3_project_id,
+   controller_device_id:item.controller_device_id,credential_id:item.credential_id});
+ },[providerBinding.data]);
+ useEffect(()=>{
+  if(!credentialRows.some(item=>item.credential_id===bindingForm.credential_id))
+   setBindingForm(value=>({...value,credential_id:credentialRows[0]?.credential_id||""}));
+ },[providerCredentials.data]);
  useEffect(()=>{
   if(!revisionId&&revisionRows.length){
    setRevisionId(revisionRows[0].revision_id);
@@ -156,6 +189,78 @@ export default function TopologyStudioPage({user}){
    "Topology revision published."
   );
  }
+ async function runProvider(action,success){
+  setProviderError("");setNotice("");
+  setProviderBusy(true);
+  try{
+   const value=await action();
+   if(success)setNotice(success);
+   return value;
+  }catch(exc){
+   setProviderError(exc.message||"Provider operation failed.");
+   return null;
+  }finally{setProviderBusy(false);}
+ }
+ async function saveProviderBinding(event){
+  event.preventDefault();
+  if(!activeLabId)return;
+  const result=await runProvider(
+   ()=>api.bindTopologyProvider(activeLabId,bindingForm),
+   "GNS3 provider binding verified and saved."
+  );
+  if(result){
+   await providerBinding.reload().catch(()=>null);
+   setProviderCatalog(null);setProviderPlan(null);setReconciliation(null);
+  }
+ }
+ async function loadProviderCatalog(){
+  const result=await runProvider(()=>api.topologyProviderCatalog(activeLabId),"Read-only GNS3 catalogue loaded.");
+  if(result)setProviderCatalog(result.catalog);
+ }
+ async function makeApplyPlan(){
+  if(!profileId||selectedRevision?.status!=="PUBLISHED"){
+   setProviderError("Select a published revision before planning provider changes.");return;
+  }
+  const result=await runProvider(
+   ()=>api.planTopologyApply(profileId,{revision_id:revisionId}),
+   "Dry-run plan refreshed. No GNS3 resources were changed."
+  );
+  if(result){setProviderPlan(result);setConfirmApply(false);}
+ }
+ async function applyPublishedTopology(){
+  if(!providerPlan?.plan?.can_apply||!confirmApply){
+   setProviderError("Review a conflict-free plan and confirm the provider changes.");return;
+  }
+  const result=await runProvider(()=>api.applyTopology(profileId,{
+   revision_id:revisionId,expected_sha256:providerPlan.plan.revision_sha256,confirmed:true
+  }),"Topology apply finished. Review the apply record and reconciliation result.");
+  if(result){
+   setLastApply(result);
+   const [planResult,reconcileResult]=await Promise.all([
+    api.planTopologyApply(profileId,{revision_id:revisionId}).catch(()=>null),
+    api.reconcileTopology(profileId,revisionId).catch(()=>null)
+   ]);
+   if(planResult)setProviderPlan(planResult);
+   if(reconcileResult)setReconciliation(reconcileResult);
+   setConfirmApply(false);
+  }
+ }
+ async function refreshReconciliation(){
+  if(!profileId||!revisionId)return;
+  const result=await runProvider(
+   ()=>api.reconcileTopology(profileId,revisionId),
+   "Observed provider state reconciled against the selected immutable revision."
+  );
+  if(result)setReconciliation(result);
+ }
+ async function operateNode(logicalNodeId,action){
+  const result=await runProvider(
+   ()=>api.operateTopologyNode(profileId,logicalNodeId,action),
+   "Explicit node "+action.toLowerCase()+" request completed."
+  );
+  if(result)await refreshReconciliation();
+ }
+
  const nodeById=Object.fromEntries(nodes.map(item=>[item.id,item]));
  if(projects.loading&&!projects.data)return <LoadingState label="Loading topology workspace…"/>;
  if(projects.error&&!projects.data)return <ErrorState error={projects.error} onRetry={projects.reload}/>;
@@ -272,6 +377,77 @@ export default function TopologyStudioPage({user}){
      {key:"actions",label:"Actions",render:item=>canManage?<Button variant="ghost" size="sm" onClick={()=>removeLink(item.id)}>Remove</Button>:"—"}
     ]} emptyTitle="No links" emptyMessage="Connect two nodes using their exact adapter and port numbers."/>
    </Section>
+   {activeLabId?<Section title="GNS3 provider and topology apply" subtitle="Bind a private GNS3 controller to this Lab, inspect its catalogue, plan changes and apply only after explicit confirmation.">
+    <div className="module-intro">
+     <div className="module-intro-icon">⇄</div>
+     <div><strong>Explicit provider boundary</strong><p>Editing and publishing remain local-only. The provider is contacted only when you verify a binding, inspect the catalogue, request a dry-run, reconcile, apply, or explicitly start/stop a mapped node. Unmanaged resources are never pruned.</p></div>
+    </div>
+    {providerBinding.error?<InlineNotice tone="danger">{providerBinding.error.message}</InlineNotice>:null}
+    {binding?<div className="context-caption">Active binding · {binding.endpoint_url} · GNS3 project {binding.gns3_project_id} · controller {binding.controller_device_id}</div>:<div className="context-caption">No active GNS3 controller is bound to this Lab.</div>}
+    {canManageProvider?<form className="form-grid" onSubmit={saveProviderBinding}>
+     <Field label="Private GNS3 Controller URL" required><input value={bindingForm.endpoint_url} onChange={event=>setBindingForm({...bindingForm,endpoint_url:event.target.value})} placeholder="http://127.0.0.1:3080" required/></Field>
+     <Field label="GNS3 project ID" required><input value={bindingForm.gns3_project_id} onChange={event=>setBindingForm({...bindingForm,gns3_project_id:event.target.value})} maxLength={128} required/></Field>
+     <Field label="Registered controller device" required>
+      <select value={bindingForm.controller_device_id} onChange={event=>setBindingForm({...bindingForm,controller_device_id:event.target.value,credential_id:""})} required>
+       <option value="">Select device</option>
+       {deviceRows.map(item=><option key={item.device_id} value={item.device_id}>{item.name} · {item.host}</option>)}
+      </select>
+     </Field>
+     <Field label="OS-vault API_TOKEN credential" required>
+      <select value={bindingForm.credential_id} onChange={event=>setBindingForm({...bindingForm,credential_id:event.target.value})} required>
+       <option value="">Select active API credential</option>
+       {credentialRows.map(item=><option key={item.credential_id} value={item.credential_id}>{item.label} · {item.credential_id}</option>)}
+      </select>
+     </Field>
+     <div className="form-actions"><Button type="submit" loading={providerBusy} disabled={!activeLabId||!bindingForm.endpoint_url.trim()||!bindingForm.gns3_project_id.trim()||!bindingForm.controller_device_id||!bindingForm.credential_id}>Verify and bind controller</Button></div>
+    </form>:null}
+    {!deviceRows.length&&activeLabId?<InlineNotice tone="info">Register the GNS3 controller as an active device in this Lab, then attach an API_TOKEN credential through the Credentials workspace.</InlineNotice>:null}
+    {providerCredentials.error?<InlineNotice tone="danger">{providerCredentials.error.message}</InlineNotice>:null}
+    {providerError?<InlineNotice tone="danger">{providerError}</InlineNotice>:null}
+    {binding?<div className="button-row">
+     <Button variant="outline" onClick={loadProviderCatalog} loading={providerBusy}>Inspect provider catalogue</Button>
+     {canManageProvider?<Button variant="ghost" onClick={()=>runProvider(()=>api.archiveTopologyProvider(activeLabId).then(async result=>{await providerBinding.reload();return result;}),"Provider binding archived. No provider resources were deleted.")} loading={providerBusy}>Archive binding</Button>:null}
+    </div>:null}
+    {providerCatalog?<div className="form-grid">
+     <div className="context-caption">GNS3 version · {providerCatalog.version?.version||"version available"} · projects {providerCatalog.projects?.length||0} · templates {providerCatalog.templates?.length||0}</div>
+     <div className="context-caption">Observed nodes {providerCatalog.nodes?.length||0} · links {providerCatalog.links?.length||0}</div>
+     <div className="context-caption">Catalogue inspection is read-only; provider nodes and links are not changed.</div>
+    </div>:null}
+    {binding&&selectedRevision?.status==="PUBLISHED"?<div className="form-grid">
+     <div className="form-actions"><Button variant="outline" onClick={makeApplyPlan} loading={providerBusy}>Build dry-run plan</Button>
+      <Button variant="outline" onClick={refreshReconciliation} loading={providerBusy}>Reconcile observed state</Button></div>
+    </div>:null}
+    {providerPlan?.plan?<div className="provider-plan">
+     <h4>Dry-run plan · revision {providerPlan.plan.revision_id}</h4>
+     <div className="metric-grid">
+      <div className="metric-card"><strong>{providerPlan.plan.nodes_to_create.length}</strong><span>Nodes to create</span></div>
+      <div className="metric-card"><strong>{providerPlan.plan.links_to_create.length}</strong><span>Links to create</span></div>
+      <div className="metric-card"><strong>{providerPlan.plan.links_pending_nodes.length}</strong><span>Links pending node creation</span></div>
+      <div className="metric-card"><strong>{providerPlan.plan.conflicts.length}</strong><span>Conflicts</span></div>
+     </div>
+     <p><StatusBadge value={providerPlan.plan.can_apply?"READY":"BLOCKED"}/> <span className="context-caption">Published revision SHA-256 · {providerPlan.plan.revision_sha256}</span></p>
+     {providerPlan.plan.conflicts.length?<ul>{providerPlan.plan.conflicts.map((item,index)=><li key={index}>{item.resource_id||"Provider"}: {item.reason}</li>)}</ul>:<p>No current template or port conflicts were found in the observed provider state.</p>}
+     {canApplyTopology&&providerPlan.plan.can_apply?<label className="confirm-operation">
+      <input type="checkbox" checked={confirmApply} onChange={event=>setConfirmApply(event.target.checked)}/>
+      I reviewed this revision hash and authorize these explicit GNS3 node/link changes for this Lab.
+     </label>:null}
+     {canApplyTopology?<div className="button-row"><Button onClick={applyPublishedTopology} loading={providerBusy} disabled={!providerPlan.plan.can_apply||!confirmApply}>Confirm and apply topology</Button></div>:null}
+    </div>:null}
+    {reconciliation?<div className="provider-plan">
+     <h4>Observed-versus-desired reconciliation</h4>
+     <p><StatusBadge value={reconciliation.status}/> {reconciliation.observed_managed_node_count} of {reconciliation.desired_node_count} managed nodes observed · {reconciliation.missing_nodes.length} missing nodes · {reconciliation.missing_links.length} missing links</p>
+     {reconciliation.missing_nodes.length?<p>Missing nodes: {reconciliation.missing_nodes.join(", ")}</p>:null}
+     {reconciliation.missing_links.length?<p>Missing links: {reconciliation.missing_links.join(", ")}</p>:null}
+     {canOperateProvider&&providerPlan?.plan?.already_present_nodes?.length?<div className="form-actions">
+      {providerPlan.plan.already_present_nodes.map(nodeId=><span key={nodeId} className="inline-node-operation"><strong>{nodeId}</strong><Button size="sm" variant="outline" onClick={()=>operateNode(nodeId,"start")} loading={providerBusy}>Start</Button><Button size="sm" variant="ghost" onClick={()=>operateNode(nodeId,"stop")} loading={providerBusy}>Stop</Button></span>)}
+     </div>:null}
+    </div>:null}
+    {lastApply?<div className="provider-plan">
+     <h4>Latest apply record · {lastApply.apply_id}</h4>
+     <p><StatusBadge value={lastApply.status}/> {lastApply.result?.summary?.created_nodes||0} nodes and {lastApply.result?.summary?.created_links||0} links created</p>
+     <pre className="code-block">{JSON.stringify(lastApply.result,null,2)}</pre>
+    </div>:null}
+   </Section>:null}
    {canManage?<Section title="Save immutable topology revision" subtitle="Saving creates a new draft with canonical JSON and SHA-256. Existing revisions are never overwritten.">
     <div className="button-row">
      <Button onClick={saveRevision} loading={mutation.loading} disabled={!profileId}>Save new draft revision</Button>

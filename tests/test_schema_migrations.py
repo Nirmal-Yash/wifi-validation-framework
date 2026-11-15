@@ -24,7 +24,7 @@ def test_fresh_database_is_created_only_through_single_alembic_head(tmp_path):
     status = DatabaseMigrationManager(path).check()
 
     assert status.current_revision == status.head_revision
-    assert status.current_revision == "20261115_12"
+    assert status.current_revision == "20261115_13"
     assert status.is_up_to_date
     assert status.schema.is_clean
 
@@ -35,7 +35,7 @@ def test_fresh_database_is_created_only_through_single_alembic_head(tmp_path):
         authority = connection.execute(
             "SELECT value FROM schema_meta WHERE key='migration_authority'"
         ).fetchone()[0]
-        assert version == "21"
+        assert version == "23"
         assert authority == "alembic"
 
 
@@ -135,7 +135,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
 
     result = manager.upgrade()
 
-    assert result.current_revision == result.head_revision == "20261115_12"
+    assert result.current_revision == result.head_revision == "20261115_13"
     assert result.is_up_to_date
     assert result.last_backup is not None
     assert result.last_backup.is_file()
@@ -159,7 +159,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "21"
+        ).fetchone()[0] == "23"
 
 
 def test_schema_drift_is_reported_without_silent_repair(tmp_path):
@@ -289,6 +289,32 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         # Recreate a genuine pre-Stage-B 20260924_02 database. The helper
         # starts from the current schema so every later table, index and
         # trigger must be removed before rewinding the recorded Alembic head.
+        # Remove the Stage D provider/apply layer before rewinding the Alembic head.
+        connection.execute("DROP TRIGGER trg_topology_apply_scope_insert")
+        connection.execute("DROP TRIGGER trg_topology_apply_identity_immutable")
+        connection.execute("DROP TRIGGER trg_topology_apply_no_delete")
+        connection.execute("DROP TRIGGER trg_topology_provider_mappings_scope_insert")
+        connection.execute("DROP TRIGGER trg_topology_provider_mappings_scope_update")
+        connection.execute("DROP TRIGGER trg_topology_provider_mappings_no_delete")
+        connection.execute("DROP TRIGGER trg_gns3_bindings_credential_scope_insert")
+        connection.execute("DROP TRIGGER trg_gns3_bindings_credential_scope_update")
+        connection.execute("DROP TRIGGER trg_gns3_bindings_no_delete")
+        connection.execute("DROP INDEX idx_topology_apply_profile_revision")
+        connection.execute("DROP INDEX idx_topology_apply_lab_created")
+        connection.execute("DROP INDEX idx_topology_provider_mappings_lab")
+        connection.execute("DROP INDEX idx_gns3_bindings_project_lab")
+        connection.execute("DROP TABLE topology_apply_records")
+        connection.execute("DROP TABLE topology_provider_mappings")
+        connection.execute("DROP TABLE gns3_lab_bindings")
+        # Remove P24 provider deployment evidence before replaying from the
+        # historical pre-topology schema.
+        connection.execute("DROP TRIGGER trg_device_config_deployments_scope_insert")
+        connection.execute("DROP TRIGGER trg_device_config_deployments_identity_immutable")
+        connection.execute("DROP TRIGGER trg_device_config_deployments_final_immutable")
+        connection.execute("DROP TRIGGER trg_device_config_deployments_no_delete")
+        connection.execute("DROP INDEX idx_device_config_deployments_revision")
+        connection.execute("DROP INDEX idx_device_config_deployments_target")
+        connection.execute("DROP TABLE device_configuration_deployments")
         # Remove the Stage D topology layer too, so this fixture truly represents
         # the historical 20260924_02 baseline before the forward migration chain.
         connection.execute("DROP TRIGGER trg_topology_profiles_no_delete")
@@ -366,7 +392,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.commit()
 
     status = DatabaseMigrationManager(path).upgrade()
-    assert status.current_revision == status.head_revision == "20261115_12"
+    assert status.current_revision == status.head_revision == "20261115_13"
     assert status.is_up_to_date
     with sqlite3.connect(path) as connection:
         assert connection.execute(
@@ -374,7 +400,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "21"
+        ).fetchone()[0] == "23"
 
 
 def test_database_operator_cli_commands(tmp_path):

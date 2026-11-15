@@ -22,10 +22,11 @@ const LEGACY_PERMISSION_ALIAS=Object.freeze({
  "organizations.manage":"admin","projects.manage":"admin","labs.manage":"admin",
  "members.manage":"admin",
  "credentials.read":"view","credentials.manage":"admin","credentials.verify":"execute",
- "configurations.read":"view","configurations.manage":"admin","configurations.publish":"admin",
+ "configurations.read":"view","configurations.manage":"admin","configurations.publish":"admin","configurations.deploy":"admin",
  "performance.read":"view","performance.manage":"admin","performance.publish":"admin",
  "devices.read":"view","devices.manage":"admin","devices.operate":"admin",
  "topology.read":"view","topology.manage":"admin","topology.publish":"admin",
+ "topology.provider.manage":"admin","topology.provider.operate":"admin","topology.apply":"admin",
 });
 export function canPerform(subject,permission){
  if(subject&&typeof subject==="object"&&Array.isArray(subject.permissions)){

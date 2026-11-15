@@ -96,6 +96,10 @@ EXPECTED_TABLE_COLUMNS = {
     "devices": ("device_id", "project_id", "lab_id", "device_key", "name", "device_type", "host", "port", "vendor", "model", "username", "credential_id", "capabilities_json", "metadata_json", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "topology_profiles": ("profile_id", "project_id", "name", "description", "scope_type", "scope_id", "lab_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "topology_revisions": ("revision_id", "profile_id", "revision_number", "definition_json", "content_sha256", "status", "created_at", "created_by", "published_at", "published_by"),
+    "gns3_lab_bindings": ("binding_id", "project_id", "lab_id", "endpoint_url", "gns3_project_id", "controller_device_id", "credential_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
+    "topology_provider_mappings": ("mapping_id", "project_id", "lab_id", "profile_id", "resource_type", "logical_id", "provider_resource_id", "template_id", "created_at", "updated_at"),
+    "topology_apply_records": ("apply_id", "project_id", "lab_id", "profile_id", "revision_id", "content_sha256", "status", "plan_json", "observed_before_json", "observed_after_json", "result_json", "created_at", "started_at", "completed_at", "created_by"),
+    "device_configuration_deployments": ("deployment_id", "project_id", "lab_id", "device_id", "profile_id", "revision_id", "schema_record_id", "configuration_hash", "status", "plan_json", "result_json", "created_at", "started_at", "completed_at", "created_by"),
     "performance_policy_profiles": ("policy_profile_id", "project_id", "name", "description", "scope_type", "scope_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "performance_policy_revisions": ("revision_id", "policy_profile_id", "revision_number", "policy_json", "policy_hash", "status", "created_at", "created_by", "published_at", "published_by"),
     "performance_policy_assignments": ("assignment_id", "project_id", "lab_id", "policy_profile_id", "revision_id", "assigned_at", "assigned_by"),
@@ -121,6 +125,19 @@ EXPECTED_TRIGGERS = (
     "trg_topology_profiles_no_delete",
     "trg_topology_revisions_immutable",
     "trg_topology_revisions_no_delete",
+    "trg_gns3_bindings_credential_scope_insert",
+    "trg_gns3_bindings_credential_scope_update",
+    "trg_gns3_bindings_no_delete",
+    "trg_topology_provider_mappings_scope_insert",
+    "trg_topology_provider_mappings_scope_update",
+    "trg_topology_provider_mappings_no_delete",
+    "trg_topology_apply_scope_insert",
+    "trg_topology_apply_identity_immutable",
+    "trg_topology_apply_no_delete",
+    "trg_device_config_deployments_scope_insert",
+    "trg_device_config_deployments_identity_immutable",
+    "trg_device_config_deployments_final_immutable",
+    "trg_device_config_deployments_no_delete",
 )
 
 EXPECTED_INDEXES = (
@@ -158,6 +175,12 @@ EXPECTED_INDEXES = (
     "idx_performance_policy_assignments_lab",
     "idx_topology_profiles_project_scope",
     "idx_topology_revisions_profile_number",
+    "idx_gns3_bindings_project_lab",
+    "idx_topology_provider_mappings_lab",
+    "idx_topology_apply_lab_created",
+    "idx_topology_apply_profile_revision",
+    "idx_device_config_deployments_target",
+    "idx_device_config_deployments_revision",
 )
 
 EXPECTED_FOREIGN_KEYS = {
@@ -194,6 +217,26 @@ EXPECTED_FOREIGN_KEYS = {
     ("topology_profiles", "project_id", "projects", "project_id"),
     ("topology_profiles", "lab_id", "labs", "lab_id"),
     ("topology_revisions", "profile_id", "topology_profiles", "profile_id"),
+    ("gns3_lab_bindings", "project_id", "projects", "project_id"),
+    ("gns3_lab_bindings", "project_id", "labs", "project_id"),
+    ("gns3_lab_bindings", "lab_id", "labs", "lab_id"),
+    ("gns3_lab_bindings", "controller_device_id", "devices", "device_id"),
+    ("gns3_lab_bindings", "credential_id", "managed_credentials", "credential_id"),
+    ("topology_provider_mappings", "profile_id", "topology_profiles", "profile_id"),
+    ("topology_provider_mappings", "project_id", "labs", "project_id"),
+    ("topology_provider_mappings", "lab_id", "labs", "lab_id"),
+    ("topology_apply_records", "profile_id", "topology_profiles", "profile_id"),
+    ("topology_apply_records", "revision_id", "topology_revisions", "revision_id"),
+    ("topology_apply_records", "project_id", "projects", "project_id"),
+    ("topology_apply_records", "project_id", "labs", "project_id"),
+    ("topology_apply_records", "lab_id", "labs", "lab_id"),
+    ("device_configuration_deployments", "device_id", "devices", "device_id"),
+    ("device_configuration_deployments", "profile_id", "configuration_profiles", "profile_id"),
+    ("device_configuration_deployments", "revision_id", "configuration_revisions", "revision_id"),
+    ("device_configuration_deployments", "schema_record_id", "configuration_schemas", "schema_record_id"),
+    ("device_configuration_deployments", "project_id", "projects", "project_id"),
+    ("device_configuration_deployments", "project_id", "labs", "project_id"),
+    ("device_configuration_deployments", "lab_id", "labs", "lab_id"),
     ("performance_policy_profiles", "project_id", "projects", "project_id"),
     ("performance_policy_revisions", "policy_profile_id", "performance_policy_profiles", "policy_profile_id"),
     ("performance_policy_assignments", "project_id", "projects", "project_id"),
@@ -328,9 +371,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "21":
+        if metadata.get("version") != "23":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '21'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '23'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

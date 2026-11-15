@@ -265,6 +265,47 @@ class CredentialVaultService:
             secret_deleted = False
         return {"credential": self.get(credential_id), "secret_deleted": secret_deleted}
 
+    def use_secret(
+        self, credential_id: str, *, project_id: str, device_id: str,
+        credential_type: str, actor: str, consumer: Callable[[Mapping[str, object], str], object],
+    ):
+        """Resolve a secret for one adapter call without returning or persisting it.
+
+        The callback must return only non-secret result data. Scope, credential
+        type and active status are rechecked immediately before vault access.
+        """
+        record = self._get_raw(credential_id)
+        if record is None:
+            raise CredentialVaultNotFound("credential not found")
+        if (
+            record["project_id"] != project_id
+            or record["device_id"] != device_id
+            or record["credential_type"] != str(credential_type).upper()
+        ):
+            raise CredentialVaultPolicyError("credential is outside the requested Project, Device or type scope")
+        if record["status"] != "ACTIVE":
+            raise CredentialVaultPolicyError("revoked credentials cannot be used")
+        actor = self._safe_actor(actor)
+        try:
+            secret = self.secret_store.get(record["secret_reference"])
+        except Exception as exc:
+            raise CredentialVaultError("the operating-system secret store could not resolve this credential") from exc
+        if not isinstance(secret, str) or not secret:
+            raise CredentialVaultError("the operating-system secret reference is unavailable")
+        succeeded = False
+        try:
+            result = consumer(self._serialize(record), secret)
+            succeeded = True
+            return result
+        finally:
+            with self.database.transaction(immediate=True) as connection:
+                self._audit(
+                    connection, actor, "CREDENTIAL_USED" if succeeded else "CREDENTIAL_USE_FAILED",
+                    credential_id,
+                    {"project_id": project_id, "device_id": device_id,
+                     "credential_type": record["credential_type"], "purpose": "provider_adapter"},
+                )
+
     def verify(
         self, credential_id: str, *, actor: str,
         verifier: Callable[[Mapping[str, object], str], tuple[str, str]],

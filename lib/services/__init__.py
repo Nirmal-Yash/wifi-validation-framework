@@ -129,6 +129,16 @@ _EXPORTS = {
     "TopologyStudioService": (".topology_studio", "TopologyStudioService"),
     "TopologyStudioError": (".topology_studio", "TopologyStudioError"),
     "TopologyStudioNotFound": (".topology_studio", "TopologyStudioNotFound"),
+    "GNS3Provider": (".gns3_provider", "GNS3Provider"),
+    "GNS3ProviderError": (".gns3_provider", "GNS3ProviderError"),
+    "TopologyApplyService": (".topology_apply", "TopologyApplyService"),
+    "TopologyApplyError": (".topology_apply", "TopologyApplyError"),
+    "TopologyApplyNotFound": (".topology_apply", "TopologyApplyNotFound"),
+    "TopologyApplyConflict": (".topology_apply", "TopologyApplyConflict"),
+    "ConfigurationDeploymentService": (".configuration_deployer", "ConfigurationDeploymentService"),
+    "ConfigurationDeploymentError": (".configuration_deployer", "ConfigurationDeploymentError"),
+    "ConfigurationDeploymentNotFound": (".configuration_deployer", "ConfigurationDeploymentNotFound"),
+    "ConfigurationDeploymentConflict": (".configuration_deployer", "ConfigurationDeploymentConflict"),
 }
 
 __all__ = tuple(_EXPORTS)
