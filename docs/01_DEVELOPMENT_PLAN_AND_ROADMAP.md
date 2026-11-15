@@ -58,9 +58,15 @@ Stage D — Device Management and Topology Studio — is an additional product-s
 | P19 | Canonical Topology Model and immutable revisions | Implemented; immutable revision and validation tests |
 | P20 | Visual Topology Canvas and node editor | Implemented; local authoring and persisted coordinates |
 | P21 | Interfaces, ports and link editor | Implemented; exact adapter/port occupancy validation |
-| P22 | GNS3 provider project/template/node lifecycle | Defined; topology delivery checkpoint |
-| P23 | GNS3 provider link lifecycle | Defined; topology delivery checkpoint |
-| P24 | Explicit apply, reconciliation and device configuration provider seam | Defined; topology delivery checkpoint |
+| P22 | GNS3 provider project/template/node lifecycle | Implemented; private controller binding, scoped vault credentials, provider catalogue, logical-to-provider mappings and explicit start/stop with verified read-back |
+| P23 | GNS3 provider link lifecycle | Implemented; deterministic logical mappings, adapter/port validation, conflict-safe create/adopt and provider drift detection |
+| P24 | Explicit apply, reconciliation and device configuration provider seam | Implemented; hash-confirmed idempotent topology apply, immutable apply evidence and PARTIAL recovery, plus allow-listed OpenWrt Wi-Fi deployment with vault-backed SSH and read-back verification |
+
+Stage D implementation is complete through P24, with mocked provider and dashboard
+integration coverage in CI. Live GNS3/OpenWrt hardware acceptance remains a deployment
+release gate. The current lock backend is POSIX-specific; Windows lock portability and
+Windows runtime acceptance remain separate platform gates. No Cloud/SaaS control plane
+is included in this Stage D increment.
 
 #### Phase C — implementation contract
 

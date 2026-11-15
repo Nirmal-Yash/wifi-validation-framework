@@ -9,7 +9,7 @@ from lib.services.device_inventory import DeviceInventoryService
 from lib.services.gns3_provider import GNS3Provider as RealGNS3Provider, GNS3ProviderError
 from lib.services.resource_lock import ResourceLockManager
 from lib.services.topology_apply import (
-    TopologyApplyConflict, TopologyApplyService,
+    TopologyApplyConflict, TopologyApplyError, TopologyApplyService,
 )
 from lib.services.topology_studio import TopologyStudioService
 
