@@ -347,11 +347,35 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
                 return error("INVALID_LAB_SCOPE","Lab must belong to the selected Project",400)
             if project.status is not ResourceStatus.ACTIVE or lab.status is not ResourceStatus.ACTIVE:
                 return error("RESOURCE_INACTIVE","Runs require an active Project and Lab",409)
+        raw_performance_policy_revision_id=payload.get("performance_policy_revision_id")
+        performance_policy_revision_id=str(raw_performance_policy_revision_id or "").strip() or None
+        performance_policy_hash=None
+        if performance_policy_revision_id:
+            if not project_id or not lab_id:
+                return error("PERFORMANCE_POLICY_REQUIRES_LAB","A performance policy can only be selected for a Project-scoped Lab Run",400)
+            policy_denied=require_permission("performance.read",project_id=project_id)
+            if policy_denied is not None:
+                return policy_denied
+            policy_revision=performance_policies.get_revision(performance_policy_revision_id)
+            if policy_revision is None or policy_revision.get("status")!="PUBLISHED":
+                return error("INVALID_PERFORMANCE_POLICY","The selected performance policy revision is missing or is not published",409)
+            policy_profile=performance_policies.get_profile(policy_revision["policy_profile_id"])
+            if policy_profile is None or policy_profile.get("project_id")!=project_id:
+                return error("INVALID_PERFORMANCE_POLICY_SCOPE","The selected performance policy does not belong to this Project",403)
+            policy_assignment=next((item for item in performance_policies.list_assignments(project_id)
+                                    if item.get("lab_id")==lab_id
+                                    and item.get("policy_profile_id")==policy_profile["policy_profile_id"]
+                                    and item.get("revision_id")==performance_policy_revision_id),None)
+            if policy_assignment is None:
+                return error("PERFORMANCE_POLICY_NOT_ASSIGNED","The selected published revision is not assigned to this Lab",409)
+            if policy_profile.get("scope_type")=="LAB" and policy_profile.get("scope_id")!=lab_id:
+                return error("INVALID_PERFORMANCE_POLICY_SCOPE","The Lab-scoped policy does not match the selected Lab",403)
+            performance_policy_hash=policy_revision["policy_hash"]
         firmware=str(payload.get("firmware_version","v1.0"))
         tests=tuple(str(x) for x in (payload.get("tests") or ()))
         try:key=IdempotencyStore.validate_key(request.headers.get("Idempotency-Key",""))
         except RequestSecurityError as exc:return error("INVALID_IDEMPOTENCY_KEY",str(exc),400)
-        request_hash=hashlib.sha256(json.dumps({"firmware_version":firmware,"tests":list(tests),"project_id":project_id,"lab_id":lab_id},sort_keys=True,separators=(",",":")).encode()).hexdigest()
+        request_hash=hashlib.sha256(json.dumps({"firmware_version":firmware,"tests":list(tests),"project_id":project_id,"lab_id":lab_id,"performance_policy_revision_id":performance_policy_revision_id},sort_keys=True,separators=(",",":")).encode()).hexdigest()
         try:
             cached=idempotency_store.get("/api/v1/runs",key,request_hash)
         except RequestSecurityError as exc:return error("IDEMPOTENCY_KEY_REUSE",str(exc),409)
@@ -361,8 +385,15 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         if project_id:
             run_env["NETREGRESS_PROJECT_ID"]=project_id
             run_env["NETREGRESS_LAB_ID"]=lab_id
+        if performance_policy_revision_id:
+            run_env["NETREGRESS_PERFORMANCE_POLICY_REVISION_ID"]=performance_policy_revision_id
+            run_env["NETREGRESS_PERFORMANCE_POLICY_HASH"]=performance_policy_hash
         handle=manager.start(tests=tests or None,firmware_version=firmware,env=run_env)
-        response={"data":{"process_id":handle.pid,"command":list(handle.command),"status":"STARTED"}}
+        response_data={"process_id":handle.pid,"command":list(handle.command),"status":"STARTED"}
+        if performance_policy_revision_id:
+            response_data["performance_policy_revision_id"]=performance_policy_revision_id
+            response_data["performance_policy_hash"]=performance_policy_hash
+        response={"data":response_data}
         idempotency_store.put("/api/v1/runs",key,request_hash,response,202)
         return jsonify(response),202
 

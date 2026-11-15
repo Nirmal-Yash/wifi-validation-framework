@@ -27,6 +27,17 @@ describe("NetRegress RBAC presentation matrix",()=>{
   expect(canAdmin("ADMIN")).toBe(true);
   expect(canOwner("ADMIN")).toBe(false);
  });
+ it("maps legacy roles to the Stage C performance permission matrix",()=>{
+  expect(canPerform("VIEWER","performance.read")).toBe(true);
+  expect(canPerform("OPERATOR","performance.read")).toBe(true);
+  expect(canPerform("ADMIN","performance.manage")).toBe(true);
+  expect(canPerform("OWNER","performance.publish")).toBe(true);
+  expect(canPerform("OPERATOR","performance.manage")).toBe(false);
+ });
+ it("respects persistent permission lists over legacy role fallback",()=>{
+  expect(canPerform({role:"OWNER",permissions:["performance.read"]},"performance.read")).toBe(true);
+  expect(canPerform({role:"OWNER",permissions:["performance.read"]},"performance.publish")).toBe(false);
+ });
  it("fails closed for unknown roles, permissions and routes",()=>{
   expect(canPerform("UNKNOWN","view")).toBe(false);
   expect(canPerform("OWNER","unknown")).toBe(false);

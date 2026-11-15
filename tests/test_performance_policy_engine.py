@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
+
+from dashboard.app import create_app
+from lib.security import AuthManager
 
 from lib.domain.models import Metric,Sample
 from lib.repositories import SQLiteDatabase
@@ -104,3 +108,67 @@ def test_published_and_project_scope_rules(policies):
     assert assignment["policy_profile_id"]==profile["policy_profile_id"]
     with pytest.raises(PerformancePolicyNotFound):
         service.assign(profile["policy_profile_id"],revision["revision_id"],lab_id="foreign-lab",actor="owner")
+
+
+def _create_policy_profile(service,*,name,scope_id):
+    profile=service.create_profile(
+        project_id="project-1",name=name,scope_type="LAB",scope_id=scope_id,actor="owner",
+    )
+    revision=service.create_revision(profile["policy_profile_id"],definition=definition(),actor="owner")
+    service.publish(profile["policy_profile_id"],revision["revision_id"],actor="owner")
+    service.assign(profile["policy_profile_id"],revision["revision_id"],lab_id=scope_id,actor="owner")
+    return profile,revision
+
+
+def test_run_launch_pins_exact_assigned_performance_policy_revision(policies,tmp_path,monkeypatch):
+    database,service=policies
+    _profile,revision=_create_policy_profile(service,name="Lab performance",scope_id="lab-1")
+    captured={}
+    def fake_start(self,**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(pid=431,command=("python","-m","pytest"),log_path=str(tmp_path/"run.log"))
+    monkeypatch.setattr("dashboard.api_v1.RunProcessManager.start",fake_start)
+    app=create_app(database.path,auth_manager=AuthManager((),required=False))
+    client=app.test_client()
+
+    response=client.post(
+        "/api/v1/runs",
+        headers={"Idempotency-Key":"stage-c-policy-run-launch-01"},
+        json={
+            "firmware_version":"v1.0","tests":["wifi.latency.threshold"],
+            "project_id":"project-1","lab_id":"lab-1",
+            "performance_policy_revision_id":revision["revision_id"],
+        },
+    )
+
+    assert response.status_code==202
+    payload=response.get_json()["data"]
+    assert payload["performance_policy_revision_id"]==revision["revision_id"]
+    assert payload["performance_policy_hash"]==revision["policy_hash"]
+    assert captured["env"]["NETREGRESS_PERFORMANCE_POLICY_REVISION_ID"]==revision["revision_id"]
+    assert captured["env"]["NETREGRESS_PERFORMANCE_POLICY_HASH"]==revision["policy_hash"]
+
+
+def test_run_launch_rejects_policy_revision_not_assigned_to_selected_lab(policies,monkeypatch):
+    database,service=policies
+    with database.transaction(immediate=True) as connection:
+        connection.execute(
+            "INSERT INTO labs(lab_id,project_id,name,provider_id,topology_version,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+            ("lab-2","project-1","Other Lab","gns3",1,"ACTIVE","2026-11-13T00:00:00+00:00","2026-11-13T00:00:00+00:00"),
+        )
+    _profile,revision=_create_policy_profile(service,name="Other lab policy",scope_id="lab-2")
+    started=[]
+    monkeypatch.setattr("dashboard.api_v1.RunProcessManager.start",lambda self,**kwargs:started.append(kwargs))
+    app=create_app(database.path,auth_manager=AuthManager((),required=False))
+    response=app.test_client().post(
+        "/api/v1/runs",
+        headers={"Idempotency-Key":"stage-c-policy-run-launch-02"},
+        json={
+            "firmware_version":"v1.0","tests":["wifi.latency.threshold"],
+            "project_id":"project-1","lab_id":"lab-1",
+            "performance_policy_revision_id":revision["revision_id"],
+        },
+    )
+    assert response.status_code==409
+    assert response.get_json()["error"]["code"]=="PERFORMANCE_POLICY_NOT_ASSIGNED"
+    assert started==[]

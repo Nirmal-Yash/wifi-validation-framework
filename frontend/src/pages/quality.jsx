@@ -2,7 +2,8 @@ import React,{useEffect,useState} from "react";
 import {Activity,ArrowUpRight,GitCompare,TrendingDown,TrendingUp,Wifi} from "lucide-react";
 import {api} from "../api";
 import {navigate} from "../router";
-import {useAsyncLoader} from "../hooks";
+import {useAsyncLoader,useMutation} from "../hooks";
+import {canPerform} from "../permissions";
 import {formatDate,formatNumber,formatShortDate,metricMean,toFiniteNumber,validSamples} from "../utils";
 import {Button,DataTable,EmptyState,ErrorState,Field,InlineNotice,LineChart,LoadingState,Section,StatCard,StatusBadge} from "../components/ui";
 
@@ -44,7 +45,7 @@ export function RegressionPage(){
  </div>;
 }
 
-export function PerformancePage(){
+function PerformanceHistoryPage(){
  const[testId,setTestId]=useState(defaultTests[0]),[submitted,setSubmitted]=useState(defaultTests[0]),[metricName,setMetricName]=useState("");
  const loader=useAsyncLoader(()=>api.metricsHistory(submitted),[submitted]);
  const rows=loader.data?.items||[];
@@ -88,6 +89,173 @@ export function PerformancePage(){
   </Section></>:null}
  </div>;
 }
+
+const DEFAULT_PERFORMANCE_POLICY=JSON.stringify({
+ metrics:[{
+  name:"latency",unit:"ms",direction:"LOWER_IS_BETTER",
+  target:20,warning:40,failure:80,aggregate:"mean",
+  minimum_samples:3,allowed_statuses:["VALID"],include_retried:false,required:true
+ }]
+},null,2);
+
+function PerformancePolicyWorkspace({user}){
+ const projects=useAsyncLoader(()=>api.workspaceProjects({}),[],{queryKey:"performance-policy-projects"});
+ const [projectId,setProjectId]=useState("");
+ const [labId,setLabId]=useState("");
+ const [profileId,setProfileId]=useState("");
+ const [revisionId,setRevisionId]=useState("");
+ const [definitionText,setDefinitionText]=useState(DEFAULT_PERFORMANCE_POLICY);
+ const [profileForm,setProfileForm]=useState({name:"Wireless performance",description:"",scope_type:"LAB",scope_id:""});
+ const [notice,setNotice]=useState("");
+ const [error,setError]=useState("");
+ const labs=useAsyncLoader(()=>projectId?api.workspaceLabs(projectId):Promise.resolve({items:[]}),[projectId],{enabled:Boolean(projectId),queryKey:"performance-policy-labs"});
+ const profiles=useAsyncLoader(()=>projectId?api.performancePolicies(projectId):Promise.resolve({items:[]}),[projectId],{enabled:Boolean(projectId),queryKey:"performance-policy-profiles"});
+ const assignments=useAsyncLoader(()=>projectId?api.performanceAssignments(projectId):Promise.resolve({items:[]}),[projectId],{enabled:Boolean(projectId),queryKey:"performance-policy-assignments"});
+ const revisions=useAsyncLoader(()=>profileId?api.performanceRevisions(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"performance-policy-revisions"});
+ const selectedAssignment=(assignments.data?.items||[]).find(item=>item.lab_id===labId)||null;
+ const effectiveRevisions=useAsyncLoader(
+  ()=>selectedAssignment?api.performanceRevisions(selectedAssignment.policy_profile_id):Promise.resolve({items:[]}),
+  [selectedAssignment?.policy_profile_id],
+  {enabled:Boolean(selectedAssignment?.policy_profile_id),queryKey:"performance-effective-policy-revisions"}
+ );
+ const mutation=useMutation();
+ const canRead=canPerform(user,"performance.read");
+ const canManage=canPerform(user,"performance.manage");
+ const canPublish=canPerform(user,"performance.publish");
+ const profileRows=profiles.data?.items||[];
+ const revisionRows=revisions.data?.items||[];
+ const selectedRevision=revisionRows.find(item=>item.revision_id===revisionId)||null;
+ const effectiveRevision=(effectiveRevisions.data?.items||[]).find(item=>item.revision_id===selectedAssignment?.revision_id)||null;
+ const labRows=(labs.data?.items||[]).filter(item=>item.status==="ACTIVE");
+ const selectedProfile=profileRows.find(item=>item.policy_profile_id===profileId)||null;
+
+ useEffect(()=>{
+  const first=projects.data?.items?.[0];
+  if(!projectId&&first)setProjectId(first.project_id);
+ },[projects.data,projectId]);
+ useEffect(()=>{
+  if(!labId&&labRows.length)setLabId(labRows[0].lab_id);
+ },[labs.data,labId]);
+ useEffect(()=>{
+  if(!profileId&&profileRows.length)setProfileId(profileRows[0].policy_profile_id);
+ },[profiles.data,profileId]);
+
+ async function perform(action,success,refresh=true){
+  setError("");setNotice("");
+  try{
+   const result=await mutation.run(action);
+   setNotice(success);
+   if(refresh)await Promise.all([profiles.reload(),assignments.reload(),revisions.reload().catch(()=>null),effectiveRevisions.reload().catch(()=>null)]);
+   return result;
+  }catch(exc){setError(exc.message||"Performance policy operation failed.");return null;}
+ }
+ async function createProfile(event){
+  event.preventDefault();
+  const scopeType=profileForm.scope_type;
+  const result=await perform(()=>api.createPerformancePolicy({
+   project_id:projectId,name:profileForm.name,description:profileForm.description,
+   scope_type:scopeType,scope_id:scopeType==="PROJECT"?projectId:profileForm.scope_id
+  }),"Performance policy profile created.");
+  if(result?.policy_profile_id)setProfileId(result.policy_profile_id);
+ }
+ async function createRevision(event){
+  event.preventDefault();
+  let definition;
+  try{definition=JSON.parse(definitionText);}catch{setError("Policy definition must be valid JSON.");return;}
+  const result=await perform(()=>api.createPerformanceRevision(profileId,{definition}),"Draft policy revision created.");
+  if(result?.revision_id)setRevisionId(result.revision_id);
+ }
+ async function publishRevision(){
+  if(!profileId||!revisionId){setError("Select a draft revision first.");return;}
+  const result=await perform(()=>api.publishPerformanceRevision(profileId,{revision_id:revisionId}),"Policy revision published.");
+  if(result?.revision_id)setRevisionId(result.revision_id);
+ }
+ async function assignRevision(){
+  if(!profileId||!revisionId||!labId){setError("Select a policy revision and an active Lab.");return;}
+  const result=await perform(()=>api.assignPerformanceRevision(profileId,{revision_id:revisionId,lab_id:labId}),"Published revision assigned to the selected Lab.");
+  if(result?.revision_id)setRevisionId(result.revision_id);
+ }
+ if(!canRead)return <InlineNotice tone="warning">Your account does not have permission to read performance policies. Ask an Owner or Admin to review the Project role.</InlineNotice>;
+ return <div className="page-stack">
+  <div className="module-intro"><div className="module-intro-icon"><Activity size={19}/></div><div><strong>Versioned performance policy</strong><p>Manage immutable threshold revisions per Project or Lab. Publishing freezes the selected revision; assignment controls which published revision is selected for future Runs.</p></div></div>
+  <Section title="Project and Lab scope" subtitle="Policy records and Lab assignments are isolated by Project.">
+   <div className="form-grid">
+    <Field label="Project"><select value={projectId} onChange={event=>{setProjectId(event.target.value);setProfileId("");setRevisionId("");setLabId("");}} disabled={projects.loading}>
+     <option value="">Select Project</option>{(projects.data?.items||[]).map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}
+    </select></Field>
+    <Field label="Lab for effective policy"><select value={labId} onChange={event=>setLabId(event.target.value)} disabled={!projectId||labs.loading}>
+     <option value="">Select active Lab</option>{labRows.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name} · {item.provider_id}</option>)}
+    </select></Field>
+   </div>
+   {projects.error?<InlineNotice tone="danger">Projects could not be loaded: {projects.error.message}</InlineNotice>:null}
+   {labs.error?<InlineNotice tone="danger">Labs could not be loaded: {labs.error.message}</InlineNotice>:null}
+  </Section>
+  {notice?<InlineNotice tone="success">{notice}</InlineNotice>:null}
+  {error?<InlineNotice tone="danger">{error}</InlineNotice>:null}
+  {canManage?<Section title="Create policy profile" subtitle="Choose Project defaults or bind a profile to one Lab. The service verifies Lab ownership.">
+   <form className="form-grid" onSubmit={createProfile}>
+    <Field label="Profile name" required><input value={profileForm.name} onChange={event=>setProfileForm({...profileForm,name:event.target.value})} maxLength={120} required/></Field>
+    <Field label="Scope"><select value={profileForm.scope_type} onChange={event=>setProfileForm({...profileForm,scope_type:event.target.value,scope_id:""})}><option value="PROJECT">Project</option><option value="LAB">Lab</option></select></Field>
+    {profileForm.scope_type==="LAB"?<Field label="Lab ID"><select value={profileForm.scope_id} onChange={event=>setProfileForm({...profileForm,scope_id:event.target.value})} required><option value="">Select Lab</option>{labRows.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name}</option>)}</select></Field>:null}
+    <Field label="Description"><input value={profileForm.description} onChange={event=>setProfileForm({...profileForm,description:event.target.value})} maxLength={500}/></Field>
+    <div className="form-actions"><Button type="submit" disabled={mutation.loading||!projectId||!profileForm.name.trim()||(profileForm.scope_type==="LAB"&&!profileForm.scope_id)}>Create profile</Button></div>
+   </form>
+  </Section>:null}
+  <Section title="Policy revisions" subtitle="Create drafts, inspect immutable revision history, publish and assign a published revision.">
+   <div className="form-grid">
+    <Field label="Policy profile"><select value={profileId} onChange={event=>{setProfileId(event.target.value);setRevisionId("");}}><option value="">Select policy profile</option>{profileRows.map(item=><option key={item.policy_profile_id} value={item.policy_profile_id}>{item.name} · {item.scope_type}</option>)}</select></Field>
+    <Field label="Revision"><select value={revisionId} onChange={event=>{setRevisionId(event.target.value);const found=revisionRows.find(item=>item.revision_id===event.target.value);if(found)setDefinitionText(JSON.stringify(found.definition,null,2));}}><option value="">Select revision</option>{revisionRows.map(item=><option key={item.revision_id} value={item.revision_id}>r{item.revision_number} · {item.status}</option>)}</select></Field>
+   </div>
+   {selectedProfile?<div className="context-caption">{selectedProfile.description||selectedProfile.name} · {selectedProfile.scope_type}:{selectedProfile.scope_id} · {selectedProfile.status}</div>:null}
+   {canManage?<form className="form-grid" onSubmit={createRevision}>
+    <Field label="Metric thresholds (JSON)" className="full-width" hint="Metric names and units must exactly match the measurements emitted by the Runner. The initial latency example is illustrative, not an automatic mapping."><textarea rows={11} value={definitionText} onChange={event=>setDefinitionText(event.target.value)} spellCheck="false"/></Field>
+    <div className="form-actions"><Button type="submit" disabled={mutation.loading||!profileId}>Create draft revision</Button></div>
+   </form>:null}
+   {revisions.loading?<LoadingState label="Loading policy revisions…"/>:revisions.error?<ErrorState error={revisions.error} onRetry={revisions.reload}/>:<DataTable caption="Performance policy revision history" rows={revisionRows} rowKey={item=>item.revision_id} columns={[
+    {key:"revision_number",label:"Revision"},
+    {key:"policy_hash",label:"SHA-256",render:item=><code title={item.policy_hash}>{item.policy_hash.slice(0,12)}…</code>},
+    {key:"status",label:"Lifecycle",render:item=><StatusBadge value={item.status}/>},
+    {key:"created_at",label:"Created",render:item=>formatDate(item.created_at)},
+    {key:"published_at",label:"Published",render:item=>item.published_at?formatDate(item.published_at):"—"},
+    {key:"created_by",label:"Author"}
+   ]} emptyTitle="No policy revisions" emptyMessage="Create a draft revision for this profile."/>}
+   <div className="button-row">
+    {canPublish?<Button disabled={!selectedRevision||selectedRevision.status!=="DRAFT"||mutation.loading} onClick={publishRevision}>Publish selected revision</Button>:null}
+    {canPublish?<Button variant="outline" disabled={!selectedRevision||selectedRevision.status!=="PUBLISHED"||!labId||mutation.loading} onClick={assignRevision}>Assign published revision to Lab</Button>:null}
+   </div>
+  </Section>
+  <Section title="Effective thresholds" subtitle="The selected Lab's assigned published revision is the threshold set eligible for Run selection.">
+   {assignments.loading?<LoadingState label="Loading Lab policy assignments…"/>:assignments.error?<ErrorState error={assignments.error} onRetry={assignments.reload}/>:null}
+   {!selectedAssignment?<EmptyState title="No policy assigned to this Lab" message="Publish a revision and assign it to this Lab to make its thresholds available in the Run launch workflow."/>:null}
+   {selectedAssignment&&effectiveRevisions.loading?<LoadingState label="Loading assigned policy revision…"/>:null}
+   {selectedAssignment&&effectiveRevisions.error?<ErrorState error={effectiveRevisions.error} onRetry={effectiveRevisions.reload}/>:null}
+   {effectiveRevision?<>
+    <div className="module-intro"><div><strong>{effectiveRevision.status} · revision {effectiveRevision.revision_number}</strong><p>Profile {selectedAssignment.policy_profile_id} · SHA-256 {effectiveRevision.policy_hash}</p></div></div>
+    <DataTable caption="Effective performance thresholds" rows={effectiveRevision.definition?.metrics||[]} rowKey={item=>item.name} columns={[
+     {key:"name",label:"Metric"},{key:"unit",label:"Unit"},{key:"direction",label:"Direction"},
+     {key:"target",label:"Target",align:"right"},{key:"warning",label:"Warning",align:"right"},{key:"failure",label:"Failure",align:"right"},
+     {key:"aggregate",label:"Aggregate"},{key:"minimum_samples",label:"Min samples",align:"right"}
+    ]} emptyTitle="No metric thresholds" emptyMessage="The assigned revision contains no metric definitions."/>
+   </>:null}
+   <DataTable caption="Performance policy assignments" rows={assignments.data?.items||[]} rowKey={item=>item.assignment_id} columns={[
+    {key:"lab_id",label:"Lab"},{key:"policy_profile_id",label:"Profile"},{key:"revision_id",label:"Published revision"},
+    {key:"assigned_at",label:"Assigned",render:item=>formatDate(item.assigned_at)},{key:"assigned_by",label:"By"}
+   ]} emptyTitle="No assignments" emptyMessage="No performance policy is assigned in this Project."/>
+  </Section>
+ </div>;
+}
+
+export function PerformancePage({user}){
+ const [view,setView]=useState("policies");
+ return <div className="page-stack">
+  <div className="button-row" role="tablist" aria-label="Performance views">
+   <Button variant={view==="policies"?"default":"outline"} onClick={()=>setView("policies")} role="tab" aria-selected={view==="policies"}>Policy management</Button>
+   <Button variant={view==="history"?"default":"outline"} onClick={()=>setView("history")} role="tab" aria-selected={view==="history"}>Metric history</Button>
+  </div>
+  {view==="policies"?<PerformancePolicyWorkspace user={user}/>:<PerformanceHistoryPage/>}
+ </div>;
+}
+
 function DatabaseIcon(){return <Activity size={17}/>;}
 function CheckMetricIcon(){return <Activity size={17}/>;}
 

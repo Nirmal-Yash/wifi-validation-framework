@@ -23,6 +23,7 @@ const LEGACY_PERMISSION_ALIAS=Object.freeze({
  "members.manage":"admin",
  "credentials.read":"view","credentials.manage":"admin","credentials.verify":"execute",
  "configurations.read":"view","configurations.manage":"admin","configurations.publish":"admin",
+ "performance.read":"view","performance.manage":"admin","performance.publish":"admin",
 });
 export function canPerform(subject,permission){
  if(subject&&typeof subject==="object"&&Array.isArray(subject.permissions)){

@@ -79,6 +79,28 @@ describe("Runner API session and CSRF client",()=>{
   expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/waivers");
   expect(fetchMock.mock.calls[2][0]).toBe("/api/v1/sync/queue?limit=25");
  });
+ it("exposes the credential, configuration and performance policy API routes",async()=>{
+  const fetchMock=vi.fn()
+   .mockResolvedValueOnce(success({items:[]}))
+   .mockResolvedValueOnce(success({items:[]}))
+   .mockResolvedValueOnce(success({items:[]}))
+   .mockResolvedValueOnce(success({items:[]}))
+   .mockResolvedValueOnce(success({items:[]}));
+  vi.stubGlobal("fetch",fetchMock);
+  await api.credentials("project 1","ap/01");
+  await api.configurationSchemas("project 1");
+  await api.configurationProfiles("project 1");
+  await api.performancePolicies("project 1");
+  await api.performanceAssignments("project 1");
+  expect(fetchMock.mock.calls.map(call=>call[0])).toEqual([
+   "/api/v1/credentials?project_id=project+1&device_id=ap%2F01",
+   "/api/v1/configuration/schemas?project_id=project+1",
+   "/api/v1/configuration/profiles?project_id=project+1",
+   "/api/v1/performance/policies?project_id=project+1",
+   "/api/v1/performance/assignments?project_id=project+1",
+  ]);
+ });
+
  it("rejects non-JSON proxy errors instead of interpreting them as API data",async()=>{
   vi.stubGlobal("fetch",vi.fn().mockResolvedValueOnce(response(null,502,"text/html")));
   await expect(api.health()).rejects.toMatchObject({status:502,code:"INVALID_API_RESPONSE"});

@@ -83,7 +83,9 @@ const query=params=>{
  const search=new URLSearchParams();
  Object.entries(params||{}).forEach(([key,value])=>{if(value!==undefined&&value!==null&&value!=="")search.set(key,String(value));});
  const value=search.toString();return value?"?"+value:"";
-
+};
+export const api={
+ health:()=>request("/health"),readiness:()=>request("/readiness"),
  credentials:(projectId,deviceId)=>request("/credentials"+query({project_id:projectId,device_id:deviceId})),
  createCredential:payload=>request("/credentials",{method:"POST",body:JSON.stringify(payload)}),
  rotateCredential:(id,payload)=>request("/credentials/"+encode(id)+"/rotate",{method:"POST",body:JSON.stringify(payload)}),
@@ -101,10 +103,14 @@ const query=params=>{
  configurationAssignments:projectId=>request("/configuration/assignments"+query({project_id:projectId})),
  resolveConfiguration:payload=>request("/configuration/resolve",{method:"POST",body:JSON.stringify(payload)}),
  importConfigurationYaml:payload=>request("/configuration/import-yaml",{method:"POST",body:JSON.stringify(payload)}),
-
-};
-export const api={
- health:()=>request("/health"),readiness:()=>request("/readiness"),
+ performancePolicies:projectId=>request("/performance/policies"+query({project_id:projectId})),
+ createPerformancePolicy:payload=>request("/performance/policies",{method:"POST",body:JSON.stringify(payload)}),
+ performanceRevisions:id=>request("/performance/policies/"+encode(id)+"/revisions"),
+ createPerformanceRevision:(id,payload)=>request("/performance/policies/"+encode(id)+"/revisions",{method:"POST",body:JSON.stringify(payload)}),
+ publishPerformanceRevision:(id,payload)=>request("/performance/policies/"+encode(id)+"/publish",{method:"POST",body:JSON.stringify(payload)}),
+ assignPerformanceRevision:(id,payload)=>request("/performance/policies/"+encode(id)+"/assign",{method:"POST",body:JSON.stringify(payload)}),
+ performanceAssignments:projectId=>request("/performance/assignments"+query({project_id:projectId})),
+ evaluatePerformancePolicy:payload=>request("/performance/evaluate",{method:"POST",body:JSON.stringify(payload)}),
  login:(username,password)=>request("/auth/login",{method:"POST",body:JSON.stringify({username,password})}),
  logout:()=>request("/auth/logout",{method:"POST"}),me:()=>request("/auth/me"),
  activity:()=>request("/auth/activity",{method:"POST",body:"{}"}),

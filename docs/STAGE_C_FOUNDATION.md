@@ -20,7 +20,7 @@ Implemented: Project/Lab/Device-scoped profiles, validated draft revisions, cano
 
 ## P14 — Configuration Management Frontend
 
-Planned: Project/device/lab configuration workflows using the existing React shell, session and CSRF API client.
+Implemented: the React dashboard exposes Project-scoped credential records and lifecycle actions, schema registration, Project/Lab/Device configuration profiles, immutable revision history, publish/rollback, assignments, safe YAML import and effective-value/provenance preview. API client operations use the shared authenticated session, CSRF and idempotency handling. Assignment is not a provider deployment; device apply/reconciliation remains Stage D.
 
 ## P15 — Performance Policy Engine
 
@@ -28,7 +28,13 @@ Implemented: Project/Lab-scoped policy profiles, immutable versioned revisions, 
 
 ## P16 — Performance Policy Frontend
 
-Planned: editable topology-specific policy profiles, effective-threshold preview and Run selection integration. The existing historic performance view remains available.
+Implemented: the existing Performance page now retains metric history and adds a permission-gated Project/Lab policy workspace. Authorized users can create Project- or Lab-scoped profiles, edit JSON threshold definitions into draft revisions, inspect immutable history and hashes, publish revisions and assign them to Labs. The interface resolves the exact currently assigned published revision and displays its effective thresholds. Run launch can explicitly select the Lab-assigned revision; the API revalidates Project ownership, publication status and the exact Lab assignment, then passes the immutable revision ID and policy hash to the Runner environment and returns them in the accepted launch response. The frontend and API client use the existing session/CSRF/idempotency contract.
+
+## Remaining boundaries after Stage C
+
+- P10 includes Linux Secret Service and Windows Credential Manager secret storage. Windows private-directory ACL enforcement remains deliberately fail-closed and is not represented as implemented.
+- P13 assignment records desired configuration state only; provider deployment and reconciliation remain Stage D.
+- P16 selects and pins the exact published policy revision/hash for a Run. Evaluation against collected Run metrics, persistence in Run snapshots and policy-result evidence remain the Stage E P28 integration gate; no synthetic result is claimed here.
 
 ## Continuity and acceptance
 

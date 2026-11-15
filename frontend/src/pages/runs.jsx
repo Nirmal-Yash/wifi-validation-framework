@@ -1,4 +1,4 @@
-import React,{useMemo,useState} from "react";
+import React,{useEffect,useMemo,useState} from "react";
 import {Filter,Play,RotateCcw,Search} from "lucide-react";
 import {api} from "../api";
 import {navigate} from "../router";
@@ -10,9 +10,16 @@ import {Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogT
 
 export default function RunsPage({user}){
  const[filters,setFilters]=useState({project_id:"",firmware:"",lab:"",profile:"",status:"",outcome:"",page:1});
- const[form,setForm]=useState({firmware_version:"v1.0",tests:"",project_id:"",lab_id:""}),[showLaunch,setShowLaunch]=useState(()=>new URLSearchParams(window.location.search).get("launch")==="1");
+ const[form,setForm]=useState({firmware_version:"v1.0",tests:"",project_id:"",lab_id:"",performance_policy_revision_id:""}),[showLaunch,setShowLaunch]=useState(()=>new URLSearchParams(window.location.search).get("launch")==="1");
  const workspaceProjects=useAsyncLoader(()=>api.workspaceProjects(),[],{queryKey:"run-visible-projects"});
  const workspaceLabs=useAsyncLoader(()=>form.project_id?api.workspaceLabs(form.project_id):Promise.resolve({items:[]}),[form.project_id],{enabled:showLaunch&&Boolean(form.project_id),queryKey:"run-launch-labs"});
+ const workspacePerformanceAssignments=useAsyncLoader(()=>form.project_id?api.performanceAssignments(form.project_id):Promise.resolve({items:[]}),[form.project_id],{enabled:showLaunch&&Boolean(form.project_id),queryKey:"run-launch-performance-assignments"});
+ const selectedPerformanceAssignment=(workspacePerformanceAssignments.data?.items||[]).find(item=>item.lab_id===form.lab_id)||null;
+ const runPolicyProfiles=useAsyncLoader(()=>form.project_id?api.performancePolicies(form.project_id):Promise.resolve({items:[]}),[form.project_id],{enabled:showLaunch&&Boolean(form.project_id),queryKey:"run-launch-performance-profiles"});
+ const runPolicyRevisions=useAsyncLoader(()=>selectedPerformanceAssignment?api.performanceRevisions(selectedPerformanceAssignment.policy_profile_id):Promise.resolve({items:[]}),[selectedPerformanceAssignment?.policy_profile_id],{enabled:showLaunch&&Boolean(selectedPerformanceAssignment?.policy_profile_id),queryKey:"run-launch-performance-revisions"});
+ const selectedRunPolicyRevision=(runPolicyRevisions.data?.items||[]).find(item=>item.revision_id===form.performance_policy_revision_id)||null;
+ const assignedRunPolicyProfile=(runPolicyProfiles.data?.items||[]).find(item=>item.policy_profile_id===selectedPerformanceAssignment?.policy_profile_id)||null;
+ useEffect(()=>{setForm(current=>({...current,performance_policy_revision_id:selectedPerformanceAssignment?.revision_id||""}));},[selectedPerformanceAssignment?.revision_id]);
  const loader=useAsyncLoader(()=>api.runs({project_id:filters.project_id,firmware:filters.firmware,lab:filters.lab,profile:filters.profile,status:filters.status,outcome:filters.outcome,page:filters.page,limit:25}),[filters.project_id,filters.firmware,filters.lab,filters.profile,filters.status,filters.outcome,filters.page],{refreshMs:10000});
  const mutation=useMutation(),canLaunch=canPerform(user,"runs.execute");
  const statusOptions=useMemo(()=>["","QUEUED","PREPARING","LAB_HEALTH_CHECK","RUNNING","FINALIZING","COMPLETED","FAILED","LAB_FAILED","CANCELLED","ABORTED"],[]);
@@ -25,6 +32,7 @@ export default function RunsPage({user}){
    tests:form.tests.split(",").map(item=>item.trim()).filter(Boolean),
    project_id:form.project_id,
    lab_id:form.lab_id,
+   performance_policy_revision_id:form.performance_policy_revision_id||null,
   }));
   setShowLaunch(false);
   await loader.reload();
@@ -63,17 +71,32 @@ export default function RunsPage({user}){
     <DialogHeader><DialogTitle>Start validation Run</DialogTitle><DialogDescription>The Runner validates authorization, configuration and idempotency. This form submits the requested execution scope.</DialogDescription></DialogHeader>
     <form className="form-stack" onSubmit={startRun}>
      <Field label="Organization Project" required hint="Choose a Project where your account has Run execution permission.">
-      <select value={form.project_id} onChange={event=>setForm(current=>({...current,project_id:event.target.value,lab_id:""}))} required disabled={workspaceProjects.loading}>
+      <select value={form.project_id} onChange={event=>setForm(current=>({...current,project_id:event.target.value,lab_id:"",performance_policy_revision_id:""}))} required disabled={workspaceProjects.loading}>
        <option value="">Select Project</option>
        {(workspaceProjects.data?.items||[]).filter(item=>item.status==="ACTIVE").map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}
       </select>
      </Field>
      <Field label="Lab" required hint={form.project_id?(workspaceLabs.loading?"Loading Labs…":"Choose an active Lab belonging to the selected Project."):"Select a Project first."}>
-      <select value={form.lab_id} onChange={event=>setForm(current=>({...current,lab_id:event.target.value}))} required disabled={!form.project_id||workspaceLabs.loading}>
+      <select value={form.lab_id} onChange={event=>setForm(current=>({...current,lab_id:event.target.value,performance_policy_revision_id:""}))} required disabled={!form.project_id||workspaceLabs.loading}>
        <option value="">Select Lab</option>
        {(workspaceLabs.data?.items||[]).filter(item=>item.status==="ACTIVE").map(item=><option key={item.lab_id} value={item.lab_id}>{item.name} · {item.provider_id}</option>)}
       </select>
      </Field>
+     <Field label="Performance policy" hint="Optional. Only the published revision assigned to this Lab can be selected for a Run.">
+      <select value={form.performance_policy_revision_id} onChange={event=>setForm(current=>({...current,performance_policy_revision_id:event.target.value}))} disabled={!selectedPerformanceAssignment||runPolicyRevisions.loading}>
+       <option value="">No performance policy</option>
+       {selectedPerformanceAssignment&&selectedRunPolicyRevision?<option value={selectedPerformanceAssignment.revision_id}>{assignedRunPolicyProfile?.name||"Assigned policy"} · revision {selectedRunPolicyRevision.revision_number}</option>:null}
+      </select>
+     </Field>
+     {workspacePerformanceAssignments.error?<InlineNotice tone="danger">Performance policy assignments could not be loaded: {workspacePerformanceAssignments.error.message}</InlineNotice>:null}
+     {selectedPerformanceAssignment&&runPolicyRevisions.error?<InlineNotice tone="danger">Assigned policy revision could not be loaded: {runPolicyRevisions.error.message}</InlineNotice>:null}
+     {form.performance_policy_revision_id&&selectedRunPolicyRevision?<Section title="Effective Run thresholds" subtitle={"Published policy revision "+selectedRunPolicyRevision.revision_number+" · SHA-256 "+selectedRunPolicyRevision.policy_hash}>
+      <DataTable caption="Selected Run performance thresholds" rows={selectedRunPolicyRevision.definition?.metrics||[]} rowKey={item=>item.name} columns={[
+       {key:"name",label:"Metric"},{key:"unit",label:"Unit"},{key:"direction",label:"Direction"},
+       {key:"target",label:"Target",align:"right"},{key:"warning",label:"Warning",align:"right"},{key:"failure",label:"Failure",align:"right"},
+       {key:"aggregate",label:"Aggregate"},{key:"minimum_samples",label:"Min samples",align:"right"}
+      ]} emptyTitle="No thresholds" emptyMessage="The selected revision has no metric thresholds."/>
+     </Section>:null}
      {workspaceProjects.error?<InlineNotice tone="danger">Unable to load your assigned Projects: {workspaceProjects.error.message}</InlineNotice>:null}
      {workspaceProjects.data&&!(workspaceProjects.data.items||[]).some(item=>item.status==="ACTIVE")?<InlineNotice tone="warning">No active Project is assigned to this account. Create or join a Project in Projects & labs before launching a Run.</InlineNotice>:null}
      {workspaceLabs.error?<InlineNotice tone="danger">Unable to load Labs for this Project: {workspaceLabs.error.message}</InlineNotice>:null}
