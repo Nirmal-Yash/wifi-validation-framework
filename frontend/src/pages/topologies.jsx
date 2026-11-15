@@ -36,6 +36,7 @@ export default function TopologyStudioPage({user}){
  const activeLabId=activeProfile?.scope_type==="LAB"?activeProfile.lab_id:"";
  const [bindingForm,setBindingForm]=useState({endpoint_url:"http://127.0.0.1:3080",gns3_project_id:"",controller_device_id:"",credential_id:""});
  const providerBinding=useAsyncLoader(()=>activeLabId?api.topologyProviderBinding(activeLabId):Promise.resolve({binding:null}),[activeLabId],{enabled:Boolean(activeLabId),queryKey:"topology-provider-binding"});
+ const applyHistory=useAsyncLoader(()=>profileId&&activeLabId?api.topologyApplies(profileId):Promise.resolve({items:[]}),[profileId,activeLabId],{enabled:Boolean(profileId&&activeLabId),queryKey:"topology-apply-history"});
  const providerDevices=useAsyncLoader(()=>activeLabId&&projectId?api.devices(projectId,activeLabId,"ACTIVE"):Promise.resolve({items:[]}),[activeLabId,projectId],{enabled:Boolean(activeLabId&&projectId),queryKey:"topology-provider-devices"});
  const providerCredentials=useAsyncLoader(()=>bindingForm.controller_device_id?api.credentials(projectId,bindingForm.controller_device_id):Promise.resolve({items:[]}),[projectId,bindingForm.controller_device_id],{enabled:Boolean(projectId&&bindingForm.controller_device_id),queryKey:"topology-provider-credentials"});
  const [providerCatalog,setProviderCatalog]=useState(null);
@@ -238,11 +239,15 @@ export default function TopologyStudioPage({user}){
    setLastApply(result);
    const [planResult,reconcileResult]=await Promise.all([
     api.planTopologyApply(profileId,{revision_id:revisionId}).catch(()=>null),
-    api.reconcileTopology(profileId,revisionId).catch(()=>null)
+    api.reconcileTopology(profileId,revisionId).catch(()=>null),
+    applyHistory.reload().catch(()=>null)
    ]);
    if(planResult)setProviderPlan(planResult);
    if(reconcileResult)setReconciliation(reconcileResult);
    setConfirmApply(false);
+  }else{
+   // A controller timeout can still leave a recorded PARTIAL operation.
+   await applyHistory.reload().catch(()=>null);
   }
  }
  async function refreshReconciliation(){
@@ -447,6 +452,14 @@ export default function TopologyStudioPage({user}){
      <p><StatusBadge value={lastApply.status}/> {lastApply.result?.summary?.created_nodes||0} nodes and {lastApply.result?.summary?.created_links||0} links created</p>
      <pre className="code-block">{JSON.stringify(lastApply.result,null,2)}</pre>
     </div>:null}
+    {applyHistory.error?<InlineNotice tone="danger">{applyHistory.error.message}</InlineNotice>:null}
+    <DataTable caption="Topology apply and recovery history" rows={applyHistory.data?.items||[]} rowKey={item=>item.apply_id} columns={[
+     {key:"apply_id",label:"Apply record",render:item=><code>{item.apply_id}</code>},
+     {key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>},
+     {key:"revision_id",label:"Revision"},
+     {key:"created_at",label:"Started",render:item=>new Date(item.created_at).toLocaleString()},
+     {key:"completed_at",label:"Completed",render:item=>item.completed_at?new Date(item.completed_at).toLocaleString():"—"}
+    ]} emptyTitle="No topology applies" emptyMessage="Dry-run plans do not create history. Confirmed provider operations are retained here, including partial results."/>
    </Section>:null}
    {canManage?<Section title="Save immutable topology revision" subtitle="Saving creates a new draft with canonical JSON and SHA-256. Existing revisions are never overwritten.">
     <div className="button-row">

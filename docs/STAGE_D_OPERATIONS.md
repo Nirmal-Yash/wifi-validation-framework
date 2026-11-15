@@ -144,4 +144,8 @@ The adapter does not deploy general router configuration, firmware, arbitrary sh
 - GET /api/v1/configuration/devices/{device_id}/deployments
 
 All mutating endpoints continue to use the dashboard's CSRF and idempotency
-controls. API error payloads do not include provider response bodies or secrets.
+controls. Binding changes, apply and node lifecycle operations serialize on the
+same Lab lock. Apply history is visible in the Topology Studio and retains PARTIAL
+outcomes when a controller timeout makes the result uncertain; reconcile observed
+provider state before retrying an interrupted operation. API errors do not include
+provider response bodies or secrets.

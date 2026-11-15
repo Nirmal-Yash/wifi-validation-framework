@@ -55,6 +55,16 @@ class TopologyApplyService:
             raise TopologyApplyError("actor must contain 1 to 128 printable characters")
         return actor
 
+    def _acquire_lab_lease(self, lab_id: str, owner: str, lease_seconds: float):
+        try:
+            return self.resource_lock_manager.acquire(
+                "lab:" + lab_id, owner[:128], timeout=0.0, lease_seconds=lease_seconds,
+            )
+        except (ResourceLockError, OSError, ValueError) as exc:
+            raise TopologyApplyConflict(
+                "Lab is locked by another provider operation; no provider changes were started"
+            ) from exc
+
     @staticmethod
     def _json(value: object) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
@@ -157,51 +167,83 @@ class TopologyApplyService:
                 raise
             raise TopologyApplyError("GNS3 binding verification failed; check the private endpoint and OS-vault credential") from exc
 
-        now = self._now()
-        with self.database.transaction(immediate=True) as connection:
-            existing = connection.execute(
-                "SELECT binding_id FROM gns3_lab_bindings WHERE lab_id=?", (lab_id,)
-            ).fetchone()
-            if existing:
-                binding_id = existing["binding_id"]
-                connection.execute(
-                    """UPDATE gns3_lab_bindings SET project_id=?,endpoint_url=?,gns3_project_id=?,
-                       controller_device_id=?,credential_id=?,status='ACTIVE',updated_at=?,updated_by=?
-                       WHERE lab_id=?""",
-                    (lab["project_id"], endpoint, gns3_project_id, controller_device_id,
-                     credential_id, now, actor, lab_id),
-                )
-                action = "GNS3_LAB_BINDING_UPDATED"
-            else:
-                binding_id = "gnb_" + secrets.token_hex(12)
-                connection.execute(
-                    """INSERT INTO gns3_lab_bindings(
-                       binding_id,project_id,lab_id,endpoint_url,gns3_project_id,controller_device_id,
-                       credential_id,status,created_at,updated_at,created_by,updated_by
-                       ) VALUES(?,?,?,?,?,?,?,'ACTIVE',?,?,?,?)""",
-                    (binding_id, lab["project_id"], lab_id, endpoint, gns3_project_id,
-                     controller_device_id, credential_id, now, now, actor, actor),
-                )
-                action = "GNS3_LAB_BINDING_CREATED"
-            self._audit(connection, actor, action, "GNS3_LAB_BINDING", binding_id,
-                        {"project_id": lab["project_id"], "lab_id": lab_id,
-                         "gns3_project_id": gns3_project_id, "controller_device_id": controller_device_id})
-        return self.get_binding(lab_id) or {}
+        # Commit binding metadata only when no provider mutation is active on
+        # this Lab. A controller cannot be swapped halfway through an apply.
+        lease = self._acquire_lab_lease(lab_id, "topology-bind:" + actor, 300.0)
+        try:
+            now = self._now()
+            with self.database.transaction(immediate=True) as connection:
+                current_device = connection.execute(
+                    "SELECT project_id,lab_id,host,status FROM devices WHERE device_id=?",
+                    (controller_device_id,),
+                ).fetchone()
+                current_credential = connection.execute(
+                    """SELECT project_id,device_id,credential_type,status,username
+                       FROM managed_credentials WHERE credential_id=?""",
+                    (credential_id,),
+                ).fetchone()
+                if (
+                    current_device is None or current_device["project_id"] != lab["project_id"]
+                    or current_device["lab_id"] != lab_id or current_device["host"] != device["host"]
+                    or current_device["status"] != "ACTIVE"
+                    or current_credential is None or current_credential["project_id"] != lab["project_id"]
+                    or current_credential["device_id"] != controller_device_id
+                    or current_credential["credential_type"] != "API_TOKEN"
+                    or current_credential["status"] != "ACTIVE" or not current_credential["username"]
+                ):
+                    raise TopologyApplyConflict("controller Device or API_TOKEN scope changed during binding verification")
+                existing = connection.execute(
+                    "SELECT binding_id FROM gns3_lab_bindings WHERE lab_id=?", (lab_id,)
+                ).fetchone()
+                if existing:
+                    binding_id = existing["binding_id"]
+                    connection.execute(
+                        """UPDATE gns3_lab_bindings SET project_id=?,endpoint_url=?,gns3_project_id=?,
+                           controller_device_id=?,credential_id=?,status='ACTIVE',updated_at=?,updated_by=?
+                           WHERE lab_id=?""",
+                        (lab["project_id"], endpoint, gns3_project_id, controller_device_id,
+                         credential_id, now, actor, lab_id),
+                    )
+                    action = "GNS3_LAB_BINDING_UPDATED"
+                else:
+                    binding_id = "gnb_" + secrets.token_hex(12)
+                    connection.execute(
+                        """INSERT INTO gns3_lab_bindings(
+                           binding_id,project_id,lab_id,endpoint_url,gns3_project_id,controller_device_id,
+                           credential_id,status,created_at,updated_at,created_by,updated_by
+                           ) VALUES(?,?,?,?,?,?,?,'ACTIVE',?,?,?,?)""",
+                        (binding_id, lab["project_id"], lab_id, endpoint, gns3_project_id,
+                         controller_device_id, credential_id, now, now, actor, actor),
+                    )
+                    action = "GNS3_LAB_BINDING_CREATED"
+                self._audit(connection, actor, action, "GNS3_LAB_BINDING", binding_id,
+                            {"project_id": lab["project_id"], "lab_id": lab_id,
+                             "gns3_project_id": gns3_project_id, "controller_device_id": controller_device_id})
+            return self.get_binding(lab_id) or {}
+        finally:
+            lease.release()
 
     def archive_binding(self, lab_id: str, *, actor: str) -> dict:
         actor = self._actor(actor)
-        binding = self.get_binding(lab_id)
-        if binding is None:
-            raise TopologyApplyNotFound("active GNS3 binding not found")
-        now = self._now()
-        with self.database.transaction(immediate=True) as connection:
-            connection.execute(
-                "UPDATE gns3_lab_bindings SET status='ARCHIVED',updated_at=?,updated_by=? WHERE lab_id=? AND status='ACTIVE'",
-                (now, actor, lab_id),
-            )
-            self._audit(connection, actor, "GNS3_LAB_BINDING_ARCHIVED", "GNS3_LAB_BINDING",
-                        binding["binding_id"], {"project_id": binding["project_id"], "lab_id": lab_id})
-        return self.get_binding(lab_id, include_archived=True) or {}
+        lease = self._acquire_lab_lease(lab_id, "topology-binding-archive:" + actor, 300.0)
+        try:
+            binding = self.get_binding(lab_id)
+            if binding is None:
+                raise TopologyApplyNotFound("active GNS3 binding not found")
+            now = self._now()
+            with self.database.transaction(immediate=True) as connection:
+                cursor = connection.execute(
+                    """UPDATE gns3_lab_bindings SET status='ARCHIVED',updated_at=?,updated_by=?
+                       WHERE lab_id=? AND status='ACTIVE'""",
+                    (now, actor, lab_id),
+                )
+                if cursor.rowcount != 1:
+                    raise TopologyApplyNotFound("active GNS3 binding not found")
+                self._audit(connection, actor, "GNS3_LAB_BINDING_ARCHIVED", "GNS3_LAB_BINDING",
+                            binding["binding_id"], {"project_id": binding["project_id"], "lab_id": lab_id})
+            return self.get_binding(lab_id, include_archived=True) or {}
+        finally:
+            lease.release()
 
     def _profile_revision(self, profile_id: str, revision_id: str):
         profile = self.topology_studio.get_profile(profile_id)
@@ -328,6 +370,12 @@ class TopologyApplyService:
             mapped_id = mapping.get("provider_resource_id") if mapping else None
             remote = provider_nodes.get(mapped_id)
             managed_name = self._provider_name(profile["profile_id"], logical_id)
+            if remote is not None and remote.get("template_id") != node["template_id"]:
+                conflicts.append({
+                    "resource_id": logical_id,
+                    "reason": "mapped provider node template no longer matches the published revision",
+                })
+                continue
             if remote is None:
                 candidates = [item for item in snapshot["nodes"] if item.get("name") == managed_name]
                 if len(candidates) == 1 and candidates[0].get("template_id") == node["template_id"]:
@@ -478,6 +526,7 @@ class TopologyApplyService:
         }
         logical_to_provider = {}
         missing_nodes = []
+        mismatched_nodes = []
         for node in revision["definition"]["nodes"]:
             mapping = mappings.get(("NODE", node["id"]))
             provider_id = mapping.get("provider_resource_id") if mapping else None
@@ -485,6 +534,8 @@ class TopologyApplyService:
                 missing_nodes.append(node["id"])
             else:
                 logical_to_provider[node["id"]] = provider_id
+                if provider_nodes[provider_id].get("template_id") != node["template_id"]:
+                    mismatched_nodes.append(node["id"])
         actual_link_signatures = {
             self._signature(item): item for item in snapshot["links"] if self._signature(item) is not None
         }
@@ -510,13 +561,14 @@ class TopologyApplyService:
         return {
             "profile_id": profile["profile_id"], "revision_id": revision["revision_id"],
             "revision_sha256": revision["content_sha256"], "lab_id": profile["lab_id"],
-            "status": "IN_SYNC" if not missing_nodes and not missing_links else "DRIFTED",
+            "status": "IN_SYNC" if not missing_nodes and not missing_links and not mismatched_nodes else "DRIFTED",
             "desired_node_count": len(revision["definition"]["nodes"]),
             "desired_link_count": len(revision["definition"]["links"]),
             "observed_managed_node_count": len(mapped_node_ids),
             "observed_provider_node_count": len(snapshot["nodes"]),
             "observed_provider_link_count": len(snapshot["links"]),
             "missing_nodes": missing_nodes, "missing_links": missing_links,
+            "mismatched_nodes": mismatched_nodes,
             "unmanaged_provider_node_count": len(snapshot["nodes"]) - len(mapped_node_ids),
         }
 
@@ -572,7 +624,11 @@ class TopologyApplyService:
         if not plan["can_apply"]:
             raise TopologyApplyConflict("dry-run found provider conflicts; no provider changes were made", plan=plan)
         apply_id = self._insert_apply(profile, revision, actor, plan, before)
-        operations = {"created_nodes": [], "recovered_nodes": [], "created_links": [], "existing_links": [], "conflicts": []}
+        operations = {
+            "attempted_nodes": [], "attempted_links": [],
+            "created_nodes": [], "recovered_nodes": [], "created_links": [],
+            "existing_links": [], "conflicts": [],
+        }
         current_snapshot = before
         try:
             for adopted in plan["adopt_nodes"]:
@@ -582,16 +638,17 @@ class TopologyApplyService:
                 )
                 operations["recovered_nodes"].append(adopted["logical_node_id"])
             for item in plan["nodes_to_create"]:
+                operations["attempted_nodes"].append(item["logical_node_id"])
                 remote = provider.create_node(
                     binding["gns3_project_id"], item["template_id"], name=item["provider_name"],
                     x=item["x"], y=item["y"],
                 )
                 provider_node_id = remote["node_id"]
+                operations["created_nodes"].append(item["logical_node_id"])
                 self._save_mapping(
                     profile=profile, resource_type="NODE", logical_id=item["logical_node_id"],
                     provider_resource_id=provider_node_id, template_id=item["template_id"],
                 )
-                operations["created_nodes"].append(item["logical_node_id"])
 
             current_snapshot = self._snapshot(provider, binding)
             refreshed_plan, _ = self._analyze(profile, revision, binding, current_snapshot)
@@ -606,6 +663,7 @@ class TopologyApplyService:
             if refreshed_plan["nodes_to_create"]:
                 operations["conflicts"].append({"reason": "one or more provider nodes were not observable after creation"})
             for link in refreshed_plan["links_to_create"] if not operations["conflicts"] else []:
+                operations["attempted_links"].append(link["logical_link_id"])
                 remote = provider.create_link(
                     binding["gns3_project_id"],
                     source_node_id=link["source_node_id"], source_adapter=link["source_adapter"],
@@ -613,12 +671,12 @@ class TopologyApplyService:
                     target_adapter=link["target_adapter"], target_port=link["target_port"],
                 )
                 provider_link_id = remote.get("link_id")
+                operations["created_links"].append(link["logical_link_id"])
                 if isinstance(provider_link_id, str) and provider_link_id:
                     self._save_mapping(
                         profile=profile, resource_type="LINK",
                         logical_id=link["logical_link_id"], provider_resource_id=provider_link_id,
                     )
-                operations["created_links"].append(link["logical_link_id"])
 
             current_snapshot = self._snapshot(provider, binding)
             reconciliation = self._reconcile(profile, revision, current_snapshot)
@@ -644,11 +702,18 @@ class TopologyApplyService:
                 current_snapshot = self._snapshot(provider, binding)
             except Exception:
                 current_snapshot = {"observation": "unavailable"}
-            status = "PARTIAL" if operations["created_nodes"] or operations["recovered_nodes"] or operations["created_links"] else "FAILED"
+            attempted = operations["attempted_nodes"] or operations["attempted_links"]
+            completed = operations["created_nodes"] or operations["recovered_nodes"] or operations["created_links"]
+            status = "PARTIAL" if attempted or completed else "FAILED"
             result = {
-                "summary": {"error_type": type(exc).__name__, "completed_operations": (
-                    len(operations["created_nodes"]) + len(operations["recovered_nodes"]) + len(operations["created_links"])
-                )},
+                "summary": {
+                    "error_type": type(exc).__name__,
+                    "completed_operations": (
+                        len(operations["created_nodes"]) + len(operations["recovered_nodes"]) + len(operations["created_links"])
+                    ),
+                    "uncertain_operations": len(operations["attempted_nodes"]) + len(operations["attempted_links"])
+                    - len(operations["created_nodes"]) - len(operations["created_links"]),
+                },
                 "operations": operations,
                 "error": "provider operation failed; inspect the apply record and reconcile before retrying",
             }
@@ -691,6 +756,8 @@ class TopologyApplyService:
         profile = self.topology_studio.get_profile(profile_id)
         if profile is None:
             raise TopologyApplyNotFound("topology profile not found")
+        if profile["status"] != "ACTIVE":
+            raise TopologyApplyConflict("provider node operations require an active topology profile")
         if profile["scope_type"] != "LAB" or not profile["lab_id"]:
             raise TopologyApplyConflict("provider node operations require a Lab-scoped topology profile")
         binding = self.get_binding(profile["lab_id"])
@@ -724,6 +791,10 @@ class TopologyApplyService:
                 after = next((item for item in refreshed if item.get("node_id") == mapping["provider_resource_id"]), None)
                 if after is None:
                     raise TopologyApplyError("provider node disappeared during the explicit lifecycle operation")
+                observed_state = str(after.get("status", "")).lower()
+                accepted_states = {"started", "running"} if action == "START" else {"stopped", "suspended"}
+                if observed_state not in accepted_states:
+                    raise TopologyApplyError("provider node did not reach the explicitly requested lifecycle state")
                 return {"logical_node_id": logical_node_id, "provider_node_id": mapping["provider_resource_id"],
                         "action": action, "status": after.get("status"), "already_in_requested_state": already}
             result = self._with_provider(binding, actor, operate)

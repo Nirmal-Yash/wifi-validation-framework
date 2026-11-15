@@ -307,6 +307,19 @@ def test_topology_provider_dashboard_routes_are_wired_and_idempotent(apply_stack
     assert current_binding.status_code == 200
     assert current_binding.get_json()["data"]["binding"]["binding_id"] == binding["binding_id"]
 
+    rebound = client.put(
+        "/api/v1/labs/lab-1/provider-binding",
+        json={
+            "endpoint_url": binding["endpoint_url"],
+            "gns3_project_id": binding["gns3_project_id"],
+            "controller_device_id": binding["controller_device_id"],
+            "credential_id": binding["credential_id"],
+        },
+        headers={"Idempotency-Key": "topology-binding-put-01"},
+    )
+    assert rebound.status_code == 200
+    assert rebound.get_json()["data"]["binding"]["binding_id"] == binding["binding_id"]
+
     catalog = client.get("/api/v1/labs/lab-1/provider-catalog")
     assert catalog.status_code == 200
     assert len(catalog.get_json()["data"]["catalog"]["templates"]) == 2
@@ -379,3 +392,66 @@ def test_topology_provider_dashboard_routes_are_wired_and_idempotent(apply_stack
     assert archived.status_code == 200
     assert archived.get_json()["data"]["binding"]["status"] == "ARCHIVED"
     assert client.get("/api/v1/labs/lab-1/provider-binding").get_json()["data"]["binding"] is None
+
+
+def test_template_drift_blocks_apply_and_is_reported_by_reconciliation(apply_stack):
+    _database, _store, service, profile, revision, _binding, state = apply_stack
+    service.apply(
+        profile["profile_id"], revision["revision_id"],
+        expected_sha256=revision["content_sha256"], confirmed=True, actor="owner",
+    )
+    state["nodes"][0]["template_id"] = "unexpected-template"
+    planned = service.plan(profile["profile_id"], revision["revision_id"], actor="owner")["plan"]
+    assert planned["can_apply"] is False
+    assert any("template" in item["reason"] for item in planned["conflicts"])
+    observed = service.reconcile(profile["profile_id"], revision["revision_id"], actor="owner")
+    assert observed["status"] == "DRIFTED"
+    assert observed["mismatched_nodes"] == ["router-a"]
+
+
+def test_provider_create_timeout_is_recorded_partial_and_recoverable(apply_stack, monkeypatch):
+    import lib.services.topology_apply as apply_module
+
+    _database, _store, service, profile, revision, _binding, state = apply_stack
+
+    class TimeoutAfterCreate(FakeGNS3Provider):
+        def create_node(self, project_id, template_id, *, name, x, y):
+            super().create_node(project_id, template_id, name=name, x=x, y=y)
+            raise TimeoutError("simulated controller response timeout")
+
+    monkeypatch.setattr(apply_module, "GNS3Provider", TimeoutAfterCreate)
+    with pytest.raises(TopologyApplyError, match="topology application stopped safely"):
+        service.apply(
+            profile["profile_id"], revision["revision_id"],
+            expected_sha256=revision["content_sha256"], confirmed=True, actor="owner",
+        )
+
+    record = service.list_applies("lab-1")[0]
+    assert record["status"] == "PARTIAL"
+    assert record["result"]["operations"]["attempted_nodes"] == ["router-a"]
+    assert record["result"]["operations"]["created_nodes"] == []
+    assert len(record["observed_after"]["nodes"]) == 1
+
+    monkeypatch.setattr(apply_module, "GNS3Provider", FakeGNS3Provider)
+    recovered = service.plan(profile["profile_id"], revision["revision_id"], actor="owner")["plan"]
+    assert [item["logical_node_id"] for item in recovered["adopt_nodes"]] == ["router-a"]
+    assert [item["logical_node_id"] for item in recovered["nodes_to_create"]] == ["switch-a"]
+
+
+def test_node_lifecycle_requires_verified_provider_state(apply_stack, monkeypatch):
+    import lib.services.topology_apply as apply_module
+
+    _database, _store, service, profile, revision, _binding, state = apply_stack
+    service.apply(
+        profile["profile_id"], revision["revision_id"],
+        expected_sha256=revision["content_sha256"], confirmed=True, actor="owner",
+    )
+
+    class DoesNotStart(FakeGNS3Provider):
+        def start_node(self, project_id, node_id):
+            return {}
+
+    monkeypatch.setattr(apply_module, "GNS3Provider", DoesNotStart)
+    with pytest.raises(TopologyApplyError, match="did not reach the explicitly requested lifecycle state"):
+        service.operate_node(profile["profile_id"], "router-a", action="START", actor="owner")
+    assert state["nodes"][0]["status"] == "stopped"
