@@ -372,6 +372,13 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.execute("DROP TRIGGER trg_runs_project_scope_insert")
         connection.execute("DROP TRIGGER trg_runs_project_scope_update")
         connection.execute("DROP TRIGGER trg_projects_prevent_delete_with_runs")
+        # Remove the newer pipeline objects before simulating the pre-project schema;
+        # the P26 scope trigger deliberately references runs.project_id.
+        connection.execute("DROP TABLE pipeline_step_attempts")
+        connection.execute("DROP TABLE pipeline_steps")
+        connection.execute("DROP TABLE pipeline_executions")
+        connection.execute("DROP TABLE pipeline_revisions")
+        connection.execute("DROP TABLE pipeline_definitions")
         connection.execute("ALTER TABLE runs DROP COLUMN project_id")
         connection.execute("DROP TABLE labs")
         connection.execute("DROP TABLE projects")
