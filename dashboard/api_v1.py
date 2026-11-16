@@ -23,6 +23,7 @@ from lib.services.wifi_lab_provisioning import (
     WiFiLabProvisioningConflict, WiFiLabProvisioningError,
     WiFiLabProvisioningNotFound, WiFiLabProvisioningService,
 )
+from lib.services.pipeline_service import PipelineConflict, PipelineError, PipelineNotFound, PipelineService
 from lib.services.performance_policy_service import (
     PerformancePolicyEngine, PerformancePolicyError, PerformancePolicyNotFound, PerformancePolicyService,
 )
@@ -79,6 +80,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     wifi_lab_provisioner=WiFiLabProvisioningService(
         query.database,credential_vault,resource_lock_manager=topology_apply.resource_lock_manager,
     )
+    pipeline_service=PipelineService(query.database)
     organization_repository=SQLiteOrganizationRepository(query.database)
     project_repository=SQLiteProjectRepository(query.database)
     lab_repository=SQLiteLabRepository(query.database)
@@ -2638,6 +2640,233 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             return error("WIFI_LAB_PROVISIONING_CONFLICT",str(exc),409)
         except WiFiLabProvisioningError as exc:
             return error("WIFI_LAB_PROVISIONING_FAILED",str(exc),502)
+        idempotency_store_response(scope,key,request_hash,result,200)
+        return ok(result)
+
+
+    @api.get("/pipelines")
+    def list_pipelines():
+        project_id=str(request.args.get("project_id","")).strip()
+        if not project_id:
+            return error("INVALID_REQUEST","project_id query parameter is required",400)
+        denied=require_permission("pipelines.read",project_id=project_id)
+        if denied is not None:
+            return denied
+        lab_id=str(request.args.get("lab_id","")).strip() or None
+        if lab_id:
+            lab=lab_repository.get(lab_id)
+            if lab is None or lab.project_id!=project_id:
+                return error("NOT_FOUND","Lab not found in this Project",404)
+        return ok({"items":pipeline_service.list_pipelines(project_id,lab_id=lab_id)})
+
+    @api.post("/pipelines")
+    def create_pipeline():
+        payload=request.get_json(silent=True) or {}
+        if not isinstance(payload,dict):
+            return error("INVALID_REQUEST","pipeline payload must be a JSON object",400)
+        project_id=str(payload.get("project_id","")).strip()
+        denied=require_permission("pipelines.manage",project_id=project_id)
+        if denied is not None:
+            return denied
+        scope="/api/v1/pipelines"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            result=pipeline_service.create_pipeline(
+                project_id=project_id,lab_id=payload.get("lab_id"),
+                name=payload.get("name"),description=payload.get("description",""),
+                definition=payload.get("definition"),
+                actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except PipelineNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except PipelineConflict as exc:
+            return error("PIPELINE_CONFLICT",str(exc),409)
+        except PipelineError as exc:
+            return error("INVALID_PIPELINE",str(exc),400)
+        idempotency_store_response(scope,key,request_hash,result,201)
+        return ok(result),201
+
+    @api.get("/pipelines/<pipeline_id>")
+    def get_pipeline(pipeline_id):
+        item=pipeline_service.get_pipeline(pipeline_id)
+        if item is None:
+            return error("NOT_FOUND","Pipeline not found",404)
+        denied=require_permission("pipelines.read",project_id=item["project_id"])
+        if denied is not None:
+            return denied
+        return ok({"pipeline":item,"revisions":pipeline_service.list_revisions(pipeline_id)})
+
+    @api.post("/pipelines/<pipeline_id>/revisions")
+    def create_pipeline_revision(pipeline_id):
+        profile=pipeline_service.get_pipeline(pipeline_id)
+        if profile is None:
+            return error("NOT_FOUND","Pipeline not found",404)
+        denied=require_permission("pipelines.manage",project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        payload=request.get_json(silent=True) or {}
+        if not isinstance(payload,dict):
+            return error("INVALID_REQUEST","revision payload must be a JSON object",400)
+        scope="/api/v1/pipelines/"+pipeline_id+"/revisions"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,{"definition":payload.get("definition")})
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            revision=pipeline_service.create_revision(
+                pipeline_id,definition=payload.get("definition"),
+                actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except PipelineNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except PipelineConflict as exc:
+            return error("PIPELINE_CONFLICT",str(exc),409)
+        except PipelineError as exc:
+            return error("INVALID_PIPELINE",str(exc),400)
+        idempotency_store_response(scope,key,request_hash,revision,201)
+        return ok(revision),201
+
+    @api.post("/pipelines/<pipeline_id>/publish")
+    def publish_pipeline_revision(pipeline_id):
+        profile=pipeline_service.get_pipeline(pipeline_id)
+        if profile is None:
+            return error("NOT_FOUND","Pipeline not found",404)
+        denied=require_permission("pipelines.manage",project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        payload=request.get_json(silent=True) or {}
+        revision_id=str(payload.get("revision_id","")).strip() if isinstance(payload,dict) else ""
+        scope="/api/v1/pipelines/"+pipeline_id+"/publish"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,{"revision_id":revision_id})
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            revision=pipeline_service.publish_revision(
+                pipeline_id,revision_id,
+                actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except PipelineNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except PipelineConflict as exc:
+            return error("PIPELINE_CONFLICT",str(exc),409)
+        except PipelineError as exc:
+            return error("INVALID_PIPELINE",str(exc),400)
+        idempotency_store_response(scope,key,request_hash,revision,200)
+        return ok(revision)
+
+    @api.post("/pipelines/<pipeline_id>/executions")
+    def enqueue_pipeline_execution(pipeline_id):
+        profile=pipeline_service.get_pipeline(pipeline_id)
+        if profile is None:
+            return error("NOT_FOUND","Pipeline not found",404)
+        denied=require_permission("pipelines.execute",project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        payload=request.get_json(silent=True) or {}
+        if not isinstance(payload,dict):
+            return error("INVALID_REQUEST","execution payload must be a JSON object",400)
+        scope="/api/v1/pipelines/"+pipeline_id+"/executions"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        # Persist a project-scoped digest of the idempotency token; the raw key
+        # remains inside the existing IdempotencyStore boundary.
+        stored_key=hashlib.sha256((pipeline_id+":"+str(key)).encode("utf-8")).hexdigest()
+        try:
+            execution=pipeline_service.enqueue(
+                pipeline_id,revision_id=payload.get("revision_id"),inputs=payload.get("inputs",{}),
+                idempotency_key=stored_key,
+                actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except PipelineNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except PipelineConflict as exc:
+            return error("PIPELINE_CONFLICT",str(exc),409)
+        except PipelineError as exc:
+            return error("INVALID_PIPELINE_EXECUTION",str(exc),400)
+        idempotency_store_response(scope,key,request_hash,execution,202)
+        return ok(execution),202
+
+    @api.get("/pipelines/<pipeline_id>/executions")
+    def list_pipeline_executions(pipeline_id):
+        profile=pipeline_service.get_pipeline(pipeline_id)
+        if profile is None:
+            return error("NOT_FOUND","Pipeline not found",404)
+        denied=require_permission("pipelines.read",project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        return ok({"items":pipeline_service.list_executions(pipeline_id)})
+
+    @api.get("/pipeline-executions/<execution_id>")
+    def get_pipeline_execution(execution_id):
+        execution=pipeline_service.get_execution(execution_id)
+        if execution is None:
+            return error("NOT_FOUND","Pipeline execution not found",404)
+        denied=require_permission("pipelines.read",project_id=execution["project_id"])
+        if denied is not None:
+            return denied
+        return ok(execution)
+
+    @api.post("/pipeline-executions/<execution_id>/cancel")
+    def cancel_pipeline_execution(execution_id):
+        execution=pipeline_service.get_execution(execution_id)
+        if execution is None:
+            return error("NOT_FOUND","Pipeline execution not found",404)
+        denied=require_permission("pipelines.execute",project_id=execution["project_id"])
+        if denied is not None:
+            return denied
+        scope="/api/v1/pipeline-executions/"+execution_id+"/cancel"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,{"execution_id":execution_id})
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            result=pipeline_service.cancel(
+                execution_id,actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except PipelineNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except PipelineConflict as exc:
+            return error("PIPELINE_CONFLICT",str(exc),409)
+        idempotency_store_response(scope,key,request_hash,result,200)
+        return ok(result)
+
+    @api.post("/pipeline-executions/<execution_id>/recover")
+    def recover_pipeline_execution(execution_id):
+        execution=pipeline_service.get_execution(execution_id)
+        if execution is None:
+            return error("NOT_FOUND","Pipeline execution not found",404)
+        denied=require_permission("pipelines.manage",project_id=execution["project_id"])
+        if denied is not None:
+            return denied
+        payload=request.get_json(silent=True) or {}
+        if not isinstance(payload,dict) or payload.get("confirmed") is not True:
+            return error("EXPLICIT_CONFIRMATION_REQUIRED","Set confirmed=true after inspecting actual provider state",409)
+        scope="/api/v1/pipeline-executions/"+execution_id+"/recover"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,{"execution_id":execution_id,"confirmed":True})
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            result=pipeline_service.recover(
+                execution_id,confirmed=True,
+                actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except PipelineNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except PipelineConflict as exc:
+            return error("PIPELINE_CONFLICT",str(exc),409)
         idempotency_store_response(scope,key,request_hash,result,200)
         return ok(result)
 

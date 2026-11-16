@@ -2940,3 +2940,20 @@ The user elected to keep the full Phase O Cloud/SaaS programme as future scope. 
 ### Explicitly not claimed
 
 No transitive Python/npm lockfiles were created from guessed versions. No obsolete compatibility entry points or secondary branches were deleted without a verified reference audit. No Git history was rewritten. The standalone production certification gaps listed under Phase N remain open; Phase O's full Cloud implementation remains future scope.
+
+
+### Stage E — Provisioning, Pipelines and End-to-End Integration (P25–P29)
+
+| Phase | Scope | Current delivery |
+|---|---|---|
+| P25 | Provisioning Adapter Migration | First Python GNS3 reference-lab slice delivered; shell compatibility path retained for host networking, Docker guest setup and mac80211_hwsim |
+| P26 | Persisted Pipeline Orchestration | Versioned definitions, durable execution/step/attempt state, worker leases, bounded retries, cancellation and operator-reviewed recovery delivered |
+| P27 | Pipeline Management Frontend | Next checkpoint: dashboard authoring, publication, monitoring and recovery workflows |
+| P28 | Complete Run and Policy Integration | Next checkpoint: validation Run linkage, configuration/topology revision pinning and performance policy evidence |
+| P29 | Security, Migration and End-to-End Qualification | Final checkpoint: workflow qualification and protected-lab operator acceptance |
+
+Stage E reuses Stage B identity/RBAC, Stage C credential/configuration/performance
+services and Stage D topology/device/provider contracts. It does not replace the
+existing Run engine or authorize unbounded shell commands. CI uses fake provider
+handlers for state-machine verification; live GNS3/OpenWrt acceptance remains an
+operator-run deployment gate.

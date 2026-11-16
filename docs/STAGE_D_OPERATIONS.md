@@ -173,3 +173,27 @@ DHCP and protected capture preparation remain on the existing executable path
 until their Python adapters have equivalent postcondition and protected-lab
 coverage. The shell entry point and its existing command-line options remain
 unchanged.
+
+
+## Stage E P26 — durable pipeline worker
+
+Pipeline definitions and revisions are stored under the selected Project/Lab.
+Only published immutable revisions can be queued. The worker claims one step at
+a time and persists its attempt record, lease and result. Provider mutation
+steps have a single automatic attempt. If the worker lease expires while a
+step is RUNNING, the execution transitions to RECOVERY_REQUIRED; an operator
+must inspect the actual Lab before explicitly resuming it. A timeout is stored
+as the worker lease deadline and provider handlers retain their own bounded
+network/SSH timeouts.
+
+Start one safe local worker invocation:
+
+    python scripts/netregress_pipeline_worker.py --once
+
+Run it under a supervised service for polling:
+
+    python scripts/netregress_pipeline_worker.py --poll-interval 5
+
+The worker executes only the registered handler allow-list. Pipeline JSON
+cannot contain passwords, private keys, API tokens, Wi-Fi PSKs or credential
+values; only opaque Credential Vault identifiers are accepted.

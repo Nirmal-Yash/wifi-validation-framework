@@ -37,7 +37,7 @@ _STEP_TYPES = frozenset({
     "WIFI_LAB_PROVISION", "TOPOLOGY_APPLY", "PROVIDER_RECONCILE",
     "CONFIGURATION_DEPLOY", "VALIDATION_RUN",
 })
-_SECRET_PARTS = ("password", "passwd", "secret", "private_key", "api_key", "psk")
+_SECRET_PARTS = ("password", "passwd", "secret", "private_key", "api_key", "psk", "token", "credential")
 
 
 class PipelineService:
@@ -722,7 +722,11 @@ class PipelineService:
                     completed_at = finished
                 else:
                     exec_status, completed_at = "RUNNING", None
-            if execution["status"] == "CANCELLING" and outcome == "SUCCEEDED":
+            current_execution_state = connection.execute(
+                "SELECT status FROM pipeline_executions WHERE execution_id=?",
+                (execution["execution_id"],),
+            ).fetchone()["status"]
+            if current_execution_state == "CANCELLING" and outcome == "SUCCEEDED":
                 connection.execute(
                     """UPDATE pipeline_steps SET status='CANCELLED',completed_at=?,last_error='execution cancellation requested'
                        WHERE execution_id=? AND status IN ('PENDING','RETRY_WAIT')""",
