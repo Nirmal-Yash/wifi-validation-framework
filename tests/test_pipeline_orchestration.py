@@ -111,7 +111,12 @@ def test_expired_worker_lease_requires_explicit_recovery(pipeline):
     assert service.get_execution(queued["execution_id"])["steps"][0]["status"] == "RECOVERY_REQUIRED"
     with pytest.raises(PipelineConflict, match="explicit recovery confirmation"):
         service.recover(queued["execution_id"], confirmed=False, actor="owner")
-    assert service.recover(queued["execution_id"], confirmed=True, actor="owner")["status"] == "QUEUED"
+    recovered = service.recover(queued["execution_id"], confirmed=True, actor="owner")
+    assert recovered["status"] == "QUEUED"
+    assert recovered["steps"][0]["max_attempts"] == 1  # Published step policy remains immutable.
+    resumed = service.run_once("worker-3", {"WIFI_LAB_PROVISION": lambda _e, _s: {"status": "APPLIED"}})
+    assert resumed["step_status"] == "SUCCEEDED"
+    assert service.get_execution(queued["execution_id"])["status"] == "SUCCEEDED"
 
 
 def test_pipeline_cancel_does_not_interrupt_running_provider_step(pipeline):

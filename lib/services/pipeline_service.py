@@ -509,16 +509,16 @@ class PipelineService:
             if execution["status"] != "RECOVERY_REQUIRED":
                 raise PipelineConflict("only a RECOVERY_REQUIRED execution can be resumed")
             steps = connection.execute(
-                "SELECT step_key,max_attempts FROM pipeline_steps WHERE execution_id=? AND status='RECOVERY_REQUIRED'",
+                "SELECT step_key,attempt_count FROM pipeline_steps WHERE execution_id=? AND status='RECOVERY_REQUIRED'",
                 (execution_id,),
             ).fetchall()
             if not steps:
                 raise PipelineConflict("execution has no recoverable steps")
             for step in steps:
-                if int(step["max_attempts"]) >= 5:
+                if int(step["attempt_count"]) >= 5:
                     raise PipelineConflict("step attempt limit reached; create a new execution after reviewing provider state")
                 connection.execute(
-                    """UPDATE pipeline_steps SET status='PENDING',max_attempts=max_attempts+1,
+                    """UPDATE pipeline_steps SET status='PENDING',
                        worker_id=NULL,lease_expires_at=NULL,next_attempt_at=NULL,last_error=NULL,completed_at=NULL
                        WHERE execution_id=? AND step_key=?""",
                     (execution_id, step["step_key"]),
