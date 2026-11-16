@@ -103,6 +103,11 @@ EXPECTED_TABLE_COLUMNS = {
     "performance_policy_profiles": ("policy_profile_id", "project_id", "name", "description", "scope_type", "scope_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "performance_policy_revisions": ("revision_id", "policy_profile_id", "revision_number", "policy_json", "policy_hash", "status", "created_at", "created_by", "published_at", "published_by"),
     "performance_policy_assignments": ("assignment_id", "project_id", "lab_id", "policy_profile_id", "revision_id", "assigned_at", "assigned_by"),
+    "pipeline_definitions": ("pipeline_id", "project_id", "lab_id", "name", "description", "status", "created_at", "updated_at", "created_by", "updated_by"),
+    "pipeline_revisions": ("revision_id", "pipeline_id", "revision_number", "definition_json", "definition_sha256", "status", "created_at", "created_by", "published_at", "published_by"),
+    "pipeline_executions": ("execution_id", "project_id", "lab_id", "pipeline_id", "revision_id", "definition_sha256", "status", "inputs_json", "result_json", "linked_run_id", "idempotency_key", "created_at", "started_at", "completed_at", "created_by", "worker_id", "lease_expires_at", "heartbeat_at", "attempt_count", "last_error"),
+    "pipeline_steps": ("execution_id", "step_key", "ordinal", "step_type", "status", "definition_json", "result_json", "max_attempts", "attempt_count", "timeout_seconds", "next_attempt_at", "worker_id", "lease_expires_at", "created_at", "started_at", "completed_at", "last_error"),
+    "pipeline_step_attempts": ("step_attempt_id", "execution_id", "step_key", "attempt_number", "status", "worker_id", "started_at", "completed_at", "result_json", "error_summary"),
 }
 
 EXPECTED_TRIGGERS = (
@@ -138,6 +143,17 @@ EXPECTED_TRIGGERS = (
     "trg_device_config_deployments_identity_immutable",
     "trg_device_config_deployments_final_immutable",
     "trg_device_config_deployments_no_delete",
+    "trg_pipeline_definitions_no_delete",
+    "trg_pipeline_revisions_published_immutable",
+    "trg_pipeline_revisions_no_delete",
+    "trg_pipeline_execution_scope_insert",
+    "trg_pipeline_execution_run_scope_insert",
+    "trg_pipeline_execution_identity_immutable",
+    "trg_pipeline_executions_no_delete",
+    "trg_pipeline_steps_identity_immutable",
+    "trg_pipeline_steps_no_delete",
+    "trg_pipeline_step_attempts_final_immutable",
+    "trg_pipeline_step_attempts_no_delete",
 )
 
 EXPECTED_INDEXES = (
@@ -181,6 +197,14 @@ EXPECTED_INDEXES = (
     "idx_topology_apply_profile_revision",
     "idx_device_config_deployments_target",
     "idx_device_config_deployments_revision",
+    "idx_pipeline_definitions_project_lab",
+    "idx_pipeline_revisions_pipeline_number",
+    "idx_pipeline_executions_queue",
+    "idx_pipeline_executions_project_lab",
+    "idx_pipeline_executions_pipeline",
+    "idx_pipeline_executions_linked_run",
+    "idx_pipeline_steps_ready",
+    "idx_pipeline_step_attempts_step",
 )
 
 EXPECTED_FOREIGN_KEYS = {
@@ -250,6 +274,19 @@ EXPECTED_FOREIGN_KEYS = {
     ("user_sessions", "username", "users", "username"),
     ("invitation_tokens", "username", "users", "username"),
     ("password_reset_tokens", "username", "users", "username"),
+    ("pipeline_definitions", "project_id", "projects", "project_id"),
+    ("pipeline_definitions", "project_id", "labs", "project_id"),
+    ("pipeline_definitions", "lab_id", "labs", "lab_id"),
+    ("pipeline_revisions", "pipeline_id", "pipeline_definitions", "pipeline_id"),
+    ("pipeline_executions", "pipeline_id", "pipeline_definitions", "pipeline_id"),
+    ("pipeline_executions", "revision_id", "pipeline_revisions", "revision_id"),
+    ("pipeline_executions", "project_id", "projects", "project_id"),
+    ("pipeline_executions", "project_id", "labs", "project_id"),
+    ("pipeline_executions", "lab_id", "labs", "lab_id"),
+    ("pipeline_executions", "linked_run_id", "runs", "run_id"),
+    ("pipeline_steps", "execution_id", "pipeline_executions", "execution_id"),
+    ("pipeline_step_attempts", "execution_id", "pipeline_steps", "execution_id"),
+    ("pipeline_step_attempts", "step_key", "pipeline_steps", "step_key"),
 }
 
 
@@ -371,9 +408,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "23":
+        if metadata.get("version") != "24":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '23'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '24'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+import sqlite3
+import pytest
+
+from lib.repositories import SQLiteDatabase
+from lib.services.pipeline_service import (
+    PipelineConflict, PipelineError, PipelineRetryableError, PipelineService,
+)
+
+
+@pytest.fixture
+def pipeline(tmp_path):
+    database = SQLiteDatabase(tmp_path / "pipeline.sqlite")
+    database.initialize()
+    now = "2026-11-16T10:00:00+00:00"
+    with database.transaction(immediate=True) as connection:
+        connection.execute("INSERT INTO organizations(organization_id,slug,name,status,created_at,updated_at) VALUES(?,?,?,?,?,?)", ("org-1", "org", "Organization", "ACTIVE", now, now))
+        connection.execute("INSERT INTO projects(project_id,organization_id,slug,name,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)", ("project-1", "org-1", "project", "Project", "ACTIVE", now, now))
+        connection.execute("INSERT INTO labs(lab_id,project_id,name,provider_id,topology_version,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)", ("lab-1", "project-1", "Lab", "gns3", 1, "ACTIVE", now, now))
+    return database, PipelineService(database)
+
+
+def definition():
+    return {"steps": [{
+        "key": "provision", "type": "WIFI_LAB_PROVISION", "name": "Provision reference lab",
+        "timeout_seconds": 600, "max_attempts": 1, "input": {"confirmed": True},
+    }]}
+
+
+def published_pipeline(service):
+    created = service.create_pipeline(
+        project_id="project-1", lab_id="lab-1", name="Reference Wi-Fi",
+        description="Protected Wi-Fi validation pipeline", definition=definition(), actor="owner",
+    )
+    service.publish_revision(created["pipeline"]["pipeline_id"], created["revision"]["revision_id"], actor="owner")
+    return created["pipeline"], created["revision"]
+
+
+def test_pipeline_definitions_are_scoped_and_published_revisions_are_immutable(pipeline):
+    database, service = pipeline
+    profile, revision = published_pipeline(service)
+    assert profile["lab_id"] == "lab-1"
+    assert service.get_revision(revision["revision_id"])["status"] == "PUBLISHED"
+    with database.connection() as connection:
+        with pytest.raises(sqlite3.IntegrityError, match="published pipeline revisions are immutable"):
+            connection.execute("UPDATE pipeline_revisions SET definition_json='{}' WHERE revision_id=?", (revision["revision_id"],))
+        with pytest.raises(sqlite3.IntegrityError, match="pipeline revision history cannot be deleted"):
+            connection.execute("DELETE FROM pipeline_revisions WHERE revision_id=?", (revision["revision_id"],))
+
+
+@pytest.mark.parametrize("value,match", [
+    ({"steps": []}, "between 1 and"),
+    ({"steps": [{"key": "bad key", "type": "WIFI_LAB_PROVISION", "input": {"confirmed": True}}]}, "invalid or duplicated"),
+    ({"steps": [{"key": "x", "type": "ARBITRARY_SHELL", "input": {}}]}, "not supported"),
+    ({"steps": [{"key": "x", "type": "WIFI_LAB_PROVISION", "input": {"confirmed": True, "command": "rm -rf"}}]}, "exactly"),
+    ({"steps": [{"key": "x", "type": "WIFI_LAB_PROVISION", "input": {"confirmed": True}}, {"key": "x", "type": "WIFI_LAB_PROVISION", "input": {"confirmed": True}}]}, "invalid or duplicated"),
+])
+def test_pipeline_definition_validation_fails_closed(value, match):
+    with pytest.raises(PipelineError, match=match):
+        PipelineService.normalize_definition(value)
+
+
+def test_pipeline_enqueue_persists_steps_and_worker_attempts(pipeline):
+    _database, service = pipeline
+    profile, revision = published_pipeline(service)
+    queued = service.enqueue(profile["pipeline_id"], revision_id=revision["revision_id"], actor="owner")
+    assert queued["status"] == "QUEUED" and len(queued["steps"]) == 1
+    result = service.run_once("worker-1", {
+        "WIFI_LAB_PROVISION": lambda execution, _step: {"status": "APPLIED", "lab_id": execution["lab_id"]},
+    })
+    assert result["step_status"] == "SUCCEEDED"
+    final = service.get_execution(queued["execution_id"])
+    assert final["status"] == "SUCCEEDED"
+    assert final["steps"][0]["attempt_count"] == 1
+    assert final["attempts"][0]["status"] == "SUCCEEDED"
+
+
+def test_retry_requires_handler_classification_and_is_bounded(pipeline):
+    database, service = pipeline
+    profile, _revision = published_pipeline(service)
+    draft = service.create_revision(profile["pipeline_id"], definition={
+        "steps": [{
+            "key": "inspect", "type": "PROVIDER_RECONCILE", "max_attempts": 2,
+            "input": {"profile_id": "topology-1", "revision_id": "revision-1"},
+        }],
+    }, actor="owner")
+    service.publish_revision(profile["pipeline_id"], draft["revision_id"], actor="owner")
+    queued = service.enqueue(profile["pipeline_id"], revision_id=draft["revision_id"], actor="owner")
+    result = service.run_once("worker-1", {
+        "PROVIDER_RECONCILE": lambda _execution, _step: (_ for _ in ()).throw(PipelineRetryableError("temporary read error")),
+    })
+    assert result["step_status"] == "RETRY_WAIT"
+    with database.transaction(immediate=True) as connection:
+        connection.execute("UPDATE pipeline_steps SET next_attempt_at='2000-01-01T00:00:00+00:00' WHERE execution_id=?", (queued["execution_id"],))
+    result = service.run_once("worker-1", {"PROVIDER_RECONCILE": lambda _e, _s: {"status": "IN_SYNC"}})
+    assert result["step_status"] == "SUCCEEDED"
+    assert service.get_execution(queued["execution_id"])["status"] == "SUCCEEDED"
+
+
+def test_expired_worker_lease_requires_explicit_recovery(pipeline):
+    database, service = pipeline
+    profile, revision = published_pipeline(service)
+    queued = service.enqueue(profile["pipeline_id"], revision_id=revision["revision_id"], actor="owner")
+    with database.transaction(immediate=True) as connection:
+        connection.execute("UPDATE pipeline_executions SET status='RUNNING',worker_id='dead-worker',lease_expires_at='2000-01-01T00:00:00+00:00' WHERE execution_id=?", (queued["execution_id"],))
+        connection.execute("UPDATE pipeline_steps SET status='RUNNING',worker_id='dead-worker',lease_expires_at='2000-01-01T00:00:00+00:00',attempt_count=1 WHERE execution_id=?", (queued["execution_id"],))
+        connection.execute("""INSERT INTO pipeline_step_attempts(step_attempt_id,execution_id,step_key,attempt_number,status,worker_id,started_at,completed_at,result_json,error_summary) VALUES('attempt-dead',?,'provision',1,'RUNNING','dead-worker','2000-01-01T00:00:00+00:00',NULL,'{}',NULL)""", (queued["execution_id"],))
+    result = service.run_once("worker-2", {"WIFI_LAB_PROVISION": lambda _e, _s: {"status": "APPLIED"}})
+    assert result["status"] == "RECOVERY_REQUIRED"
+    assert service.get_execution(queued["execution_id"])["steps"][0]["status"] == "RECOVERY_REQUIRED"
+    with pytest.raises(PipelineConflict, match="explicit recovery confirmation"):
+        service.recover(queued["execution_id"], confirmed=False, actor="owner")
+    assert service.recover(queued["execution_id"], confirmed=True, actor="owner")["status"] == "QUEUED"
+
+
+def test_pipeline_cancel_does_not_interrupt_running_provider_step(pipeline):
+    database, service = pipeline
+    profile, revision = published_pipeline(service)
+    queued = service.enqueue(profile["pipeline_id"], revision_id=revision["revision_id"], actor="owner")
+    with database.transaction(immediate=True) as connection:
+        connection.execute("UPDATE pipeline_executions SET status='RUNNING',worker_id='worker-1',lease_expires_at='2099-01-01T00:00:00+00:00' WHERE execution_id=?", (queued["execution_id"],))
+        connection.execute("UPDATE pipeline_steps SET status='RUNNING',worker_id='worker-1',lease_expires_at='2099-01-01T00:00:00+00:00' WHERE execution_id=?", (queued["execution_id"],))
+    cancelling = service.cancel(queued["execution_id"], actor="owner")
+    assert cancelling["status"] == "CANCELLING"
+    assert cancelling["steps"][0]["status"] == "RUNNING"
+
+
+def test_pipeline_rejects_secret_values_not_opaque_reference_ids():
+    with pytest.raises(PipelineError, match="secret material"):
+        PipelineService.normalize_definition({"steps": [{
+            "key": "bad", "type": "WIFI_LAB_PROVISION", "input": {"confirmed": True, "api_token": "plaintext"},
+        }]})
