@@ -149,3 +149,27 @@ same Lab lock. Apply history is visible in the Topology Studio and retains PARTI
 outcomes when a controller timeout makes the result uncertain; reconcile observed
 provider state before retrying an interrupted operation. API errors do not include
 provider response bodies or secrets.
+
+
+## Stage E P25 — Python provisioning migration checkpoint
+
+The first provider migration slice now exposes the protected Wi-Fi reference lab's
+GNS3 operations through `WiFiLabProvisioningService` and the dashboard endpoints
+`GET /api/v1/labs/{lab_id}/provisioning-plan` and
+`POST /api/v1/labs/{lab_id}/provision`.
+
+The Python adapter performs a read-only project/node/link inspection, validates
+the four protected reference nodes and the client management adapter, selects
+only an unoccupied Switch1 port for the missing management link, starts
+infrastructure before Docker-backed nodes, and verifies provider read-back.
+The mutation endpoint requires `topology.provider.operate`, CSRF, idempotency
+and explicit confirmation. It shares the Lab resource lock with topology apply
+and does not delete, stop or rewire existing resources.
+
+This is an incremental migration, not removal of
+`wifi_lab_reprovision_robust.sh`. Host networking, Docker guest package and
+service configuration, mac80211_hwsim radio placement, hostapd/wpa_supplicant,
+DHCP and protected capture preparation remain on the existing executable path
+until their Python adapters have equivalent postcondition and protected-lab
+coverage. The shell entry point and its existing command-line options remain
+unchanged.

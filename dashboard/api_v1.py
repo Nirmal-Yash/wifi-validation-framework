@@ -19,6 +19,10 @@ from lib.services.topology_studio import TopologyStudioService, TopologyStudioEr
 from lib.services.topology_apply import (
     TopologyApplyConflict, TopologyApplyError, TopologyApplyNotFound, TopologyApplyService,
 )
+from lib.services.wifi_lab_provisioning import (
+    WiFiLabProvisioningConflict, WiFiLabProvisioningError,
+    WiFiLabProvisioningNotFound, WiFiLabProvisioningService,
+)
 from lib.services.performance_policy_service import (
     PerformancePolicyEngine, PerformancePolicyError, PerformancePolicyNotFound, PerformancePolicyService,
 )
@@ -72,6 +76,9 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     device_inventory=DeviceInventoryService(query.database)
     topology_studio=TopologyStudioService(query.database)
     topology_apply=TopologyApplyService(query.database,credential_vault,topology_studio)
+    wifi_lab_provisioner=WiFiLabProvisioningService(
+        query.database,credential_vault,resource_lock_manager=topology_apply.resource_lock_manager,
+    )
     organization_repository=SQLiteOrganizationRepository(query.database)
     project_repository=SQLiteProjectRepository(query.database)
     lab_repository=SQLiteLabRepository(query.database)
@@ -2582,6 +2589,56 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         except TopologyApplyError as exc:
             return error("PROVIDER_NODE_OPERATION_FAILED", str(exc), 502)
         idempotency_store_response(scope, key, request_hash, result, 200)
+        return ok(result)
+
+
+    @api.get("/labs/<lab_id>/provisioning-plan")
+    def wifi_lab_provisioning_plan(lab_id):
+        lab=lab_repository.get(lab_id)
+        if lab is None:
+            return error("NOT_FOUND","Lab not found",404)
+        denied=require_permission("topology.read",project_id=lab.project_id)
+        if denied is not None:
+            return denied
+        try:
+            return ok(wifi_lab_provisioner.plan(
+                lab_id,actor=str((session.get("netregress_user") or {}).get("username","local")),
+            ))
+        except WiFiLabProvisioningNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except WiFiLabProvisioningError as exc:
+            return error("WIFI_LAB_PROVISIONING_FAILED",str(exc),409)
+
+    @api.post("/labs/<lab_id>/provision")
+    def apply_wifi_lab_provisioning(lab_id):
+        lab=lab_repository.get(lab_id)
+        if lab is None:
+            return error("NOT_FOUND","Lab not found",404)
+        denied=require_permission("topology.provider.operate",project_id=lab.project_id)
+        if denied is not None:
+            return denied
+        payload=request.get_json(silent=True) or {}
+        confirmed=payload.get("confirmed") is True if isinstance(payload,dict) else False
+        if not confirmed:
+            return error("EXPLICIT_CONFIRMATION_REQUIRED","Set confirmed=true after reviewing the read-only provisioning plan",409)
+        scope="/api/v1/labs/"+lab_id+"/provision"
+        key,request_hash,cached,security_error=idempotency_preflight(scope,{"lab_id":lab_id,"confirmed":confirmed})
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response),cached.status_code
+        try:
+            result=wifi_lab_provisioner.apply(
+                lab_id,confirmed=True,
+                actor=str((session.get("netregress_user") or {}).get("username","local")),
+            )
+        except WiFiLabProvisioningNotFound as exc:
+            return error("NOT_FOUND",str(exc),404)
+        except WiFiLabProvisioningConflict as exc:
+            return error("WIFI_LAB_PROVISIONING_CONFLICT",str(exc),409)
+        except WiFiLabProvisioningError as exc:
+            return error("WIFI_LAB_PROVISIONING_FAILED",str(exc),502)
+        idempotency_store_response(scope,key,request_hash,result,200)
         return ok(result)
 
     return api
