@@ -17,6 +17,7 @@ export function routeFor(pathname=window.location.pathname){
   if(path==="/configuration")return{name:"configuration"};
   if(path==="/devices")return{name:"devices"};
   if(path==="/topologies")return{name:"topologies"};
+  if(path==="/pipelines")return{name:"pipelines"};
   if(path==="/administration")return{name:"administration"};
   if(path==="/activate")return{name:"account-access",mode:"activate"};
   if(path==="/reset-password")return{name:"account-access",mode:"reset"};
