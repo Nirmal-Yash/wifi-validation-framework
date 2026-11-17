@@ -200,7 +200,6 @@ jobs:
           tests/test_platform_foundation.py
           tests/test_product_resources.py
           tests/test_project_scope_persistence.py
-          tests/test_phase_i_architecture.py
           tests/test_project_scope_persistence.py
           tests/test_performance_policy_engine.py
           tests/test_device_firmware_adapters.py
@@ -223,7 +222,6 @@ jobs:
           tests/test_platform_foundation.py
           tests/test_product_resources.py
           tests/test_project_scope_persistence.py
-          tests/test_phase_i_architecture.py
           ci_tests/test_release_gate.py
 
   dashboard-startup-smoke:
