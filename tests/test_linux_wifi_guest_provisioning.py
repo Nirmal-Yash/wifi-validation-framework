@@ -147,7 +147,7 @@ def test_wpa_configuration_escapes_quoted_values_and_keeps_secret_off_arguments(
     content = service._wpa_config('Test"Net', 'pass"word\\value')
     assert 'ssid="Test\\"Net"' in content
     assert "pass" + chr(92) + '"word' in content
-    assert "pass\"word" in content
+    assert "pass\"word" not in content
 
 
 def test_hwsim_reuses_existing_guest_radios_without_module_reload(tmp_path):
