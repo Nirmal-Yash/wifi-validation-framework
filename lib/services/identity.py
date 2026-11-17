@@ -149,6 +149,39 @@ class IdentityStore:
         assert user is not None
         return user
 
+    def bootstrap_first_owner(self, username: str, password_hash: str, *, actor: str = "desktop-first-run") -> dict[str, Any]:
+        """Atomically create the first local Global Owner, exactly once."""
+        username = str(username or "").strip()
+        if not self.USERNAME_PATTERN.fullmatch(username):
+            raise ValueError("username does not satisfy the account identifier policy")
+        if not isinstance(password_hash, str) or not password_hash.strip():
+            raise ValueError("password hash must be non-empty")
+        now = self.iso()
+        with self.database.transaction(immediate=True) as connection:
+            existing = connection.execute("SELECT 1 FROM users LIMIT 1").fetchone()
+            if existing is not None:
+                raise IdentityPolicyError("first-owner setup has already been completed")
+            connection.execute(
+                """INSERT INTO users(
+                    username,email,display_name,password_hash,status,workspace_scope,
+                    created_at,updated_at,created_by,activated_at,password_changed_at
+                ) VALUES(?,NULL,?,?, 'ACTIVE','WILDCARD',?,?,?,?,?)""",
+                (username, username, password_hash, now, now, actor, now, now),
+            )
+            connection.execute(
+                """INSERT INTO role_assignments(
+                    username,role_id,scope_type,scope_id,created_at,created_by
+                ) VALUES(?,?,'GLOBAL','*',?,?)""",
+                (username, self._role_id("OWNER", "GLOBAL"), now, actor),
+            )
+            self._audit_in_transaction(
+                connection, actor, "ACCOUNT_BOOTSTRAPPED", "USER", username,
+                {"global_role": "OWNER", "workspace_scope": "WILDCARD"},
+            )
+        user = self.get_user(username)
+        assert user is not None
+        return user
+
     def create_session(self, username: str, lifetime_seconds: int = 1800) -> str:
         if lifetime_seconds < 60 or lifetime_seconds > 86400:
             raise ValueError("session lifetime must be between 60 and 86400 seconds")

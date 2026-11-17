@@ -86,11 +86,23 @@ def create_app(database_path: str | Path = DATABASE_PATH, *, auth_manager: AuthM
     )
     @flask_app.after_request
     def harden_response(response):
-        return apply_security_headers(
+        response = apply_security_headers(
             response,
             no_store=request.path.startswith("/api/v1/") or bool(session.get("netregress_user")),
             hsts=bool(flask_app.config["SESSION_COOKIE_SECURE"]),
         )
+        origin = request.headers.get("Origin", "")
+        allowed_origins = {
+            "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost",
+            "http://127.0.0.1:5173", "http://localhost:5173",
+        }
+        if request.path.startswith("/api/v1/") and origin in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-CSRF-Token, Idempotency-Key"
+            response.headers.add("Vary", "Origin")
+        return response
     query = DashboardQueryService(SQLiteDatabase(database_path))
     auth_manager = auth_manager or AuthManager.from_env()
     flask_app.config["NETREGRESS_QUERY"] = query

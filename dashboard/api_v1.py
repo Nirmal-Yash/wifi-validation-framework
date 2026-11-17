@@ -229,6 +229,51 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         if write_or_touch:
             session["netregress_last_activity"]=now
         return None
+    @api.get("/setup/status")
+    def setup_status():
+        import ipaddress
+        try:
+            remote = ipaddress.ip_address(request.remote_addr or "127.0.0.1")
+        except ValueError:
+            return error("LOCAL_SETUP_ONLY", "first-run setup is available only on this computer", 403)
+        if not remote.is_loopback:
+            return error("LOCAL_SETUP_ONLY", "first-run setup is available only on this computer", 403)
+        required = not bool(identity.list_users()) and not bool(auth._users)
+        return ok({"first_run_required": required})
+
+    @api.post("/setup/owner")
+    def setup_owner():
+        import ipaddress
+        try:
+            remote = ipaddress.ip_address(request.remote_addr or "")
+        except ValueError:
+            return error("LOCAL_SETUP_ONLY", "first-run setup is available only on this computer", 403)
+        if not remote.is_loopback:
+            return error("LOCAL_SETUP_ONLY", "first-run setup is available only on this computer", 403)
+        origin = (request.headers.get("Origin") or "").strip()
+        trusted_origins = {
+            "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost",
+            "http://127.0.0.1:5173", "http://localhost:5173",
+        }
+        if origin and origin not in trusted_origins:
+            return error("UNTRUSTED_ORIGIN", "first-run setup request origin is not trusted", 403)
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error("INVALID_REQUEST", "a JSON setup payload is required", 400)
+        username = str(payload.get("username", "owner")).strip()
+        password = str(payload.get("password", ""))
+        if not login_limiter.allow(f"{request.remote_addr or 'unknown'}:{username}:first-run"):
+            return error("RATE_LIMITED", "too many first-run setup attempts", 429)
+        try:
+            IdentityStore.validate_password(password)
+            password_hash = AuthManager.password_hash(password)
+            identity.bootstrap_first_owner(username, password_hash, actor="desktop-first-run")
+        except IdentityPolicyError as exc:
+            return error("SETUP_ALREADY_COMPLETED", str(exc), 409)
+        except ValueError as exc:
+            return error("INVALID_SETUP", str(exc), 400)
+        return ok({"username": username, "global_role": "OWNER", "first_run_required": False})
+
     @api.get("/health")
     def health():return ok({"status":"ok"})
     @api.get("/readiness")
