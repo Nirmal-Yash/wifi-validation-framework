@@ -1,4 +1,23 @@
-const base="/api/v1";
+const configuredBase=import.meta.env.VITE_API_BASE_URL||"/api/v1";
+let resolvedBase=null;
+let basePromise=null;
+
+async function resolveApiBase(){
+ if(resolvedBase)return resolvedBase;
+ if(basePromise)return basePromise;
+ const invoke=globalThis.window?.__TAURI__?.core?.invoke;
+ if(typeof invoke==="function"){
+  basePromise=Promise.resolve(invoke("api_base_url")).then(value=>{
+   const origin=String(value||"").replace(/\\/+$/,"");
+   if(!/^http:\\/\\/127\\.0\\.0\\.1:\\d{1,5}$/.test(origin))throw new ApiError("The desktop backend returned an invalid local API address.",0,"INVALID_API_BASE");
+   resolvedBase=origin+"/api/v1";
+   return resolvedBase;
+  }).finally(()=>{basePromise=null;});
+  return basePromise;
+ }
+ resolvedBase=configuredBase;
+ return resolvedBase;
+}
 let csrfToken="";
 let csrfPromise=null;
 let csrfGeneration=0;
@@ -20,14 +39,15 @@ function notifyExpired(path){
 async function rawRequest(path,options={}){
  let response;
  try{
+  const base=await resolveApiBase();
   response=await fetch(base+path,{
-   credentials:"same-origin",
+   credentials:"include",
    cache:"no-store",
    ...options,
    headers:{Accept:"application/json",...(options.body?{"Content-Type":"application/json"}:{}),...(options.headers||{})},
   });
  }catch(error){
-  if(error instanceof TypeError)throw new ApiError("Cannot reach the Runner API. Start it with ./scripts/start_dashboard.sh from the repository root.",0,"API_UNREACHABLE");
+  if(error instanceof TypeError)throw new ApiError("Cannot reach the Runner API. Launch the NetRegress desktop app or start the developer launcher.",0,"API_UNREACHABLE");
   throw error;
  }
  const contentType=response.headers?.get?.("content-type")||"";
@@ -86,6 +106,8 @@ const query=params=>{
 };
 export const api={
  health:()=>request("/health"),readiness:()=>request("/readiness"),
+ setupStatus:()=>request("/setup/status"),
+ bootstrapOwner:payload=>rawRequest("/setup/owner",{method:"POST",body:JSON.stringify(payload)}),
  credentials:(projectId,deviceId)=>request("/credentials"+query({project_id:projectId,device_id:deviceId})),
  createCredential:payload=>request("/credentials",{method:"POST",body:JSON.stringify(payload)}),
  rotateCredential:(id,payload)=>request("/credentials/"+encode(id)+"/rotate",{method:"POST",body:JSON.stringify(payload)}),
@@ -160,7 +182,7 @@ export const api={
  healthForRun:(id,options={})=>request("/runs/"+encode(id)+"/health",options),
  labHealth:(id,options={})=>request("/labs/"+encode(id)+"/health",options),
  artifacts:(params={},options={})=>request("/artifacts"+query(params),options),artifact:id=>request("/artifacts/"+encode(id)),
- artifactDownloadUrl:id=>base+"/artifacts/"+encode(id)+"/download",
+ artifactDownloadUrl:id=>(resolvedBase||configuredBase)+"/artifacts/"+encode(id)+"/download",
  baselines:()=>request("/baselines"),promoteBaseline:payload=>request("/baselines",{method:"POST",body:JSON.stringify(payload)}),
  promoteExistingBaseline:(id,payload)=>request("/baselines/"+encode(id)+"/promote",{method:"POST",body:JSON.stringify(payload)}),
  waivers:()=>request("/waivers"),
