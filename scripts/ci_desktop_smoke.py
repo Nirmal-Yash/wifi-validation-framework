@@ -83,8 +83,15 @@ def _wait_backend(data_home: Path, process: subprocess.Popen, *, timeout: float 
     while time.monotonic() < deadline:
         if process.poll() is not None:
             details = process.stdout_path.read_text(encoding="utf-8", errors="replace")[-5000:]
+            backend_log = _find_backend_log(data_home)
+            backend_details = (
+                backend_log.read_text(encoding="utf-8", errors="replace")[-12000:]
+                if backend_log is not None and backend_log.is_file()
+                else "<backend.log was not created>"
+            )
             raise SmokeFailure(
-                f"desktop process exited during startup ({process.returncode}); launcher output: {details}"
+                f"desktop process exited during startup ({process.returncode}); "
+                f"backend log: {backend_details}; launcher output: {details}"
             )
         log_path = _find_backend_log(data_home)
         if log_path is not None:
