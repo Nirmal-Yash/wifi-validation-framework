@@ -122,6 +122,7 @@ jobs:
           python -m pytest
           tests/test_auth_flow.py
           tests/test_desktop_setup.py
+          tests/test_desktop_runtime.py
           tests/test_rbac_auth.py
           tests/test_dashboard_rbac_matrix.py
           tests/test_dashboard_session_enforcement.py

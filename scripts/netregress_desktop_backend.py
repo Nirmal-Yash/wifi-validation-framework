@@ -24,15 +24,14 @@ def _dispatch_frozen_child(arguments: list[str]) -> int | None:
 
         sys.argv = [str(Path(sys.executable).name), *arguments[2:]]
         return int(pytest.main(arguments[2:]))
-    if len(arguments) == 1:
-        candidate = Path(arguments[0])
-        if candidate.name == "netregress_pipeline_worker.py":
-            script = ROOT / "scripts" / candidate.name
-            if not script.is_file():
-                raise FileNotFoundError("packaged pipeline worker is missing")
-            sys.argv = [str(script)]
-            runpy.run_path(str(script), run_name="__main__")
-            return 0
+    candidate = Path(arguments[0])
+    if candidate.name == "netregress_pipeline_worker.py":
+        script = ROOT / "scripts" / candidate.name
+        if not script.is_file():
+            raise FileNotFoundError("packaged pipeline worker is missing")
+        sys.argv = [str(script), *arguments[1:]]
+        runpy.run_path(str(script), run_name="__main__")
+        return 0
     return None
 
 

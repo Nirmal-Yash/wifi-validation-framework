@@ -3,7 +3,7 @@
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-ROOT = Path(SPECPATH).resolve().parents[1]
+ROOT = Path(SPECPATH).resolve().parent
 
 datas = []
 for directory in (
