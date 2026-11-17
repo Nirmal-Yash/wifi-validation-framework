@@ -121,6 +121,10 @@ jobs:
           mkdir -p "${SMOKE_ROOT}"
           DEB="$(find src-tauri/target/release/bundle -type f -name '*.deb' -print -quit)"
           test -n "${DEB}"
+          # apt-get treats a bare relative path as a package name; pass the
+          # canonical absolute .deb path so it installs the built artifact.
+          DEB="$(realpath "${DEB}")"
+          test -f "${DEB}"
           DEB_PACKAGE="$(dpkg-deb -f "${DEB}" Package)"
           test -n "${DEB_PACKAGE}"
           sudo apt-get install -y "${DEB}"
