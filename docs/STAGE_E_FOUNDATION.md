@@ -7,32 +7,102 @@ The existing Run/evidence engine remains authoritative.
 
 ## P25 — Provisioning Adapter Migration
 
-The first migration slice is delivered by WiFiLabProvisioningService. It
-performs read-only GNS3 discovery, verifies the protected reference nodes and
-client management adapter, creates only a missing management link on an
-unoccupied Switch1 port, starts nodes in dependency order and verifies provider
-read-back. Its dashboard plan and apply routes use Project/Lab authorization,
-CSRF, idempotency, explicit confirmation and the shared Lab resource lease.
+P25 is implemented as a set of separately bounded adapters while retaining
+the original shell entry point as a recovery fallback.
 
-The Linux host-network slice is now owned by
-LinuxLabHostNetworkService in lib/services/linux_lab_host_network.py. It
-validates the existing libvirt default network against the protected virbr0
-192.168.122.1/24 lab subnet and the additional 10.10.10.1/24 management
-address. It detects any other unapproved bridge address and produces a
-read-only plan. Apply requires explicit operator confirmation, removes only
-default-network DHCP ranges/host reservations through libvirt's live and
-persistent update API, adds either approved address only when absent, and
-verifies both addresses and the DHCP postconditions. It never redefines the network, flushes addresses,
-changes routes or touches unrelated networks. Unit coverage lives in
+### GNS3 provider lifecycle
+
+WiFiLabProvisioningService owns read-only discovery, reference-node and client
+management-adapter validation, additive creation of a missing client management
+link on an unoccupied Switch1 port, ordered node startup, provider read-back,
+Project/Lab authorization, scoped vault credentials, audit and the shared Lab
+resource lock. It never deletes nodes, stops a healthy topology or rewires an
+existing link.
+
+### Linux host network
+
+LinuxLabHostNetworkService in lib/services/linux_lab_host_network.py validates
+the existing libvirt default network and the protected virbr0 address contract:
+192.168.122.1/24 and 10.10.10.1/24. It refuses unapproved bridge addresses,
+deletes only default-network DHCP ranges/reservations using libvirt's live and
+persistent update API, adds only missing approved addresses, and verifies
+postconditions. It does not redefine the network, flush addresses, alter
+routes or touch unrelated networks. Its deterministic tests are in
 tests/test_linux_lab_host_network.py.
 
-The migration remains incremental. wifi_lab_reprovision_robust.sh remains the
-compatibility entry point for Docker guest package/identity setup,
-mac80211_hwsim radio placement, hostapd/wpa_supplicant, FRR DHCP/DNS, monitor
-capture readiness, end-to-end connectivity and the protected Run/evidence
-suite. Those operations still require equivalent Python adapters, isolated
-parity tests and operator-run protected-lab acceptance before their legacy
-path can be retired. A green hosted test suite is not hardware acceptance.
+### Docker guests, Wi-Fi radios and services
+
+LinuxWiFiGuestProvisioningService in
+lib/services/linux_wifi_guest_provisioning.py owns the repeatable guest setup:
+
+- Resolves the exact GNS3 Docker node containers and checks running state,
+  container PID, required Ethernet interfaces and carrier without guessing a
+  similarly named container.
+- Installs only missing Alpine/Ubuntu packages, using CDN/archive fallback for
+  the FRR Alpine repositories.
+- Creates or updates the guest admin account and SSH service. Passwords are
+  sent through stdin to chpasswd; sudoers and service configuration are written
+  through private stdin-backed files.
+- Reuses already placed AP/client mac80211_hwsim radios; loads the module when
+  absent and moves only available host PHYs into the intended Docker network
+  namespaces. It never unloads or recycles the hwsim module. A shortage or
+  ambiguous placement stops for operator inspection.
+- Configures the AP bridge and hostapd WPA2 network, then configures
+  wpa_supplicant and verifies the client WPA association and SSID.
+- Configures FRR dnsmasq with a 12-hour lease, gateway/DNS options and a
+  deterministic reservation for the observed client WLAN MAC at 192.168.122.30.
+  It verifies the DHCP address, preserves client management on eth1 at
+  10.10.10.30, and verifies the default route remains on wlan0.
+- Verifies the client-to-router and gateway paths, DNS resolution, admin SSH
+  and passwordless sudo on all four nodes, plus tcpdump availability on the
+  monitor guest.
+
+The guest service uses bounded argument-vector commands with shell disabled,
+non-interactive sudo only for host operations, a shared Lab resource lease,
+explicit confirmation, stdin-only secret payloads, and read-back after
+mutation. If a later operation fails after earlier mutations, it returns an
+uncertain/partial-completion error; it does not blindly replay the workflow.
+
+### Operator entry point
+
+The explicit CLI joins the GNS3, host-network and Docker guest adapters:
+
+    python scripts/netregress_lab_setup.py --lab-id <LAB_ID> --action plan
+
+For apply, put the required guest credentials in an owner-only .env file
+(chmod 600 .env) or a protected process environment, then run:
+
+    python scripts/netregress_lab_setup.py --lab-id <LAB_ID> --action apply --confirm
+
+The required variables are WIFI_ROUTER1_PASSWORD, WIFI_AP_HOST_PASSWORD,
+WIFI_CLIENT_VM_PASSWORD, WIFI_MONITOR_VM_PASSWORD and WIFI_TEST_PSK. The
+command refuses missing secrets; it has no shared/default passwords and does
+not accept credentials as command-line arguments. Do not run it with sudo.
+Apply starts GNS3 nodes through the bound provider first, then re-plans and
+applies host/guest setup. It does not run pytest automatically; execute the
+protected validation suite through the canonical Run/evidence workflow after
+reviewing the provisioning result.
+
+### Remaining compatibility and acceptance boundaries
+
+The original wifi_lab_reprovision_robust.sh is retained and has not been
+weakened or removed. It remains the fallback for the broader host readiness
+sequence (Ubuntu package installation, Chrony synchronization, local source
+and configuration repair/backup, repository-specific preflight), the
+explicit destructive --repro-test reset mode, and direct invocation of the
+protected test suite. The Python adapters do not perform a destructive GNS3
+reset or claim that tcpdump package availability is proof of a successful
+packet capture.
+
+Hosted CI validates adapter contracts with fake Docker/host command runners.
+It cannot validate the actual GNS3 project, physical Linux bridge, Docker
+guest images, mac80211_hwsim namespace placement, WPA association, RF behavior,
+physical OpenWrt devices or actual capture evidence. Before retiring the shell
+fallback or declaring production P25 acceptance, the operator must run the
+Python plan/apply on the protected lab, run the same protected Run/evidence
+suite, inspect PCAP checksums and final topology/network state, and record the
+actual commit, environment fingerprint and evidence. Those physical-lab
+acceptance results remain distinct from hosted CI.
 
 ## P26 — Persisted Pipeline Orchestration
 
@@ -108,9 +178,11 @@ tests/test_run_process.py.
 Hosted CI does not certify the protected GNS3/mac80211_hwsim Lab or physical
 OpenWrt devices. Before production enablement, operators must complete the
 Stage D GNS3/OpenWrt acceptance checklist and the protected Run/evidence suite.
-The remaining host-network, Docker guest, radio placement, hostapd/wpa_supplicant,
-DHCP/DNS and capture portions of P25 remain on the compatibility script until
-each Python adapter has parity tests and operator-run protected-Lab acceptance.
+The Python GNS3, libvirt and guest adapters have deterministic hosted contract
+tests; host OS readiness, repository/config repair, the destructive compatibility
+reset mode and direct protected-suite execution remain on the shell entry point.
+The shell fallback must remain available until the Python path has been accepted
+on the physical lab with matching Run/evidence and capture checksums.
 
 ## Safe worker operation
 

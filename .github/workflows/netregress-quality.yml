@@ -115,6 +115,12 @@ jobs:
           && bash -n scripts/start_dashboard.sh
           && bash -n scripts/generate_dependency_locks.sh
           && bash -n wifi_lab_reprovision_robust.sh
+      - name: Compile Linux lab provisioning services and CLI
+        run: >-
+          python -m py_compile
+          lib/services/linux_lab_host_network.py
+          lib/services/linux_wifi_guest_provisioning.py
+          scripts/netregress_lab_setup.py
       - name: Run strict source security audit
         run: python scripts/netregress_security_audit.py --strict
       - name: Run API security boundary tests
@@ -144,6 +150,8 @@ jobs:
           tests/test_credential_vault.py
           tests/test_device_inventory.py
           tests/test_wifi_lab_provisioning.py
+          tests/test_linux_lab_host_network.py
+          tests/test_linux_wifi_guest_provisioning.py
           tests/test_pipeline_orchestration.py
           tests/test_pipeline_runtime.py
           tests/test_managed_device_binding.py
