@@ -102,6 +102,54 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked
 
+      - name: Validate Tauri icon PNG encoding
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import struct
+          import sys
+          import zlib
+
+          path = Path("src-tauri/icons/icon.png")
+          payload = path.read_bytes()
+          if payload[:8] != b"\\x89PNG\\r\\n\\x1a\\n" or len(payload) < 33:
+              raise SystemExit(f"{path} is not a valid PNG")
+          offset = 8
+          width = height = bit_depth = color_type = None
+          saw_idat = saw_iend = False
+          while offset + 12 <= len(payload):
+              length = struct.unpack(">I", payload[offset:offset + 4])[0]
+              kind = payload[offset + 4:offset + 8]
+              end = offset + 12 + length
+              if end > len(payload):
+                  raise SystemExit(f"{path} contains a truncated PNG chunk")
+              chunk_data = payload[offset + 8:offset + 8 + length]
+              expected_crc = struct.unpack(">I", payload[offset + 8 + length:end])[0]
+              actual_crc = zlib.crc32(kind + chunk_data) & 0xffffffff
+              if actual_crc != expected_crc:
+                  raise SystemExit(f"{path} contains an invalid {kind.decode('ascii', 'replace')} CRC")
+              if kind == b"IHDR":
+                  if offset != 8 or length != 13:
+                      raise SystemExit(f"{path} has an invalid IHDR chunk")
+                  width, height, bit_depth, color_type = struct.unpack(">IIBB", chunk_data[:10])
+              elif kind == b"IDAT":
+                  saw_idat = True
+              elif kind == b"IEND":
+                  saw_iend = True
+                  if length != 0 or end != len(payload):
+                      raise SystemExit(f"{path} has invalid data after IEND")
+                  break
+              offset = end
+          if not saw_iend or not saw_idat:
+              raise SystemExit(f"{path} is missing required PNG image data or IEND")
+          if (width, height, bit_depth, color_type) != (64, 64, 8, 6):
+              raise SystemExit(
+                  f"{path} must be a 64x64 8-bit RGBA PNG; "
+                  f"found {width}x{height}, bit depth {bit_depth}, color type {color_type}"
+              )
+          print(f"Validated {path}: {width}x{height}, 8-bit RGBA, PNG chunk CRCs valid")
+          PY
+
       - name: Build and bundle the desktop application
         working-directory: src-tauri
         run: cargo tauri build --bundles deb,appimage --ci
