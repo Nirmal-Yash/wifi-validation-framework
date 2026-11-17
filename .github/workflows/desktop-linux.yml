@@ -112,7 +112,7 @@ jobs:
 
           path = Path("src-tauri/icons/icon.png")
           payload = path.read_bytes()
-          if payload[:8] != b"\\x89PNG\\r\\n\\x1a\\n" or len(payload) < 33:
+          if payload[:8] != b"\x89PNG\r\n\x1a\n" or len(payload) < 33:
               raise SystemExit(f"{path} is not a valid PNG")
           offset = 8
           width = height = bit_depth = color_type = None
