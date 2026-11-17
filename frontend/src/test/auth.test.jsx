@@ -29,6 +29,15 @@ describe("NetRegress login screen",()=>{
   expect(screen.getByLabelText("Password").type).toBe("text");
   expect(screen.getByLabelText("Password").value).toBe("local-owner-password");
  });
+ it("offers one-time Owner setup when the packaged Runner has no accounts",async()=>{
+  const onBootstrap=vi.fn().mockResolvedValue({});
+  render(<LoginPage onLogin={vi.fn()} onBootstrap={onBootstrap} setupRequired/>);
+  fireEvent.change(screen.getByLabelText("Username"),{target:{value:"owner"}});
+  fireEvent.change(screen.getByLabelText("Password"),{target:{value:"desktop-owner-password"}});
+  fireEvent.change(screen.getByLabelText("Confirm password"),{target:{value:"desktop-owner-password"}});
+  fireEvent.click(screen.getByRole("button",{name:/create owner account/i}));
+  await waitFor(()=>expect(onBootstrap).toHaveBeenCalledWith("owner","desktop-owner-password"));
+ });
  it("submits the normalized username and password to the session provider",async()=>{
   const onLogin=vi.fn().mockResolvedValue({username:"owner",role:"OWNER"});
   render(<LoginPage onLogin={onLogin}/>);
