@@ -60,7 +60,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "unittest", "test"],
+    excludes=["tkinter"],
     noarchive=False,
     optimize=1,
 )
