@@ -20,6 +20,7 @@ on:
       - "requirements-desktop-build.txt"
       - "wifi_lab_reprovision_robust.sh"
       - ".github/workflows/desktop-linux.yml"
+      - ".github/workflows/netregress-quality.yml"
   workflow_dispatch:
 
 permissions:
@@ -36,7 +37,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Tauri Linux system dependencies
         run: |
@@ -58,7 +59,7 @@ jobs:
             dbus-x11
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -71,7 +72,7 @@ jobs:
           python -m pip install --require-hashes -r requirements.lock
           python -m pip install -r requirements-desktop-build.txt
           python -m pip check
-          python -m py_compile scripts/ci_desktop_smoke.py
+          python -m py_compile scripts/ci_desktop_smoke.py scripts/netregress_desktop_backend.py
 
       - name: Build self-contained Python Runner sidecar
         run: |
@@ -81,9 +82,11 @@ jobs:
             packaging/netregress-backend.spec
           test -x desktop-dist/netregress-backend
           file desktop-dist/netregress-backend
+          # Fail before Tauri packaging if runtime-only migration imports were omitted.
+          desktop-dist/netregress-backend --check-desktop-runtime
 
       - name: Set up Node.js 22.22.2
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22.22.2"
           cache: npm
@@ -107,7 +110,6 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import struct
-          import sys
           import zlib
 
           path = Path("src-tauri/icons/icon.png")
@@ -162,6 +164,8 @@ jobs:
           test -s src-tauri/target/release/bundle/SHA256SUMS
 
       - name: Install Debian package and exercise first-run, restart and removal lifecycle
+        id: deb-lifecycle
+        continue-on-error: true
         run: |
           set -euo pipefail
           SMOKE_ROOT="${RUNNER_TEMP}/netregress-desktop-smoke"
@@ -204,6 +208,8 @@ jobs:
           echo "Debian package removal retained the user database and session secret."
 
       - name: Exercise AppImage first-run and restart lifecycle
+        id: appimage-lifecycle
+        continue-on-error: true
         run: |
           set -euo pipefail
           SMOKE_ROOT="${RUNNER_TEMP}/netregress-desktop-smoke"
@@ -228,7 +234,27 @@ jobs:
             --appimage | tee "${SMOKE_ROOT}/appimage-lifecycle.json"
           rm -rf "${APPIMAGE_RESOURCES}/squashfs-root"
 
+      - name: Summarize desktop package qualification
+        if: always()
+        env:
+          DEB_OUTCOME: ${{ steps.deb-lifecycle.outcome }}
+          APPIMAGE_OUTCOME: ${{ steps.appimage-lifecycle.outcome }}
+        run: |
+          {
+            echo "## Linux desktop package qualification"
+            echo ""
+            echo "| Package | Lifecycle result |"
+            echo "|---|---|"
+            echo "| Debian (.deb) | ${DEB_OUTCOME} |"
+            echo "| AppImage | ${APPIMAGE_OUTCOME} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${DEB_OUTCOME}" != "success" || "${APPIMAGE_OUTCOME}" != "success" ]]; then
+            echo "Linux package qualification failed; see the independent lifecycle steps above." >&2
+            exit 1
+          fi
+
       - name: Upload Linux packages for qualification
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: netregress-linux-desktop-${{ github.sha }}

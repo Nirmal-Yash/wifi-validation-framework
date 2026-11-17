@@ -23,7 +23,9 @@ for filename in ("alembic.ini", "pytest.ini", "wifi_lab_reprovision_robust.sh"):
     if source.is_file():
         datas.append((str(source), "."))
 
-hiddenimports = []
+# Alembic dynamically loads its migration environment, which imports this
+# standard-library module at runtime. Keep it in the optimized one-file build.
+hiddenimports = ["logging.config"]
 for package in ("dashboard", "lib", "regression", "tests"):
     try:
         hiddenimports.extend(collect_submodules(package))

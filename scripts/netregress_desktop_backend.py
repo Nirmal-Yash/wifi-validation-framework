@@ -39,7 +39,28 @@ def _dispatch_frozen_child(arguments: list[str]) -> int | None:
     return None
 
 
+def _check_desktop_runtime() -> int:
+    """Verify dynamically loaded stdlib and migration imports in the frozen app."""
+    import importlib
+
+    required_modules = (
+        "logging.config",
+        "alembic",
+        "alembic.command",
+        "alembic.config",
+        "alembic.script",
+        "sqlalchemy",
+    )
+    for module_name in required_modules:
+        importlib.import_module(module_name)
+    print("Packaged desktop runtime imports validated: " + ", ".join(required_modules))
+    return 0
+
+
 def main() -> int:
+    if sys.argv[1:] == ["--check-desktop-runtime"]:
+        return _check_desktop_runtime()
+
     child_result = _dispatch_frozen_child(sys.argv[1:])
     if child_result is not None:
         return child_result
