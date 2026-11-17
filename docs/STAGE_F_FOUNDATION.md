@@ -53,7 +53,9 @@ The desktop shell passes the OS-resolved application data and configuration loca
 
 ## Qualification boundaries
 
-The hosted package workflow is a build, installation and first-run lifecycle gate for the Ubuntu 22.04 CI image. P33 still requires operator qualification on clean supported Ubuntu/Debian desktop environments, including interactive rendering, desktop launch integration, upgrade and rollback, database migration, backup/restore, process supervision and shutdown, application removal with data retention, and execution of representative packaged validation Runs with evidence.
+The hosted package workflow builds the PyInstaller/Tauri bundles and runs the Debian/AppImage lifecycle smoke test in Xvfb on Ubuntu 22.04. The Debian test installs the package, starts the installed desktop executable, verifies the local sidecar health check, creates the first Owner, authenticates, restarts, verifies the same account/database, removes the package and checks user-data retention. The AppImage test checks the same first-run and restart path. These are automated CI checks; no claim is made that they replace interactive rendering or target-machine qualification.
+
+P33 still requires operator qualification on clean supported Ubuntu/Debian desktop environments, including interactive rendering, desktop launch integration, upgrade and rollback, backup/restore, package-manager behavior on supported OS releases, process supervision under real sessions, and execution of representative packaged validation Runs with evidence.
 
 The live protected GNS3/mac80211_hwsim/physical OpenWrt lab remains a separate operator acceptance gate from hosted CI. The compatibility provisioning script is included unchanged as a fallback while the remaining P25 host-network, container/radio, Wi-Fi service and capture operations are brought to Python parity. No destructive protected-lab reset is part of desktop startup.
 

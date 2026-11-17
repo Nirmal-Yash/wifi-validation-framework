@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import signal
 import subprocess
 import sys
@@ -22,7 +23,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-OWNER_PASSWORD = "desktop-smoke-owner-password-2026"
+OWNER_PASSWORD = secrets.token_urlsafe(32)
 PORT_PATTERN = re.compile(r"https?://127\.0\.0\.1:(\d{1,5})")
 
 

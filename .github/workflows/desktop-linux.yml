@@ -53,7 +53,9 @@ jobs:
             libxdo-dev \
             librsvg2-dev \
             patchelf \
-            wget
+            wget \
+            xvfb \
+            dbus-x11
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -111,6 +113,54 @@ jobs:
             -print0 | sort -z | xargs -0 sha256sum > src-tauri/target/release/bundle/SHA256SUMS
           test -s src-tauri/target/release/bundle/SHA256SUMS
 
+      - name: Install Debian package and exercise first-run, restart and removal lifecycle
+        run: |
+          set -euo pipefail
+          SMOKE_ROOT="${RUNNER_TEMP}/netregress-desktop-smoke"
+          DEB_STATE="${SMOKE_ROOT}/deb"
+          mkdir -p "${SMOKE_ROOT}"
+          DEB="$(find src-tauri/target/release/bundle -type f -name '*.deb' -print -quit)"
+          test -n "${DEB}"
+          DEB_PACKAGE="$(dpkg-deb -f "${DEB}" Package)"
+          test -n "${DEB_PACKAGE}"
+          sudo apt-get install -y "${DEB}"
+          APP_EXECUTABLE="$(dpkg-query -L "${DEB_PACKAGE}" | awk '/^\/usr\/bin\/[^/]+$/ {print; exit}')"
+          if [[ -z "${APP_EXECUTABLE}" || ! -x "${APP_EXECUTABLE}" ]]; then
+            echo "Could not locate the installed NetRegress desktop executable for package ${DEB_PACKAGE}." >&2
+            dpkg-query -L "${DEB_PACKAGE}" >&2
+            exit 1
+          fi
+          python scripts/ci_desktop_smoke.py \
+            --executable "${APP_EXECUTABLE}" \
+            --state-root "${DEB_STATE}" \
+            --label deb | tee "${SMOKE_ROOT}/deb-lifecycle.json"
+          sudo apt-get remove -y "${DEB_PACKAGE}"
+          if dpkg-query -W -f='${Status}' "${DEB_PACKAGE}" 2>/dev/null | grep -q "install ok installed"; then
+            echo "Debian package remains installed after removal." >&2
+            exit 1
+          fi
+          DB="$(find "${DEB_STATE}/data" -type f -name test_results.db -print -quit)"
+          SESSION_SECRET="$(find "${DEB_STATE}/data" -type f -name session-secret -print -quit)"
+          test -s "${DB}"
+          test -s "${SESSION_SECRET}"
+          echo "Debian package removal retained the user database and session secret."
+
+      - name: Exercise AppImage first-run and restart lifecycle
+        run: |
+          set -euo pipefail
+          SMOKE_ROOT="${RUNNER_TEMP}/netregress-desktop-smoke"
+          APPIMAGE_STATE="${SMOKE_ROOT}/appimage"
+          mkdir -p "${APPIMAGE_STATE}"
+          APPIMAGE="$(find src-tauri/target/release/bundle -type f \
+            \( -name '*.AppImage' -o -name '*.appimage' \) -print -quit)"
+          test -n "${APPIMAGE}"
+          chmod +x "${APPIMAGE}"
+          python scripts/ci_desktop_smoke.py \
+            --executable "${APPIMAGE}" \
+            --state-root "${APPIMAGE_STATE}" \
+            --label appimage \
+            --appimage | tee "${SMOKE_ROOT}/appimage-lifecycle.json"
+
       - name: Upload Linux packages for qualification
         uses: actions/upload-artifact@v4
         with:
@@ -120,5 +170,6 @@ jobs:
             src-tauri/target/release/bundle/**/*.AppImage
             src-tauri/target/release/bundle/**/*.appimage
             src-tauri/target/release/bundle/SHA256SUMS
+            ${{ runner.temp }}/netregress-desktop-smoke/**
           if-no-files-found: error
           retention-days: 30

@@ -29,6 +29,8 @@ on:
       - "tests/test_dashboard_rbac_matrix.py"
       - "tests/test_dashboard_session_enforcement.py"
       - ".github/workflows/netregress-quality.yml"
+      - ".github/workflows/desktop-linux.yml"
+      - "scripts/ci_desktop_smoke.py"
   pull_request:
     branches: [main]
     paths:
