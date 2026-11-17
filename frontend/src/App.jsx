@@ -1,4 +1,4 @@
-import React from "react";
+import React,{useEffect,useState} from "react";
 import {ArrowLeft,ShieldAlert} from "lucide-react";
 import {navigate,routeFor} from "@/router";
 import {useRoute} from "@/hooks";
@@ -17,6 +17,7 @@ import TopologyStudioPage from "@/pages/topologies";
 import PipelinesPage from "@/pages/pipelines";
 import {Button,LoadingState,Section} from "@/components/ui";
 import {useSession} from "@/auth/session-provider";
+import {api} from "@/api";
 import {canAccessRoute} from "@/permissions";
 
 function NotFound(){
@@ -45,11 +46,32 @@ export default function App(){
  const routeState=useRoute();
  const route=routeFor(routeState.value);
  const{status,user,login,logout,sessionNotice,clearNotice}=useSession();
+ const[setupRequired,setSetupRequired]=useState(false);
+ const[setupChecked,setSetupChecked]=useState(false);
+ useEffect(()=>{
+  let active=true;
+  if(status==="anonymous"){
+   setSetupChecked(false);
+   api.setupStatus().then(result=>{
+    if(active)setSetupRequired(Boolean(result?.first_run_required));
+   }).catch(()=>{if(active)setSetupRequired(false);}).finally(()=>{if(active)setSetupChecked(true);});
+  }else if(status==="authenticated"){
+   setSetupRequired(false);
+   setSetupChecked(true);
+  }
+  return()=>{active=false;};
+ },[status]);
+ const bootstrapOwner=async(username,password)=>{
+  await api.bootstrapOwner({username,password});
+  setSetupRequired(false);
+  await login(username,password);
+ };
  if(route.name==="account-access")return <AccountAccessPage mode={route.mode}/>;
  if(status==="checking")return <div className="boot-screen"><LoadingState label="Restoring secure Runner session…"/></div>;
  if(status==="anonymous"||status==="authenticating"){
   const unavailable=sessionNotice?.includes("API is unavailable");
-  return unavailable?<RunnerUnavailable message={sessionNotice}/>:<LoginPage onLogin={login} notice={sessionNotice} onDismissNotice={clearNotice}/>;
+  if(!setupChecked&&!unavailable)return <div className="boot-screen"><LoadingState label="Preparing local workspace…"/></div>;
+  return unavailable?<RunnerUnavailable message={sessionNotice}/>:<LoginPage onLogin={login} onBootstrap={bootstrapOwner} setupRequired={setupRequired} notice={sessionNotice} onDismissNotice={clearNotice}/>;
  }
  if(route.name!=="not-found"&&!canAccessRoute(user,route.name)){
   return <AppShell user={user} routeName="dashboard" onLogout={logout}><Forbidden/></AppShell>;
