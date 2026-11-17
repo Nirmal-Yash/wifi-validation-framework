@@ -19,6 +19,10 @@ def _dispatch_frozen_child(arguments: list[str]) -> int | None:
     """Route Runner subprocess commands through the PyInstaller executable."""
     if not getattr(sys, "frozen", False) or not arguments:
         return None
+    # Runner children are launched by sys.executable from the PyInstaller
+    # sidecar. Keep their cwd rooted in the embedded, read-only application
+    # resources rather than inheriting a desktop/user-data working directory.
+    os.chdir(ROOT)
     if len(arguments) >= 2 and arguments[0] == "-m" and arguments[1] == "pytest":
         import pytest
 

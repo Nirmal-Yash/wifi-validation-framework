@@ -121,8 +121,6 @@ jobs:
           mkdir -p "${SMOKE_ROOT}"
           DEB="$(find src-tauri/target/release/bundle -type f -name '*.deb' -print -quit)"
           test -n "${DEB}"
-          # apt-get treats a bare relative path as a package name; pass the
-          # canonical absolute .deb path so it installs the built artifact.
           DEB="$(realpath "${DEB}")"
           test -f "${DEB}"
           DEB_PACKAGE="$(dpkg-deb -f "${DEB}" Package)"
@@ -130,12 +128,79 @@ jobs:
           sudo apt-get install -y "${DEB}"
           APP_EXECUTABLE="$(dpkg-query -L "${DEB_PACKAGE}" | awk '/^\/usr\/bin\/[^/]+$/ {print; exit}')"
           if [[ -z "${APP_EXECUTABLE}" || ! -x "${APP_EXECUTABLE}" ]]; then
-            echo "Could not locate the installed NetRegress desktop executable for package ${DEB_PACKAGE}." >&2
+            echo "Could not locate the installed NetRegress desktop executable." >&2
+            dpkg-query -L "${DEB_PACKAGE}" >&2
+            exit 1
+          fi
+          BACKEND_EXECUTABLE="$(dpkg-query -L "${DEB_PACKAGE}" | grep -E '/netregress-backend$' | head -n 1 || true)"
+          if [[ -z "${BACKEND_EXECUTABLE}" || ! -x "${BACKEND_EXECUTABLE}" ]]; then
+            echo "Could not locate the packaged Python backend sidecar." >&2
+            dpkg-query -L "${DEB_PACKAGE}" >&2
+            find /usr/lib /opt -type f -name netregress-backend -print 2>/dev/null >&2 || true
+            exit 1
+          fi
+          python scripts/ci_desktop_smoke.py \
+            --executable "${APP_EXECUTABLE}" \
+            --backend-executable "${BACKEND_EXECUTABLE}" \
+            --state-root "${DEB_STATE}" \
+            --label deb | tee "${SMOKE_ROOT}/deb-lifecycle.json"
+          sudo apt-get remove -y "${DEB_PACKAGE}"
+          if dpkg-query -W -f='${Status}' "${DEB_PACKAGE}" 2>/dev/null | grep -q "install ok installed"; then
+            echo "Debian package remains installed after removal." >&2
+            exit 1
+          fi
+          DB="$(find "${DEB_STATE}/data" -type f -name test_results.db -print -quit)"
+          SESSION_SECRET="$(find "${DEB_STATE}/data" -type f -name session-secret -print -quit)"
+          test -s "${DB}"
+          test -s "${SESSION_SECRET}"
+          echo "Debian package removal retained the user database and session secret."
+
+      - name: Exercise AppImage first-run and restart lifecycle
+        run: |
+          set -euo pipefail
+          SMOKE_ROOT="${RUNNER_TEMP}/netregress-desktop-smoke"
+          APPIMAGE_STATE="${SMOKE_ROOT}/appimage"
+          APPIMAGE_RESOURCES="${SMOKE_ROOT}/appimage-resources"
+          mkdir -p "${APPIMAGE_STATE}" "${APPIMAGE_RESOURCES}"
+          APPIMAGE="$(find src-tauri/target/release/bundle -type f -name '*.AppImage' -print -quit)"
+          test -n "${APPIMAGE}"
+          chmod +x "${APPIMAGE}"
+          (cd "${APPIMAGE_RESOURCES}" && "${APPIMAGE}" --appimage-extract >/dev/null)
+          BACKEND_EXECUTABLE="$(find "${APPIMAGE_RESOURCES}/squashfs-root" -type f -name netregress-backend -print -quit)"
+          if [[ -z "${BACKEND_EXECUTABLE}" || ! -x "${BACKEND_EXECUTABLE}" ]]; then
+            echo "Could not locate the AppImage Python backend sidecar." >&2
+            find "${APPIMAGE_RESOURCES}/squashfs-root" -maxdepth 8 -type f -print >&2
+            exit 1
+          fi
+          python scripts/ci_desktop_smoke.py \
+            --executable "${APPIMAGE}" \
+            --backend-executable "${BACKEND_EXECUTABLE}" \
+            --state-root "${APPIMAGE_STATE}" \
+            --label appimage \
+            --appimage | tee "${SMOKE_ROOT}/appimage-lifecycle.json"
+          rm -rf "${APPIMAGE_RESOURCES}/squashfs-root"
+
+      - name: Upload Linux packages for qualification
+        uses: actions/upload-artifact@v4
+        with:
+          name: netregress-linux-desktop-${{ github.sha }}
+          path: |
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.appimage
+            src-tauri/target/release/bundle/SHA256SUMS
+            ${{ runner.temp }}/netregress-desktop-smoke/**
+          if-no-files-found: error
+          retention-days: 30
+ | head -n 1 || true)"
+          if [[ -z "${BACKEND_EXECUTABLE}" || ! -x "${BACKEND_EXECUTABLE}" ]]; then
+            echo "Could not locate the packaged Python backend sidecar." >&2
             dpkg-query -L "${DEB_PACKAGE}" >&2
             exit 1
           fi
           python scripts/ci_desktop_smoke.py \
             --executable "${APP_EXECUTABLE}" \
+            --backend-executable "${BACKEND_EXECUTABLE}" \
             --state-root "${DEB_STATE}" \
             --label deb | tee "${SMOKE_ROOT}/deb-lifecycle.json"
           sudo apt-get remove -y "${DEB_PACKAGE}"

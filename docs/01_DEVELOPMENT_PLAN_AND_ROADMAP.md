@@ -76,11 +76,11 @@ docs/STAGE_E_FOUNDATION.md.
 
 | Phase | Scope | Status |
 |---|---|---|
-| P25 | Provisioning Adapter Migration | Python GNS3 provisioner and plan-first libvirt/virbr0 dual-subnet host-network adapter delivered with hosted unit coverage; Docker guest package/SSH setup, hwsim radio placement, Wi-Fi/DHCP/DNS, monitor capture and protected-lab parity/acceptance remain open |
+| P25 | Provisioning Adapter Migration | Python GNS3, Ubuntu host-readiness, libvirt dual-subnet, Docker guest package/SSH, hwsim placement, hostapd/wpa_supplicant, FRR DHCP/DNS and guest path/SSH preflight adapters implemented with hosted contract tests; actual PCAP and protected GNS3/mac80211_hwsim/OpenWrt acceptance remain operator-owned; compatibility shell retained for repository/config repair, destructive reset and protected-suite/capture workflow |
 | P26 | Persisted Pipeline Orchestration | Implemented; immutable Project/Lab revisions, persisted execution/step/attempt records, worker leases, bounded safe retries and explicit recovery |
 | P27 | Pipeline Management Frontend | Implemented; scoped authoring/publication, execution monitoring, cancellation and reviewed recovery |
 | P28 | Complete Run and Policy Integration | Implemented in source; canonical RunProcessManager/RunService execution, same-Project/Lab Run association, pinned policy/configuration/topology references and post-Run policy evaluation |
-| P29 | Qualification and Release Gate | Hosted qualification added for migration/schema, RBAC, idempotency, Run integration, policy pinning, worker/process recovery, frontend and dashboard; protected GNS3/mac80211_hwsim/OpenWrt acceptance remains operator-owned |
+| P29 | Qualification and Release Gate | Hosted backend (532 passed, 7 skipped on 2026-11-17), frontend and dashboard checks pass for the current Stage E checkpoint; protected GNS3/mac80211_hwsim/physical OpenWrt Run, capture and evidence acceptance remains operator-owned |
 
 Stage E does not introduce a Cloud control plane or retire the protected shell
 entry point. Run/evidence remains authoritative, and uncertain validation
@@ -2964,14 +2964,26 @@ No transitive Python/npm lockfiles were created from guessed versions. No obsole
 
 | Phase | Scope | Current delivery |
 |---|---|---|
-| P25 | Provisioning Adapter Migration | Python GNS3 lifecycle and protected libvirt dual-subnet host-network slices delivered; shell remains for Docker guest/service configuration, hwsim radio placement, capture and end-to-end protected-lab acceptance |
+| P25 | Provisioning Adapter Migration | Python GNS3 provider, Ubuntu host bootstrap, libvirt dual-subnet host network, Docker guest package/SSH, hwsim, hostapd/wpa_supplicant, FRR DHCP/DNS and end-to-end guest preflight adapters delivered with hosted contract tests; actual PCAP/physical-lab acceptance remains operator-owned |
 | P26 | Persisted Pipeline Orchestration | Versioned definitions, durable execution/step/attempt state, worker leases, bounded retries, cancellation and operator-reviewed recovery delivered |
-| P27 | Pipeline Management Frontend | Next checkpoint: dashboard authoring, publication, monitoring and recovery workflows |
-| P28 | Complete Run and Policy Integration | Next checkpoint: validation Run linkage, configuration/topology revision pinning and performance policy evidence |
-| P29 | Security, Migration and End-to-End Qualification | Final checkpoint: workflow qualification and protected-lab operator acceptance |
+| P27 | Pipeline Management Frontend | Scoped authoring, publication, monitoring, cancellation and recovery workflows delivered |
+| P28 | Complete Run and Policy Integration | Canonical validation Run linkage, configuration/device/topology revision pinning and post-Run performance policy evaluation delivered |
+| P29 | Security, Migration and End-to-End Qualification | Hosted migration/RBAC/idempotency/worker/Run/policy/frontend/dashboard qualification passes; protected GNS3/mac80211_hwsim/OpenWrt Run/evidence acceptance remains operator-owned |
 
-Stage E reuses Stage B identity/RBAC, Stage C credential/configuration/performance
-services and Stage D topology/device/provider contracts. It does not replace the
-existing Run engine or authorize unbounded shell commands. CI uses fake provider
-handlers for state-machine verification; live GNS3/OpenWrt acceptance remains an
-operator-run deployment gate.
+The Python provisioning adapters retain the legacy shell as a fallback for
+repository/config repair, destructive reset, and direct protected-suite and
+capture/evidence operations. CI does not substitute for actual protected-lab
+acceptance or verified PCAP evidence.
+
+### Additional Stage F implementation track — P30–P33
+
+| Phase | Scope | Current delivery |
+|---|---|---|
+| P30 | Tauri Desktop Shell | Implemented; local React webview, loopback backend sidecar, health gate, secure data paths and orderly shutdown |
+| P31 | Packaged Backend Runtime | Implemented; PyInstaller sidecar with migrations, pytest tree and pipeline worker dispatch, persistent SQLite/session state and one-time Owner bootstrap |
+| P32 | Linux Packaging and Lifecycle | Debian and AppImage build pipeline plus Xvfb install/first-run/login/restart/data-retention smoke, including frozen pytest/worker dispatch; final current-head CI result is the release gate |
+| P33 | Linux Product Release Certification | Operator qualification still required on clean supported Ubuntu/Debian systems for interactive UI, desktop integration, upgrades/rollback, backup/restore and representative packaged validation Runs/evidence |
+
+Windows packaging (W1) and the SaaS control plane (S1) remain separate future
+targets. Hosted Linux CI does not certify every supported desktop distribution,
+the protected Wi-Fi lab, or a Windows build.

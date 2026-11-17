@@ -19,7 +19,18 @@ Project/Lab authorization, scoped vault credentials, audit and the shared Lab
 resource lock. It never deletes nodes, stops a healthy topology or rewires an
 existing link.
 
-### Linux host network
+### Linux host readiness and network
+
+LinuxLabHostBootstrapService in lib/services/linux_lab_host_bootstrap.py
+migrates the repeatable Ubuntu host baseline into a bounded plan/apply service.
+It reports missing documented packages/commands, Docker daemon access, Chrony
+service/clock synchronization and libvirt default-network state. Apply requires
+explicit confirmation, a non-root operator account and passwordless
+non-interactive sudo. It installs only the enumerated host packages, starts
+Docker and Chrony, waits for synchronized time, and defines the protected
+libvirt default network only when it is absent. Existing network XML is
+validated against the virbr0/NAT/192.168.122.1/24 contract; a mismatch is a
+conflict, never an instruction to redefine or delete the network.
 
 LinuxLabHostNetworkService in lib/services/linux_lab_host_network.py validates
 the existing libvirt default network and the protected virbr0 address contract:
@@ -65,7 +76,8 @@ uncertain/partial-completion error; it does not blindly replay the workflow.
 
 ### Operator entry point
 
-The explicit CLI joins the GNS3, host-network and Docker guest adapters:
+The explicit CLI joins the Linux host-readiness, GNS3, host-network and Docker
+guest adapters:
 
     python scripts/netregress_lab_setup.py --lab-id <LAB_ID> --action plan
 
@@ -78,21 +90,28 @@ The required variables are WIFI_ROUTER1_PASSWORD, WIFI_AP_HOST_PASSWORD,
 WIFI_CLIENT_VM_PASSWORD, WIFI_MONITOR_VM_PASSWORD and WIFI_TEST_PSK. The
 command refuses missing secrets; it has no shared/default passwords and does
 not accept credentials as command-line arguments. Do not run it with sudo.
-Apply starts GNS3 nodes through the bound provider first, then re-plans and
-applies host/guest setup. It does not run pytest automatically; execute the
-protected validation suite through the canonical Run/evidence workflow after
-reviewing the provisioning result.
+Apply performs the approved host package/Chrony/Docker/libvirt bootstrap,
+re-reads GNS3 and host/guest preflight, starts GNS3 nodes through the bound
+provider, then applies the dual-subnet host network and guest configuration
+under the shared Lab resource lock. The host bootstrap defines the default
+network only when absent and never overwrites a mismatched existing network.
+The CLI does not run pytest automatically; execute the protected validation
+suite through the canonical Run/evidence workflow after reviewing the
+provisioning result.
 
 ### Remaining compatibility and acceptance boundaries
 
 The original wifi_lab_reprovision_robust.sh is retained and has not been
-weakened or removed. It remains the fallback for the broader host readiness
-sequence (Ubuntu package installation, Chrony synchronization, local source
-and configuration repair/backup, repository-specific preflight), the
-explicit destructive --repro-test reset mode, and direct invocation of the
-protected test suite. The Python adapters do not perform a destructive GNS3
-reset or claim that tcpdump package availability is proof of a successful
-packet capture.
+weakened or removed. The Python adapters now own the reusable Ubuntu
+package/Chrony/Docker/libvirt bootstrap, GNS3 provider lifecycle, dual-subnet
+libvirt host networking, Docker guest packages/SSH, hwsim placement, hostapd,
+wpa_supplicant, FRR DHCP/DNS and guest data-path/SSH preflight. The compatibility
+script remains the recovery path for repository-local virtual-environment and
+dependency repair, config validation/backup normalization, destructive
+--repro-test reset mode, direct protected-suite invocation and the historical
+final capture/evidence operations. The Python adapters do not perform a
+destructive GNS3 reset or claim that tcpdump package availability is proof of a
+successful PCAP capture.
 
 Hosted CI validates adapter contracts with fake Docker/host command runners.
 It cannot validate the actual GNS3 project, physical Linux bridge, Docker
@@ -178,11 +197,12 @@ tests/test_run_process.py.
 Hosted CI does not certify the protected GNS3/mac80211_hwsim Lab or physical
 OpenWrt devices. Before production enablement, operators must complete the
 Stage D GNS3/OpenWrt acceptance checklist and the protected Run/evidence suite.
-The Python GNS3, libvirt and guest adapters have deterministic hosted contract
-tests; host OS readiness, repository/config repair, the destructive compatibility
-reset mode and direct protected-suite execution remain on the shell entry point.
-The shell fallback must remain available until the Python path has been accepted
-on the physical lab with matching Run/evidence and capture checksums.
+The Python GNS3, host readiness, libvirt and guest adapters have deterministic
+hosted contract tests. Repository/config repair, the destructive compatibility
+reset mode and direct protected-suite/capture execution remain on the shell
+entry point. The shell fallback must remain available until the Python path has
+been accepted on the physical lab with matching Run/evidence and capture
+checksums.
 
 ## Safe worker operation
 

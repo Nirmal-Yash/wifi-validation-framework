@@ -226,7 +226,112 @@ def _create_owner_and_login(port: int, *, first_run: bool) -> None:
         raise SmokeFailure(f"authenticated Owner profile could not be restored: HTTP {status}, {body}")
 
 
-def _run_cycle(executable: Path, state_root: Path, *, appimage: bool) -> dict:
+def _run_packaged_backend_checks(
+    backend_executable: Path,
+    *,
+    state_root: Path,
+    database: Path,
+) -> dict:
+    """Exercise the actual frozen pytest and pipeline-worker child dispatch."""
+    if not backend_executable.is_file() or not os.access(backend_executable, os.X_OK):
+        raise SmokeFailure(
+            "the package resource backend/netregress-backend is missing or not executable"
+        )
+    data_home = state_root / "data"
+    results_dir = database.parent
+    process_dir = results_dir / "processes"
+    logs_dir = data_home / "logs"
+    config_dir = state_root / "config"
+    for directory in (process_dir, logs_dir, config_dir):
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        directory.chmod(0o700)
+
+    env = os.environ.copy()
+    env.update({
+        "HOME": str(state_root / "home"),
+        "XDG_DATA_HOME": str(data_home),
+        "XDG_CONFIG_HOME": str(config_dir),
+        "NETREGRESS_PACKAGED": "1",
+        "NETREGRESS_AUTH_REQUIRED": "1",
+        "NETREGRESS_AUTH_USERS_JSON": "",
+        "NETREGRESS_USER_DATA_DIR": str(data_home),
+        "NETREGRESS_LOCAL_DIR": str(data_home),
+        "NETREGRESS_CONFIG_DIR": str(config_dir),
+        "NETREGRESS_LOG_DIR": str(logs_dir),
+        "NETREGRESS_RESULTS_DIR": str(results_dir),
+        "NETREGRESS_PROCESS_DIR": str(process_dir),
+        "NETREGRESS_DATABASE_PATH": str(database),
+        "PYTHONNOUSERSITE": "1",
+    })
+    pytest_result = subprocess.run(
+        [
+            str(backend_executable.resolve()),
+            "-m", "pytest",
+            "tests/test_desktop_setup.py",
+            "-q",
+            "-p", "no:cacheprovider",
+        ],
+        cwd=state_root,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=240,
+        check=False,
+    )
+    if pytest_result.returncode != 0:
+        output = (pytest_result.stdout + "\n" + pytest_result.stderr)[-5000:]
+        raise SmokeFailure(
+            "the packaged backend could not execute its embedded pytest suite "
+            f"(exit {pytest_result.returncode}): {output}"
+        )
+
+    worker_result = subprocess.run(
+        [
+            str(backend_executable.resolve()),
+            "scripts/netregress_pipeline_worker.py",
+            "--once",
+        ],
+        cwd=state_root,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=90,
+        check=False,
+    )
+    if worker_result.returncode != 0:
+        output = (worker_result.stdout + "\n" + worker_result.stderr)[-5000:]
+        raise SmokeFailure(
+            "the packaged backend could not dispatch its pipeline worker "
+            f"(exit {worker_result.returncode}): {output}"
+        )
+    lines = [line for line in worker_result.stdout.splitlines() if line.strip()]
+    if not lines:
+        raise SmokeFailure("the packaged pipeline worker produced no result")
+    try:
+        worker_state = json.loads(lines[-1])
+    except json.JSONDecodeError as exc:
+        raise SmokeFailure("the packaged pipeline worker returned invalid JSON") from exc
+    if worker_state.get("status") != "IDLE":
+        raise SmokeFailure(
+            "the packaged pipeline worker did not report an idle, empty queue "
+            f"in the isolated smoke database: {worker_state.get('status')!r}"
+        )
+    return {
+        "pytest": "PASS",
+        "pytest_summary": (pytest_result.stdout.strip().splitlines()[-1:] or ["completed"])[0],
+        "pipeline_worker": worker_state.get("status"),
+    }
+
+
+def _run_cycle(
+    executable: Path,
+    state_root: Path,
+    *,
+    appimage: bool,
+    backend_executable: Path | None,
+) -> dict:
     data_home = state_root / "data"
     process, _ = _start_app(
         executable, state_root=state_root, label="first-launch", appimage=appimage,
@@ -261,6 +366,12 @@ def _run_cycle(executable: Path, state_root: Path, *, appimage: bool) -> dict:
     secrets = list(data_home.rglob("session-secret"))
     if len(secrets) != 1 or secrets[0].stat().st_mode & 0o077:
         raise SmokeFailure("persistent session-signing secret is missing or has broad permissions")
+    packaged_children = (
+        _run_packaged_backend_checks(
+            backend_executable, state_root=state_root, database=database,
+        )
+        if backend_executable is not None else {"status": "NOT_REQUESTED"}
+    )
     return {
         "status": "PASS",
         "first_backend_port": first_port,
@@ -269,6 +380,7 @@ def _run_cycle(executable: Path, state_root: Path, *, appimage: bool) -> dict:
         "database_bytes": database.stat().st_size,
         "session_secret": str(secrets[0]),
         "backend_logs": [str(first_log), str(second_log)],
+        "packaged_backend_children": packaged_children,
     }
 
 
@@ -278,6 +390,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--state-root", required=True, type=Path, help="Isolated HOME/XDG state root for this smoke test.")
     parser.add_argument("--label", default="desktop")
     parser.add_argument("--appimage", action="store_true", help="Launch the AppImage directly.")
+    parser.add_argument(
+        "--backend-executable", type=Path,
+        help="Packaged resources/backend/netregress-backend to test frozen child dispatch.",
+    )
     args = parser.parse_args(argv)
 
     if not args.executable.is_file() or not os.access(args.executable, os.X_OK):
@@ -287,7 +403,10 @@ def main(argv: list[str] | None = None) -> int:
 
     args.state_root.mkdir(parents=True, exist_ok=True)
     try:
-        report = _run_cycle(args.executable, args.state_root, appimage=args.appimage)
+        report = _run_cycle(
+            args.executable, args.state_root, appimage=args.appimage,
+            backend_executable=args.backend_executable,
+        )
         report["label"] = args.label
         report["executable"] = str(args.executable)
         print(json.dumps(report, indent=2, sort_keys=True))

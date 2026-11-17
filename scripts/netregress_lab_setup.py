@@ -57,6 +57,7 @@ def _build_services(database_path: str | None):
     from lib.repositories import SQLiteDatabase
     from lib.services.credential_vault import CredentialVaultService
     from lib.services.gns3_provider import GNS3ProviderError
+    from lib.services.linux_lab_host_bootstrap import LinuxLabHostBootstrapService
     from lib.services.linux_lab_host_network import LinuxLabHostNetworkService
     from lib.services.linux_wifi_guest_provisioning import LinuxWiFiGuestProvisioningService
     from lib.services.wifi_lab_provisioning import WiFiLabProvisioningService
@@ -71,11 +72,12 @@ def _build_services(database_path: str | None):
     )
     gns3 = WiFiLabProvisioningService(database, vault)
     host_network = LinuxLabHostNetworkService()
+    host_bootstrap = LinuxLabHostBootstrapService(host_network)
     guests = LinuxWiFiGuestProvisioningService(
         host_network,
         resource_lock_manager=gns3.resource_lock_manager,
     )
-    return gns3, host_network, guests
+    return gns3, host_bootstrap, host_network, guests
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -93,15 +95,21 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         _load_local_environment()
-        gns3, host_network, guests = _build_services(args.database)
+        gns3, host_bootstrap, host_network, guests = _build_services(args.database)
+        host_bootstrap_plan = host_bootstrap.plan()
         gns3_plan = gns3.plan(args.lab_id, actor=args.actor)
-        host_plan = host_network.plan()
-        guest_plan = guests.plan()
+        host_plan = None
+        guest_plan = None
+        if host_bootstrap_plan["libvirt_default_network"]["exists"] is True and host_bootstrap_plan["libvirt_default_network"]["active"]:
+            host_plan = host_network.plan()
+            if host_bootstrap_plan["docker"]["daemon_ready"] and host_plan.get("can_apply"):
+                guest_plan = guests.plan()
 
         if args.action == "plan":
             print(json.dumps({
                 "status": "PLANNED",
                 "lab_id": args.lab_id,
+                "host_readiness": host_bootstrap_plan,
                 "gns3": gns3_plan,
                 "host_network": host_plan,
                 "guests": guest_plan,
@@ -112,13 +120,23 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 "compatibility": "wifi_lab_reprovision_robust.sh remains available until live-lab parity is accepted.",
             }, indent=2, sort_keys=True))
-            return 0 if gns3_plan.get("can_apply") and host_plan.get("can_apply") and guest_plan.get("can_apply") else 1
+            return 0 if host_bootstrap_plan.get("can_apply") and gns3_plan.get("can_apply") else 1
 
         passwords = _guest_passwords()
+        if not host_bootstrap_plan.get("can_apply"):
+            raise RuntimeError("Linux host readiness preflight contains a conflict")
+        if not gns3_plan.get("can_apply"):
+            raise RuntimeError("GNS3 provider preflight contains a conflict; host setup was not started")
+        host_bootstrap_result = host_bootstrap.apply(confirmed=True)
+        # Re-read all provider and guest state after host packages, clock,
+        # Docker and libvirt reach their verified postconditions.
+        gns3_plan = gns3.plan(args.lab_id, actor=args.actor)
+        host_plan = host_network.plan()
+        guest_plan = guests.plan()
         if not gns3_plan.get("can_apply"):
             raise RuntimeError("GNS3 provider preflight contains a conflict")
-        if not host_plan.get("can_apply"):
-            raise RuntimeError("protected libvirt host network preflight contains a conflict")
+        if not host_plan.get("can_apply") or not guest_plan.get("can_apply"):
+            raise RuntimeError("protected host-network or guest preflight contains a conflict")
 
         gns3_result = gns3.apply(args.lab_id, confirmed=True, actor=args.actor)
         # Re-inspect after GNS3 starts nodes/creates the approved management link.
@@ -135,6 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({
             "status": "APPLIED",
             "lab_id": args.lab_id,
+            "host_readiness": host_bootstrap_result,
             "gns3": gns3_result,
             "guests": guest_result,
             "protected_run": (

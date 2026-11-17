@@ -53,11 +53,17 @@ The desktop shell passes the OS-resolved application data and configuration loca
 
 ## Qualification boundaries
 
-The hosted package workflow builds the PyInstaller/Tauri bundles and runs the Debian/AppImage lifecycle smoke test in Xvfb on Ubuntu 22.04. The Debian test installs the package, starts the installed desktop executable, verifies the local sidecar health check, creates the first Owner, authenticates, restarts, verifies the same account/database, removes the package and checks user-data retention. The AppImage test checks the same first-run and restart path. These are automated CI checks; no claim is made that they replace interactive rendering or target-machine qualification.
+The hosted package workflow builds the PyInstaller/Tauri bundles and runs the Debian/AppImage lifecycle smoke test in Xvfb on Ubuntu 22.04. The Debian test installs the package, starts the installed desktop executable, verifies the local sidecar health check, creates the first Owner, authenticates, restarts, verifies the same account/database, removes the package and checks user-data retention. Both package paths also invoke the frozen backend directly to run the embedded first-run setup tests and execute the bundled pipeline worker against an empty smoke database. The AppImage test checks the same first-run and restart path. These are automated CI checks; no claim is made that they replace interactive rendering or target-machine qualification.
 
 P33 still requires operator qualification on clean supported Ubuntu/Debian desktop environments, including interactive rendering, desktop launch integration, upgrade and rollback, backup/restore, package-manager behavior on supported OS releases, process supervision under real sessions, and execution of representative packaged validation Runs with evidence.
 
-The live protected GNS3/mac80211_hwsim/physical OpenWrt lab remains a separate operator acceptance gate from hosted CI. The compatibility provisioning script is included unchanged as a fallback while the remaining P25 host-network, container/radio, Wi-Fi service and capture operations are brought to Python parity. No destructive protected-lab reset is part of desktop startup.
+The live protected GNS3/mac80211_hwsim/physical OpenWrt lab remains a
+separate operator acceptance gate from hosted CI. Stage E's Python GNS3,
+host-readiness, libvirt and Docker guest provisioning adapters are implemented
+with deterministic hosted contract tests; the shell entry point remains a
+recovery fallback for repository/config repair, destructive reset, direct
+protected-suite and capture/evidence operations until real-lab parity is
+recorded. No destructive protected-lab reset is part of desktop startup.
 
 ## Future targets
 
