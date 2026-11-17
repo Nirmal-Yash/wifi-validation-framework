@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 import platform
-import secrets
 import subprocess
 import xml.etree.ElementTree as ET
 from typing import Callable, Sequence
@@ -32,8 +31,13 @@ class LinuxLabHostNetworkService:
     NETWORK_NAME = "default"
     BRIDGE_NAME = "virbr0"
     GATEWAY = "192.168.122.1"
+    MANAGEMENT_GATEWAY = "10.10.10.1"
     PREFIX = 24
     NETMASK = "255.255.255.0"
+    ADDRESS_CONTRACT = (
+        ("lab_gateway", GATEWAY, PREFIX),
+        ("management_gateway", MANAGEMENT_GATEWAY, PREFIX),
+    )
     COMMAND_TIMEOUT = 20
 
     def __init__(
@@ -148,30 +152,48 @@ class LinuxLabHostNetworkService:
                 "code": "MANAGEMENT_BRIDGE_MISSING",
                 "message": "The libvirt default network bridge virbr0 does not exist; start the libvirt default network first",
             })
-        expected = [
-            item for item in bridge["ipv4"]
-            if item["local"] == self.GATEWAY and item["prefixlen"] == self.PREFIX
+        observed = {
+            (item["local"], int(item["prefixlen"]))
+            for item in bridge["ipv4"]
+            if isinstance(item.get("prefixlen"), int)
+        }
+        allowed = {(address, prefix) for _label, address, prefix in self.ADDRESS_CONTRACT}
+        unexpected = sorted(observed - allowed)
+        missing = [
+            (label, address, prefix)
+            for label, address, prefix in self.ADDRESS_CONTRACT
+            if (address, prefix) not in observed
         ]
-        other = [
-            item for item in bridge["ipv4"]
-            if not (item["local"] == self.GATEWAY and item["prefixlen"] == self.PREFIX)
-        ]
-        if other:
+        if unexpected:
             conflicts.append({
                 "code": "MANAGEMENT_BRIDGE_ADDRESS_CONFLICT",
-                "message": "virbr0 has an IPv4 address outside the protected lab gateway contract; refusing to replace it",
+                "message": (
+                    "virbr0 has IPv4 addresses outside the protected "
+                    "192.168.122.1/24 and 10.10.10.1/24 lab contract; "
+                    "refusing to remove or replace them"
+                ),
+                "observed": [
+                    {"address": address, "prefix": prefix}
+                    for address, prefix in unexpected
+                ],
             })
         return {
             "platform": "Linux",
             "network": libvirt,
             "bridge": bridge,
-            "gateway_status": "PRESENT" if expected else "MISSING",
+            "gateway_status": (
+                "PRESENT" if (self.GATEWAY, self.PREFIX) in observed else "MISSING"
+            ),
+            "management_gateway_status": (
+                "PRESENT" if (self.MANAGEMENT_GATEWAY, self.PREFIX) in observed else "MISSING"
+            ),
             "dhcp_ranges_to_remove": len(libvirt["dhcp_ranges"]),
             "dhcp_hosts_to_remove": len(libvirt["dhcp_hosts"]),
             "conflicts": conflicts,
             "can_apply": not conflicts,
             "mutations": {
-                "add_gateway_address": bridge["exists"] and not expected and not other,
+                "add_gateway_address": bridge["exists"] and (self.GATEWAY, self.PREFIX) not in observed and not unexpected,
+                "add_management_gateway_address": bridge["exists"] and (self.MANAGEMENT_GATEWAY, self.PREFIX) not in observed and not unexpected,
                 "remove_default_network_dhcp_ranges": len(libvirt["dhcp_ranges"]),
                 "remove_default_network_dhcp_hosts": len(libvirt["dhcp_hosts"]),
             },
@@ -214,16 +236,26 @@ class LinuxLabHostNetworkService:
                 ])
                 completed.append("delete_dhcp_host")
 
-            if plan["mutations"]["add_gateway_address"]:
-                self._run([
-                    "ip", "address", "add",
-                    f"{self.GATEWAY}/{self.PREFIX}",
-                    "dev", self.BRIDGE_NAME,
-                ], privileged=True)
-                completed.append("add_gateway_address")
+            for key, label, address in (
+                ("add_gateway_address", "add_gateway_address", self.GATEWAY),
+                ("add_management_gateway_address", "add_management_gateway_address", self.MANAGEMENT_GATEWAY),
+            ):
+                if plan["mutations"][key]:
+                    self._run([
+                        "ip", "address", "replace",
+                        f"{address}/{self.PREFIX}",
+                        "dev", self.BRIDGE_NAME,
+                    ], privileged=True)
+                    completed.append(label)
 
             after = self.plan()
-            if not after["can_apply"] or after["gateway_status"] != "PRESENT" or after["dhcp_ranges_to_remove"] or after["dhcp_hosts_to_remove"]:
+            if (
+                not after["can_apply"]
+                or after["gateway_status"] != "PRESENT"
+                or after["management_gateway_status"] != "PRESENT"
+                or after["dhcp_ranges_to_remove"]
+                or after["dhcp_hosts_to_remove"]
+            ):
                 raise LinuxLabHostNetworkUncertain(
                     "host network mutation completed but provider read-back did not satisfy all postconditions",
                     details={"completed_operations": completed, "observed": after},
@@ -244,6 +276,7 @@ class LinuxLabHostNetworkService:
             "network": self.NETWORK_NAME,
             "bridge": self.BRIDGE_NAME,
             "gateway": f"{self.GATEWAY}/{self.PREFIX}",
+            "management_gateway": f"{self.MANAGEMENT_GATEWAY}/{self.PREFIX}",
             "removed_dhcp_ranges": plan["dhcp_ranges_to_remove"],
             "removed_dhcp_hosts": plan["dhcp_hosts_to_remove"],
             "reconciliation": after,

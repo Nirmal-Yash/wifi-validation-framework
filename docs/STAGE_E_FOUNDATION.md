@@ -16,12 +16,13 @@ CSRF, idempotency, explicit confirmation and the shared Lab resource lease.
 
 The Linux host-network slice is now owned by
 LinuxLabHostNetworkService in lib/services/linux_lab_host_network.py. It
-validates the existing libvirt default network against the protected virbr0,
-192.168.122.1/24 contract, detects conflicting bridge addresses, and produces a
+validates the existing libvirt default network against the protected virbr0
+192.168.122.1/24 lab subnet and the additional 10.10.10.1/24 management
+address. It detects any other unapproved bridge address and produces a
 read-only plan. Apply requires explicit operator confirmation, removes only
 default-network DHCP ranges/host reservations through libvirt's live and
-persistent update API, adds the 192.168.122.1/24 host address when absent, and
-verifies the final state. It never redefines the network, flushes addresses,
+persistent update API, adds either approved address only when absent, and
+verifies both addresses and the DHCP postconditions. It never redefines the network, flushes addresses,
 changes routes or touches unrelated networks. Unit coverage lives in
 tests/test_linux_lab_host_network.py.
 

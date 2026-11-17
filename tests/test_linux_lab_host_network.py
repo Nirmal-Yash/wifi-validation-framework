@@ -64,8 +64,12 @@ class FakeHost:
             elif "ip-dhcp-host" in command:
                 self.hosts = False
             return subprocess.CompletedProcess(command, 0, "", "")
-        if "ip" in command and "address" in command and "add" in command:
-            self.addresses.append(("192.168.122.1", 24))
+        if "ip" in command and "address" in command and "replace" in command:
+            value = command[command.index("replace") + 1]
+            address, prefix_text = value.split("/", 1)
+            item = (address, int(prefix_text))
+            self.addresses = [entry for entry in self.addresses if entry[0] != address]
+            self.addresses.append(item)
             return subprocess.CompletedProcess(command, 0, "", "")
         return subprocess.CompletedProcess(command, 1, "", "unexpected test command")
 
@@ -86,6 +90,9 @@ def test_host_network_plan_is_read_only_and_reports_exact_mutations():
 
     assert plan["can_apply"] is True
     assert plan["gateway_status"] == "MISSING"
+    assert plan["management_gateway_status"] == "MISSING"
+    assert plan["mutations"]["add_gateway_address"] is True
+    assert plan["mutations"]["add_management_gateway_address"] is True
     assert plan["dhcp_ranges_to_remove"] == 1
     assert plan["dhcp_hosts_to_remove"] == 1
     assert plan["safety"]["recreates_network"] is False
@@ -107,18 +114,21 @@ def test_apply_requires_confirmation_and_preserves_existing_network_structure():
     assert result["removed_dhcp_ranges"] == 1
     assert result["removed_dhcp_hosts"] == 1
     assert result["gateway"] == "192.168.122.1/24"
+    assert result["management_gateway"] == "10.10.10.1/24"
+    assert result["reconciliation"]["management_gateway_status"] == "PRESENT"
     updates = [command for command in fake.calls if "net-update" in command]
     assert len(updates) == 2
     assert all("--live" in command and "--config" in command for command in updates)
     assert all(command[2:4] == ["default", "delete"] for command in updates)
-    assert ["sudo", "-n", "ip", "address", "add", "192.168.122.1/24", "dev", "virbr0"] in fake.calls
+    assert ["sudo", "-n", "ip", "address", "replace", "192.168.122.1/24", "dev", "virbr0"] in fake.calls
+    assert ["sudo", "-n", "ip", "address", "replace", "10.10.10.1/24", "dev", "virbr0"] in fake.calls
 
 
 def test_apply_is_idempotent_after_protected_network_is_already_prepared():
     fake = FakeHost()
     fake.ranges = False
     fake.hosts = False
-    fake.addresses = [("192.168.122.1", 24)]
+    fake.addresses = [("192.168.122.1", 24), ("10.10.10.1", 24)]
     service = make_service(fake)
 
     result = service.apply(confirmed=True, actor="operator")
@@ -126,6 +136,27 @@ def test_apply_is_idempotent_after_protected_network_is_already_prepared():
     assert result["status"] == "APPLIED"
     assert result["completed_operations"] == []
     assert len(fake.calls) == 4
+    assert result["reconciliation"]["gateway_status"] == "PRESENT"
+    assert result["reconciliation"]["management_gateway_status"] == "PRESENT"
+
+
+def test_host_network_adds_only_missing_management_address_when_libvirt_gateway_is_present():
+    fake = FakeHost()
+    fake.addresses = [("192.168.122.1", 24)]
+    fake.ranges = False
+    fake.hosts = False
+    service = make_service(fake)
+
+    plan = service.plan()
+    assert plan["gateway_status"] == "PRESENT"
+    assert plan["management_gateway_status"] == "MISSING"
+    assert plan["mutations"]["add_gateway_address"] is False
+    assert plan["mutations"]["add_management_gateway_address"] is True
+
+    result = service.apply(confirmed=True, actor="operator")
+    assert result["status"] == "APPLIED"
+    assert result["completed_operations"] == ["add_management_gateway_address"]
+    assert fake.addresses == [("192.168.122.1", 24), ("10.10.10.1", 24)]
 
 
 def test_host_network_refuses_unrelated_gateway_address_without_replacing_it():
@@ -171,7 +202,7 @@ def test_host_network_is_linux_only():
 
 def test_partial_host_mutation_is_marked_uncertain_for_operator_reconciliation():
     fake = FakeHost()
-    fake.fail_command = lambda command: "ip" in command and "address" in command and "add" in command
+    fake.fail_command = lambda command: "ip" in command and "address" in command and "replace" in command
     service = make_service(fake)
     with pytest.raises(LinuxLabHostNetworkUncertain, match="partially applied"):
         service.apply(confirmed=True, actor="operator")

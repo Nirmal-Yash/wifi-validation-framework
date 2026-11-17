@@ -76,7 +76,7 @@ docs/STAGE_E_FOUNDATION.md.
 
 | Phase | Scope | Status |
 |---|---|---|
-| P25 | Provisioning Adapter Migration | Python GNS3 provisioner and plan-first libvirt/virbr0 host-network adapter delivered with hosted unit coverage; Docker guest setup, hwsim radio placement, Wi-Fi/DHCP/DNS, monitor capture and protected-lab parity/acceptance remain open |
+| P25 | Provisioning Adapter Migration | Python GNS3 provisioner and plan-first libvirt/virbr0 dual-subnet host-network adapter delivered with hosted unit coverage; Docker guest package/SSH setup, hwsim radio placement, Wi-Fi/DHCP/DNS, monitor capture and protected-lab parity/acceptance remain open |
 | P26 | Persisted Pipeline Orchestration | Implemented; immutable Project/Lab revisions, persisted execution/step/attempt records, worker leases, bounded safe retries and explicit recovery |
 | P27 | Pipeline Management Frontend | Implemented; scoped authoring/publication, execution monitoring, cancellation and reviewed recovery |
 | P28 | Complete Run and Policy Integration | Implemented in source; canonical RunProcessManager/RunService execution, same-Project/Lab Run association, pinned policy/configuration/topology references and post-Run policy evaluation |
@@ -2964,7 +2964,7 @@ No transitive Python/npm lockfiles were created from guessed versions. No obsole
 
 | Phase | Scope | Current delivery |
 |---|---|---|
-| P25 | Provisioning Adapter Migration | Python GNS3 lifecycle and protected libvirt host-network slices delivered; shell remains for Docker guest/service configuration, hwsim radio placement, capture and end-to-end protected-lab acceptance |
+| P25 | Provisioning Adapter Migration | Python GNS3 lifecycle and protected libvirt dual-subnet host-network slices delivered; shell remains for Docker guest/service configuration, hwsim radio placement, capture and end-to-end protected-lab acceptance |
 | P26 | Persisted Pipeline Orchestration | Versioned definitions, durable execution/step/attempt state, worker leases, bounded retries, cancellation and operator-reviewed recovery delivered |
 | P27 | Pipeline Management Frontend | Next checkpoint: dashboard authoring, publication, monitoring and recovery workflows |
 | P28 | Complete Run and Policy Integration | Next checkpoint: validation Run linkage, configuration/topology revision pinning and performance policy evidence |
