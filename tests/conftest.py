@@ -1,4 +1,5 @@
 import hashlib
+from collections.abc import Mapping
 from dataclasses import replace
 import json
 import logging
@@ -52,6 +53,7 @@ from lib.services import (
     redact_configuration,
 )
 from lib.services.pytest_result_mapping import map_pytest_reports
+from lib.services.managed_device_binding import build_managed_device_profile
 
 
 def pytest_addoption(parser):
@@ -319,6 +321,18 @@ def _run_repository_context(session):
     return getattr(session.config, "_netregress_run_context", None)
 
 
+def _merge_configuration_values(base: Mapping, overlay: Mapping) -> dict:
+    """Recursively merge a published Project configuration over test defaults."""
+    merged = dict(base)
+    for key, value in overlay.items():
+        existing = merged.get(key)
+        if isinstance(existing, Mapping) and isinstance(value, Mapping):
+            merged[key] = _merge_configuration_values(existing, value)
+        else:
+            merged[key] = value
+    return merged
+
+
 @pytest.hookimpl(trylast=True)
 def pytest_collection_finish(session):
     if not session.items or os.getenv("NETREGRESS_CI_MODE","0").lower() in {"1","true","yes"}:
@@ -328,15 +342,88 @@ def pytest_collection_finish(session):
     with open(params_path, "r", encoding="utf-8") as handle:
         params = yaml.safe_load(handle) or {}
 
+    configuration_values = {}
+    configuration_scope = ""
+    raw_configuration_values = os.getenv("NETREGRESS_CONFIGURATION_VALUES_JSON", "")
+    if raw_configuration_values:
+        try:
+            configuration_values = json.loads(raw_configuration_values)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("pipeline configuration values are not valid JSON") from exc
+        if not isinstance(configuration_values, dict):
+            raise RuntimeError("pipeline configuration values must be a JSON object")
+        configuration_scope = os.getenv("NETREGRESS_CONFIGURATION_SCOPE_TYPE", "").strip().upper()
+        if configuration_scope not in {"PROJECT", "LAB", "DEVICE"}:
+            raise RuntimeError("pipeline configuration scope must be PROJECT, LAB or DEVICE")
+
+    topology_snapshot = params.get("network", {})
+    raw_topology = os.getenv("NETREGRESS_TOPOLOGY_DEFINITION_JSON", "")
+    if raw_topology:
+        try:
+            topology_snapshot = json.loads(raw_topology)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("pipeline topology definition is not valid JSON") from exc
+        if not isinstance(topology_snapshot, dict):
+            raise RuntimeError("pipeline topology definition must be a JSON object")
+
+    configuration_defaults = dict(params)
+    configuration_lab = None
+    configuration_device = None
+    if configuration_values:
+        if configuration_scope == "PROJECT":
+            configuration_defaults = _merge_configuration_values(configuration_defaults, configuration_values)
+        elif configuration_scope == "LAB":
+            configuration_lab = configuration_values
+        elif configuration_scope == "DEVICE":
+            configuration_device = configuration_values
+
     firmware_version = session.config.getoption("--firmware-version")
     selected_tests = [item.nodeid for item in session.items]
     registry = TestRegistry.default()
     test_versions = registry.version_map(selected_tests)
     resolver = ConfigurationResolver()
-    resolved = resolver.resolve(defaults=params, environment=resolver.environment_json())
+    service = _create_run_service(test_registry=registry)
+    resolved = resolver.resolve(
+        defaults=configuration_defaults,
+        environment=resolver.environment_json(),
+        lab=configuration_lab,
+        device=configuration_device,
+    )
     persisted_config = redact_configuration(resolved.values)
 
-    service = _create_run_service(test_registry=registry)
+    device_id = os.getenv("NETREGRESS_DEVICE_ID", "client_vm")
+    configured_devices = load_devices()
+    if device_id not in configured_devices:
+        raise RuntimeError(f"Configured device is missing from devices.yaml: {device_id}")
+    managed_device_id = os.getenv("NETREGRESS_MANAGED_DEVICE_ID", "").strip()
+    ssh_credential_id = os.getenv("NETREGRESS_DEVICE_SSH_CREDENTIAL_ID", "").strip()
+    if managed_device_id:
+        from lib.platform import platform_adapter_for
+        from lib.services.credential_vault import CredentialVaultService
+
+        platform = platform_adapter_for()
+        vault = CredentialVaultService(
+            service.run_repository.database, platform.create_secret_store(),
+            secret_provider=platform.descriptor.family.value,
+        )
+        device_profile, managed_device_identity = build_managed_device_profile(
+            service.run_repository.database,
+            vault,
+            managed_device_id=managed_device_id,
+            project_id=os.getenv("NETREGRESS_PROJECT_ID", ""),
+            lab_id=os.getenv("NETREGRESS_LAB_ID", ""),
+            ssh_credential_id=ssh_credential_id or None,
+            actor=os.getenv("NETREGRESS_RUN_REQUESTED_BY", "pipeline-worker"),
+        )
+        if managed_device_identity["device_key"] != device_id:
+            raise RuntimeError("managed Device key does not match the selected Runner adapter ID")
+        device_identity = dict(managed_device_identity)
+    else:
+        if ssh_credential_id:
+            raise RuntimeError("SSH credential reference requires a managed Device reference")
+        device_profile = DeviceProfile.from_mapping(device_id, configured_devices[device_id])
+        device_identity = {"device_id": device_id}
+
     lock_directory = service.run_repository.database.path.resolve().parent / "locks"
     lock_manager = ResourceLockManager(lock_directory)
     fingerprint_service = EnvironmentFingerprintService(ROOT)
@@ -358,12 +445,14 @@ def pytest_collection_finish(session):
         validation_profile=_validation_profile(session.config),
         selected_tests=selected_tests,
         test_definition_versions=test_versions,
-        defaults=params,
+        defaults=configuration_defaults,
         environment=resolver.environment_json(),
+        lab=configuration_lab,
+        device=configuration_device,
         repository_commit=os.getenv("NETREGRESS_REPOSITORY_COMMIT")
         or repository_commit(str(ROOT)),
-        device_identity={"device_id": os.getenv("NETREGRESS_DEVICE_ID", "client_vm")},
-        topology=params.get("network", {}),
+        device_identity=device_identity,
+        topology=topology_snapshot,
         source_run_id=os.getenv("NETREGRESS_SOURCE_RUN_ID") or None,
         project_id=os.getenv("NETREGRESS_PROJECT_ID") or None,
     )
@@ -385,6 +474,12 @@ def pytest_collection_finish(session):
             "topology_profile_id": os.getenv("NETREGRESS_TOPOLOGY_PROFILE_ID", ""),
             "topology_revision_id": os.getenv("NETREGRESS_TOPOLOGY_REVISION_ID", ""),
             "topology_hash": os.getenv("NETREGRESS_TOPOLOGY_HASH", ""),
+            "managed_device_id": managed_device_id,
+            "device_ssh_credential_id": ssh_credential_id,
+            "managed_device_key": str(device_identity.get("device_key", "")),
+            "managed_device_host": str(device_identity.get("host", "")),
+            "managed_device_port": str(device_identity.get("port", "")),
+            "managed_device_username": str(device_identity.get("username", "")),
         }
         pipeline_metadata = {key: value for key, value in pipeline_metadata.items() if value}
         try:
@@ -429,11 +524,6 @@ def pytest_collection_finish(session):
     telemetry_environment = TelemetryEnvironmentClass(
         os.getenv("NETREGRESS_WIFI_ENVIRONMENT_CLASS", "VIRTUAL_WIFI").upper()
     )
-    device_id = os.getenv("NETREGRESS_DEVICE_ID", "client_vm")
-    configured_devices = load_devices()
-    if device_id not in configured_devices:
-        raise RuntimeError(f"Configured device is missing from devices.yaml: {device_id}")
-    device_profile = DeviceProfile.from_mapping(device_id, configured_devices[device_id])
     device_adapter = (
         OpenWrtDeviceAdapter.from_profile(device_profile, command_runner)
         if device_profile.device_type.lower() == "openwrt"

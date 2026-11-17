@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -8,6 +9,9 @@ import pytest
 from lib.domain import EnvironmentHealthStatus, EnvironmentSnapshot
 from lib.repositories import SQLiteDatabase
 from lib.security import AuthManager, Role, UserRecord
+from lib.services.configuration_profile_service import ConfigurationProfileService
+from lib.services.configuration_schema_registry import ConfigurationSchemaRegistry
+from lib.services.device_inventory import DeviceInventoryService
 from lib.services.performance_policy_service import PerformancePolicyService
 from lib.services.pipeline_runtime import build_pipeline_handlers
 from lib.services.pipeline_service import PipelineService
@@ -288,3 +292,72 @@ def test_pipeline_api_enforces_rbac_and_idempotent_create_enqueue(tmp_path):
         headers={"X-CSRF-Token": viewer_csrf, "Idempotency-Key": "viewer-enqueue-01"},
     )
     assert denied_execution.status_code == 403
+
+
+def test_validation_run_binds_managed_device_and_resolves_published_configuration_values(tmp_path):
+    database = create_database(tmp_path / "managed-device-run.sqlite")
+    schemas = ConfigurationSchemaRegistry(database)
+    schema = schemas.register(
+        project_id="project-1", schema_id="runner.settings", version=1,
+        name="Runner settings", actor="owner", definition={
+            "type": "object", "required": ["ssid", "channel"], "additionalProperties": False,
+            "properties": {
+                "ssid": {"type": "string", "minLength": 1, "maxLength": 32},
+                "channel": {"type": "integer", "minimum": 1, "maximum": 165},
+            },
+        },
+    )
+    profiles = ConfigurationProfileService(database, schemas)
+    profile = profiles.create_profile(
+        project_id="project-1", name="Pipeline config", description="", scope_type="PROJECT",
+        scope_id="project-1", schema_record_id=schema["schema_record_id"], actor="owner",
+    )
+    draft = profiles.create_revision(
+        profile["profile_id"], values={"ssid": "PipelineNet", "channel": 44}, actor="owner",
+    )
+    published = profiles.publish(profile["profile_id"], draft["revision_id"], actor="owner")
+    device = DeviceInventoryService(database).create({
+        "project_id": "project-1", "lab_id": "lab-1", "device_key": "client_vm",
+        "name": "Managed Client", "device_type": "CLIENT", "host": "192.0.2.50",
+        "port": 2222, "username": "runner",
+    }, actor="owner")
+
+    class VaultMetadata:
+        def get(self, credential_id):
+            if credential_id != "ssh-credential-1":
+                return None
+            return {
+                "credential_id": credential_id, "project_id": "project-1",
+                "device_id": device["device_id"], "credential_type": "SSH_PASSWORD",
+                "status": "ACTIVE", "username": "vault-runner",
+            }
+
+    pipelines = PipelineService(database)
+    manager = FakeRunProcessManager(database)
+    _created, _revision, queued = create_validation_pipeline(pipelines, {
+        "tests": ["wifi.latency.threshold"],
+        "configuration_profile_id": profile["profile_id"],
+        "configuration_revision_id": published["revision_id"],
+        "device_id": device["device_id"],
+        "ssh_credential_id": "ssh-credential-1",
+    })
+    handlers = build_pipeline_handlers(database, VaultMetadata(), run_process_manager=manager)
+
+    result = pipelines.run_once("worker-1", handlers)
+    execution = pipelines.get_execution(queued["execution_id"])
+    environment = manager.start_args["env"]
+
+    assert result["step_status"] == "SUCCEEDED"
+    assert environment["NETREGRESS_CONFIGURATION_PROFILE_ID"] == profile["profile_id"]
+    assert environment["NETREGRESS_CONFIGURATION_REVISION_ID"] == published["revision_id"]
+    assert environment["NETREGRESS_CONFIGURATION_SCOPE_TYPE"] == "PROJECT"
+    assert json.loads(environment["NETREGRESS_CONFIGURATION_VALUES_JSON"]) == {
+        "ssid": "PipelineNet", "channel": 44,
+    }
+    assert environment["NETREGRESS_DEVICE_ID"] == "client_vm"
+    assert environment["NETREGRESS_MANAGED_DEVICE_ID"] == device["device_id"]
+    assert environment["NETREGRESS_DEVICE_HOST"] == "192.0.2.50"
+    assert environment["NETREGRESS_DEVICE_PORT"] == "2222"
+    assert environment["NETREGRESS_DEVICE_USERNAME"] == "vault-runner"
+    assert environment["NETREGRESS_DEVICE_SSH_CREDENTIAL_ID"] == "ssh-credential-1"
+    assert execution["steps"][0]["result"]["references"]["device"]["device_id"] == device["device_id"]

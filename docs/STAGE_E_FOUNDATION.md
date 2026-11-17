@@ -56,11 +56,20 @@ The pytest session creates its Run/Attempt through RunService; the execution
 ID is propagated to the child and the new Run is linked back under a strict
 same-Project/Lab database guard.
 
-The Run environment snapshot retains the pipeline execution/revision identity
-and the selected published performance-policy revision/hash. Optional
-configuration and topology references must be supplied as profile/revision
-pairs; the worker verifies they are published and belong to the execution's
-Project/Lab, then carries their immutable hashes into the Run environment.
+The Run environment snapshot retains the pipeline execution/revision identity,
+selected published performance-policy revision/hash, configuration revision
+values and hash, topology revision definition/hash, and successful preceding
+provision/apply/deployment references. Project, Lab and Device configuration
+profiles are resolved through their corresponding configuration layers. A
+selected topology is reconciled against the bound GNS3 Lab and must be IN_SYNC
+before validation starts. A selected managed Device must match the execution
+Project/Lab and an active same-device SSH_PASSWORD vault credential; its
+registered Runner adapter key must exist in configs/devices.yaml. The child
+Run process resolves the secret from the OS Credential Vault and overlays the
+managed Device endpoint without placing secret material in the pipeline
+definition, process command line, environment or Run metadata.
+
+The exact topology revision is included in the Run environment fingerprint.
 After the process group exits, the worker reads the terminal canonical Run and
 evaluates the pinned policy against metrics from the latest Run Attempt. The
 pipeline result retains the Run ID, business outcome, policy hash and

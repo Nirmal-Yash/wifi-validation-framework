@@ -13,9 +13,11 @@ const GUIDANCE=`Allowed step types:
 - TOPOLOGY_APPLY: input { "profile_id": "...", "revision_id": "...", "expected_sha256": "<64 hex>", "confirmed": true }
 - PROVIDER_RECONCILE: input { "profile_id": "...", "revision_id": "..." }
 - CONFIGURATION_DEPLOY: input { "profile_id": "...", "revision_id": "...", "configuration_hash": "<64 hex>", "device_id": "...", "ssh_credential_id": "...", "wifi_psk_credential_id": "...", "confirmed": true }
+- VALIDATION_RUN: input { "tests": ["wifi.latency.threshold"], "firmware_version": "v1.0", "performance_policy_revision_id": "...", "configuration_profile_id": "...", "configuration_revision_id": "...", "topology_profile_id": "...", "topology_revision_id": "...", "device_id": "...", "ssh_credential_id": "..." }
 
+Configuration and topology profile/revision references must be supplied in pairs. A selected configuration revision is resolved through its Project, Lab or Device layer. A selected topology revision must be in sync with the bound GNS3 Lab. Optional Device and SSH references must point to an active Device and its same-device SSH_PASSWORD credential.
 Each step accepts key, type, name, timeout_seconds (5–3600), max_attempts (1–5).
-Mutating operations are single-attempt. VALIDATION_RUN accepts registered semantic test IDs or registered pytest node IDs.
+Mutating operations and VALIDATION_RUN are single-attempt. VALIDATION_RUN accepts registered semantic test IDs or registered pytest node IDs.
 No arbitrary shell/command step is accepted. Never put secret values in the definition.
 Opaque Credential Vault IDs only.`;
 const stamp=value=>value?new Date(value).toLocaleString():"—";

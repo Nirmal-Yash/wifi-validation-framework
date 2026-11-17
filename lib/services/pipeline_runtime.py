@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 from typing import Any, Mapping
 
+from lib.connector import load_devices
 from lib.domain import RunLifecycle
 from lib.domain.models import Metric
 from lib.repositories import SQLiteAttemptRepository, SQLiteRunRepository, SQLiteTestResultRepository
 from lib.services.configuration_deployer import ConfigurationDeploymentService
 from lib.services.configuration_profile_service import ConfigurationProfileService
 from lib.services.configuration_schema_registry import ConfigurationSchemaRegistry
+from lib.services.device_inventory import DeviceInventoryService
 from lib.services.performance_policy_service import PerformancePolicyService
 from lib.services.pipeline_service import PipelineError, PipelineRecoveryRequired, PipelineService
 from lib.services.run_process import RunProcessManager
@@ -31,6 +34,7 @@ def build_pipeline_handlers(database, credential_vault, *, run_process_manager: 
         resource_lock_manager=topology_apply.resource_lock_manager,
     )
     performance_policies = PerformancePolicyService(database)
+    device_inventory = DeviceInventoryService(database)
     pipeline_service = PipelineService(database)
     test_registry = TestRegistry.default()
     run_manager = run_process_manager or RunProcessManager(Path(__file__).resolve().parents[2])
@@ -89,7 +93,7 @@ def build_pipeline_handlers(database, credential_vault, *, run_process_manager: 
             resolved.append(definition.node_id)
         return resolved
 
-    def validate_run_references(execution: dict, item: Mapping[str, Any]) -> dict[str, dict[str, str]]:
+    def validate_run_references(execution: dict, item: Mapping[str, Any]):
         project_id, lab_id = execution["project_id"], execution["lab_id"]
         with database.connection() as connection:
             scope = connection.execute(
@@ -101,7 +105,12 @@ def build_pipeline_handlers(database, credential_vault, *, run_process_manager: 
         if scope is None or scope["lab_status"] != "ACTIVE" or scope["project_status"] != "ACTIVE":
             raise PipelineError("VALIDATION_RUN requires the active Project and Lab pinned by its execution")
 
-        references: dict[str, dict[str, str]] = {}
+        references: dict[str, dict[str, Any]] = {}
+        configuration_values: dict[str, Any] = {}
+        topology_definition: dict[str, Any] = {}
+        device_reference: dict[str, Any] | None = None
+        managed_device_id = item.get("device_id")
+
         policy_revision_id = item.get("performance_policy_revision_id")
         if policy_revision_id:
             policy_revision = performance_policies.get_revision(policy_revision_id)
@@ -135,15 +144,20 @@ def build_pipeline_handlers(database, credential_vault, *, run_process_manager: 
                 or profile["project_id"] != project_id
                 or revision["profile_id"] != configuration_profile_id
                 or revision["status"] != "PUBLISHED"
-                or profile["status"] != "ACTIVE"
-                or profile["scope_type"] not in {"PROJECT", "LAB"}
+                or profile["status"] != "PUBLISHED"
+                or profile["scope_type"] not in {"PROJECT", "LAB", "DEVICE"}
+                or (profile["scope_type"] == "PROJECT" and profile["scope_id"] != project_id)
                 or (profile["scope_type"] == "LAB" and profile["scope_id"] != lab_id)
+                or (profile["scope_type"] == "DEVICE" and profile["scope_id"] != managed_device_id)
             ):
-                raise PipelineError("configuration reference must be a published revision in the same Project/Lab scope")
+                raise PipelineError("configuration reference must be a published revision in the same Project/Lab/Device scope")
+            configuration_values = revision["values"]
             references["configuration"] = {
                 "profile_id": configuration_profile_id,
                 "revision_id": configuration_revision_id,
                 "sha256": revision["configuration_hash"],
+                "scope_type": profile["scope_type"],
+                "scope_id": profile["scope_id"],
             }
 
         topology_profile_id = item.get("topology_profile_id")
@@ -161,12 +175,52 @@ def build_pipeline_handlers(database, credential_vault, *, run_process_manager: 
                 or profile["status"] != "ACTIVE"
             ):
                 raise PipelineError("topology reference must be a published Lab-scoped revision in the same Project/Lab")
+            topology_definition = revision["definition"]
             references["topology"] = {
                 "profile_id": topology_profile_id,
                 "revision_id": topology_revision_id,
                 "sha256": revision["content_sha256"],
             }
-        return references
+
+        if managed_device_id:
+            device = device_inventory.get(managed_device_id)
+            if (
+                device is None or device["status"] != "ACTIVE"
+                or device["project_id"] != project_id or device["lab_id"] != lab_id
+            ):
+                raise PipelineError("selected managed Device must be active in the same Project/Lab")
+            device_key = device["device_key"]
+            if device_key not in load_devices():
+                raise PipelineError("selected Device key has no compatible Runner adapter profile in configs/devices.yaml")
+            ssh_credential_id = item.get("ssh_credential_id") or device.get("credential_id")
+            credential = credential_vault.get(ssh_credential_id) if ssh_credential_id else None
+            if (
+                credential is None or credential.get("project_id") != project_id
+                or credential.get("device_id") != managed_device_id
+                or credential.get("credential_type") != "SSH_PASSWORD"
+                or credential.get("status") != "ACTIVE"
+            ):
+                raise PipelineError("selected managed Device requires an active same-device SSH_PASSWORD vault credential")
+            username = credential.get("username") or device.get("username")
+            if not isinstance(username, str) or not username.strip():
+                raise PipelineError("selected Device SSH credential must have a username")
+            device_reference = {
+                "device_id": managed_device_id,
+                "device_key": device_key,
+                "host": device["host"],
+                "port": int(device["port"]),
+                "username": username.strip(),
+                "ssh_credential_id": ssh_credential_id,
+            }
+            references["device"] = {
+                "device_id": managed_device_id,
+                "device_key": device_key,
+                "ssh_credential_id": ssh_credential_id,
+            }
+        elif item.get("ssh_credential_id"):
+            raise PipelineError("ssh_credential_id cannot be used without a managed device_id")
+
+        return references, configuration_values, topology_definition, device_reference
 
     def aggregate_run_metrics(run_id: str) -> tuple[Metric, ...]:
         attempts = attempt_repository.list_for_run(run_id)
@@ -198,7 +252,7 @@ def build_pipeline_handlers(database, credential_vault, *, run_process_manager: 
     def validation_run(execution, step):
         item = step["definition"]["input"]
         pytest_nodes = resolve_run_tests(item["tests"])
-        references = validate_run_references(execution, item)
+        references, configuration_values, topology_definition, device_reference = validate_run_references(execution, item)
         firmware_version = str(item.get("firmware_version", "v1.0")).strip()
         if not firmware_version or len(firmware_version) > 80:
             raise PipelineError("VALIDATION_RUN firmware_version is invalid")
@@ -216,14 +270,68 @@ def build_pipeline_handlers(database, credential_vault, *, run_process_manager: 
         if "performance_policy" in references:
             environment["NETREGRESS_PERFORMANCE_POLICY_REVISION_ID"] = references["performance_policy"]["revision_id"]
             environment["NETREGRESS_PERFORMANCE_POLICY_HASH"] = references["performance_policy"]["sha256"]
+        environment["NETREGRESS_RUN_REQUESTED_BY"] = actor(execution)
         if "configuration" in references:
             environment["NETREGRESS_CONFIGURATION_PROFILE_ID"] = references["configuration"]["profile_id"]
             environment["NETREGRESS_CONFIGURATION_REVISION_ID"] = references["configuration"]["revision_id"]
             environment["NETREGRESS_CONFIGURATION_HASH"] = references["configuration"]["sha256"]
+            environment["NETREGRESS_CONFIGURATION_SCOPE_TYPE"] = references["configuration"]["scope_type"]
+            encoded_values = json.dumps(configuration_values, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+            if len(encoded_values.encode("utf-8")) > 16384:
+                raise PipelineError("selected configuration values exceed the Run override size limit")
+            environment["NETREGRESS_CONFIGURATION_VALUES_JSON"] = encoded_values
         if "topology" in references:
+            reconciliation = topology_apply.reconcile(
+                references["topology"]["profile_id"], references["topology"]["revision_id"],
+                actor=actor(execution),
+            )
+            if reconciliation.get("status") != "IN_SYNC":
+                raise PipelineError("selected topology revision is not IN_SYNC with the bound GNS3 Lab")
+            references["topology"]["reconciliation_status"] = "IN_SYNC"
+            encoded_topology = json.dumps(topology_definition, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+            if len(encoded_topology.encode("utf-8")) > 32768:
+                raise PipelineError("selected topology definition exceeds the Run environment limit")
             environment["NETREGRESS_TOPOLOGY_PROFILE_ID"] = references["topology"]["profile_id"]
             environment["NETREGRESS_TOPOLOGY_REVISION_ID"] = references["topology"]["revision_id"]
             environment["NETREGRESS_TOPOLOGY_HASH"] = references["topology"]["sha256"]
+            environment["NETREGRESS_TOPOLOGY_DEFINITION_JSON"] = encoded_topology
+        if device_reference is not None:
+            environment.update({
+                "NETREGRESS_DEVICE_ID": device_reference["device_key"],
+                "NETREGRESS_MANAGED_DEVICE_ID": device_reference["device_id"],
+                "NETREGRESS_DEVICE_HOST": device_reference["host"],
+                "NETREGRESS_DEVICE_PORT": str(device_reference["port"]),
+                "NETREGRESS_DEVICE_USERNAME": device_reference["username"],
+                "NETREGRESS_DEVICE_SSH_CREDENTIAL_ID": device_reference["ssh_credential_id"],
+            })
+        current_state = pipeline_service.get_execution(execution["execution_id"])
+        previous_steps = []
+        for previous in (current_state or {}).get("steps", []):
+            if previous["ordinal"] >= step["ordinal"] or previous["status"] != "SUCCEEDED":
+                continue
+            if previous["step_type"] not in {"WIFI_LAB_PROVISION", "TOPOLOGY_APPLY", "PROVIDER_RECONCILE", "CONFIGURATION_DEPLOY"}:
+                continue
+            source_input = previous.get("definition", {}).get("input", {})
+            references_used = {
+                key: value for key, value in source_input.items()
+                if key.endswith("_id") or key.endswith("_hash")
+            }
+            source_result = previous.get("result", {})
+            result_summary = {
+                key: source_result[key] for key in (
+                    "deployment_id", "apply_id", "status", "configuration_hash",
+                    "content_sha256", "device_id", "revision_id", "profile_id",
+                ) if key in source_result
+            }
+            previous_steps.append({
+                "step_key": previous["step_key"], "step_type": previous["step_type"],
+                "references": references_used, "result": result_summary,
+            })
+        if previous_steps:
+            encoded_previous = json.dumps(previous_steps, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+            if len(encoded_previous.encode("utf-8")) > 16384:
+                raise PipelineError("prior pipeline step references exceed the Run environment limit")
+            environment["NETREGRESS_PIPELINE_PREVIOUS_STEPS_JSON"] = encoded_previous
 
         handle = run_manager.start(
             tests=pytest_nodes,

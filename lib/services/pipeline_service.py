@@ -165,6 +165,7 @@ class PipelineService:
                     "tests", "firmware_version", "performance_policy_revision_id",
                     "configuration_profile_id", "configuration_revision_id",
                     "topology_profile_id", "topology_revision_id",
+                    "device_id", "ssh_credential_id",
                 },
             }[step_type]
             if step_type != "VALIDATION_RUN" and set(inputs) != expected:
@@ -201,6 +202,14 @@ class PipelineService:
                 policy_revision_id = inputs.get("performance_policy_revision_id")
                 if policy_revision_id is not None:
                     cls._text(policy_revision_id, f"steps[{ordinal}].input.performance_policy_revision_id")
+                device_id = inputs.get("device_id")
+                ssh_credential_id = inputs.get("ssh_credential_id")
+                if ssh_credential_id and not device_id:
+                    raise PipelineError(f"steps[{ordinal}].input.ssh_credential_id requires device_id")
+                if device_id:
+                    cls._text(device_id, f"steps[{ordinal}].input.device_id")
+                if ssh_credential_id:
+                    cls._text(ssh_credential_id, f"steps[{ordinal}].input.ssh_credential_id")
                 reference_pairs = (
                     ("configuration_profile_id", "configuration_revision_id"),
                     ("topology_profile_id", "topology_revision_id"),
