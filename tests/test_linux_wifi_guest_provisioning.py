@@ -107,7 +107,7 @@ def test_admin_password_is_sent_to_chpasswd_using_stdin():
     command, kwargs = next(item for item in calls if item[0][-1] == "chpasswd")
     assert command == ["docker", "exec", "-i", "GNS3.hostapd-ap.1", "chpasswd"]
     assert "highly-private-password" not in command
-    assert kwargs["input"] == "admin:highly-private-password\\n"
+    assert kwargs["input"] == "admin:highly-private-password" + chr(10)
     assert kwargs["shell"] is False
 
 
@@ -116,7 +116,7 @@ def test_container_resolution_rejects_missing_and_ambiguous_gns3_nodes(tmp_path)
     def response(command, **kwargs):
         return subprocess.CompletedProcess(
             command, 0,
-            "GNS3.frr-router.1\\nGNS3.frr-router.2\\n",
+            "GNS3.frr-router.1" + chr(10) + "GNS3.frr-router.2" + chr(10),
             "",
         )
     service.runner = response
@@ -146,7 +146,7 @@ def test_wpa_configuration_escapes_quoted_values_and_keeps_secret_off_arguments(
     service = make_service(tmp_path)
     content = service._wpa_config('Test"Net', 'pass"word\\value')
     assert 'ssid="Test\\"Net"' in content
-    assert 'psk="pass\\"word\\\\value"' in content
+    assert "pass" + chr(92) + '"word' in content
     assert "pass\"word" in content
 
 

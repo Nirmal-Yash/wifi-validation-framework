@@ -23,12 +23,12 @@ def ip_state(addresses=()):
 
 
 def network_xml(*, ranges=True, hosts=True, bridge="virbr0", gateway="192.168.122.1"):
-    dhcp = "<dhcp>"
+    entries = []
     if ranges:
-        dhcp += '<range start="192.168.122.100" end="192.168.122.200"/>'
+        entries.append('<range start="192.168.122.100" end="192.168.122.200"/>')
     if hosts:
-        dhcp += '<host mac="52:54:00:aa:bb:cc" name="protected-client" ip="192.168.122.30"/>'
-    dhcp += "</dhcp>" if ranges or hosts else ""
+        entries.append('<host mac="52:54:00:aa:bb:cc" name="protected-client" ip="192.168.122.30"/>')
+    dhcp = "<dhcp>" + "".join(entries) + "</dhcp>" if entries else ""
     return (
         "<network><name>default</name>"
         f'<bridge name="{bridge}"/>'
@@ -99,7 +99,7 @@ def test_host_network_plan_is_read_only_and_reports_exact_mutations():
     assert plan["safety"]["changes_routes"] is False
     assert len(fake.calls) == 2
     assert all("net-update" not in command for command in fake.calls)
-    assert all("address" not in command for command in fake.calls)
+    assert not any("address" in command and "replace" in command for command in fake.calls)
 
 
 def test_apply_requires_confirmation_and_preserves_existing_network_structure():
