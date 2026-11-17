@@ -61,14 +61,14 @@ def test_desktop_runtime_rejects_a_world_readable_session_secret(tmp_path):
 def test_desktop_runtime_rejects_symlinked_private_state(tmp_path):
     target = tmp_path / "shared"
     target.mkdir()
-    link = tmp_path / "home"
+    link = tmp_path / "data-link"
     link.symlink_to(target, target_is_directory=True)
     env = {
-        "HOME": str(link),
-        "NETREGRESS_USER_DATA_DIR": str(link / "data"),
-        "NETREGRESS_CONFIG_DIR": str(link / "config"),
+        "HOME": str(tmp_path / "home"),
+        "NETREGRESS_USER_DATA_DIR": str(link),
+        "NETREGRESS_CONFIG_DIR": str(tmp_path / "home" / "config"),
     }
-    with pytest.raises(PlatformCapabilityError, match="must not be a symlink"):
+    with pytest.raises(PlatformCapabilityError, match="symlink"):
         prepare_desktop_runtime(
             tmp_path / "bundle", environ=env, home=link, port=51437,
         )

@@ -36,9 +36,17 @@ class LinuxPlatformAdapter:
         return SecretServiceSecretStore()
 
     def ensure_private_directory(self, path: str | Path) -> Path:
-        target = Path(path).expanduser()
-        if target.is_symlink():
-            raise PlatformCapabilityError("private directory must not be a symlink")
+        target = Path(path).expanduser().absolute()
+        # Refuse symlinks in the entire path, not merely the leaf. Checking
+        # every existing component prevents a trusted-looking child directory
+        # from redirecting private state through a symlinked parent.
+        for component in (target, *target.parents):
+            try:
+                metadata = component.lstat()
+            except FileNotFoundError:
+                continue
+            if stat.S_ISLNK(metadata.st_mode):
+                raise PlatformCapabilityError("private directory path must not contain a symlink")
         existed = target.exists()
         if existed and not target.is_dir():
             raise PlatformCapabilityError("private directory path exists but is not a directory")

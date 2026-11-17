@@ -40,8 +40,9 @@ async function rawRequest(path,options={}){
  let response;
  try{
   const base=await resolveApiBase();
+  const credentials=base.startsWith("http://127.0.0.1:")?"include":"same-origin";
   response=await fetch(base+path,{
-   credentials:"include",
+   credentials,
    cache:"no-store",
    ...options,
    headers:{Accept:"application/json",...(options.body?{"Content-Type":"application/json"}:{}),...(options.headers||{})},
