@@ -14,12 +14,24 @@ unoccupied Switch1 port, starts nodes in dependency order and verifies provider
 read-back. Its dashboard plan and apply routes use Project/Lab authorization,
 CSRF, idempotency, explicit confirmation and the shared Lab resource lease.
 
-This is intentionally incremental. wifi_lab_reprovision_robust.sh remains the
-compatibility entry point for host network setup, Docker guest preparation,
-mac80211_hwsim, hostapd/wpa_supplicant, DHCP/DNS and protected capture setup.
-Those operations must be migrated one adapter at a time with isolated parity
-tests and operator-run protected-lab acceptance before their legacy path is
-retired.
+The Linux host-network slice is now owned by
+LinuxLabHostNetworkService in lib/services/linux_lab_host_network.py. It
+validates the existing libvirt default network against the protected virbr0,
+192.168.122.1/24 contract, detects conflicting bridge addresses, and produces a
+read-only plan. Apply requires explicit operator confirmation, removes only
+default-network DHCP ranges/host reservations through libvirt's live and
+persistent update API, adds the 192.168.122.1/24 host address when absent, and
+verifies the final state. It never redefines the network, flushes addresses,
+changes routes or touches unrelated networks. Unit coverage lives in
+tests/test_linux_lab_host_network.py.
+
+The migration remains incremental. wifi_lab_reprovision_robust.sh remains the
+compatibility entry point for Docker guest package/identity setup,
+mac80211_hwsim radio placement, hostapd/wpa_supplicant, FRR DHCP/DNS, monitor
+capture readiness, end-to-end connectivity and the protected Run/evidence
+suite. Those operations still require equivalent Python adapters, isolated
+parity tests and operator-run protected-lab acceptance before their legacy
+path can be retired. A green hosted test suite is not hardware acceptance.
 
 ## P26 — Persisted Pipeline Orchestration
 

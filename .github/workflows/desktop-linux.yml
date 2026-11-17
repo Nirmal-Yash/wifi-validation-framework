@@ -69,6 +69,7 @@ jobs:
           python -m pip install --require-hashes -r requirements.lock
           python -m pip install -r requirements-desktop-build.txt
           python -m pip check
+          python -m py_compile scripts/ci_desktop_smoke.py
 
       - name: Build self-contained Python Runner sidecar
         run: |

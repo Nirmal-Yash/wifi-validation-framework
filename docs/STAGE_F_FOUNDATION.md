@@ -35,7 +35,15 @@ Stage F introduces a packaged Linux desktop application while keeping the existi
 
 ## Linux package build
 
-The CI workflow `.github/workflows/desktop-linux.yml` builds a PyInstaller sidecar, the React production UI, and Tauri Linux packages on Ubuntu 22.04. Expected artifacts are a Debian `.deb` package and an AppImage, accompanied by SHA-256 checksums.
+The CI workflow `.github/workflows/desktop-linux.yml` builds a PyInstaller sidecar, the React production UI, and Tauri Linux packages on Ubuntu 22.04. It also exercises the generated installers under Xvfb:
+
+- Install the generated Debian package and launch its installed executable.
+- Wait for the packaged sidecar health endpoint, create the first Global Owner through the local-only setup route, and authenticate.
+- Shut down and restart the desktop app, then verify the Owner account and persistent SQLite database survive.
+- Remove the Debian package and verify user data is retained.
+- Launch the AppImage through its extracted runtime, repeat first-run creation/login/restart checks, and retain smoke logs with the package artifacts.
+
+Expected release artifacts are a Debian `.deb` package and an AppImage, accompanied by SHA-256 checksums. The hosted lifecycle gate tests packages on Ubuntu 22.04; it does not establish support for every Ubuntu/Debian desktop version.
 
 Build prerequisites for contributors are the Tauri v2 Linux system packages, Rust stable, Python 3.12, Node.js 22.22.2, and the pinned frontend and Python dependencies. See the Tauri documentation for the platform dependency matrix and Debian/AppImage runtime requirements.
 
@@ -45,7 +53,7 @@ The desktop shell passes the OS-resolved application data and configuration loca
 
 ## Qualification boundaries
 
-The package workflow is a build-and-artifact gate, not a substitute for clean-machine product qualification. P32/P33 still require installation and launch tests on supported Ubuntu/Debian desktop environments, first-run setup and subsequent login, application restart, database migration, backup/restore, process supervision and shutdown, removal with data retention, and checks of the packaged validation execution path.
+The hosted package workflow is a build, installation and first-run lifecycle gate for the Ubuntu 22.04 CI image. P33 still requires operator qualification on clean supported Ubuntu/Debian desktop environments, including interactive rendering, desktop launch integration, upgrade and rollback, database migration, backup/restore, process supervision and shutdown, application removal with data retention, and execution of representative packaged validation Runs with evidence.
 
 The live protected GNS3/mac80211_hwsim/physical OpenWrt lab remains a separate operator acceptance gate from hosted CI. The compatibility provisioning script is included unchanged as a fallback while the remaining P25 host-network, container/radio, Wi-Fi service and capture operations are brought to Python parity. No destructive protected-lab reset is part of desktop startup.
 
