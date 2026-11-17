@@ -1,4 +1,5 @@
 import hashlib
+from dataclasses import replace
 import json
 import logging
 import os
@@ -367,6 +368,42 @@ def pytest_collection_finish(session):
         project_id=os.getenv("NETREGRESS_PROJECT_ID") or None,
     )
     run, attempt = orchestration.run, orchestration.attempt
+    pipeline_execution_id = os.getenv("NETREGRESS_PIPELINE_EXECUTION_ID", "").strip()
+    if pipeline_execution_id:
+        from lib.services.pipeline_service import PipelineService
+
+        pipeline_metadata = {
+            "pipeline_execution_id": pipeline_execution_id,
+            "pipeline_step_key": os.getenv("NETREGRESS_PIPELINE_STEP_KEY", ""),
+            "pipeline_revision_id": os.getenv("NETREGRESS_PIPELINE_REVISION_ID", ""),
+            "pipeline_definition_sha256": os.getenv("NETREGRESS_PIPELINE_DEFINITION_SHA256", ""),
+            "performance_policy_revision_id": os.getenv("NETREGRESS_PERFORMANCE_POLICY_REVISION_ID", ""),
+            "performance_policy_hash": os.getenv("NETREGRESS_PERFORMANCE_POLICY_HASH", ""),
+            "configuration_profile_id": os.getenv("NETREGRESS_CONFIGURATION_PROFILE_ID", ""),
+            "configuration_revision_id": os.getenv("NETREGRESS_CONFIGURATION_REVISION_ID", ""),
+            "configuration_hash": os.getenv("NETREGRESS_CONFIGURATION_HASH", ""),
+            "topology_profile_id": os.getenv("NETREGRESS_TOPOLOGY_PROFILE_ID", ""),
+            "topology_revision_id": os.getenv("NETREGRESS_TOPOLOGY_REVISION_ID", ""),
+            "topology_hash": os.getenv("NETREGRESS_TOPOLOGY_HASH", ""),
+        }
+        pipeline_metadata = {key: value for key, value in pipeline_metadata.items() if value}
+        try:
+            if run.environment is not None:
+                run.environment = replace(
+                    run.environment,
+                    tools={**dict(run.environment.tools), **pipeline_metadata},
+                )
+                service.run_repository.update(run)
+            PipelineService(service.run_repository.database).link_run(
+                pipeline_execution_id, run.run_id,
+            )
+        except Exception as exc:
+            try:
+                service.lab_fail_run(run.run_id, "Pipeline Run association failed: " + type(exc).__name__)
+            except Exception:
+                pass
+            orchestration.lease.release()
+            raise RuntimeError("pipeline execution could not be linked to the canonical Run") from exc
     session.config._netregress_resource_lease = orchestration.lease
     session.config._netregress_environment_fingerprint = orchestration.fingerprint
     service.begin_lab_health_check(run.run_id)

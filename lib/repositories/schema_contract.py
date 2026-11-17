@@ -148,6 +148,7 @@ EXPECTED_TRIGGERS = (
     "trg_pipeline_revisions_no_delete",
     "trg_pipeline_execution_scope_insert",
     "trg_pipeline_execution_run_scope_insert",
+    "trg_pipeline_execution_run_scope_update",
     "trg_pipeline_execution_identity_immutable",
     "trg_pipeline_executions_no_delete",
     "trg_pipeline_steps_identity_immutable",
@@ -408,9 +409,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "24":
+        if metadata.get("version") != "25":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '24'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '25'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

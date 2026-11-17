@@ -197,3 +197,36 @@ Run it under a supervised service for polling:
 The worker executes only the registered handler allow-list. Pipeline JSON
 cannot contain passwords, private keys, API tokens, Wi-Fi PSKs or credential
 values; only opaque Credential Vault identifiers are accepted.
+
+
+## Stage E P28/P29 — canonical Run integration and qualification
+
+Start the local worker with one of these operator-controlled commands:
+
+    python scripts/netregress_pipeline_worker.py --once
+    python scripts/netregress_pipeline_worker.py --poll-interval 5
+
+A VALIDATION_RUN step accepts registered semantic IDs (for example,
+wifi.latency.threshold) or registered pytest node IDs. It pins the Project,
+Lab, pipeline revision and optional published configuration, topology and
+performance-policy revisions. The pytest child uses the same SQLite path and
+links its canonical Run back to the pipeline execution. The Run environment
+snapshot records immutable reference IDs and hashes; policy evaluation uses
+metrics from the Run's latest Attempt.
+
+A validation timeout is not permission to terminate or replay the child. Check
+the stored pipeline attempt details/process log, locate the linked Run and
+inspect the actual Lab. Resume only after confirming the prior process and Run
+are terminal and that a new validation attempt is safe. Pipeline cancellation
+prevents later steps but does not interrupt a provider operation or active
+validation process.
+
+Hosted CI qualification does not replace operator acceptance. Preserve the
+existing protected invocation and compare the complete Run/evidence outcome:
+
+    pytest tests/ -v --firmware-version=v1.0
+
+The Python P25 adapter remains an incremental GNS3 migration; the legacy shell
+entry point is not retired until host network, guest services, radio placement,
+DHCP/DNS and protected capture each have parity tests and protected-Lab
+acceptance.

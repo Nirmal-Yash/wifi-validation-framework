@@ -48,6 +48,9 @@ class RunProcessManager:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root).resolve()
         self.process_dir = self.root / "results" / "processes"
+        self._process_guard = threading.Lock()
+        self._processes: dict[int, subprocess.Popen] = {}
+        self._exit_codes: dict[int, int] = {}
 
     def start(
         self,
@@ -120,6 +123,8 @@ class RunProcessManager:
                 "created_at_ns": time.time_ns(),
             }
             self._write_manifest(pid, manifest)
+            with self._process_guard:
+                self._processes[pid] = process
             threading.Thread(
                 target=self._reap_when_finished,
                 args=(process, manifest),
@@ -142,6 +147,50 @@ class RunProcessManager:
                     self._remove_manifest(pid, manifest)
             log_path.unlink(missing_ok=True)
             raise
+
+    def wait(self, pid: int, *, timeout: float | None = None) -> int | None:
+        """Wait for a Runner-owned process and its complete process group.
+
+        Returns the leader exit code when the entire group has exited, or None
+        when the timeout expires. A timeout never signals or kills the process.
+        """
+        if timeout is not None and (
+            isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout < 0
+        ):
+            raise ValueError("wait timeout must be a non-negative number or None")
+        started = time.monotonic()
+        with self._process_guard:
+            process = self._processes.get(int(pid))
+            exit_code = self._exit_codes.get(int(pid))
+        if process is None and exit_code is None:
+            raise ProcessNotManagedError(f"PID {pid} is not a process started by this Runner")
+        try:
+            manifest = self._load_manifest(pid)
+        except ProcessNotManagedError:
+            if exit_code is not None:
+                with self._process_guard:
+                    self._processes.pop(int(pid), None)
+                    self._exit_codes.pop(int(pid), None)
+                return exit_code
+            raise
+        if exit_code is None:
+            if process is None:
+                raise ProcessNotManagedError(f"PID {pid} has no waitable Runner process handle")
+            try:
+                exit_code = process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                return None
+            with self._process_guard:
+                self._exit_codes[int(pid)] = int(exit_code)
+        remaining = None if timeout is None else max(0.0, float(timeout) - (time.monotonic() - started))
+        group_timeout = 86400.0 if remaining is None else remaining
+        if not self._wait_for_group_exit(int(pid), manifest, group_timeout):
+            return None
+        self._remove_manifest(int(pid), manifest)
+        with self._process_guard:
+            self._processes.pop(int(pid), None)
+            self._exit_codes.pop(int(pid), None)
+        return int(exit_code)
 
     def validate(self, pid: int) -> bool:
         """Return whether PID is a live, verified Runner-owned process group."""
@@ -354,11 +403,17 @@ class RunProcessManager:
     ) -> None:
         pid = int(manifest["pid"])
         try:
-            process.wait()
+            return_code = process.wait()
+            with self._process_guard:
+                self._exit_codes[pid] = int(return_code)
+                while len(self._exit_codes) > 256:
+                    self._exit_codes.pop(next(iter(self._exit_codes)))
             # A child may outlive the pytest leader. Keep the manifest until
             # every member of the original session/process group has exited.
             if self._wait_for_group_exit(pid, manifest, 5.0):
                 self._remove_manifest(pid, manifest)
+                with self._process_guard:
+                    self._processes.pop(pid, None)
         except (OSError, RunProcessError):
             # A stale record is safe: future cancellation still validates it
             # against /proc and refuses to signal a reused PID.

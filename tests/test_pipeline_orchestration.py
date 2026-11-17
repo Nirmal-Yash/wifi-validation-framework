@@ -136,3 +136,34 @@ def test_pipeline_rejects_secret_values_not_opaque_reference_ids():
         PipelineService.normalize_definition({"steps": [{
             "key": "bad", "type": "WIFI_LAB_PROVISION", "input": {"confirmed": True, "api_token": "plaintext"},
         }]})
+
+
+def test_pipeline_run_link_database_guard_rejects_cross_project_lab_run(pipeline):
+    database, service = pipeline
+    from lib.services.run_service import RunService
+
+    now = "2026-11-17T06:00:00+00:00"
+    with database.transaction(immediate=True) as connection:
+        connection.execute(
+            "INSERT INTO projects(project_id,organization_id,slug,name,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+            ("project-2", "org-1", "project-2", "Other Project", "ACTIVE", now, now),
+        )
+        connection.execute(
+            "INSERT INTO labs(lab_id,project_id,name,provider_id,topology_version,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+            ("lab-2", "project-2", "Other Lab", "gns3", 1, "ACTIVE", now, now),
+        )
+    profile, revision = published_pipeline(service)
+    queued = service.enqueue(profile["pipeline_id"], revision_id=revision["revision_id"], actor="owner")
+    run_service = RunService.from_sqlite(database)
+    run, _attempt = run_service.create_run(
+        firmware_version="v1.0", lab_id="lab-2", project_id="project-2",
+        validation_profile="Smoke", selected_tests=["wifi.latency.threshold"],
+        test_definition_versions={"wifi.latency.threshold": "1.0"},
+        resolved_config={}, repository_commit="test-commit",
+    )
+    with database.connection() as connection:
+        with pytest.raises(sqlite3.IntegrityError, match="same Project/Lab"):
+            connection.execute(
+                "UPDATE pipeline_executions SET linked_run_id=? WHERE execution_id=?",
+                (run.run_id, queued["execution_id"]),
+            )

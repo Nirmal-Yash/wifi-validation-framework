@@ -68,6 +68,24 @@ release gate. The current lock backend is POSIX-specific; Windows lock portabili
 Windows runtime acceptance remain separate platform gates. No Cloud/SaaS control plane
 is included in this Stage D increment.
 
+### Additional Stage E implementation track — P25–P29
+
+Stage E — Provisioning, Pipelines and Run Integration — follows Stage D. Its
+authoritative contracts and protected-lab gates are in
+docs/STAGE_E_FOUNDATION.md.
+
+| Phase | Scope | Status |
+|---|---|---|
+| P25 | Provisioning Adapter Migration | Incremental Python GNS3 provisioner delivered; host networking, Docker guest setup, radio placement, DHCP/DNS and protected capture remain on the compatibility script pending adapter parity and Lab acceptance |
+| P26 | Persisted Pipeline Orchestration | Implemented; immutable Project/Lab revisions, persisted execution/step/attempt records, worker leases, bounded safe retries and explicit recovery |
+| P27 | Pipeline Management Frontend | Implemented; scoped authoring/publication, execution monitoring, cancellation and reviewed recovery |
+| P28 | Complete Run and Policy Integration | Implemented in source; canonical RunProcessManager/RunService execution, same-Project/Lab Run association, pinned policy/configuration/topology references and post-Run policy evaluation |
+| P29 | Qualification and Release Gate | Hosted qualification added for migration/schema, RBAC, idempotency, Run integration, policy pinning, worker/process recovery, frontend and dashboard; protected GNS3/mac80211_hwsim/OpenWrt acceptance remains operator-owned |
+
+Stage E does not introduce a Cloud control plane or retire the protected shell
+entry point. Run/evidence remains authoritative, and uncertain validation
+processes require explicit recovery rather than automatic replay.
+
 #### Phase C — implementation contract
 
 Phase C deliberately establishes persistence primitives without taking ownership of historical data conversion or schema migration governance.

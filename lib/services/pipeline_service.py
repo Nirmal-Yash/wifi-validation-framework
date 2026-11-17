@@ -30,6 +30,10 @@ class PipelineRetryableError(RuntimeError):
 class PipelineRecoveryRequired(RuntimeError):
     """A provider operation has an uncertain outcome and needs observation."""
 
+    def __init__(self, message: str, *, details: Mapping[str, Any] | None = None):
+        super().__init__(message)
+        self.details = dict(details or {})
+
 
 _PIPELINE_KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 _HASH = re.compile(r"^[a-f0-9]{64}$")
@@ -124,6 +128,7 @@ class PipelineService:
             raise PipelineError(f"pipeline must contain between 1 and {cls.MAX_STEPS} steps")
         steps = []
         keys = set()
+        validation_run_count = 0
         for ordinal, raw in enumerate(raw_steps):
             if not isinstance(raw, Mapping) or set(raw) - {
                 "key", "type", "name", "timeout_seconds", "max_attempts", "input",
@@ -179,15 +184,37 @@ class PipelineService:
                 if not _HASH.fullmatch(str(inputs.get("configuration_hash", ""))):
                     raise PipelineError(f"steps[{ordinal}].input.configuration_hash must be a SHA-256 digest")
             if step_type == "VALIDATION_RUN":
+                validation_run_count += 1
+                if validation_run_count > 1:
+                    raise PipelineError("a pipeline revision may contain only one VALIDATION_RUN step")
                 tests = inputs.get("tests")
                 if not isinstance(tests, list) or not tests or len(tests) > 200 or any(not isinstance(t, str) or not t.strip() for t in tests):
                     raise PipelineError(f"steps[{ordinal}].input.tests must contain between 1 and 200 test identifiers")
-                if len(set(tests)) != len(tests):
+                normalized_tests = [test.strip() for test in tests]
+                if len(set(normalized_tests)) != len(normalized_tests):
                     raise PipelineError(f"steps[{ordinal}].input.tests cannot contain duplicates")
+                inputs["tests"] = normalized_tests
                 firmware = inputs.get("firmware_version", "v1.0")
                 if not isinstance(firmware, str) or not firmware.strip() or len(firmware) > 80:
                     raise PipelineError(f"steps[{ordinal}].input.firmware_version is invalid")
-                inputs.setdefault("firmware_version", firmware)
+                inputs["firmware_version"] = firmware.strip()
+                policy_revision_id = inputs.get("performance_policy_revision_id")
+                if policy_revision_id is not None:
+                    cls._text(policy_revision_id, f"steps[{ordinal}].input.performance_policy_revision_id")
+                reference_pairs = (
+                    ("configuration_profile_id", "configuration_revision_id"),
+                    ("topology_profile_id", "topology_revision_id"),
+                )
+                for profile_field, revision_field in reference_pairs:
+                    profile_value = inputs.get(profile_field)
+                    revision_value = inputs.get(revision_field)
+                    if bool(profile_value) != bool(revision_value):
+                        raise PipelineError(
+                            f"steps[{ordinal}].input.{profile_field} and {revision_field} must be provided together"
+                        )
+                    if profile_value:
+                        cls._text(profile_value, f"steps[{ordinal}].input.{profile_field}")
+                        cls._text(revision_value, f"steps[{ordinal}].input.{revision_field}")
             steps.append({
                 "key": key, "ordinal": ordinal, "type": step_type, "name": name,
                 "timeout_seconds": timeout, "max_attempts": retries, "input": inputs,
@@ -669,6 +696,11 @@ class PipelineService:
             next_attempt = None
         except PipelineRecoveryRequired as exc:
             safe_result = {"error_code": "RECOVERY_REQUIRED", "error_type": type(exc).__name__}
+            if exc.details:
+                try:
+                    safe_result["details"] = self._safe_object(exc.details, "recovery details", 4096)
+                except PipelineError:
+                    safe_result["details"] = {"details_omitted": True}
             outcome = "RECOVERY_REQUIRED"
             error_summary = "operation outcome is uncertain; observe provider state before retry"
             next_attempt = None

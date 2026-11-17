@@ -250,3 +250,23 @@ def test_timeout_classification_is_infrastructure_not_product_failure(tmp_path):
     assert timed_out.lifecycle is RunLifecycle.ABORTED
     assert timed_out.failure_class is FailureClass.TIMED_OUT
     assert timed_out.outcome.value == "UNVALIDATED"
+
+
+
+def test_process_manager_wait_returns_exit_code_after_reaping_group(tmp_path):
+    manager = RunProcessManager(tmp_path)
+    handle = manager._start_command([sys.executable, "-c", "import time; print('wait-complete', flush=True); time.sleep(0.05)"])
+
+    assert manager.wait(handle.pid, timeout=5) == 0
+    assert not manager._manifest_path(handle.pid).exists()
+    assert "wait-complete" in Path(handle.log_path).read_text(encoding="utf-8")
+
+
+def test_process_manager_wait_timeout_does_not_terminate_owned_group(tmp_path):
+    manager = RunProcessManager(tmp_path)
+    handle = _start_sleep(manager)
+    _wait_for_log(handle.log_path)
+
+    assert manager.wait(handle.pid, timeout=0.05) is None
+    assert manager.validate(handle.pid) is True
+    assert manager.cancel(handle.pid, grace_seconds=2, kill_timeout=2) is True

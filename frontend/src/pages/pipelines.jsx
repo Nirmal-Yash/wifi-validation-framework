@@ -15,8 +15,9 @@ const GUIDANCE=`Allowed step types:
 - CONFIGURATION_DEPLOY: input { "profile_id": "...", "revision_id": "...", "configuration_hash": "<64 hex>", "device_id": "...", "ssh_credential_id": "...", "wifi_psk_credential_id": "...", "confirmed": true }
 
 Each step accepts key, type, name, timeout_seconds (5–3600), max_attempts (1–5).
-Mutating operations are single-attempt. No arbitrary shell/command step is accepted.
-Never put secret values in the definition. Opaque Credential Vault IDs only.`;
+Mutating operations are single-attempt. VALIDATION_RUN accepts registered semantic test IDs or registered pytest node IDs.
+No arbitrary shell/command step is accepted. Never put secret values in the definition.
+Opaque Credential Vault IDs only.`;
 const stamp=value=>value?new Date(value).toLocaleString():"—";
 
 export default function PipelinesPage({user}){
@@ -148,6 +149,16 @@ export default function PipelinesPage({user}){
     {key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>},
     {key:"attempt_count",label:"Attempts",render:item=>item.attempt_count+" / "+item.max_attempts},
     {key:"timeout_seconds",label:"Timeout",render:item=>item.timeout_seconds+" s"},
+    {key:"result",label:"Run / policy result",render:item=>{
+     const result=item.result||{};
+     const policy=result.performance_policy_evaluation;
+     const summary=[];
+     if(result.run_id)summary.push("Run "+result.run_id);
+     if(result.run_outcome)summary.push(result.run_outcome);
+     if(policy?.overall)summary.push("Policy "+policy.overall);
+     if(result.error_code)summary.push(result.error_code);
+     return summary.length?<span className="mono">{summary.join(" · ")}</span>:"—";
+    }},
     {key:"last_error",label:"Error",render:item=>item.last_error||"—"}
    ]}/>
    <DataTable caption="Worker attempt history" rows={attemptRows} rowKey={item=>item.step_attempt_id} columns={[

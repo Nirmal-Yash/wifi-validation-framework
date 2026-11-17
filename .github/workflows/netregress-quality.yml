@@ -141,6 +141,7 @@ jobs:
           tests/test_device_inventory.py
           tests/test_wifi_lab_provisioning.py
           tests/test_pipeline_orchestration.py
+          tests/test_pipeline_runtime.py
           tests/test_topology_studio.py
           tests/test_topology_apply.py
           tests/test_configuration_deployer.py
