@@ -480,6 +480,7 @@ def pytest_collection_finish(session):
             "managed_device_host": str(device_identity.get("host", "")),
             "managed_device_port": str(device_identity.get("port", "")),
             "managed_device_username": str(device_identity.get("username", "")),
+            "pipeline_previous_steps_json": os.getenv("NETREGRESS_PIPELINE_PREVIOUS_STEPS_JSON", ""),
         }
         pipeline_metadata = {key: value for key, value in pipeline_metadata.items() if value}
         try:
