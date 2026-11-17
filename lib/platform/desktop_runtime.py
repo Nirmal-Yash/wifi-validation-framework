@@ -9,6 +9,7 @@ import stat
 from typing import Mapping
 
 from .adapters import LinuxPlatformAdapter
+from .contracts import PlatformCapabilityError
 from .paths import ApplicationPaths, resolve_application_paths
 
 
@@ -62,6 +63,19 @@ def _ensure_session_secret(path: Path) -> str:
     return secret
 
 
+def _reject_symlinked_path(path: str | Path, *, label: str) -> None:
+    candidate = Path(path).expanduser().absolute()
+    for component in (candidate, *candidate.parents):
+        try:
+            metadata = component.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(metadata.st_mode):
+            raise PlatformCapabilityError(
+                f"{label} path must not contain a symlink"
+            )
+
+
 def prepare_desktop_runtime(
     project_root: str | Path,
     *,
@@ -76,6 +90,22 @@ def prepare_desktop_runtime(
     desktop product is a separate qualification target.
     """
     env = dict(os.environ if environ is None else environ)
+    # Validate caller-supplied paths before resolve_application_paths() applies
+    # Path.resolve(), which intentionally canonicalizes symlinks for normal
+    # source-checkout resolution.
+    for variable, label in (
+        ("NETREGRESS_USER_DATA_DIR", "user data"),
+        ("NETREGRESS_LOCAL_DIR", "local state"),
+        ("NETREGRESS_CONFIG_DIR", "configuration"),
+        ("NETREGRESS_CACHE_DIR", "cache"),
+        ("NETREGRESS_STATE_DIR", "state"),
+        ("NETREGRESS_LOG_DIR", "logs"),
+        ("NETREGRESS_RUNTIME_DIR", "runtime"),
+        ("NETREGRESS_RESULTS_DIR", "results"),
+    ):
+        value = str(env.get(variable) or "").strip()
+        if value:
+            _reject_symlinked_path(value, label=label)
     env["NETREGRESS_PACKAGED"] = "1"
     env["NETREGRESS_AUTH_REQUIRED"] = "1"
     env["NETREGRESS_AUTH_USERS_JSON"] = ""
