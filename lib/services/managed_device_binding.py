@@ -40,7 +40,7 @@ def build_managed_device_profile(
         or device.get("project_id") != project_id
         or device.get("lab_id") != lab_id
     ):
-        raise ManagedDeviceBindingError("managed Device must be active in the selected Project/Lab")
+        raise ManagedDeviceBindingError("managed Device must be active in the same Project/Lab as the Run")
 
     profiles = device_profiles if device_profiles is not None else load_devices()
     device_key = device.get("device_key")
