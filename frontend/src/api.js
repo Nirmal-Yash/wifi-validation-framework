@@ -8,8 +8,8 @@ async function resolveApiBase(){
  const invoke=globalThis.window?.__TAURI__?.core?.invoke;
  if(typeof invoke==="function"){
   basePromise=Promise.resolve(invoke("api_base_url")).then(value=>{
-   const origin=String(value||"").replace(/\\/+$/,"");
-   if(!/^http:\\/\\/127\\.0\\.0\\.1:\\d{1,5}$/.test(origin))throw new ApiError("The desktop backend returned an invalid local API address.",0,"INVALID_API_BASE");
+   const origin=String(value||"").replace(/\/+$/,"");
+   if(!/^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(origin))throw new ApiError("The desktop backend returned an invalid local API address.",0,"INVALID_API_BASE");
    resolvedBase=origin+"/api/v1";
    return resolvedBase;
   }).finally(()=>{basePromise=null;});
