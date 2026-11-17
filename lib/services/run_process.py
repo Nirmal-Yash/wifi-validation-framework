@@ -47,7 +47,11 @@ class RunProcessManager:
 
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root).resolve()
-        self.process_dir = self.root / "results" / "processes"
+        configured_process_dir = os.getenv("NETREGRESS_PROCESS_DIR", "").strip()
+        self.process_dir = (
+            Path(configured_process_dir).expanduser().resolve(strict=False)
+            if configured_process_dir else self.root / "results" / "processes"
+        )
         self._process_guard = threading.Lock()
         self._processes: dict[int, subprocess.Popen] = {}
         self._exit_codes: dict[int, int] = {}

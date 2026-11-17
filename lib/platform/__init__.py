@@ -18,6 +18,7 @@ from .contracts import (
     SecretStoreError,
 )
 from .detection import describe_platform, platform_family_for
+from .desktop_runtime import DesktopRuntime, prepare_desktop_runtime
 from .paths import ApplicationPaths, resolve_application_paths
 from .process import ManagedSubprocess, SubprocessExecutor
 from .secrets import SecretServiceSecretStore, UnavailableSecretStore, WindowsCredentialManagerSecretStore
@@ -25,6 +26,8 @@ from .secrets import SecretServiceSecretStore, UnavailableSecretStore, WindowsCr
 __all__ = [
     "ApplicationPaths",
     "LinuxPlatformAdapter",
+    "DesktopRuntime",
+    "prepare_desktop_runtime",
     "ManagedSubprocess",
     "PlatformAdapter",
     "PlatformCapabilities",
