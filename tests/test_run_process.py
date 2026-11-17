@@ -267,6 +267,8 @@ def test_process_manager_wait_timeout_does_not_terminate_owned_group(tmp_path):
     handle = _start_sleep(manager)
     _wait_for_log(handle.log_path)
 
+    started = time.monotonic()
     assert manager.wait(handle.pid, timeout=0.05) is None
+    assert time.monotonic() - started < 1.0
     assert manager.validate(handle.pid) is True
     assert manager.cancel(handle.pid, grace_seconds=2, kill_timeout=2) is True

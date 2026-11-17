@@ -403,11 +403,18 @@ class RunProcessManager:
     ) -> None:
         pid = int(manifest["pid"])
         try:
-            return_code = process.wait()
+            # Do not call Popen.wait() from the reaper: a concurrently supervised
+            # wait(timeout=...) must not block behind an unbounded waiter.
+            while True:
+                return_code = process.poll()
+                if return_code is not None:
+                    break
+                time.sleep(0.05)
             with self._process_guard:
-                self._exit_codes[pid] = int(return_code)
-                while len(self._exit_codes) > 256:
-                    self._exit_codes.pop(next(iter(self._exit_codes)))
+                if pid in self._processes:
+                    self._exit_codes[pid] = int(return_code)
+                    while len(self._exit_codes) > 256:
+                        self._exit_codes.pop(next(iter(self._exit_codes)))
             # A child may outlive the pytest leader. Keep the manifest until
             # every member of the original session/process group has exited.
             if self._wait_for_group_exit(pid, manifest, 5.0):
