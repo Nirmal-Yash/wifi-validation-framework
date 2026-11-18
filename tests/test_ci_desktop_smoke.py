@@ -62,7 +62,17 @@ def test_packaged_pytest_environment_is_hardware_free(tmp_path, monkeypatch):
     assert result["pytest"] == "PASS"
     assert result["pipeline_worker"] == "IDLE"
     pytest_command = calls[0][0]
-    assert pytest_command[pytest_command.index("--pyargs") + 1] == "tests.test_desktop_setup"
+    pyargs_index = pytest_command.index("--pyargs")
+    assert pytest_command[pyargs_index + 1:pyargs_index + 4] == [
+        "tests.test_desktop_setup",
+        "tests.test_pipeline_orchestration",
+        "tests.test_pipeline_runtime",
+    ]
+    assert result["packaged_contract_modules"] == [
+        "tests.test_desktop_setup",
+        "tests.test_pipeline_orchestration",
+        "tests.test_pipeline_runtime",
+    ]
     assert "--confcutdir" in pytest_command
     environment = calls[0][1]["env"]
     assert environment["NETREGRESS_CI_MODE"] == "1"

@@ -281,9 +281,15 @@ def _run_packaged_backend_checks(
     embedded_root = Path(getattr(sys, "_MEIPASS", backend_executable.parent)).resolve()
     if not embedded_root.is_dir():
         raise SmokeFailure("the frozen backend resource root is unavailable")
+    packaged_contract_modules = (
+        "tests.test_desktop_setup",
+        "tests.test_pipeline_orchestration",
+        "tests.test_pipeline_runtime",
+    )
     pytest_args = [
         "-m", "pytest",
-        "--pyargs", "tests.test_desktop_setup",
+        "--pyargs",
+        *packaged_contract_modules,
         "-q",
         "-p", "no:cacheprovider",
         "--confcutdir", str(embedded_root),
@@ -298,7 +304,7 @@ def _run_packaged_backend_checks(
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
-        timeout=240,
+        timeout=360,
         check=False,
     )
     if pytest_result.returncode != 0:
@@ -343,6 +349,7 @@ def _run_packaged_backend_checks(
     return {
         "pytest": "PASS",
         "pytest_summary": (pytest_result.stdout.strip().splitlines()[-1:] or ["completed"])[0],
+        "packaged_contract_modules": list(packaged_contract_modules),
         "pipeline_worker": worker_state.get("status"),
     }
 
