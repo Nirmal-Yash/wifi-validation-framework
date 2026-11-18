@@ -95,7 +95,7 @@ jobs:
           gh workflow run netregress-quality.yml --ref main --repo "$GITHUB_REPOSITORY"
           gh workflow run desktop-linux.yml --ref main --repo "$GITHUB_REPOSITORY"
       - name: Upload generated lockfiles for source review
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: netregress-dependency-locks-${{ github.sha }}
           path: |
