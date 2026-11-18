@@ -1,0 +1,7 @@
+# Application dependency catalog only. The OS packages on the ephemeral
+# GitHub-hosted Ubuntu runner are maintained through the runner image update
+# process and are not part of the application's Python/npm/Cargo lock graph.
+select-catalogers:
+  - python
+  - javascript
+  - rust

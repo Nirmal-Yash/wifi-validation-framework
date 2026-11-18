@@ -23,7 +23,19 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-OWNER_PASSWORD = secrets.token_urlsafe(32)
+def _resolve_owner_password() -> str:
+    """Reuse one ephemeral CI Owner password across package lifecycle invocations."""
+    configured = os.environ.get("NETREGRESS_SMOKE_OWNER_PASSWORD")
+    if configured is None:
+        return secrets.token_urlsafe(32)
+    if len(configured) < 32 or any(character.isspace() for character in configured):
+        raise RuntimeError("NETREGRESS_SMOKE_OWNER_PASSWORD must be a long, whitespace-free token")
+    return configured
+
+
+OWNER_PASSWORD = _resolve_owner_password()
+# Do not leak the smoke-only credential to the desktop process or any helper.
+os.environ.pop("NETREGRESS_SMOKE_OWNER_PASSWORD", None)
 PORT_PATTERN = re.compile(r"https?://127\.0\.0\.1:(\d{1,5})")
 
 
@@ -83,8 +95,15 @@ def _wait_backend(data_home: Path, process: subprocess.Popen, *, timeout: float 
     while time.monotonic() < deadline:
         if process.poll() is not None:
             details = process.stdout_path.read_text(encoding="utf-8", errors="replace")[-5000:]
+            backend_log = _find_backend_log(data_home)
+            backend_details = (
+                backend_log.read_text(encoding="utf-8", errors="replace")[-12000:]
+                if backend_log is not None and backend_log.is_file()
+                else "<backend.log was not created>"
+            )
             raise SmokeFailure(
-                f"desktop process exited during startup ({process.returncode}); launcher output: {details}"
+                f"desktop process exited during startup ({process.returncode}); "
+                f"backend log: {backend_details}; launcher output: {details}"
             )
         log_path = _find_backend_log(data_home)
         if log_path is not None:
@@ -132,6 +151,7 @@ def _start_app(
 
     launcher_log = state_root / f"{label}-launcher.log"
     env = os.environ.copy()
+    env.pop("NETREGRESS_SMOKE_OWNER_PASSWORD", None)
     env.update({
         "HOME": str(home),
         "XDG_DATA_HOME": str(data_home),
@@ -143,10 +163,22 @@ def _start_app(
         "WEBKIT_DISABLE_COMPOSITING_MODE": "1",
         "NO_AT_BRIDGE": "1",
     })
-    command = ["xvfb-run", "-a", "--server-args=-screen 0 1600x1000x24"]
+    # xvfb-run configures DISPLAY and XAUTHORITY only inside its child
+    # environment. Publish both from that same session so the parent smoke
+    # process inspects the actual application display, not the runner display.
+    display_path = state_root / f"{label}-xvfb-display.txt"
+    display_path.unlink(missing_ok=True)
+    launch_script = (
+        'umask 077; printf "%s\\n%s\\n" "$DISPLAY" "${XAUTHORITY:-}" > "$1"; '
+        'exec "$2"'
+    )
+    command = [
+        "xvfb-run", "-a", "--server-args=-screen 0 1600x1000x24",
+        "bash", "-c", launch_script, "netregress-xvfb-launch",
+        str(display_path), str(executable.resolve()),
+    ]
     if appimage:
         env["APPIMAGE_EXTRACT_AND_RUN"] = "1"
-    command.append(str(executable.resolve()))
 
     output = launcher_log.open("w", encoding="utf-8")
     process = subprocess.Popen(
@@ -160,6 +192,7 @@ def _start_app(
     )
     # Keep a named handle for actionable diagnostics in _wait_backend().
     process.stdout_path = launcher_log  # type: ignore[attr-defined]
+    process.display_path = display_path  # type: ignore[attr-defined]
     process._smoke_output = output  # type: ignore[attr-defined]
     return process, data_home
 
@@ -188,6 +221,126 @@ def _stop_app(process: subprocess.Popen) -> None:
     output = getattr(process, "_smoke_output", None)
     if output is not None:
         output.close()
+
+
+def _wait_for_desktop_display(
+    process: subprocess.Popen,
+    *,
+    timeout: float,
+) -> dict[str, str]:
+    """Read the Xvfb display/auth context published by the launched app wrapper."""
+    display_path = getattr(process, "display_path", None)
+    if not isinstance(display_path, Path):
+        raise SmokeFailure("desktop launcher did not expose its Xvfb display context")
+    deadline = time.monotonic() + timeout
+    last_error = "display metadata has not been written"
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise SmokeFailure(
+                f"desktop process exited before Xvfb display became available ({process.returncode})"
+            )
+        try:
+            lines = display_path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            last_error = type(exc).__name__
+            lines = []
+        if lines:
+            display = lines[0].strip()
+            if display.startswith(":") and display[1:].split(".", 1)[0].isdigit():
+                env = os.environ.copy()
+                env["DISPLAY"] = display
+                if len(lines) > 1 and lines[1].strip():
+                    env["XAUTHORITY"] = lines[1].strip()
+                else:
+                    env.pop("XAUTHORITY", None)
+                return env
+            last_error = f"invalid Xvfb display value {display!r}"
+        time.sleep(0.05)
+    raise SmokeFailure(f"Xvfb did not publish a usable display context: {last_error}")
+
+
+def _qualify_desktop_window(
+    process: subprocess.Popen,
+    *,
+    state_root: Path,
+    label: str,
+    timeout: float = 25.0,
+) -> dict:
+    """Verify the real X11 window is visible, sized and keyboard-focusable."""
+    if not shutil_which("xdotool") or not shutil_which("xwd"):
+        raise SmokeFailure("xdotool and xwd are required for desktop-window qualification")
+    display_env = _wait_for_desktop_display(process, timeout=min(timeout, 10.0))
+    deadline = time.monotonic() + timeout
+    screenshot = state_root / f"{label}-window.xwd"
+    last_detail = "no visible NetRegress window found"
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise SmokeFailure(
+                f"desktop process exited before its window became available ({process.returncode})"
+            )
+        search = subprocess.run(
+            ["xdotool", "search", "--onlyvisible", "--name", "NetRegress"],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=3, check=False, env=display_env,
+        )
+        if search.returncode == 0:
+            for window_id in search.stdout.split():
+                title_result = subprocess.run(
+                    ["xdotool", "getwindowname", window_id],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=3, check=False, env=display_env,
+                )
+                geometry_result = subprocess.run(
+                    ["xdotool", "getwindowgeometry", "--shell", window_id],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=3, check=False, env=display_env,
+                )
+                if title_result.returncode or geometry_result.returncode:
+                    continue
+                title = title_result.stdout.strip()
+                geometry = {}
+                for line in geometry_result.stdout.splitlines():
+                    if "=" in line:
+                        key, value = line.split("=", 1)
+                        if key in {"WIDTH", "HEIGHT"} and value.isdigit():
+                            geometry[key] = int(value)
+                width, height = geometry.get("WIDTH", 0), geometry.get("HEIGHT", 0)
+                last_detail = f"title={title!r}, width={width}, height={height}"
+                if "NetRegress" not in title or width < 1024 or height < 720:
+                    continue
+                focus = subprocess.run(
+                    ["xdotool", "windowfocus", "--sync", window_id],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=3, check=False, env=display_env,
+                )
+                if focus.returncode:
+                    last_detail = f"window could not receive keyboard focus: {focus.stderr[-500:]}"
+                    continue
+                key = subprocess.run(
+                    ["xdotool", "key", "--clearmodifiers", "--window", window_id, "Tab"],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=3, check=False, env=display_env,
+                )
+                if key.returncode:
+                    last_detail = f"keyboard focus probe failed: {key.stderr[-500:]}"
+                    continue
+                capture = subprocess.run(
+                    ["xwd", "-silent", "-id", window_id, "-out", str(screenshot)],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5, check=False, env=display_env,
+                )
+                if capture.returncode or not screenshot.is_file() or screenshot.stat().st_size < 4096:
+                    last_detail = f"desktop window screenshot capture failed: {capture.stderr[-500:]}"
+                    continue
+                return {
+                    "title": title,
+                    "width": width,
+                    "height": height,
+                    "keyboard_focus": "PASS",
+                    "screenshot": str(screenshot),
+                    "screenshot_bytes": screenshot.stat().st_size,
+                }
+        elif search.stderr.strip():
+            last_detail = f"X11 window search failed: {search.stderr.strip()[-500:]}"
+        time.sleep(0.25)
+    raise SmokeFailure(
+        f"NetRegress desktop window did not pass visibility/render/focus qualification "
+        f"within {timeout:.0f}s: {last_detail}"
+    )
 
 
 def _create_owner_and_login(port: int, *, first_run: bool) -> None:
@@ -247,6 +400,7 @@ def _run_packaged_backend_checks(
         directory.chmod(0o700)
 
     env = os.environ.copy()
+    env.pop("NETREGRESS_SMOKE_OWNER_PASSWORD", None)
     env.update({
         "HOME": str(state_root / "home"),
         "XDG_DATA_HOME": str(data_home),
@@ -262,21 +416,55 @@ def _run_packaged_backend_checks(
         "NETREGRESS_PROCESS_DIR": str(process_dir),
         "NETREGRESS_DATABASE_PATH": str(database),
         "PYTHONNOUSERSITE": "1",
+        # Packaged contract tests run without real lab secrets or devices.
+        "NETREGRESS_CI_MODE": "1",
+        "NETREGRESS_SESSION_SECRET": "netregress-desktop-smoke-session-secret",
+        "NETREGRESS_SESSION_COOKIE_SECURE": "0",
     })
+    # PyInstaller stores data under _MEIPASS, but importable Python modules
+    # live in the PYZ archive. --confcutdir requires a real filesystem path,
+    # so collect the embedded test module by import name and anchor pytest's
+    # fixture discovery at the extraction root (never the user's working dir).
+    embedded_root = Path(getattr(sys, "_MEIPASS", backend_executable.parent)).resolve()
+    if not embedded_root.is_dir():
+        raise SmokeFailure("the frozen backend resource root is unavailable")
+    # Exercise the frozen runtime across the persisted business workflow:
+    # workspace scope, secrets, configuration/policy revisions, topology and
+    # device deployment, then queue/worker orchestration and canonical Runs.
+    # These tests use isolated fixtures/fake providers; REAL_LAB remains a
+    # separately approved operator acceptance class.
+    packaged_contract_modules = (
+        "tests.test_desktop_setup",
+        "tests.test_project_scope_persistence",
+        "tests.test_credential_vault",
+        "tests.test_device_inventory",
+        "tests.test_configuration_profile_service",
+        "tests.test_performance_policy_engine",
+        "tests.test_topology_apply",
+        "tests.test_configuration_deployer",
+        "tests.test_pipeline_orchestration",
+        "tests.test_pipeline_runtime",
+        "tests.test_release_artifact_verification",
+    )
+    pytest_args = [
+        "-m", "pytest",
+        "--pyargs",
+        *packaged_contract_modules,
+        "-q",
+        "-p", "no:cacheprovider",
+        "--confcutdir", str(embedded_root),
+    ]
     pytest_result = subprocess.run(
         [
             str(backend_executable.resolve()),
-            "-m", "pytest",
-            "tests/test_desktop_setup.py",
-            "-q",
-            "-p", "no:cacheprovider",
+            *pytest_args,
         ],
         cwd=state_root,
         env=env,
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
-        timeout=240,
+        timeout=360,
         check=False,
     )
     if pytest_result.returncode != 0:
@@ -321,6 +509,7 @@ def _run_packaged_backend_checks(
     return {
         "pytest": "PASS",
         "pytest_summary": (pytest_result.stdout.strip().splitlines()[-1:] or ["completed"])[0],
+        "packaged_contract_modules": list(packaged_contract_modules),
         "pipeline_worker": worker_state.get("status"),
     }
 
@@ -331,6 +520,7 @@ def _run_cycle(
     *,
     appimage: bool,
     backend_executable: Path | None,
+    existing_owner: bool = False,
 ) -> dict:
     data_home = state_root / "data"
     process, _ = _start_app(
@@ -338,7 +528,10 @@ def _run_cycle(
     )
     try:
         first_port, first_log = _wait_backend(data_home, process)
-        _create_owner_and_login(first_port, first_run=True)
+        first_window = _qualify_desktop_window(
+            process, state_root=state_root, label="first-launch",
+        )
+        _create_owner_and_login(first_port, first_run=not existing_owner)
     finally:
         _stop_app(process)
 
@@ -357,6 +550,9 @@ def _run_cycle(
     )
     try:
         second_port, second_log = _wait_backend(data_home, second)
+        second_window = _qualify_desktop_window(
+            second, state_root=state_root, label="second-launch",
+        )
         _create_owner_and_login(second_port, first_run=False)
     finally:
         _stop_app(second)
@@ -376,6 +572,8 @@ def _run_cycle(
         "status": "PASS",
         "first_backend_port": first_port,
         "second_backend_port": second_port,
+        "desktop_windows": {"first_launch": first_window, "second_launch": second_window},
+        "first_run_expected": not existing_owner,
         "database": str(database),
         "database_bytes": database.stat().st_size,
         "session_secret": str(secrets[0]),
@@ -390,6 +588,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--state-root", required=True, type=Path, help="Isolated HOME/XDG state root for this smoke test.")
     parser.add_argument("--label", default="desktop")
     parser.add_argument("--appimage", action="store_true", help="Launch the AppImage directly.")
+    parser.add_argument(
+        "--existing-owner", action="store_true",
+        help="Require an existing Owner on the first launch (upgrade/rollback qualification).",
+    )
     parser.add_argument(
         "--backend-executable", type=Path,
         help="Packaged resources/backend/netregress-backend to test frozen child dispatch.",
@@ -406,6 +608,7 @@ def main(argv: list[str] | None = None) -> int:
         report = _run_cycle(
             args.executable, args.state_root, appimage=args.appimage,
             backend_executable=args.backend_executable,
+            existing_owner=args.existing_owner,
         )
         report["label"] = args.label
         report["executable"] = str(args.executable)

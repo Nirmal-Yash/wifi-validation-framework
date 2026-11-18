@@ -304,6 +304,9 @@ class CertificationMatrix:
         source_commit = self._current_commit(repository_root)
         missing: list[str] = []
         issues: list[str] = []
+        known_scenarios = set(self._by_id)
+        for unknown_id in sorted(str(key) for key in evidence if key not in known_scenarios):
+            issues.append(f"unknown scenario id: {unknown_id}")
 
         used_execution_ids: set[str] = set()
         for scenario in self.scenarios:
@@ -326,7 +329,11 @@ class CertificationMatrix:
                         scenario_issues.append(f"outcome {observed_outcome or 'MISSING'} does not match {scenario.expected_outcome}")
 
                 controls = record.get("controls", ())
-                observed_controls = set(controls) if isinstance(controls, (list, tuple, set)) else set()
+                observed_controls = (
+                    {value for value in controls if isinstance(value, str)}
+                    if isinstance(controls, (list, tuple, set))
+                    else set()
+                )
                 missing_controls = sorted(set(scenario.required_controls) - observed_controls)
                 if missing_controls:
                     scenario_issues.append("missing controls: " + ", ".join(missing_controls))
@@ -375,7 +382,13 @@ class CertificationMatrix:
                             if not isinstance(artifact, Mapping):
                                 artifact_errors.append("evidence entry must be an object")
                                 continue
-                            evidence_type, error = self._verify_artifact(artifact, repository_root)
+                            try:
+                                evidence_type, error = self._verify_artifact(artifact, repository_root)
+                            except (OSError, RuntimeError, ValueError, TypeError) as exc:
+                                artifact_errors.append(
+                                    f"artifact verification raised {type(exc).__name__}"
+                                )
+                                continue
                             if error:
                                 artifact_errors.append(error)
                             elif evidence_type:
@@ -401,7 +414,7 @@ class CertificationMatrix:
                 issues.extend(f"{scenario.scenario_id}: {message}" for message in scenario_issues)
 
         return CertificationEvaluation(
-            complete=not missing,
+            complete=not missing and not issues,
             missing_scenarios=tuple(sorted(missing)),
             issues=tuple(sorted(issues)),
         )

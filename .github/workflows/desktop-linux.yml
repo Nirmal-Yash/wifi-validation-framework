@@ -14,16 +14,32 @@ on:
       - "tests/**"
       - "regression/**"
       - "scripts/netregress_desktop_backend.py"
+      - "scripts/netregress_verify_desktop_artifacts.py"
+      - "scripts/netregress_sbom_gate.py"
+      - ".syft/**"
       - "scripts/netregress_pipeline_worker.py"
       - "packaging/**"
+      - "requirements.txt"
       - "requirements.lock"
       - "requirements-desktop-build.txt"
+      - "requirements-desktop-build.lock"
+      - "rust-toolchain.toml"
+      - "src-tauri/Cargo.lock"
       - "wifi_lab_reprovision_robust.sh"
       - ".github/workflows/desktop-linux.yml"
+      - ".github/workflows/netregress-quality.yml"
+      - ".github/workflows/linux-release-readiness.yml"
+      - ".github/dependabot.yml"
+      - "lib/services/release_manifest.py"
+      - "scripts/netregress_release.py"
+      - "docs/P33_P37_PRODUCTION_READINESS.md"
   workflow_dispatch:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 concurrency:
   group: netregress-desktop-linux-${{ github.ref }}
@@ -31,12 +47,16 @@ concurrency:
 
 jobs:
   build-linux:
-    name: Build Linux desktop app (.deb and AppImage)
-    runs-on: ubuntu-22.04
+    name: Build Linux desktop app (.deb and AppImage) — ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Tauri Linux system dependencies
         run: |
@@ -55,23 +75,27 @@ jobs:
             patchelf \
             wget \
             xvfb \
-            dbus-x11
+            dbus-x11 \
+            xdotool \
+            x11-utils \
+            x11-apps
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: |
             requirements.lock
             requirements-desktop-build.txt
+            requirements-desktop-build.lock
 
       - name: Install locked application and desktop build dependencies
         run: |
           python -m pip install --require-hashes -r requirements.lock
-          python -m pip install -r requirements-desktop-build.txt
+          python -m pip install --require-hashes -r requirements-desktop-build.lock
           python -m pip check
-          python -m py_compile scripts/ci_desktop_smoke.py
+          python -m py_compile scripts/ci_desktop_smoke.py scripts/netregress_desktop_backend.py
 
       - name: Build self-contained Python Runner sidecar
         run: |
@@ -81,9 +105,11 @@ jobs:
             packaging/netregress-backend.spec
           test -x desktop-dist/netregress-backend
           file desktop-dist/netregress-backend
+          # Fail before Tauri packaging if runtime-only migration imports were omitted.
+          desktop-dist/netregress-backend --check-desktop-runtime
 
       - name: Set up Node.js 22.22.2
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22.22.2"
           cache: npm
@@ -96,11 +122,60 @@ jobs:
           npm test
           npm run build
 
-      - name: Set up Rust stable
+      - name: Set up pinned Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.100.0
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --locked
+      - name: Install pinned Tauri CLI
+        run: cargo install tauri-cli --version 2.12.5 --locked
+
+      - name: Validate Tauri icon PNG encoding
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import struct
+          import zlib
+
+          path = Path("src-tauri/icons/icon.png")
+          payload = path.read_bytes()
+          if payload[:8] != b"\x89PNG\r\n\x1a\n" or len(payload) < 33:
+              raise SystemExit(f"{path} is not a valid PNG")
+          offset = 8
+          width = height = bit_depth = color_type = None
+          saw_idat = saw_iend = False
+          while offset + 12 <= len(payload):
+              length = struct.unpack(">I", payload[offset:offset + 4])[0]
+              kind = payload[offset + 4:offset + 8]
+              end = offset + 12 + length
+              if end > len(payload):
+                  raise SystemExit(f"{path} contains a truncated PNG chunk")
+              chunk_data = payload[offset + 8:offset + 8 + length]
+              expected_crc = struct.unpack(">I", payload[offset + 8 + length:end])[0]
+              actual_crc = zlib.crc32(kind + chunk_data) & 0xffffffff
+              if actual_crc != expected_crc:
+                  raise SystemExit(f"{path} contains an invalid {kind.decode('ascii', 'replace')} CRC")
+              if kind == b"IHDR":
+                  if offset != 8 or length != 13:
+                      raise SystemExit(f"{path} has an invalid IHDR chunk")
+                  width, height, bit_depth, color_type = struct.unpack(">IIBB", chunk_data[:10])
+              elif kind == b"IDAT":
+                  saw_idat = True
+              elif kind == b"IEND":
+                  saw_iend = True
+                  if length != 0 or end != len(payload):
+                      raise SystemExit(f"{path} has invalid data after IEND")
+                  break
+              offset = end
+          if not saw_iend or not saw_idat:
+              raise SystemExit(f"{path} is missing required PNG image data or IEND")
+          if (width, height, bit_depth, color_type) != (64, 64, 8, 6):
+              raise SystemExit(
+                  f"{path} must be a 64x64 8-bit RGBA PNG; "
+                  f"found {width}x{height}, bit depth {bit_depth}, color type {color_type}"
+              )
+          print(f"Validated {path}: {width}x{height}, 8-bit RGBA, PNG chunk CRCs valid")
+          PY
 
       - name: Build and bundle the desktop application
         working-directory: src-tauri
@@ -112,8 +187,72 @@ jobs:
             \( -name '*.deb' -o -name '*.AppImage' -o -name '*.appimage' \) \
             -print0 | sort -z | xargs -0 sha256sum > src-tauri/target/release/bundle/SHA256SUMS
           test -s src-tauri/target/release/bundle/SHA256SUMS
+          sha256sum --check src-tauri/target/release/bundle/SHA256SUMS
+
+      - name: Prepare source SBOM output directory
+        run: mkdir -p release-output
+
+      - name: Generate application dependency SBOM
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: release-output/netregress-source.spdx.json
+          artifact-name: netregress-source-sbom-${{ github.sha }}
+          upload-artifact: false
+          upload-release-assets: false
+          # Only application package catalogs. Syft's directory defaults also
+          # include the hosted Ubuntu runner's installed OS packages.
+          config: .syft/netregress-app-dependencies.yaml
+
+      - name: Validate application dependency SBOM scope
+        run: python scripts/netregress_sbom_gate.py validate --sbom release-output/netregress-source.spdx.json
+
+      - name: Scan application dependency SBOM for high-severity vulnerabilities
+        uses: anchore/scan-action@v7
+        with:
+          sbom: release-output/netregress-source.spdx.json
+          fail-build: false
+          severity-cutoff: high
+          output-format: json
+          output-file: release-output/netregress-grype.json
+
+      - name: Enforce application dependency vulnerability policy
+        run: |
+          python scripts/netregress_sbom_gate.py enforce \
+            --sbom release-output/netregress-source.spdx.json \
+            --grype-report release-output/netregress-grype.json \
+            --summary release-output/netregress-vulnerability-summary.json
+
+      - name: Attest Linux package build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.appimage
+
+      - name: Attest Linux package SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.appimage
+          sbom-path: release-output/netregress-source.spdx.json
+
+      - name: Create shared ephemeral desktop smoke Owner credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          password="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          echo "::add-mask::${password}"
+          printf 'NETREGRESS_SMOKE_OWNER_PASSWORD=%s\n' "${password}" >> "${GITHUB_ENV}"
+          unset password
 
       - name: Install Debian package and exercise first-run, restart and removal lifecycle
+        id: deb-lifecycle
+        continue-on-error: true
         run: |
           set -euo pipefail
           SMOKE_ROOT="${RUNNER_TEMP}/netregress-desktop-smoke"
@@ -144,6 +283,46 @@ jobs:
             --backend-executable "${BACKEND_EXECUTABLE}" \
             --state-root "${DEB_STATE}" \
             --label deb | tee "${SMOKE_ROOT}/deb-lifecycle.json"
+
+          # Exercise package-manager upgrade and rollback without replacing or
+          # fabricating application data. Only the Debian control version is
+          # advanced; the application payload remains byte-for-byte identical.
+          CURRENT_VERSION="$(dpkg-deb -f "${DEB}" Version)"
+          UPGRADE_VERSION="${CURRENT_VERSION}+ci1"
+          dpkg --compare-versions "${UPGRADE_VERSION}" gt "${CURRENT_VERSION}"
+          UPGRADE_ROOT="${SMOKE_ROOT}/deb-upgrade-root"
+          UPGRADE_DEB="${SMOKE_ROOT}/netregress-upgrade.deb"
+          mkdir -p "${UPGRADE_ROOT}"
+          dpkg-deb --extract "${DEB}" "${UPGRADE_ROOT}"
+          dpkg-deb --control "${DEB}" "${UPGRADE_ROOT}/DEBIAN"
+          sed -i "s/^Version: .*/Version: ${UPGRADE_VERSION}/" "${UPGRADE_ROOT}/DEBIAN/control"
+          dpkg-deb --build --root-owner-group "${UPGRADE_ROOT}" "${UPGRADE_DEB}"
+          SESSION_SECRET_BEFORE="$(find "${DEB_STATE}/data" -type f -name session-secret -print -quit)"
+          SESSION_SECRET_SHA_BEFORE="$(sha256sum "${SESSION_SECRET_BEFORE}" | awk '{print $1}')"
+          sudo apt-get install -y "${UPGRADE_DEB}"
+          INSTALLED_VERSION="$(dpkg-query -W -f='${Version}' "${DEB_PACKAGE}")"
+          test "${INSTALLED_VERSION}" = "${UPGRADE_VERSION}"
+          python scripts/ci_desktop_smoke.py \
+            --executable "${APP_EXECUTABLE}" \
+            --state-root "${DEB_STATE}" \
+            --label deb-upgrade \
+            --existing-owner | tee "${SMOKE_ROOT}/deb-upgrade.json"
+          SESSION_SECRET_AFTER="$(find "${DEB_STATE}/data" -type f -name session-secret -print -quit)"
+          test "${SESSION_SECRET_AFTER}" = "${SESSION_SECRET_BEFORE}"
+          test "$(sha256sum "${SESSION_SECRET_AFTER}" | awk '{print $1}')" = "${SESSION_SECRET_SHA_BEFORE}"
+
+          sudo dpkg --force-downgrade --install "${DEB}"
+          ROLLBACK_VERSION="$(dpkg-query -W -f='${Version}' "${DEB_PACKAGE}")"
+          test "${ROLLBACK_VERSION}" = "${CURRENT_VERSION}"
+          python scripts/ci_desktop_smoke.py \
+            --executable "${APP_EXECUTABLE}" \
+            --state-root "${DEB_STATE}" \
+            --label deb-rollback \
+            --existing-owner | tee "${SMOKE_ROOT}/deb-rollback.json"
+          SESSION_SECRET_ROLLBACK="$(find "${DEB_STATE}/data" -type f -name session-secret -print -quit)"
+          test "${SESSION_SECRET_ROLLBACK}" = "${SESSION_SECRET_BEFORE}"
+          echo "Debian package upgrade and rollback preserved the existing Owner and session secret."
+
           sudo apt-get remove -y "${DEB_PACKAGE}"
           if dpkg-query -W -f='${Status}' "${DEB_PACKAGE}" 2>/dev/null | grep -q "install ok installed"; then
             echo "Debian package remains installed after removal." >&2
@@ -156,6 +335,8 @@ jobs:
           echo "Debian package removal retained the user database and session secret."
 
       - name: Exercise AppImage first-run and restart lifecycle
+        id: appimage-lifecycle
+        continue-on-error: true
         run: |
           set -euo pipefail
           SMOKE_ROOT="${RUNNER_TEMP}/netregress-desktop-smoke"
@@ -164,7 +345,8 @@ jobs:
           mkdir -p "${APPIMAGE_STATE}" "${APPIMAGE_RESOURCES}"
           APPIMAGE="$(find src-tauri/target/release/bundle -type f -name '*.AppImage' -print -quit)"
           test -n "${APPIMAGE}"
-          chmod +x "${APPIMAGE}"
+          APPIMAGE="$(realpath "${APPIMAGE}")"
+          test -x "${APPIMAGE}"
           (cd "${APPIMAGE_RESOURCES}" && "${APPIMAGE}" --appimage-extract >/dev/null)
           BACKEND_EXECUTABLE="$(find "${APPIMAGE_RESOURCES}/squashfs-root" -type f -name netregress-backend -print -quit)"
           if [[ -z "${BACKEND_EXECUTABLE}" || ! -x "${BACKEND_EXECUTABLE}" ]]; then
@@ -172,6 +354,7 @@ jobs:
             find "${APPIMAGE_RESOURCES}/squashfs-root" -maxdepth 8 -type f -print >&2
             exit 1
           fi
+          BACKEND_EXECUTABLE="$(realpath "${BACKEND_EXECUTABLE}")"
           python scripts/ci_desktop_smoke.py \
             --executable "${APPIMAGE}" \
             --backend-executable "${BACKEND_EXECUTABLE}" \
@@ -180,65 +363,38 @@ jobs:
             --appimage | tee "${SMOKE_ROOT}/appimage-lifecycle.json"
           rm -rf "${APPIMAGE_RESOURCES}/squashfs-root"
 
-      - name: Upload Linux packages for qualification
-        uses: actions/upload-artifact@v4
-        with:
-          name: netregress-linux-desktop-${{ github.sha }}
-          path: |
-            src-tauri/target/release/bundle/**/*.deb
-            src-tauri/target/release/bundle/**/*.AppImage
-            src-tauri/target/release/bundle/**/*.appimage
-            src-tauri/target/release/bundle/SHA256SUMS
-            ${{ runner.temp }}/netregress-desktop-smoke/**
-          if-no-files-found: error
-          retention-days: 30
- | head -n 1 || true)"
-          if [[ -z "${BACKEND_EXECUTABLE}" || ! -x "${BACKEND_EXECUTABLE}" ]]; then
-            echo "Could not locate the packaged Python backend sidecar." >&2
-            dpkg-query -L "${DEB_PACKAGE}" >&2
-            exit 1
-          fi
-          python scripts/ci_desktop_smoke.py \
-            --executable "${APP_EXECUTABLE}" \
-            --backend-executable "${BACKEND_EXECUTABLE}" \
-            --state-root "${DEB_STATE}" \
-            --label deb | tee "${SMOKE_ROOT}/deb-lifecycle.json"
-          sudo apt-get remove -y "${DEB_PACKAGE}"
-          if dpkg-query -W -f='${Status}' "${DEB_PACKAGE}" 2>/dev/null | grep -q "install ok installed"; then
-            echo "Debian package remains installed after removal." >&2
-            exit 1
-          fi
-          DB="$(find "${DEB_STATE}/data" -type f -name test_results.db -print -quit)"
-          SESSION_SECRET="$(find "${DEB_STATE}/data" -type f -name session-secret -print -quit)"
-          test -s "${DB}"
-          test -s "${SESSION_SECRET}"
-          echo "Debian package removal retained the user database and session secret."
-
-      - name: Exercise AppImage first-run and restart lifecycle
+      - name: Summarize desktop package qualification
+        if: always()
+        env:
+          DEB_OUTCOME: ${{ steps.deb-lifecycle.outcome }}
+          APPIMAGE_OUTCOME: ${{ steps.appimage-lifecycle.outcome }}
         run: |
-          set -euo pipefail
-          SMOKE_ROOT="${RUNNER_TEMP}/netregress-desktop-smoke"
-          APPIMAGE_STATE="${SMOKE_ROOT}/appimage"
-          mkdir -p "${APPIMAGE_STATE}"
-          APPIMAGE="$(find src-tauri/target/release/bundle -type f \
-            \( -name '*.AppImage' -o -name '*.appimage' \) -print -quit)"
-          test -n "${APPIMAGE}"
-          chmod +x "${APPIMAGE}"
-          python scripts/ci_desktop_smoke.py \
-            --executable "${APPIMAGE}" \
-            --state-root "${APPIMAGE_STATE}" \
-            --label appimage \
-            --appimage | tee "${SMOKE_ROOT}/appimage-lifecycle.json"
+          {
+            echo "## Linux desktop package qualification"
+            echo ""
+            echo "| Package | Lifecycle result |"
+            echo "|---|---|"
+            echo "| Debian (.deb) | ${DEB_OUTCOME} |"
+            echo "| AppImage | ${APPIMAGE_OUTCOME} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${DEB_OUTCOME}" != "success" || "${APPIMAGE_OUTCOME}" != "success" ]]; then
+            echo "Linux package qualification failed; see the independent lifecycle steps above." >&2
+            exit 1
+          fi
 
       - name: Upload Linux packages for qualification
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: netregress-linux-desktop-${{ github.sha }}
+          name: netregress-linux-desktop-${{ matrix.os }}-${{ github.sha }}
           path: |
             src-tauri/target/release/bundle/**/*.deb
             src-tauri/target/release/bundle/**/*.AppImage
             src-tauri/target/release/bundle/**/*.appimage
             src-tauri/target/release/bundle/SHA256SUMS
+            release-output/netregress-source.spdx.json
+            release-output/netregress-grype.json
+            release-output/netregress-vulnerability-summary.json
             ${{ runner.temp }}/netregress-desktop-smoke/**
           if-no-files-found: error
           retention-days: 30

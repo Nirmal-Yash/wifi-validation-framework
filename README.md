@@ -55,6 +55,7 @@ Read the canonical documents in this order:
 7. docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md — architecture decisions and business invariants
 8. docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md — standalone installation, maintenance, recovery and certification operations
 9. docs/UPGRADE_AND_FIRST_RUN_GUIDE.md — upgrade an existing checkout, pull current main, migrate the database, and operate the upgraded Runner
+10. docs/P33_P37_PRODUCTION_READINESS.md — Linux desktop, supply-chain, reliability, end-to-end and release-certification gates
 
 Supporting contracts remain separate:
 - docs/EXECUTION_AND_ADAPTERS.md
@@ -230,7 +231,7 @@ python scripts/netregress_release.py verify-manifest --manifest results/release-
 python scripts/netregress_certification.py
 ~~~
 
-The manifest is deterministic for an unchanged Git checkout and records the tracked-file inventory and SHA-256 digests. Its production_reproducible field remains false until both Python and frontend transitive dependency lockfiles exist. The current repository does not contain those lockfiles; the direct dependency declarations alone are not a complete lock.
+The manifest is deterministic for an unchanged Git checkout and records the tracked-file inventory and SHA-256 digests. The Python runtime and frontend dependency lockfiles are tracked and validated. Full desktop build reproducibility remains false until the hash-locked PyInstaller build requirements (`requirements-desktop-build.lock`) and Rust dependency graph (`src-tauri/Cargo.lock`) are committed and validated. The release manifest reports the missing build locks explicitly; a passing package build does not override that status.
 
 The 11-scenario certification matrix is an execution/evidence gate. Generate the matrix with python scripts/netregress_certification.py; evaluate a scenario-keyed evidence JSON with --evidence. Each required execution must identify the current source commit, a 64-character environment fingerprint, a timezone-aware timestamp, its command, and SHA-256-verified evidence files below results/. REAL_LAB and PROTECTED_TARGET records additionally require operator and approval-reference attestations. A matrix listing or passing hardware-free CI does not certify the protected lab or physical firmware.
 

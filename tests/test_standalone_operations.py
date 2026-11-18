@@ -142,8 +142,9 @@ def test_release_manifest_is_deterministic_and_verifiable(tmp_path):
     assert first["dependencies"]["lockfiles_present"] is True
     assert first["dependencies"]["lockfiles_valid"] is True
     assert first["dependencies"]["status"] == "COMPLETE"
-    assert first["application"]["version"] is None
-    assert first["application"]["version_status"] == "NOT_DECLARED_IN_REPOSITORY_METADATA"
+    assert first["application"]["version"] == "0.1.0"
+    assert first["application"]["version_status"] == "DECLARED_IN_TAURI_CONFIGURATION"
+    assert first["production_reproducible"] is True
     assert first["application"]["frontend_package_version"]
 
     manifest_path = service.write_manifest(tmp_path / "release-manifest.json")
@@ -423,16 +424,61 @@ def test_release_manifest_requires_tracked_consistent_hashed_lockfiles(tmp_path,
     tracked = service._dependency_control()
     assert tracked["lockfiles_present"] is True
     assert tracked["lockfiles_valid"] is True
-    assert tracked["complete"] is True
-    assert tracked["status"] == "COMPLETE"
+    assert tracked["runtime_complete"] is True
+    assert tracked["build_lockfiles_present"] is False
+    assert tracked["build_complete"] is False
+    assert tracked["complete"] is False
+    assert tracked["status"] == "INCOMPLETE_BUILD_LOCKFILES"
     assert tracked["python"]["transitive_lockfile"] == "requirements.lock"
     assert tracked["frontend"]["transitive_lockfile"] == "frontend/package-lock.json"
+
+    # A full release requires source-controlled Python build and Rust graphs,
+    # not merely valid application runtime locks.
+    build_dir = tmp_path / "src-tauri"
+    build_dir.mkdir()
+    (tmp_path / "requirements-desktop-build.txt").write_text(
+        "pyinstaller==6.22.3\n", encoding="utf-8",
+    )
+    (tmp_path / "requirements-desktop-build.lock").write_text(
+        "pyinstaller==6.22.3 " + chr(92) + "\n"
+        + f"    --hash=sha256:{'c' * 64}\n",
+        encoding="utf-8",
+    )
+    (build_dir / "tauri.conf.json").write_text(
+        json.dumps({"version": "0.1.0"}), encoding="utf-8",
+    )
+    cargo_lock_lines = (
+        "version = 3",
+        "",
+        "[[package]]",
+        'name = "netregress-runner"',
+        'version = "0.1.0"',
+        'dependencies = ["tauri", "tauri-build"]',
+    )
+    (build_dir / "Cargo.lock").write_text(
+        "\n".join(cargo_lock_lines) + "\n",
+        encoding="utf-8",
+    )
+    complete_paths = tracked_paths + (
+        "requirements-desktop-build.txt",
+        "requirements-desktop-build.lock",
+        "src-tauri/tauri.conf.json",
+        "src-tauri/Cargo.lock",
+    )
+    monkeypatch.setattr(service, "tracked_files", lambda: complete_paths)
+    complete = service._dependency_control()
+    assert complete["build_lockfiles_present"] is True
+    assert complete["desktop_build"]["lockfile_valid"] is True
+    assert complete["rust"]["lockfile_valid"] is True
+    assert complete["build_complete"] is True
+    assert complete["complete"] is True
+    assert complete["status"] == "COMPLETE"
 
     package_lock["packages"][""]["version"] = "0.9.0"
     package_lock_path.write_text(json.dumps(package_lock), encoding="utf-8")
     mismatched = service._dependency_control()
     assert mismatched["complete"] is False
-    assert mismatched["status"] == "LOCKFILE_MISMATCH"
+    assert mismatched["status"] == "RUNTIME_LOCKFILE_MISMATCH"
     assert mismatched["frontend"]["lockfile_errors"]
 
 
