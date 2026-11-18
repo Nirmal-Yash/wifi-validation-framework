@@ -7,7 +7,7 @@ This guide describes the current standalone Runner behavior. SQLite remains the 
 - Python 3.11 or newer.
 - Node.js version permitted by frontend/package.json (currently ^22.22.2 || ^24.15.0 || >=26.0.0) and npm for the React/Vite dashboard.
 - Git for source-bound release manifest operations.
-- Linux is the supported environment for the protected GNS3/mac80211_hwsim lab and its operational scripts.
+- The packaged desktop qualification matrix currently covers Ubuntu 22.04 and Ubuntu 24.04. Protected GNS3/mac80211_hwsim lab operations remain Linux-oriented. Other distributions and desktop environments are not yet certified by the hosted package matrix.
 - Direct Python dependencies are declared in requirements.txt and the fully resolved, SHA-256 hash-locked graph is in the tracked requirements.lock.
 
 Optional protected-lab programs include ip, iw, tcpdump, ssh, iperf3 and tshark. They are checked only when the doctor is invoked with --include-lab-tools; a workstation-only Runner does not need to pretend those checks were performed.

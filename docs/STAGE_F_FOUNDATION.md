@@ -35,7 +35,7 @@ Stage F introduces a packaged Linux desktop application while keeping the existi
 
 ## Linux package build
 
-The CI workflow `.github/workflows/desktop-linux.yml` builds a PyInstaller sidecar, the React production UI, and Tauri Linux packages on Ubuntu 22.04. It also exercises the generated installers under Xvfb:
+The CI workflow `.github/workflows/desktop-linux.yml` builds a PyInstaller sidecar, the React production UI, and Tauri Linux packages on **Ubuntu 22.04 and Ubuntu 24.04**. Each OS leg independently exercises the generated installers under Xvfb:
 
 - Install the generated Debian package and launch its installed executable.
 - Wait for the packaged sidecar health endpoint, create the first Global Owner through the local-only setup route, and authenticate.
@@ -43,7 +43,7 @@ The CI workflow `.github/workflows/desktop-linux.yml` builds a PyInstaller sidec
 - Remove the Debian package and verify user data is retained.
 - Launch the AppImage through its extracted runtime, repeat first-run creation/login/restart checks, and retain smoke logs with the package artifacts.
 
-Expected release artifacts are a Debian `.deb` package and an AppImage, accompanied by SHA-256 checksums. The hosted lifecycle gate tests packages on Ubuntu 22.04; it does not establish support for every Ubuntu/Debian desktop version.
+Expected release artifacts are a Debian `.deb` package and an AppImage per qualified OS leg, accompanied by SHA-256 checksums. The initial automated Linux desktop qualification matrix is Ubuntu 22.04 and Ubuntu 24.04. This is an explicit support target, not a claim of compatibility with every Linux distribution or desktop environment. Debian 12 is not yet in the hosted qualification matrix.
 
 Build prerequisites for contributors are the Tauri v2 Linux system packages, Rust stable, Python 3.12, Node.js 22.22.2, and the pinned frontend and Python dependencies. See the Tauri documentation for the platform dependency matrix and Debian/AppImage runtime requirements.
 
@@ -55,7 +55,11 @@ The desktop shell passes the OS-resolved application data and configuration loca
 
 The hosted package workflow builds the PyInstaller/Tauri bundles and runs the Debian/AppImage lifecycle smoke test in Xvfb on Ubuntu 22.04. The Debian test installs the package, starts the installed desktop executable, verifies the local sidecar health check, creates the first Owner, authenticates, restarts, verifies the same account/database, removes the package and checks user-data retention. Both package paths also invoke the frozen backend directly to run the embedded first-run setup tests in explicit hardware-free CI mode (without real lab credentials or device provisioning), and execute the bundled pipeline worker against an empty smoke database. The AppImage test checks the same first-run and restart path. These are automated CI checks; no claim is made that they replace interactive rendering or target-machine qualification.
 
-P33 still requires operator qualification on clean supported Ubuntu/Debian desktop environments, including interactive rendering, desktop launch integration, upgrade and rollback, backup/restore, package-manager behavior on supported OS releases, process supervision under real sessions, and execution of representative packaged validation Runs with evidence.
+### P33 — Linux workstation qualification
+
+Implemented in source/CI: the Debian and AppImage package build plus first-run/restart/removal lifecycle now run independently on Ubuntu 22.04 and Ubuntu 24.04. Each matrix leg uploads OS-labelled packages and lifecycle evidence. The automated check uses Xvfb and therefore proves process launch, backend health, Owner bootstrap, restart persistence and package removal behaviour; it does not prove interactive rendering or desktop-session integration.
+
+Remaining operator acceptance: install on clean physical/VM machines for both supported Ubuntu releases; inspect the rendered interface, launcher/menu integration, keyboard/focus behaviour, desktop-session process supervision and user-facing error paths; exercise upgrade/reinstall/rollback and verify user data retention. Do not advertise Debian 12 or other distributions until their own package/runtime matrix is green.
 
 The live protected GNS3/mac80211_hwsim/physical OpenWrt lab remains a
 separate operator acceptance gate from hosted CI. Stage E's Python GNS3,
