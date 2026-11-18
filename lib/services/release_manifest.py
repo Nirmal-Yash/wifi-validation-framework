@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import tomllib
 from typing import Any
 
 
@@ -279,20 +280,98 @@ class ReleaseManifestService:
 
         python_direct_pinned = bool(direct_requirements) and not unpinned_requirements
         frontend_direct_pinned = bool(frontend_direct) and not frontend_unpinned
-        lockfiles_present = bool(python_lock and frontend_lock)
-        direct_dependencies_pinned = python_direct_pinned and frontend_direct_pinned
-        lockfiles_valid = (
+        runtime_lockfiles_present = bool(python_lock and frontend_lock)
+        runtime_direct_dependencies_pinned = python_direct_pinned and frontend_direct_pinned
+        runtime_lockfiles_valid = (
             bool(python_lock and frontend_lock)
             and not python_lock_errors
             and not frontend_lock_errors
         )
-        complete = lockfiles_valid and direct_dependencies_pinned
-        if not lockfiles_present:
-            dependency_status = "INCOMPLETE_TRANSITIVE_LOCKFILES"
-        elif not direct_dependencies_pinned:
+        runtime_complete = runtime_lockfiles_valid and runtime_direct_dependencies_pinned
+
+        # Desktop build tooling is a separate dependency surface. A pinned
+        # PyInstaller version alone does not lock its transitive dependencies.
+        desktop_build_lock = (
+            "requirements-desktop-build.lock"
+            if "requirements-desktop-build.lock" in tracked_paths
+            and (self.root / "requirements-desktop-build.lock").is_file()
+            else None
+        )
+        desktop_build_lock_errors: list[str] = []
+        desktop_build_locked_count = 0
+        if desktop_build_lock:
+            build_versions, desktop_build_lock_errors, _ = self._parse_pinned_requirements(
+                self.root / desktop_build_lock, require_hashes=True
+            )
+            desktop_build_locked_count = len(build_versions)
+            for raw in (self.root / "requirements-desktop-build.txt").read_text(encoding="utf-8").splitlines():
+                line = raw.split("#", 1)[0].strip()
+                if not line or line.startswith(("-", "http:", "https:")):
+                    continue
+                candidate = line.split(";", 1)[0].strip()
+                match = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9_.-]*)==([^\s]+)", candidate)
+                if match and build_versions.get(match.group(1).lower().replace("_", "-")) != match.group(2):
+                    desktop_build_lock_errors.append(
+                        f"{match.group(1)}: build manifest pins {match.group(2)}, "
+                        f"lockfile has {build_versions.get(match.group(1).lower().replace('_', '-'), 'no entry')}"
+                    )
+        else:
+            desktop_build_lock_errors.append("lockfile is missing: requirements-desktop-build.lock")
+
+        # Rust application dependencies must be source-locked as well. A valid
+        # lock must describe this Tauri package, not just be present.
+        cargo_lock = (
+            "src-tauri/Cargo.lock"
+            if "src-tauri/Cargo.lock" in tracked_paths
+            and (self.root / "src-tauri" / "Cargo.lock").is_file()
+            else None
+        )
+        cargo_lock_errors: list[str] = []
+        cargo_locked_count = 0
+        if cargo_lock:
+            try:
+                cargo_payload = tomllib.loads((self.root / cargo_lock).read_text(encoding="utf-8"))
+                lock_version = cargo_payload.get("version")
+                packages = cargo_payload.get("package")
+                manifest_payload = json.loads((self.root / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
+                manifest_version = manifest_payload.get("version")
+                cargo_package = next(
+                    (item for item in packages if item.get("name") == "netregress-runner"),
+                    None,
+                ) if isinstance(packages, list) else None
+                cargo_locked_count = len(packages) if isinstance(packages, list) else 0
+                if not isinstance(lock_version, int) or lock_version not in (3, 4):
+                    cargo_lock_errors.append("Cargo.lock has an unsupported or missing lockfile version")
+                if not isinstance(cargo_package, dict) or cargo_package.get("version") != manifest_version:
+                    cargo_lock_errors.append("Cargo.lock does not contain the netregress-runner package at the desktop version")
+                if not isinstance(cargo_package, dict) or not {"tauri", "tauri-build"}.issubset(
+                    {str(item).split(" ", 1)[0] for item in cargo_package.get("dependencies", [])}
+                ):
+                    cargo_lock_errors.append("Cargo.lock is missing the direct Tauri build/runtime dependencies")
+            except (OSError, ValueError, TypeError, StopIteration) as exc:
+                cargo_lock_errors.append(f"Cargo.lock could not be validated: {type(exc).__name__}")
+        else:
+            cargo_lock_errors.append("lockfile is missing: src-tauri/Cargo.lock")
+
+        build_lockfiles_present = bool(desktop_build_lock and cargo_lock)
+        build_lockfiles_valid = (
+            build_lockfiles_present
+            and not desktop_build_lock_errors
+            and not cargo_lock_errors
+        )
+        build_complete = build_lockfiles_valid
+        complete = runtime_complete and build_complete
+
+        if not runtime_lockfiles_present:
+            dependency_status = "INCOMPLETE_RUNTIME_LOCKFILES"
+        elif not runtime_direct_dependencies_pinned:
             dependency_status = "INCOMPLETE_DIRECT_DEPENDENCY_PINS"
-        elif not lockfiles_valid:
-            dependency_status = "LOCKFILE_MISMATCH"
+        elif not runtime_lockfiles_valid:
+            dependency_status = "RUNTIME_LOCKFILE_MISMATCH"
+        elif not build_lockfiles_present:
+            dependency_status = "INCOMPLETE_BUILD_LOCKFILES"
+        elif not build_lockfiles_valid:
+            dependency_status = "BUILD_LOCKFILE_MISMATCH"
         else:
             dependency_status = "COMPLETE"
 
@@ -318,9 +397,27 @@ class ReleaseManifestService:
                 "locked_package_count": frontend_locked_count,
                 "lockfile_errors": sorted(frontend_lock_errors),
             },
-            "lockfiles_present": lockfiles_present,
-            "lockfiles_valid": lockfiles_valid,
-            "direct_dependencies_pinned": direct_dependencies_pinned,
+            "lockfiles_present": runtime_lockfiles_present,
+            "lockfiles_valid": runtime_lockfiles_valid,
+            "direct_dependencies_pinned": runtime_direct_dependencies_pinned,
+            "runtime_complete": runtime_complete,
+            "desktop_build": {
+                "requirements_file": "requirements-desktop-build.txt",
+                "transitive_lockfile": desktop_build_lock,
+                "lockfile_valid": bool(desktop_build_lock) and not desktop_build_lock_errors,
+                "locked_package_count": desktop_build_locked_count,
+                "lockfile_errors": sorted(desktop_build_lock_errors),
+            },
+            "rust": {
+                "manifest": "src-tauri/Cargo.toml",
+                "transitive_lockfile": cargo_lock,
+                "lockfile_valid": bool(cargo_lock) and not cargo_lock_errors,
+                "locked_package_count": cargo_locked_count,
+                "lockfile_errors": sorted(cargo_lock_errors),
+            },
+            "build_lockfiles_present": build_lockfiles_present,
+            "build_lockfiles_valid": build_lockfiles_valid,
+            "build_complete": build_complete,
             "complete": complete,
             "status": dependency_status,
         }
@@ -391,6 +488,17 @@ class ReleaseManifestService:
             for path in self.tracked_files()
             if path.startswith("alembic/versions/") and path.endswith(".py")
         )
+        application_version = None
+        application_version_status = "NOT_DECLARED_IN_REPOSITORY_METADATA"
+        tauri_config_path = self.root / "src-tauri" / "tauri.conf.json"
+        try:
+            tauri_config = json.loads(tauri_config_path.read_text(encoding="utf-8"))
+            candidate_version = tauri_config.get("version")
+            if isinstance(candidate_version, str) and re.fullmatch(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?", candidate_version):
+                application_version = candidate_version
+                application_version_status = "DECLARED_IN_TAURI_CONFIGURATION"
+        except (OSError, ValueError, TypeError):
+            pass
         source_security = {
             "forbidden_tracked_files": list(audit.forbidden_tracked_files),
             "syntax_errors": list(audit.syntax_errors),
@@ -400,8 +508,8 @@ class ReleaseManifestService:
             "release_track": "standalone-runner",
             "application": {
                 "name": "NetRegress Runner",
-                "version": None,
-                "version_status": "NOT_DECLARED_IN_REPOSITORY_METADATA",
+                "version": application_version,
+                "version_status": application_version_status,
                 "frontend_package_version": dependency_control["frontend"]["package_version"],
             },
             "source": {

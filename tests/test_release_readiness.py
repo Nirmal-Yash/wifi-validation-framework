@@ -33,8 +33,15 @@ def test_release_manifest_schema_is_stable():
     dependencies = payload["dependencies"]
     assert dependencies["lockfiles_present"] is True
     assert dependencies["lockfiles_valid"] is True
-    assert dependencies["status"] == "COMPLETE"
+    assert dependencies["runtime_complete"] is True
     assert dependencies["python"]["direct_dependencies_pinned"] is True
-    assert payload["production_reproducible"] is (
-        payload["release_ready"] and dependencies["complete"]
-    )
+    # Python/npm application dependencies are locked, but the complete
+    # desktop build graph remains explicitly incomplete until both build locks exist.
+    assert dependencies["build_lockfiles_present"] is False
+    assert dependencies["desktop_build"]["lockfile_valid"] is False
+    assert dependencies["rust"]["lockfile_valid"] is False
+    assert dependencies["status"] == "INCOMPLETE_BUILD_LOCKFILES"
+    assert dependencies["complete"] is False
+    assert payload["application"]["version"] == "0.1.0"
+    assert payload["application"]["version_status"] == "DECLARED_IN_TAURI_CONFIGURATION"
+    assert payload["production_reproducible"] is False

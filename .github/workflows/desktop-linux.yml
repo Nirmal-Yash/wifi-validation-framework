@@ -25,6 +25,9 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 concurrency:
   group: netregress-desktop-linux-${{ github.ref }}
@@ -106,8 +109,8 @@ jobs:
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --locked
+      - name: Install pinned Tauri CLI
+        run: cargo install tauri-cli --version 2.12.5 --locked
 
       - name: Validate Tauri icon PNG encoding
         run: |
@@ -166,6 +169,34 @@ jobs:
             \( -name '*.deb' -o -name '*.AppImage' -o -name '*.appimage' \) \
             -print0 | sort -z | xargs -0 sha256sum > src-tauri/target/release/bundle/SHA256SUMS
           test -s src-tauri/target/release/bundle/SHA256SUMS
+          sha256sum --check src-tauri/target/release/bundle/SHA256SUMS
+
+      - name: Generate source dependency SBOM
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: release-output/netregress-source.spdx.json
+          artifact-name: netregress-source-sbom-${{ github.sha }}
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attest Linux package build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.appimage
+
+      - name: Attest Linux package SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.appimage
+          sbom-path: release-output/netregress-source.spdx.json
 
       - name: Install Debian package and exercise first-run, restart and removal lifecycle
         id: deb-lifecycle
@@ -269,6 +300,7 @@ jobs:
             src-tauri/target/release/bundle/**/*.AppImage
             src-tauri/target/release/bundle/**/*.appimage
             src-tauri/target/release/bundle/SHA256SUMS
+            release-output/netregress-source.spdx.json
             ${{ runner.temp }}/netregress-desktop-smoke/**
           if-no-files-found: error
           retention-days: 30
