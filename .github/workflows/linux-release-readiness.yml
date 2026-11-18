@@ -103,6 +103,11 @@ jobs:
               raise SystemExit("certification matrix must contain the complete 11-scenario contract")
           if matrix.get("evidence_complete") is not False:
               raise SystemExit("a matrix-only packet must not claim execution evidence")
+          if manifest["production_reproducible"] is not True:
+              raise SystemExit("desktop build dependency graph is not fully locked and reproducible")
+          dependencies = manifest["dependencies"]
+          if not dependencies["runtime_complete"] or not dependencies["build_complete"]:
+              raise SystemExit("runtime or desktop build dependency lock validation failed")
           print(json.dumps({
               "commit": manifest["source"]["commit"],
               "application_version": manifest["application"]["version"],

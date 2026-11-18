@@ -28,20 +28,21 @@ def test_release_manifest_schema_is_stable():
     assert "generated_at" not in payload
     assert "dependencies" in payload
     assert "production_reproducible" in payload
-    assert payload["application"]["version"] is None
-    assert payload["application"]["version_status"] == "NOT_DECLARED_IN_REPOSITORY_METADATA"
     dependencies = payload["dependencies"]
     assert dependencies["lockfiles_present"] is True
     assert dependencies["lockfiles_valid"] is True
     assert dependencies["runtime_complete"] is True
     assert dependencies["python"]["direct_dependencies_pinned"] is True
-    # Python/npm application dependencies are locked, but the complete
-    # desktop build graph remains explicitly incomplete until both build locks exist.
-    assert dependencies["build_lockfiles_present"] is False
-    assert dependencies["desktop_build"]["lockfile_valid"] is False
-    assert dependencies["rust"]["lockfile_valid"] is False
-    assert dependencies["status"] == "INCOMPLETE_BUILD_LOCKFILES"
-    assert dependencies["complete"] is False
+    # Runtime and both desktop build dependency graphs are source-locked.
+    assert dependencies["build_lockfiles_present"] is True
+    assert dependencies["desktop_build"]["lockfile_valid"] is True
+    assert dependencies["desktop_build"]["locked_package_count"] >= 1
+    assert dependencies["rust"]["lockfile_valid"] is True
+    assert dependencies["rust"]["locked_package_count"] >= 1
+    assert dependencies["build_lockfiles_valid"] is True
+    assert dependencies["build_complete"] is True
+    assert dependencies["status"] == "COMPLETE"
+    assert dependencies["complete"] is True
     assert payload["application"]["version"] == "0.1.0"
     assert payload["application"]["version_status"] == "DECLARED_IN_TAURI_CONFIGURATION"
-    assert payload["production_reproducible"] is False
+    assert payload["production_reproducible"] is True

@@ -34,6 +34,8 @@ on:
       - "scripts/netregress_desktop_backend.py"
       - "packaging/netregress-backend.spec"
       - "requirements-desktop-build.txt"
+      - "requirements-desktop-build.lock"
+      - "src-tauri/Cargo.lock"
   pull_request:
     branches: [main]
     paths:

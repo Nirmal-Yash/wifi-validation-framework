@@ -45,7 +45,7 @@ The CI workflow `.github/workflows/desktop-linux.yml` builds a PyInstaller sidec
 
 Expected release artifacts are a Debian `.deb` package and an AppImage per qualified OS leg, accompanied by SHA-256 checksums. The initial automated Linux desktop qualification matrix is Ubuntu 22.04 and Ubuntu 24.04. This is an explicit support target, not a claim of compatibility with every Linux distribution or desktop environment. Debian 12 is not yet in the hosted qualification matrix.
 
-Build prerequisites for contributors are the Tauri v2 Linux system packages, Rust stable, Python 3.12, Node.js 22.22.2, and the pinned frontend and Python dependencies. See the Tauri documentation for the platform dependency matrix and Debian/AppImage runtime requirements.
+Build prerequisites for contributors are the Tauri v2 Linux system packages, Rust 1.100.0, Python 3.12, Node.js 22.22.2, and the pinned frontend, Python runtime and Python desktop-build dependencies. See the Tauri documentation for the platform dependency matrix and Debian/AppImage runtime requirements.
 
 ## Persistent user data
 

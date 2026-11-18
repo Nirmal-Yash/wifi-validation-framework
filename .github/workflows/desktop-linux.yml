@@ -81,11 +81,12 @@ jobs:
           cache-dependency-path: |
             requirements.lock
             requirements-desktop-build.txt
+            requirements-desktop-build.lock
 
       - name: Install locked application and desktop build dependencies
         run: |
           python -m pip install --require-hashes -r requirements.lock
-          python -m pip install -r requirements-desktop-build.txt
+          python -m pip install --require-hashes -r requirements-desktop-build.lock
           python -m pip check
           python -m py_compile scripts/ci_desktop_smoke.py scripts/netregress_desktop_backend.py
 
@@ -114,8 +115,10 @@ jobs:
           npm test
           npm run build
 
-      - name: Set up Rust stable
+      - name: Set up pinned Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.100.0
 
       - name: Install pinned Tauri CLI
         run: cargo install tauri-cli --version 2.12.5 --locked
