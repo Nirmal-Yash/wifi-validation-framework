@@ -1,0 +1,77 @@
+name: NetRegress dependency lock generation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "requirements.txt"
+      - "requirements-desktop-build.txt"
+      - "frontend/package.json"
+      - "src-tauri/Cargo.toml"
+      - "scripts/generate_dependency_locks.sh"
+      - ".github/workflows/generate-dependency-locks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: netregress-dependency-locks-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    name: Generate and validate source-controlled dependency locks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v7
+      - name: Set up Python 3.11 lock-generation runtime
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-desktop-build.txt
+      - name: Set up Node.js 22.22.2
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22.22.2"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Create isolated lock-generation environment
+        run: |
+          python -m venv /tmp/netregress-lock-venv
+          source /tmp/netregress-lock-venv/bin/activate
+          python -m pip install --disable-pip-version-check uv==0.13.7
+      - name: Generate Python and npm dependency locks
+        run: |
+          source /tmp/netregress-lock-venv/bin/activate
+          bash -n scripts/generate_dependency_locks.sh
+          ./scripts/generate_dependency_locks.sh
+      - name: Generate and validate Rust dependency lock
+        run: |
+          cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
+          cargo metadata --locked --manifest-path src-tauri/Cargo.toml --format-version 1 > /dev/null
+          test -s src-tauri/Cargo.lock
+      - name: Validate all generated lockfiles are non-empty
+        run: |
+          test -s requirements.lock
+          test -s requirements-desktop-build.lock
+          test -s frontend/package-lock.json
+          test -s src-tauri/Cargo.lock
+      - name: Upload generated lockfiles for source review
+        uses: actions/upload-artifact@v4
+        with:
+          name: netregress-dependency-locks-${{ github.sha }}
+          path: |
+            requirements.lock
+            requirements-desktop-build.lock
+            frontend/package-lock.json
+            src-tauri/Cargo.lock
+          if-no-files-found: error
+          retention-days: 7

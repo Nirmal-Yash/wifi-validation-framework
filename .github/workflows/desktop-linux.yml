@@ -16,8 +16,11 @@ on:
       - "scripts/netregress_desktop_backend.py"
       - "scripts/netregress_pipeline_worker.py"
       - "packaging/**"
+      - "requirements.txt"
       - "requirements.lock"
       - "requirements-desktop-build.txt"
+      - "requirements-desktop-build.lock"
+      - "src-tauri/Cargo.lock"
       - "wifi_lab_reprovision_robust.sh"
       - ".github/workflows/desktop-linux.yml"
       - ".github/workflows/netregress-quality.yml"
@@ -175,6 +178,9 @@ jobs:
             -print0 | sort -z | xargs -0 sha256sum > src-tauri/target/release/bundle/SHA256SUMS
           test -s src-tauri/target/release/bundle/SHA256SUMS
           sha256sum --check src-tauri/target/release/bundle/SHA256SUMS
+
+      - name: Prepare source SBOM output directory
+        run: mkdir -p release-output
 
       - name: Generate source dependency SBOM
         uses: anchore/sbom-action@v0.24.3

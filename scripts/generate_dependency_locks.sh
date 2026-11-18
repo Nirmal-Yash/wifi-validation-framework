@@ -34,14 +34,17 @@ if [[ -f frontend/package-lock.json ]]; then
   cp -p -- frontend/package-lock.json "$BACKUP_PATH"
   echo "Previous frontend lock preserved at: $BACKUP_PATH"
 fi
-if [[ -f requirements.lock ]]; then
-  BACKUP_PATH="$BACKUP_DIR/requirements-lock-before-$STAMP.txt"
-  if [[ -e "$BACKUP_PATH" ]]; then
-    BACKUP_PATH="$BACKUP_DIR/requirements-lock-before-$STAMP-$$.txt"
+for LOCK_PATH in requirements.lock requirements-desktop-build.lock; do
+  if [[ -f "$LOCK_PATH" ]]; then
+    LOCK_NAME="$(basename "$LOCK_PATH" .lock)"
+    BACKUP_PATH="$BACKUP_DIR/${LOCK_NAME}-before-$STAMP.lock"
+    if [[ -e "$BACKUP_PATH" ]]; then
+      BACKUP_PATH="$BACKUP_DIR/${LOCK_NAME}-before-$STAMP-$.lock"
+    fi
+    cp -p -- "$LOCK_PATH" "$BACKUP_PATH"
+    echo "Previous dependency lock preserved at: $BACKUP_PATH"
   fi
-  cp -p -- requirements.lock "$BACKUP_PATH"
-  echo "Previous Python lock preserved at: $BACKUP_PATH"
-fi
+done
 
 PYTHON_DIR="$("$PYTHON_BIN" -c 'import sys; print(sys.prefix)')"
 UV_BIN="$(command -v uv || true)"
@@ -56,7 +59,8 @@ if [[ ! -x "$UV_BIN" ]]; then
 fi
 
 TEMP_LOCK="$(mktemp "$ROOT_DIR/.requirements.lock.XXXXXX")"
-cleanup() { rm -f -- "$TEMP_LOCK"; }
+TEMP_BUILD_LOCK="$(mktemp "$ROOT_DIR/.requirements-desktop-build.lock.XXXXXX")"
+cleanup() { rm -f -- "$TEMP_LOCK" "$TEMP_BUILD_LOCK"; }
 trap cleanup EXIT
 
 echo "Resolving hash-locked Python dependencies for minimum supported Python 3.11..."
@@ -70,7 +74,20 @@ echo "Resolving hash-locked Python dependencies for minimum supported Python 3.1
   --allow-unsafe \
   --output-file="$TEMP_LOCK" \
   "$ROOT_DIR/requirements.txt"
+echo "Resolving hash-locked desktop build dependencies..."
+"$UV_BIN" run \
+  --python 3.11 \
+  --with "pip-tools==7.6.2" \
+  --no-project \
+  -- python -m piptools compile \
+  --resolver=backtracking \
+  --generate-hashes \
+  --allow-unsafe \
+  --output-file="$TEMP_BUILD_LOCK" \
+  "$ROOT_DIR/requirements-desktop-build.txt"
+
 mv -f -- "$TEMP_LOCK" "$ROOT_DIR/requirements.lock"
+mv -f -- "$TEMP_BUILD_LOCK" "$ROOT_DIR/requirements-desktop-build.lock"
 trap - EXIT
 
 echo "Regenerating npm lockfile from frontend/package.json..."
@@ -82,6 +99,7 @@ npm --prefix "$ROOT_DIR/frontend" install \
 
 echo "Validating Python hash lock without installing packages..."
 "$PYTHON_BIN" -m pip install --dry-run --require-hashes -r "$ROOT_DIR/requirements.lock"
+"$PYTHON_BIN" -m pip install --dry-run --require-hashes -r "$ROOT_DIR/requirements-desktop-build.lock"
 
 echo "Validating npm lockfile against the package manifest..."
 node --input-type=module - "$ROOT_DIR/frontend/package.json" "$ROOT_DIR/frontend/package-lock.json" <<'NODE'
@@ -132,6 +150,7 @@ echo "Validating npm's clean-install contract without modifying node_modules..."
 
 echo
 echo "Dependency lock generation and validation completed."
-echo "Next: review requirements.lock and frontend/package-lock.json."
-echo "Stage with: git add requirements.txt requirements.lock scripts/generate_dependency_locks.sh"
+echo "Next: review requirements.lock, requirements-desktop-build.lock and frontend/package-lock.json."
+echo "Generate the Rust lock with: cargo generate-lockfile --manifest-path src-tauri/Cargo.toml"
+echo "Stage with: git add requirements.txt requirements.lock requirements-desktop-build.txt requirements-desktop-build.lock scripts/generate_dependency_locks.sh src-tauri/Cargo.lock"
 echo "If locally excluded: git add -f frontend/package-lock.json"
