@@ -51,7 +51,7 @@ def test_packaged_pytest_environment_is_hardware_free(tmp_path, monkeypatch):
             assert kwargs["env"]["NETREGRESS_CI_MODE"] == "1"
             return subprocess.CompletedProcess(command, 0, "7 passed\\n", "")
         return subprocess.CompletedProcess(
-            command, 0, json.dumps({"status": "IDLE"}) + "\\n", "",
+            command, 0, json.dumps({"status": "IDLE"}) + "\n", "",
         )
 
     monkeypatch.setattr(ci_desktop_smoke.subprocess, "run", fake_run)
