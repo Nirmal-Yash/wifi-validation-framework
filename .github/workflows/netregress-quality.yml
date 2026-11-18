@@ -145,6 +145,7 @@ jobs:
           tests/test_auth_flow.py
           tests/test_desktop_setup.py
           tests/test_ci_desktop_smoke.py
+          tests/test_ci_reliability_gate.py
           tests/test_desktop_runtime.py
           tests/test_rbac_auth.py
           tests/test_dashboard_rbac_matrix.py
@@ -228,6 +229,8 @@ jobs:
           tests/test_product_resources.py
           tests/test_project_scope_persistence.py
           ci_tests/test_release_gate.py
+      - name: Repeat Linux locking, process and recovery reliability contracts
+        run: python scripts/ci_reliability_gate.py --iterations 2 --timeout 600
 
   dashboard-startup-smoke:
     name: Dashboard startup, proxy and session smoke test (Node 22.22.2)
