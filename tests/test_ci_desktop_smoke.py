@@ -29,3 +29,46 @@ def test_wait_backend_includes_backend_log_when_desktop_exits(tmp_path):
     message = str(failure.value)
     assert "backend startup diagnostic" in message
     assert "Tauri setup failed" in message
+
+
+def test_packaged_pytest_environment_is_hardware_free(tmp_path, monkeypatch):
+    import json
+    import subprocess
+
+    from scripts import ci_desktop_smoke
+
+    backend = tmp_path / "netregress-backend"
+    backend.write_text("binary-placeholder", encoding="utf-8")
+    backend.chmod(0o755)
+    database = tmp_path / "data" / "results" / "test_results.db"
+    database.parent.mkdir(parents=True)
+    database.write_bytes(b"sqlite-placeholder")
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        if "-m" in command:
+            assert kwargs["env"]["NETREGRESS_CI_MODE"] == "1"
+            return subprocess.CompletedProcess(command, 0, "7 passed\\n", "")
+        return subprocess.CompletedProcess(
+            command, 0, json.dumps({"status": "IDLE"}) + "\\n", "",
+        )
+
+    monkeypatch.setattr(ci_desktop_smoke.subprocess, "run", fake_run)
+    result = ci_desktop_smoke._run_packaged_backend_checks(
+        backend, state_root=tmp_path, database=database,
+    )
+
+    assert result["pytest"] == "PASS"
+    assert result["pipeline_worker"] == "IDLE"
+    pytest_command = calls[0][0]
+    assert "--confcutdir" in pytest_command
+    assert kwargs_env_is_isolated(calls[0][1]["env"])
+
+
+def kwargs_env_is_isolated(environment):
+    return (
+        environment["NETREGRESS_CI_MODE"] == "1"
+        and environment["NETREGRESS_SESSION_COOKIE_SECURE"] == "0"
+        and environment["NETREGRESS_SESSION_SECRET"]
+    )

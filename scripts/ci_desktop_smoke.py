@@ -269,6 +269,10 @@ def _run_packaged_backend_checks(
         "NETREGRESS_PROCESS_DIR": str(process_dir),
         "NETREGRESS_DATABASE_PATH": str(database),
         "PYTHONNOUSERSITE": "1",
+        # Packaged contract tests run without real lab secrets or devices.
+        "NETREGRESS_CI_MODE": "1",
+        "NETREGRESS_SESSION_SECRET": "netregress-desktop-smoke-session-secret",
+        "NETREGRESS_SESSION_COOKIE_SECURE": "0",
     })
     pytest_result = subprocess.run(
         [
@@ -277,6 +281,7 @@ def _run_packaged_backend_checks(
             "tests/test_desktop_setup.py",
             "-q",
             "-p", "no:cacheprovider",
+            "--confcutdir", str(Path(getattr(sys, "_MEIPASS", backend_executable.parent)) / "tests"),
         ],
         cwd=state_root,
         env=env,

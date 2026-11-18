@@ -218,7 +218,8 @@ jobs:
           mkdir -p "${APPIMAGE_STATE}" "${APPIMAGE_RESOURCES}"
           APPIMAGE="$(find src-tauri/target/release/bundle -type f -name '*.AppImage' -print -quit)"
           test -n "${APPIMAGE}"
-          chmod +x "${APPIMAGE}"
+          APPIMAGE="$(realpath "${APPIMAGE}")"
+          test -x "${APPIMAGE}"
           (cd "${APPIMAGE_RESOURCES}" && "${APPIMAGE}" --appimage-extract >/dev/null)
           BACKEND_EXECUTABLE="$(find "${APPIMAGE_RESOURCES}/squashfs-root" -type f -name netregress-backend -print -quit)"
           if [[ -z "${BACKEND_EXECUTABLE}" || ! -x "${BACKEND_EXECUTABLE}" ]]; then
@@ -226,6 +227,7 @@ jobs:
             find "${APPIMAGE_RESOURCES}/squashfs-root" -maxdepth 8 -type f -print >&2
             exit 1
           fi
+          BACKEND_EXECUTABLE="$(realpath "${BACKEND_EXECUTABLE}")"
           python scripts/ci_desktop_smoke.py \
             --executable "${APPIMAGE}" \
             --backend-executable "${BACKEND_EXECUTABLE}" \
