@@ -21,6 +21,11 @@ on:
       - "wifi_lab_reprovision_robust.sh"
       - ".github/workflows/desktop-linux.yml"
       - ".github/workflows/netregress-quality.yml"
+      - ".github/workflows/linux-release-readiness.yml"
+      - ".github/dependabot.yml"
+      - "lib/services/release_manifest.py"
+      - "scripts/netregress_release.py"
+      - "docs/P33_P37_PRODUCTION_READINESS.md"
   workflow_dispatch:
 
 permissions:

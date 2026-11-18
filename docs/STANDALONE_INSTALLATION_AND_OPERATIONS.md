@@ -202,9 +202,11 @@ Verify the generated manifest against the current source checkout:
 python scripts/netregress_release.py verify-manifest --manifest results/release-manifest.json
 ~~~
 
-The manifest is source-bound: it includes the Git branch/commit/tree, clean-tree state, dependency/lockfile status, runtime compatibility, Alembic revision inventory, required source paths, forbidden tracked runtime items and SHA-256 digests for tracked files. It intentionally omits wall-clock generation time so an unchanged source checkout produces the same manifest content. The repository does not yet declare a separate Runner service version; application.version is therefore reported as NOT_DECLARED, while the frontend package version is listed separately. Do not treat the frontend package version as a Runner release version.
+The manifest is source-bound: it includes the Git branch/commit/tree, clean-tree state, runtime and build dependency-lock status, application version from `src-tauri/tauri.conf.json`, runtime compatibility, Alembic revision inventory, required source paths, forbidden tracked runtime items and SHA-256 digests for tracked files. It omits wall-clock generation time so an unchanged checkout produces deterministic manifest content.
 
-A manifest is not a signed release artifact and does not prove that dependencies were installed, the dashboard was deployed, the protected lab ran, or physical firmware was certified. The production_reproducible field remains false until the Python and frontend transitive lockfiles exist and are included in the release.
+The Python runtime and frontend dependency locks are tracked and validated. The full desktop build is **not yet production-reproducible**: `requirements-desktop-build.lock` and `src-tauri/Cargo.lock` are not yet tracked. The release manifest reports this as `INCOMPLETE_BUILD_LOCKFILES` and keeps `production_reproducible=false`; do not bypass that status or treat a successful package build as a reproducible toolchain.
+
+A source manifest is not a signed release artifact and does not prove that dependencies were installed, the dashboard was deployed, the protected lab ran, or physical firmware was certified. P34 adds SBOM generation and signed GitHub build attestations for the package artifacts, but release acceptance remains gated by the external execution evidence described below.
 
 ## 9. Standalone 11-scenario certification
 
@@ -292,7 +294,7 @@ The existing GNS3/mac80211_hwsim topology, management path, Wi-Fi validation pat
 
 Source implementation and hosted CI are distinct from operational certification. The following remain separate acceptance items until actual evidence exists:
 
-- Python and frontend transitive dependency lockfiles, followed by clean-machine install verification.
+- Hash-locked desktop build dependencies (`requirements-desktop-build.lock` and `src-tauri/Cargo.lock`), followed by clean-machine build verification.
 - A clean-machine install/upgrade/backup/restore rehearsal.
 - Authenticated browser/reverse-proxy deployment verification using production secrets and trusted proxy configuration.
 - Protected GNS3/mac80211_hwsim 11-scenario REAL_LAB evidence.

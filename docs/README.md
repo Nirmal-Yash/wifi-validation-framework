@@ -43,3 +43,7 @@ Lab Reproduction + Testing + Operations
 Executable source on main remains the current behavioral authority until the corresponding planned migration or contract is fully applied.
 
 Legacy consolidated-document files have been removed. The canonical documents above are the authoritative locations to edit.
+
+## Current production-readiness programme
+
+See [P33–P37 Linux Production Readiness](P33_P37_PRODUCTION_READINESS.md) for current desktop qualification, supply-chain, recovery, packaged business workflow and release certification gates.

@@ -43,7 +43,7 @@ This B–P programme is the current execution order for the next development sli
 | K | Security and Deployment Hardening: credential handling, auth/RBAC, secure command boundaries, artifact controls, deployment policy and security regression | Source hardening delivered; strict audit, SSRF/API/RBAC/session and artifact-download tests passed workflows 42510776806 and 42511179934 (3/3 jobs); production proxy/secrets, DNS-rebinding and threat-model acceptance remain |
 | L | API, Dashboard and Frontend Completion: typed API contract, consistent errors, pagination, operational UX, authenticated downloads and browser/runtime parity | Source integration and contract tests delivered; hosted workflow [42619327281](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42619327281) passed 3/3 jobs; authenticated reverse-proxy runtime and protected REAL_LAB acceptance remain |
 | M | Regression Intelligence, Release Gate and Offline Operations: comparable baseline logic, metric classification, waiver boundaries, local queue recovery and release decision evidence | Source hardening and regression corrections delivered; hosted workflow [42619327281](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42619327281) passed 3/3 jobs; Cloud endpoint and protected release acceptance remain separate |
-| N | Standalone Packaging and Production Certification: reproducible install, upgrade/backup/restore, doctor/manifest, operator runbooks and the full standalone certification matrix | Source implementation delivered in 80831042; hosted workflow 42629371133 passed 3/3 jobs, including 360 backend tests (7 skipped), 35 API security tests and 31 frontend tests. Dependency lockfiles, clean-machine rehearsal, production proxy acceptance, protected REAL_LAB and physical firmware evidence remain open |
+| N | Standalone Packaging and Production Certification: reproducible install, upgrade/backup/restore, doctor/manifest, operator runbooks and the full standalone certification matrix | Source tooling delivered; P33–P37 extend Linux desktop qualification, dependency/supply-chain controls, repeatable reliability checks, packaged business-logic contracts and exact-commit certification packet. Python and npm runtime locks are tracked and validated; hash-locked PyInstaller and Cargo build locks, clean-machine rehearsal, production proxy acceptance, protected REAL_LAB and physical firmware evidence remain open |
 | O | Cloud/SaaS Expansion and Integration: separate control-plane contracts, tenant/project ownership, outbound synchronization and remote release workflows; begin only after standalone Runner certification | Future scope. Combined O/P adds only local read-only sync-queue visibility over the existing outbound-only transport; no Cloud receiver, tenant model, PostgreSQL or remote-control feature is implemented |
 | P | GitHub Repository Organization and Cleanup: source and docs ownership audit, tests/workflow coverage, dependency hygiene, stale-file/branch cleanup, secret scan, release metadata and final repository freeze | Source/governance cleanup delivered in `a87bfd1`; hosted workflow [42632716718](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42632716718) passed all 3 jobs and the single-branch/no-open-PR audit passed. No history rewrite or compatibility-file deletion |
 
@@ -2929,11 +2929,11 @@ The Phase N source slice adds a standalone installer/bootstrap command, a read-o
 
 - scripts/netregress_install.py creates the standard results tree and private local-state directories, supports a non-mutating --check-only preflight, rejects runtime symlinks and fails closed on unsafe pre-existing local-state permissions, and delegates schema changes to DatabaseMigrationManager/Alembic.
 - RunnerDoctor reports PASS, WARNING, FAIL and NOT_CHECKED separately. It checks required Python imports, supported Node.js runtime, configuration shape, private authentication-file permissions, writable runtime locations, SQLite integrity and Alembic schema state. Dashboard and protected-lab checks are opt-in and read-only.
-- ReleaseManifestService emits deterministic v2 metadata without a wall-clock field, records source commit/tree and per-file SHA-256, reports direct dependency pin coverage and missing transitive lockfiles, and verifies a manifest against the current checkout.
+- ReleaseManifestService emits deterministic source-bound metadata without a wall-clock field, records source commit/tree and per-file SHA-256, validates the Python runtime and npm dependency locks, and reports the additional PyInstaller and Rust build lock state separately. It also reads the desktop application version from `src-tauri/tauri.conf.json`.
 - CertificationMatrix documents objective, preconditions, execution method, expected behavior, required evidence types and verification criteria for each of the 11 scenarios. The new evaluator requires all execution classes, source-commit and environment-fingerprint binding, a timestamp, command, typed/hash-verified files beneath results/, and operator/approval attestation for REAL_LAB/PROTECTED_TARGET.
 - Focused Phase N tests are included in the hosted backend workflow. CI result is pending for the exact delivery commit until GitHub Actions completes.
 
-**Outstanding acceptance is intentional and explicit.** The repository still has no Python transitive lockfile and no frontend npm lockfile; the release manifest therefore sets production_reproducible=false. Clean-machine installation/upgrade/backup/restore, production proxy/secrets review, protected 11-scenario REAL_LAB execution and physical firmware acceptance have not been performed by source-only CI. Phase O remains deferred until those standalone acceptance requirements are met. Phase P remains the final repository-wide cleanup.
+**Outstanding acceptance is intentional and explicit.** The Python SHA-256 runtime lock and frontend npm lockfile are tracked and validated. Full desktop build reproducibility remains incomplete because `requirements-desktop-build.lock` and `src-tauri/Cargo.lock` are not yet tracked; the release manifest reports `INCOMPLETE_BUILD_LOCKFILES` and keeps `production_reproducible=false`. P33–P37 add Ubuntu 22.04/24.04 package qualification, dependency audits/SBOM/attestations, repeated recovery tests, packaged pipeline/Run contract tests and an exact-commit PRE_CERTIFICATION workflow. Clean-machine interactive upgrade/backup/restore, production proxy/secrets review, protected 11-scenario REAL_LAB execution and physical firmware acceptance remain operator-owned. Phase O remains deferred until those standalone acceptance requirements are met.
 
 
 ## Combined Phase O/P — Bounded integration and repository governance (2026-11-09)
@@ -2957,7 +2957,7 @@ The user elected to keep the full Phase O Cloud/SaaS programme as future scope. 
 
 ### Explicitly not claimed
 
-No transitive Python/npm lockfiles were created from guessed versions. No obsolete compatibility entry points or secondary branches were deleted without a verified reference audit. No Git history was rewritten. The standalone production certification gaps listed under Phase N remain open; Phase O's full Cloud implementation remains future scope.
+The Python and frontend runtime lockfiles are now tracked and validated. The missing PyInstaller build-tool and Rust Cargo lockfiles remain explicit blockers; no lock data is guessed or manually fabricated. No obsolete compatibility entry points or secondary branches were deleted without a verified reference audit. No Git history was rewritten. The standalone production certification gaps listed under Phase N remain open; Phase O's full Cloud implementation remains future scope.
 
 
 ### Stage E — Provisioning, Pipelines and End-to-End Integration (P25–P29)
@@ -2975,14 +2975,18 @@ repository/config repair, destructive reset, and direct protected-suite and
 capture/evidence operations. CI does not substitute for actual protected-lab
 acceptance or verified PCAP evidence.
 
-### Additional Stage F implementation track — P30–P33
+### Additional Stage F implementation track — P30–P37
 
 | Phase | Scope | Current delivery |
 |---|---|---|
 | P30 | Tauri Desktop Shell | Implemented; local React webview, loopback backend sidecar, health gate, secure data paths and orderly shutdown |
 | P31 | Packaged Backend Runtime | Implemented; PyInstaller sidecar with migrations, pytest tree and pipeline worker dispatch, persistent SQLite/session state and one-time Owner bootstrap |
-| P32 | Linux Packaging and Lifecycle | Debian and AppImage build pipeline plus Xvfb install/first-run/login/restart/data-retention smoke, including frozen pytest/worker dispatch; final current-head CI result is the release gate |
-| P33 | Linux Product Release Certification | Operator qualification still required on clean supported Ubuntu/Debian systems for interactive UI, desktop integration, upgrades/rollback, backup/restore and representative packaged validation Runs/evidence |
+| P32 | Linux Packaging and Lifecycle | Debian and AppImage build pipeline plus Xvfb install/first-run/login/restart/data-retention smoke, including frozen pytest/worker dispatch; exact release-head package workflows are the gate |
+| P33 | Linux Workstation Qualification | Hosted package matrix targets Ubuntu 22.04 and 24.04; interactive desktop-session, clean-machine upgrade/reinstall/rollback and data-preservation acceptance remain operator tasks |
+| P34 | Supply-Chain and Build Reproducibility | Python/frontend dependency audits, Dependabot coverage, SPDX source SBOM, GitHub package attestations, SHA-256 verification and pinned Tauri CLI added; full reproducibility remains blocked on hash-locked PyInstaller build requirements and Cargo.lock |
+| P35 | Reliability and Recovery Qualification | Hosted workflow repeats resource-lock, owned-process, Run/pipeline recovery, SQLite and sync-queue contracts twice; clean-machine soak, concurrency/load, full-disk and reboot recovery evidence remain |
+| P36 | Packaged End-to-End Business Logic | Frozen backend smoke executes first-run, pipeline orchestration and canonical Run/policy integration test modules plus worker dispatch; live provider/lab execution remains operator-owned |
+| P37 | Exact-Commit Release Certification | Manual workflow verifies both CI workflow families on the exact commit, checks source governance, and emits a PRE_CERTIFICATION manifest/matrix packet; it does not certify the 11 scenarios without their execution evidence |
 
 Windows packaging (W1) and the SaaS control plane (S1) remain separate future
 targets. Hosted Linux CI does not certify every supported desktop distribution,
