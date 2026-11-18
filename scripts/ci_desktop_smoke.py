@@ -274,14 +274,24 @@ def _run_packaged_backend_checks(
         "NETREGRESS_SESSION_SECRET": "netregress-desktop-smoke-session-secret",
         "NETREGRESS_SESSION_COOKIE_SECURE": "0",
     })
+    # PyInstaller stores data under _MEIPASS, but importable Python modules
+    # live in the PYZ archive. --confcutdir requires a real filesystem path,
+    # so collect the embedded test module by import name and anchor pytest's
+    # fixture discovery at the extraction root (never the user's working dir).
+    embedded_root = Path(getattr(sys, "_MEIPASS", backend_executable.parent)).resolve()
+    if not embedded_root.is_dir():
+        raise SmokeFailure("the frozen backend resource root is unavailable")
+    pytest_args = [
+        "-m", "pytest",
+        "--pyargs", "tests.test_desktop_setup",
+        "-q",
+        "-p", "no:cacheprovider",
+        "--confcutdir", str(embedded_root),
+    ]
     pytest_result = subprocess.run(
         [
             str(backend_executable.resolve()),
-            "-m", "pytest",
-            "tests/test_desktop_setup.py",
-            "-q",
-            "-p", "no:cacheprovider",
-            "--confcutdir", str(Path(getattr(sys, "_MEIPASS", backend_executable.parent)) / "tests"),
+            *pytest_args,
         ],
         cwd=state_root,
         env=env,
