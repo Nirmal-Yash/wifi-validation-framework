@@ -63,12 +63,7 @@ def test_packaged_pytest_environment_is_hardware_free(tmp_path, monkeypatch):
     assert result["pipeline_worker"] == "IDLE"
     pytest_command = calls[0][0]
     assert "--confcutdir" in pytest_command
-    assert kwargs_env_is_isolated(calls[0][1]["env"])
-
-
-def kwargs_env_is_isolated(environment):
-    return (
-        environment["NETREGRESS_CI_MODE"] == "1"
-        and environment["NETREGRESS_SESSION_COOKIE_SECURE"] == "0"
-        and environment["NETREGRESS_SESSION_SECRET"]
-    )
+    environment = calls[0][1]["env"]
+    assert environment["NETREGRESS_CI_MODE"] == "1"
+    assert environment["NETREGRESS_SESSION_COOKIE_SECURE"] == "0"
+    assert environment["NETREGRESS_SESSION_SECRET"]
