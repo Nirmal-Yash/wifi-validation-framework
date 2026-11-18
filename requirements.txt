@@ -1,4 +1,4 @@
-netmiko==4.7.0
+netmiko==4.8.0
 paramiko==5.1.0
 pytest==9.0.3
 pytest-html==4.1.1
