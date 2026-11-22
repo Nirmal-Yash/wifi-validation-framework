@@ -19,6 +19,11 @@ describe("shared application shell",()=>{
   queryClient=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   vi.clearAllMocks();
   globalThis.sessionStorage.clear();
+  for(const username of ["owner","viewer"]){
+   globalThis.sessionStorage.setItem("netregress.workspace."+username,JSON.stringify({
+    organizationId:"org-a",projectId:"project-a",labId:"lab-a"
+   }));
+  }
   api.workspaceOrganizations.mockResolvedValue({items:[{organization_id:"org-a",name:"Organization A"}]});
   api.workspaceProjects.mockResolvedValue({items:[{project_id:"project-a",name:"Project A"}]});
   api.workspaceLabs.mockResolvedValue({items:[{lab_id:"lab-a",name:"Lab A",provider_id:"gns3"}]});
