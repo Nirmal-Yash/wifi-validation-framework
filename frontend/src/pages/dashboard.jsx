@@ -178,6 +178,7 @@ export default function DashboardPage({user}){
       <div className="operations-detail-row"><span>Failed or partial topology applies</span><strong>{operations.data.action_items?.topology_apply_failures??(operations.data.topology?.access==="RESTRICTED"?"Restricted":"0")}</strong></div>
       <div className="operations-detail-row"><span>Failed or partial configuration deployments</span><strong>{operations.data.action_items?.configuration_deployment_failures??(operations.data.configuration?.access==="RESTRICTED"?"Restricted":"0")}</strong></div>
       <div className="operations-detail-row"><span>Pipeline recovery required</span><strong>{operations.data.action_items?.pipeline_recovery_required??(operations.data.pipelines?.access==="RESTRICTED"?"Restricted":"0")}</strong></div>
+      <div className="operations-detail-row"><span>Pipeline recovery-required steps</span><strong>{operations.data.action_items?.pipeline_recovery_required_steps??(operations.data.pipelines?.access==="RESTRICTED"?"Restricted":"0")}</strong></div>
       <div className="operations-detail-row"><span>Regressions</span><StatusBadge value={operations.data.action_items?.regressions?.status||"UNAVAILABLE"}/></div>
       <p className="muted">{operations.data.action_items?.regressions?.reason}</p>
       <div className="operations-detail-row"><span>Configuration drift</span><StatusBadge value={operations.data.action_items?.configuration_drift?.status||"UNAVAILABLE"}/></div>
