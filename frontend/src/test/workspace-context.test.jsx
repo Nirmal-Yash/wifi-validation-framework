@@ -53,9 +53,13 @@ describe("global workspace context",()=>{
   expect(api.workspaceLabs).toHaveBeenCalledWith("project-b");
  });
  it("retries workspace loading after an Organization request fails",async()=>{
+  globalThis.sessionStorage.setItem("netregress.workspace.owner",JSON.stringify({
+   organizationId:"org-a",projectId:"project-a",labId:"lab-project-a"
+  }));
   api.workspaceOrganizations.mockRejectedValueOnce(new Error("offline"));
   render(<WorkspaceProvider user={{username:"owner"}}><Harness/></WorkspaceProvider>);
   expect((await screen.findByRole("alert")).textContent).toMatch(/Could not load Organizations/);
+  expect(JSON.parse(globalThis.sessionStorage.getItem("netregress.workspace.owner")).labId).toBe("lab-project-a");
   fireEvent.click(screen.getByRole("button",{name:"Retry workspace"}));
   expect(await screen.findByRole("option",{name:"Project A"})).toBeTruthy();
   expect(await screen.findByRole("option",{name:"Lab project-a"})).toBeTruthy();

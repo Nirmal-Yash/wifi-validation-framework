@@ -24,20 +24,24 @@ export function WorkspaceProvider({user,children}){
  const [labsLoading,setLabsLoading]=useState(false);
  const [error,setError]=useState("");
  const [retryKey,setRetryKey]=useState(0);
+ const [contextResolved,setContextResolved]=useState(false);
  const savedSelection=useRef(readSelection(username));
 
  useEffect(()=>{
   let current=true;
   setOrganizationsLoading(true);setError("");
-  const saved=readSelection(username);
-  savedSelection.current=saved;
+  const saved=savedSelection.current;
   api.workspaceOrganizations().then(result=>{
    if(!current)return;
    const rows=Array.isArray(result?.items)?result.items:[];
    setOrganizations(rows);
    const preferred=rows.some(item=>item.organization_id===saved.organizationId)?saved.organizationId:(rows[0]?.organization_id||"");
    setActiveOrganizationId(preferred);
-   if(!preferred){setProjects([]);setLabs([]);setActiveProjectId("");setActiveLabId("");}
+   if(preferred)setProjectsLoading(true);
+   else{
+    setProjects([]);setLabs([]);setActiveProjectId("");setActiveLabId("");
+    setProjectsLoading(false);setLabsLoading(false);setContextResolved(true);
+   }
   }).catch(()=>{
    if(!current)return;
    setOrganizations([]);setProjects([]);setLabs([]);
@@ -63,7 +67,8 @@ export function WorkspaceProvider({user,children}){
    const saved=savedSelection.current;
    const preferred=rows.some(item=>item.project_id===saved.projectId)?saved.projectId:(rows[0]?.project_id||"");
    setActiveProjectId(preferred);
-   if(!preferred)setActiveLabId("");
+   if(preferred)setLabsLoading(true);
+   else{setActiveLabId("");setLabsLoading(false);setContextResolved(true);}
   }).catch(()=>{
    if(!current)return;
    setProjects([]);setLabs([]);setActiveProjectId("");setActiveLabId("");
@@ -83,6 +88,7 @@ export function WorkspaceProvider({user,children}){
    setLabs(rows);
    const saved=savedSelection.current;
    setActiveLabId(rows.some(item=>item.lab_id===saved.labId)?saved.labId:"");
+   setContextResolved(true);
   }).catch(()=>{
    if(!current)return;
    setLabs([]);setActiveLabId("");
@@ -92,15 +98,17 @@ export function WorkspaceProvider({user,children}){
  },[activeProjectId,organizationsLoading,projectsLoading,username]);
 
  useEffect(()=>{
+  if(!contextResolved||error)return;
   try{
    globalThis.sessionStorage?.setItem("netregress.workspace."+username,JSON.stringify({
     organizationId:activeOrganizationId,projectId:activeProjectId,labId:activeLabId
    }));
   }catch{/* Selection remains usable when storage is unavailable. */}
- },[username,activeOrganizationId,activeProjectId,activeLabId]);
+ },[username,activeOrganizationId,activeProjectId,activeLabId,contextResolved,error]);
 
  const selectOrganization=useCallback(id=>{
   savedSelection.current={organizationId:String(id||""),projectId:"",labId:""};
+  setContextResolved(false);
   setActiveOrganizationId(String(id||""));setActiveProjectId("");setActiveLabId("");setError("");
  },[]);
  const selectProject=useCallback(id=>{
@@ -112,7 +120,7 @@ export function WorkspaceProvider({user,children}){
   setActiveLabId(String(id||""));setError("");
  },[activeOrganizationId,activeProjectId]);
 
- const retry=useCallback(()=>setRetryKey(value=>value+1),[]);
+ const retry=useCallback(()=>{setContextResolved(false);setRetryKey(value=>value+1);},[]);
  const selectedOrganization=organizations.find(item=>item.organization_id===activeOrganizationId)||null;
  const selectedProject=projects.find(item=>item.project_id===activeProjectId)||null;
  const selectedLab=labs.find(item=>item.lab_id===activeLabId)||null;
