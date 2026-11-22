@@ -98,7 +98,7 @@ describe("Project/Lab operations overview",()=>{
   expect(screen.getByText("95.5 Mbps")).toBeTruthy();
   expect(screen.getByText("rssi dbm")).toBeTruthy();
   expect(screen.getByText("Mean -52 dBm · 2 samples · Run run-a")).toBeTruthy();
-  expect(screen.getByText("deploy-a")).toBeTruthy();
+  expect(screen.getByText(/deploy-a/)).toBeTruthy();
   expect(screen.getByText("Telemetry artifacts")).toBeTruthy();
   expect(screen.getByText("Lab health snapshots")).toBeTruthy();
   expect(screen.getByText("Device reachability")).toBeTruthy();
@@ -176,7 +176,7 @@ describe("Project/Lab operations overview",()=>{
   globalThis.sessionStorage.setItem("netregress.workspace.ops-admin",JSON.stringify({organizationId:"",projectId:"",labId:""}));
   api.workspaceOrganizations.mockResolvedValue({items:[]});
   renderDashboard(queryClient);
-  expect(await screen.findByText("No Project selected")).toBeTruthy();
+  expect(await screen.findAllByText("No Project selected")).toHaveLength(2);
   expect(api.runs).not.toHaveBeenCalled();
   expect(api.operationsOverview).not.toHaveBeenCalled();
  });
