@@ -132,3 +132,50 @@
 
 /* Stage B administration surfaces */
 .token-notice{display:grid;gap:8px;min-width:0}.token-value{display:block;max-width:100%;overflow-wrap:anywhere;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--muted);font-size:12px}.button-row,.admin-row-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.admin-row-actions select{max-width:150px;min-width:110px}.role-editor{display:grid;gap:14px;margin:16px 0;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--card)}.role-editor-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.role-editor-heading p{margin:5px 0 0;color:var(--muted-foreground);font-size:12px}.permission-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:8px}.permission-option{display:flex;align-items:flex-start;gap:10px;padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--background);cursor:pointer}.permission-option input{margin-top:3px}.permission-option span{display:grid;gap:3px;min-width:0}.permission-option strong{font-size:12px;overflow-wrap:anywhere}.permission-option small{font-size:11px;color:var(--muted-foreground);line-height:1.4}.audit-details{display:block;max-width:360px;white-space:normal;overflow-wrap:anywhere;font-size:10px}.mono{font-family:var(--font-mono,monospace);font-size:11px;overflow-wrap:anywhere}.muted{color:var(--muted-foreground);font-size:11px}.page-stack .filter-grid select,.page-stack .form-grid select,.page-stack .admin-row-actions select{min-height:36px;width:100%;border:1px solid var(--input);border-radius:8px;background:var(--background);padding:7px 10px;color:var(--foreground);font:inherit;font-size:12px}.page-stack input[type="text"],.page-stack input[type="email"],.page-stack input:not([type]),.page-stack select,.page-stack textarea{max-width:100%}@media(max-width:720px){.admin-row-actions{align-items:stretch}.admin-row-actions select{max-width:none;width:100%}.role-editor{padding:12px}.permission-grid{grid-template-columns:1fr}}
+
+
+/* P01 — globally consistent Organization / Project / Lab context. */
+.workspace-context-controls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.workspace-context-controls label { display: grid; min-width: 108px; gap: 3px; }
+.workspace-context-controls label > span {
+  color: var(--muted-foreground);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.workspace-context-controls select {
+  width: 100%;
+  min-width: 0;
+  max-width: 156px;
+  min-height: 31px;
+  padding: 4px 24px 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--foreground);
+  font-size: 10px;
+}
+.workspace-context-controls select:disabled { cursor: not-allowed; opacity: .6; }
+.workspace-context-error { color: var(--warning); font-size: 9px; }
+@media (max-width: 1100px) {
+  .workspace-context-controls label { min-width: 90px; }
+  .workspace-context-controls select { max-width: 122px; }
+}
+@media (max-width: 800px) {
+  .topbar { height: auto; min-height: 60px; flex-wrap: wrap; padding-block: 8px; }
+  .workspace-context-controls { order: 3; width: 100%; justify-content: flex-start; }
+  .workspace-context-controls label { flex: 1; min-width: 0; }
+  .workspace-context-controls select { max-width: none; }
+}
+@media (max-width: 640px) {
+  .workspace-context-controls { gap: 5px; }
+  .workspace-context-controls label > span { font-size: 7px; }
+  .workspace-context-controls select { min-height: 30px; padding-inline: 6px; font-size: 9px; }
+}

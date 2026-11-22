@@ -1,5 +1,6 @@
 import React,{useEffect,useState} from "react";
 import {api} from "@/api";
+import {useWorkspace} from "@/components/workspace-context";
 import {useAsyncLoader,useMutation} from "@/hooks";
 import {canPerform} from "@/permissions";
 import {Button,DataTable,EmptyState,ErrorState,Field,InlineNotice,LoadingState,Section,StatusBadge} from "@/components/ui";
@@ -9,8 +10,9 @@ const emptyDefinition=()=>({nodes:[],links:[]});
 const localId=prefix=>prefix+"-"+(globalThis.crypto?.randomUUID?globalThis.crypto.randomUUID().slice(0,12):Math.random().toString(36).slice(2,14));
 
 export default function TopologyStudioPage({user}){
+ const workspace=useWorkspace();
  const projects=useAsyncLoader(()=>api.workspaceProjects(),[],{queryKey:"topology-studio-projects"});
- const [projectId,setProjectId]=useState("");
+ const [projectId,setProjectId]=useState(workspace.activeProjectId||"");
  const [profileId,setProfileId]=useState("");
  const [revisionId,setRevisionId]=useState("");
  const [scope,setScope]=useState({scope_type:"PROJECT",scope_id:""});
@@ -56,7 +58,16 @@ export default function TopologyStudioPage({user}){
  const deviceRows=providerDevices.data?.items||[];
  const credentialRows=(providerCredentials.data?.items||[]).filter(item=>item.credential_type==="API_TOKEN"&&item.status==="ACTIVE");
 
- useEffect(()=>{if(!projectId&&projectRows.length)setProjectId(projectRows[0].project_id);},[projects.data,projectId]);
+ useEffect(()=>{
+  if(workspace.activeProjectId&&projectRows.some(item=>item.project_id===workspace.activeProjectId)){
+   if(projectId!==workspace.activeProjectId){
+    setProjectId(workspace.activeProjectId);setProfileId("");setRevisionId("");setDefinition(emptyDefinition());
+   }
+  }else if(!projectId&&projectRows.length){
+   const first=projectRows[0].project_id;
+   setProjectId(first);workspace.selectProject(first);
+  }
+ },[projects.data,projectId,workspace.activeProjectId]);
  useEffect(()=>{if(!profileId&&profileRows.length)setProfileId(profileRows[0].profile_id);},[profiles.data,profileId]);
  useEffect(()=>{
   setProviderCatalog(null);setProviderPlan(null);setReconciliation(null);setLastApply(null);
@@ -277,7 +288,7 @@ export default function TopologyStudioPage({user}){
   <Section title="Workspace scope" subtitle="Topology profiles are isolated by Project and optionally by Lab.">
    <div className="form-grid">
     <Field label="Project">
-     <select value={projectId} onChange={event=>{setProjectId(event.target.value);setProfileId("");setRevisionId("");setDefinition(emptyDefinition());}} disabled={projects.loading}>
+     <select value={projectId} onChange={event=>{const value=event.target.value;setProjectId(value);workspace.selectProject(value);setProfileId("");setRevisionId("");setDefinition(emptyDefinition());}} disabled={projects.loading}>
       <option value="">Select Project</option>
       {projectRows.map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}
      </select>

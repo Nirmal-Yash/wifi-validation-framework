@@ -12,6 +12,7 @@ import {
  SidebarProvider,SidebarTrigger,
 } from "@/components/ui/sidebar";
 import {ThemeToggle} from "@/components/theme-toggle";
+import {WorkspaceProvider,useWorkspace} from "@/components/workspace-context";
 
 const navGroups=[
  {title:"Workspace",items:[
@@ -83,8 +84,9 @@ function UserMenu({user,onLogout}){
   </DropdownMenuContent>
  </DropdownMenu>;
 }
-export default function AppShell({user,routeName,onLogout,children}){
+function AppShellContent({user,routeName,onLogout,children}){
  const meta=pageMeta[routeName]||{section:"Workspace",title:"Runner",description:"NetRegress standalone validation operations."};
+ const workspace=useWorkspace();
  const visibleGroups=navGroups.map(group=>({
   ...group,
   items:group.items.filter(([key])=>key!=="baselines"||canPerform(user,"baselines.manage")).filter(([key])=>key!=="operations"||canExecute(user)).filter(([key])=>key!=="administration"||canPerform(user,"users.read")||canPerform(user,"roles.read")||canPerform(user,"permissions.read")||canPerform(user,"audit.read")).filter(([key])=>key!=="pipelines"||canPerform(user,"pipelines.read")),
@@ -117,7 +119,21 @@ export default function AppShell({user,routeName,onLogout,children}){
   <SidebarInset>
    <header className="topbar">
     <div className="topbar-start"><SidebarTrigger/><div className="breadcrumbs"><span>NetRegress</span><ChevronRight size={13}/><span>{meta.section}</span><ChevronRight size={13}/><strong>{meta.title}</strong></div></div>
-    <div className="topbar-end"><span className="local-pill"><span className="presence-indicator"/>Local runtime</span><span className="topbar-divider"/><ThemeToggle/><UserMenu user={user} onLogout={onLogout}/></div>
+    <div className="workspace-context-controls" aria-label="Active workspace context">
+     <label><span>Organization</span><select aria-label="Active organization" value={workspace.activeOrganizationId} onChange={event=>workspace.selectOrganization(event.target.value)} disabled={workspace.organizationsLoading||!workspace.organizations.length}>
+      <option value="">No organization</option>
+      {workspace.organizations.map(item=><option key={item.organization_id} value={item.organization_id}>{item.name}</option>)}
+     </select></label>
+     <label><span>Project</span><select aria-label="Active project" value={workspace.activeProjectId} onChange={event=>workspace.selectProject(event.target.value)} disabled={!workspace.activeOrganizationId||workspace.projectsLoading||!workspace.projects.length}>
+      <option value="">No project</option>
+      {workspace.projects.map(item=><option key={item.project_id} value={item.project_id}>{item.name}</option>)}
+     </select></label>
+     <label><span>Lab</span><select aria-label="Active lab" value={workspace.activeLabId} onChange={event=>workspace.selectLab(event.target.value)} disabled={!workspace.activeProjectId||workspace.labsLoading||!workspace.labs.length}>
+      <option value="">No lab selected</option>
+      {workspace.labs.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name}</option>)}
+     </select></label>
+    </div>
+    <div className="topbar-end">{workspace.error?<span className="workspace-context-error" role="status">Workspace context unavailable</span>:null}<span className="local-pill"><span className="presence-indicator"/>Local runtime</span><span className="topbar-divider"/><ThemeToggle/><UserMenu user={user} onLogout={onLogout}/></div>
    </header>
    <main id="main-content" className="content-body" tabIndex="-1">
     <div className="content-intro"><div><div className="eyebrow">{meta.section}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="content-intro-meta"><span className="role-chip">{user.role}</span></div></div>
@@ -126,4 +142,8 @@ export default function AppShell({user,routeName,onLogout,children}){
    <footer className="app-footer"><span>NetRegress · Network validation platform</span><span>Local-first · Evidence-led validation</span></footer>
   </SidebarInset>
  </SidebarProvider>;
+}
+
+export default function AppShell(props){
+ return <WorkspaceProvider user={props.user}><AppShellContent {...props}/></WorkspaceProvider>;
 }
