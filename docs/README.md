@@ -47,3 +47,14 @@ Legacy consolidated-document files have been removed. The canonical documents ab
 ## Current production-readiness programme
 
 See [P33–P37 Linux Production Readiness](P33_P37_PRODUCTION_READINESS.md) for current desktop qualification, supply-chain, recovery, packaged business workflow and release certification gates.
+
+## Product expansion programme
+
+The additive P00–P17 network-engineering programme is documented in:
+- [Product Requirements and Scope](06_PRODUCT_REQUIREMENTS_AND_SCOPE.md)
+- [Target Architecture](07_TARGET_ARCHITECTURE.md)
+- [Implementation Roadmap](08_IMPLEMENTATION_ROADMAP.md)
+- [Requirement Traceability](09_REQUIREMENT_TRACEABILITY.md)
+- [Implementation Decisions](10_IMPLEMENTATION_DECISIONS.md)
+
+The new expansion phases are prefixed **EXP-** in repository traceability to distinguish them from historical Stage D/E/F phase IDs. The current first batch is EXP-P00–EXP-P03.
