@@ -2344,6 +2344,39 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
 
 
 
+    def validate_topology_reference_scope(project_id, normalized_definition):
+        """Validate opaque topology references against the same Project and caller permissions."""
+        for node in normalized_definition.get("nodes", []):
+            credential_id = node.get("credential_ref_id")
+            if credential_id:
+                denied = require_permission("credentials.read", project_id=project_id)
+                if denied is not None:
+                    return denied
+                credential = credential_vault.get(credential_id)
+                if credential is None or credential.get("project_id") != project_id:
+                    return error("NOT_FOUND", "Credential reference not found in this Project", 404)
+                if credential.get("status") != "ACTIVE":
+                    return error("INVALID_TOPOLOGY_REFERENCE", "Credential reference must be active", 422)
+
+            configuration_profile_id = node.get("configuration_profile_id")
+            if configuration_profile_id:
+                denied = require_permission("configurations.read", project_id=project_id)
+                if denied is not None:
+                    return denied
+                configuration_profile = configuration_profiles.get_profile(configuration_profile_id)
+                if configuration_profile is None or configuration_profile.get("project_id") != project_id:
+                    return error("NOT_FOUND", "Configuration profile reference not found in this Project", 404)
+                if configuration_profile.get("status") != "PUBLISHED":
+                    return error("INVALID_TOPOLOGY_REFERENCE", "Configuration profile reference must be published", 422)
+                with query.database.connection() as connection:
+                    schema = connection.execute(
+                        "SELECT project_id,status FROM configuration_schemas WHERE schema_record_id=?",
+                        (configuration_profile["schema_record_id"],),
+                    ).fetchone()
+                if schema is None or schema["project_id"] != project_id or schema["status"] != "ACTIVE":
+                    return error("INVALID_TOPOLOGY_REFERENCE", "Configuration profile must reference an active Project schema", 422)
+        return None
+
     @api.post("/topologies/validate")
     def validate_topology_definition():
         payload = request.get_json(silent=True)
@@ -2368,6 +2401,9 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             normalized, _encoded, digest = topology_studio.canonical_payload(payload.get("definition"))
         except (TopologyStudioError, TypeError, ValueError) as exc:
             return error("INVALID_TOPOLOGY", str(exc), 422)
+        reference_error = validate_topology_reference_scope(project_id, normalized)
+        if reference_error is not None:
+            return reference_error
         return ok({
             "valid": True,
             "project_id": project_id,
@@ -2439,6 +2475,13 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             return denied
         payload=request.get_json(silent=True) or {}
         definition=payload.get("definition") if isinstance(payload,dict) else None
+        try:
+            normalized, _encoded, _digest = topology_studio.canonical_payload(definition)
+        except (TopologyStudioError, TypeError, ValueError) as exc:
+            return error("INVALID_TOPOLOGY", str(exc), 422)
+        reference_error = validate_topology_reference_scope(profile["project_id"], normalized)
+        if reference_error is not None:
+            return reference_error
         scope="/api/v1/topologies/"+profile_id+"/revisions"
         key,request_hash,cached,security_error=idempotency_preflight(scope,{"profile_id":profile_id,"definition":definition})
         if security_error is not None:

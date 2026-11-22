@@ -1,6 +1,6 @@
 import {describe,expect,it} from "vitest";
 import {
- copyTopologySelection,createTopologyHistory,moveTopologyNodes,
+ autoLayoutTopology,copyTopologySelection,createTopologyHistory,moveTopologyNodes,
  pasteTopologySelection,removeTopologySelection,
 } from "../topology-editor";
 
@@ -68,5 +68,45 @@ describe("visual topology editing primitives",()=>{
   history.reset(definition());
   expect(history.canUndo).toBe(false);
   expect(history.canRedo).toBe(false);
+ });
+});
+
+
+describe("automatic topology layout",()=>{
+ it("lays out connected nodes deterministically without changing links or node metadata",()=>{
+  const source=definition();
+  source.nodes[0].vendor="Cisco";
+  source.nodes[0].interfaces=[{name:"Gi0/0",adapter:0,port:0}];
+  const first=autoLayoutTopology(source);
+  const second=autoLayoutTopology(source);
+  expect(first).toEqual(second);
+  expect(first.links).toEqual(source.links);
+  const router=first.nodes.find(node=>node.id==="router-a");
+  expect(router.vendor).toBe("Cisco");
+  expect(router.interfaces).toEqual(source.nodes[0].interfaces);
+  expect(first.nodes.map(node=>[node.x,node.y])).not.toEqual(source.nodes.map(node=>[node.x,node.y]));
+ });
+ it("keeps large and disconnected topologies within canonical canvas bounds",()=>{
+  const nodes=Array.from({length:128},(_,index)=>({
+   id:"node-"+index,name:"Node "+index,node_type:"OTHER",template_id:"",
+   x:0,y:0,properties:{},
+  }));
+  const links=nodes.slice(1).map((node,index)=>({
+   id:"link-"+index,source_node_id:nodes[index].id,source_adapter:0,source_port:0,
+   target_node_id:node.id,target_adapter:0,target_port:0,
+  }));
+  const arranged=autoLayoutTopology({nodes,links});
+  const coordinates=arranged.nodes.map(node=>[node.x,node.y]);
+  expect(arranged.nodes).toHaveLength(128);
+  expect(new Set(coordinates.map(point=>point.join(":"))).size).toBe(128);
+  for(const node of arranged.nodes){
+   expect(node.x).toBeGreaterThanOrEqual(0);
+   expect(node.x).toBeLessThanOrEqual(10000);
+   expect(node.y).toBeGreaterThanOrEqual(0);
+   expect(node.y).toBeLessThanOrEqual(10000);
+  }
+ });
+ it("preserves the exact empty definition",()=>{
+  expect(autoLayoutTopology({nodes:[],links:[]})).toEqual({nodes:[],links:[]});
  });
 });

@@ -1,7 +1,7 @@
 """Canonical, Project/Lab-scoped topology profiles and immutable revisions."""
 from __future__ import annotations
 from datetime import datetime, timezone
-import hashlib, json, math, re, secrets
+import hashlib, ipaddress, json, math, re, secrets
 from typing import Any, Mapping
 
 
@@ -64,7 +64,13 @@ class TopologyStudioService:
             prefix = f"nodes[{index}]"
             if not isinstance(raw, Mapping):
                 raise TopologyStudioError(f"{prefix} must be an object")
-            if set(raw) - {"id", "name", "node_type", "template_id", "x", "y", "properties"}:
+            node_fields = {
+                "id", "name", "node_type", "template_id", "x", "y", "properties",
+                "vendor", "operating_system", "image", "cpu_cores", "memory_mb",
+                "interfaces", "management_address", "default_gateway", "vlan_id",
+                "configuration_profile_id", "credential_ref_id",
+            }
+            if set(raw) - node_fields:
                 raise TopologyStudioError(f"{prefix} contains unsupported properties")
             node_id = cls._text(raw.get("id"), f"{prefix}.id", 64)
             if not _ID.fullmatch(node_id) or node_id in node_ids:
@@ -74,8 +80,10 @@ class TopologyStudioService:
             node_type = cls._text(raw.get("node_type"), f"{prefix}.node_type", 24).upper()
             if node_type not in _NODE_TYPES:
                 raise TopologyStudioError(f"{prefix}.node_type is not supported")
-            template_id = cls._text(raw.get("template_id"), f"{prefix}.template_id", 128)
-            if not _TEMPLATE_ID.fullmatch(template_id):
+            # A logical node may be designed before it is mapped to a provider image/template.
+            # Provider planning remains responsible for blocking an unmapped node.
+            template_id = cls._text(raw.get("template_id", ""), f"{prefix}.template_id", 128, required=False)
+            if template_id and not _TEMPLATE_ID.fullmatch(template_id):
                 raise TopologyStudioError(f"{prefix}.template_id contains unsupported characters")
             coords: dict[str, float] = {}
             for axis in ("x", "y"):
@@ -102,10 +110,89 @@ class TopologyStudioService:
                 if isinstance(item, str) and (len(item) > 256 or any(ord(ch) < 32 for ch in item)):
                     raise TopologyStudioError(f"{prefix}.properties.{property_name} is too long or contains control characters")
                 safe_properties[property_name] = item
-            nodes.append({
+            normalized_node = {
                 "id": node_id, "name": name, "node_type": node_type, "template_id": template_id,
                 "x": coords["x"], "y": coords["y"], "properties": safe_properties,
-            })
+            }
+            for field, maximum in (("vendor", 80), ("operating_system", 80), ("image", 128),
+                                   ("configuration_profile_id", 128), ("credential_ref_id", 128)):
+                if field in raw:
+                    value = cls._text(raw[field], f"{prefix}.{field}", maximum, required=False)
+                    if field == "credential_ref_id" and value and any(ord(char) < 33 for char in value):
+                        raise TopologyStudioError(f"{prefix}.credential_ref_id must be an opaque Credential Vault reference ID")
+                    if value:
+                        normalized_node[field] = value
+            for field, minimum, maximum in (("cpu_cores", 1, 128), ("memory_mb", 128, 1048576),
+                                             ("vlan_id", 1, 4094)):
+                if field in raw and raw[field] not in (None, ""):
+                    number = raw[field]
+                    if isinstance(number, bool) or not isinstance(number, int) or not minimum <= number <= maximum:
+                        raise TopologyStudioError(f"{prefix}.{field} must be an integer from {minimum} to {maximum}")
+                    normalized_node[field] = number
+            for field in ("management_address", "default_gateway"):
+                if field in raw and raw[field] not in (None, ""):
+                    value = cls._text(raw[field], f"{prefix}.{field}", 64)
+                    try:
+                        address = ipaddress.ip_interface(value) if field == "management_address" else ipaddress.ip_address(value)
+                    except ValueError as exc:
+                        raise TopologyStudioError(f"{prefix}.{field} must be a valid IP address" ) from exc
+                    normalized_node[field] = str(address)
+            if "management_address" in normalized_node and "default_gateway" in normalized_node:
+                interface = ipaddress.ip_interface(normalized_node["management_address"])
+                gateway = ipaddress.ip_address(normalized_node["default_gateway"])
+                if interface.version != gateway.version:
+                    raise TopologyStudioError(f"{prefix}.default_gateway must use the same IP family as management_address")
+            if "interfaces" in raw:
+                raw_interfaces = raw["interfaces"]
+                if not isinstance(raw_interfaces, list) or len(raw_interfaces) > 64:
+                    raise TopologyStudioError(f"{prefix}.interfaces must be an array of at most 64 entries")
+                normalized_interfaces = []
+                interface_names: set[str] = set()
+                interface_ports: set[tuple[int, int]] = set()
+                for interface_index, interface in enumerate(raw_interfaces):
+                    interface_prefix = f"{prefix}.interfaces[{interface_index}]"
+                    if not isinstance(interface, Mapping):
+                        raise TopologyStudioError(f"{interface_prefix} must be an object")
+                    interface_fields = {"name", "adapter", "port", "mode", "ip_address", "vlan_id", "description"}
+                    if set(interface) - interface_fields:
+                        raise TopologyStudioError(f"{interface_prefix} contains unsupported properties")
+                    interface_name = cls._text(interface.get("name"), f"{interface_prefix}.name", 64)
+                    if interface_name in interface_names:
+                        raise TopologyStudioError(f"{interface_prefix}.name is duplicated")
+                    interface_names.add(interface_name)
+                    adapter, port = interface.get("adapter"), interface.get("port")
+                    if (isinstance(adapter, bool) or not isinstance(adapter, int) or not 0 <= adapter <= 255
+                            or isinstance(port, bool) or not isinstance(port, int) or not 0 <= port <= 255):
+                        raise TopologyStudioError(f"{interface_prefix}.adapter and port must be integers from 0 to 255")
+                    port_key = (adapter, port)
+                    if port_key in interface_ports:
+                        raise TopologyStudioError(f"{interface_prefix} reuses an adapter/port assignment")
+                    interface_ports.add(port_key)
+                    normalized_interface = {"name": interface_name, "adapter": adapter, "port": port}
+                    if "mode" in interface and interface["mode"] not in (None, ""):
+                        mode = cls._text(interface["mode"], f"{interface_prefix}.mode", 16).upper()
+                        if mode not in {"ACCESS", "TRUNK", "ROUTED", "WIRELESS", "OTHER"}:
+                            raise TopologyStudioError(f"{interface_prefix}.mode is not supported")
+                        normalized_interface["mode"] = mode
+                    if "ip_address" in interface and interface["ip_address"] not in (None, ""):
+                        ip_value = cls._text(interface["ip_address"], f"{interface_prefix}.ip_address", 64)
+                        try:
+                            normalized_interface["ip_address"] = str(
+                                ipaddress.ip_interface(ip_value) if "/" in ip_value else ipaddress.ip_address(ip_value)
+                            )
+                        except ValueError as exc:
+                            raise TopologyStudioError(f"{interface_prefix}.ip_address must be a valid IP address or interface") from exc
+                    if "vlan_id" in interface and interface["vlan_id"] not in (None, ""):
+                        vlan = interface["vlan_id"]
+                        if isinstance(vlan, bool) or not isinstance(vlan, int) or not 1 <= vlan <= 4094:
+                            raise TopologyStudioError(f"{interface_prefix}.vlan_id must be between 1 and 4094")
+                        normalized_interface["vlan_id"] = vlan
+                    if "description" in interface and interface["description"] not in (None, ""):
+                        normalized_interface["description"] = cls._text(interface["description"], f"{interface_prefix}.description", 160)
+                    normalized_interfaces.append(normalized_interface)
+                normalized_interfaces.sort(key=lambda item: (item["adapter"], item["port"], item["name"]))
+                normalized_node["interfaces"] = normalized_interfaces
+            nodes.append(normalized_node)
         occupied: set[tuple[str, int, int]] = set()
         link_ids: set[str] = set()
         links: list[dict[str, Any]] = []
@@ -113,9 +200,13 @@ class TopologyStudioService:
             prefix = f"links[{index}]"
             if not isinstance(raw, Mapping):
                 raise TopologyStudioError(f"{prefix} must be an object")
-            allowed = {"id", "source_node_id", "source_adapter", "source_port", "target_node_id", "target_adapter", "target_port"}
-            if set(raw) != allowed:
-                raise TopologyStudioError(f"{prefix} must contain exactly the declared endpoint fields")
+            allowed = {
+                "id", "source_node_id", "source_adapter", "source_port", "target_node_id",
+                "target_adapter", "target_port", "source_interface_name", "target_interface_name",
+                "link_type", "network_segment_id", "vlan_id",
+            }
+            if set(raw) - allowed:
+                raise TopologyStudioError(f"{prefix} contains unsupported endpoint fields")
             link_id = cls._text(raw.get("id"), f"{prefix}.id", 64)
             if not _ID.fullmatch(link_id) or link_id in link_ids:
                 raise TopologyStudioError(f"{prefix}.id is invalid or duplicated")
@@ -139,12 +230,43 @@ class TopologyStudioService:
             if endpoints[0] in occupied or endpoints[1] in occupied:
                 raise TopologyStudioError(f"{prefix} reuses an occupied adapter/port")
             occupied.update(endpoints)
-            links.append({
+            normalized_link = {
                 "id": link_id, "source_node_id": source,
                 "source_adapter": endpoint_values["source_adapter"], "source_port": endpoint_values["source_port"],
                 "target_node_id": target, "target_adapter": endpoint_values["target_adapter"],
                 "target_port": endpoint_values["target_port"],
-            })
+            }
+            node_lookup = {item["id"]: item for item in nodes}
+            for side, node_id, adapter_field, port_field in (
+                ("source", source, "source_adapter", "source_port"),
+                ("target", target, "target_adapter", "target_port"),
+            ):
+                interface_field = side + "_interface_name"
+                if interface_field in raw and raw[interface_field] not in (None, ""):
+                    interface_name = cls._text(raw[interface_field], f"{prefix}.{interface_field}", 64)
+                    declared = node_lookup[node_id].get("interfaces", [])
+                    match = next((item for item in declared if item["name"] == interface_name), None)
+                    if declared and match is None:
+                        raise TopologyStudioError(f"{prefix}.{interface_field} does not exist on its logical node")
+                    if match is not None and (
+                        match["adapter"] != endpoint_values[adapter_field]
+                        or match["port"] != endpoint_values[port_field]
+                    ):
+                        raise TopologyStudioError(f"{prefix}.{interface_field} does not match its adapter/port endpoint")
+                    normalized_link[interface_field] = interface_name
+            if "link_type" in raw and raw["link_type"] not in (None, ""):
+                link_type = cls._text(raw["link_type"], f"{prefix}.link_type", 16).upper()
+                if link_type not in {"ETHERNET", "WIRELESS", "SERIAL", "TUNNEL", "OTHER"}:
+                    raise TopologyStudioError(f"{prefix}.link_type is not supported")
+                normalized_link["link_type"] = link_type
+            if "network_segment_id" in raw and raw["network_segment_id"] not in (None, ""):
+                normalized_link["network_segment_id"] = cls._text(raw["network_segment_id"], f"{prefix}.network_segment_id", 128)
+            if "vlan_id" in raw and raw["vlan_id"] not in (None, ""):
+                vlan = raw["vlan_id"]
+                if isinstance(vlan, bool) or not isinstance(vlan, int) or not 1 <= vlan <= 4094:
+                    raise TopologyStudioError(f"{prefix}.vlan_id must be between 1 and 4094")
+                normalized_link["vlan_id"] = vlan
+            links.append(normalized_link)
         nodes.sort(key=lambda item: item["id"])
         links.sort(key=lambda item: item["id"])
         return {"nodes": nodes, "links": links}

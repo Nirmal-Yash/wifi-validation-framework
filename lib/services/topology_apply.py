@@ -389,7 +389,9 @@ class TopologyApplyService:
             if remote is not None and isinstance(remote.get("node_id"), str):
                 node_ids[logical_id] = remote["node_id"]
             else:
-                if node["template_id"] not in templates:
+                if not node.get("template_id"):
+                    conflicts.append({"resource_id": logical_id, "reason": "logical node has no provider template mapping"})
+                elif node["template_id"] not in templates:
                     conflicts.append({"resource_id": logical_id, "reason": "provider template is unavailable"})
                 nodes_to_create.append({
                     "logical_node_id": logical_id, "name": node["name"],
@@ -540,6 +542,8 @@ class TopologyApplyService:
             self._signature(item): item for item in snapshot["links"] if self._signature(item) is not None
         }
         missing_links = []
+        mismatched_links = []
+        logical_to_provider_links = {}
         for link in revision["definition"]["links"]:
             source = logical_to_provider.get(link["source_node_id"])
             target = logical_to_provider.get(link["target_node_id"])
@@ -554,21 +558,29 @@ class TopologyApplyService:
             mapping = mappings.get(("LINK", link["id"]))
             if remote is None:
                 missing_links.append(link["id"])
-            elif isinstance(remote.get("link_id"), str):
-                # Mapping changes are recorded by apply; reconciliation itself is read-only.
-                pass
+            elif mapping and isinstance(remote.get("link_id"), str):
+                mapped_id = mapping.get("provider_resource_id")
+                if mapped_id == remote.get("link_id"):
+                    logical_to_provider_links[link["id"]] = mapped_id
+                else:
+                    mismatched_links.append(link["id"])
+            else:
+                # An observed provider link without a durable logical mapping is not IN_SYNC.
+                mismatched_links.append(link["id"])
         mapped_node_ids = {value for value in logical_to_provider.values()}
         return {
             "profile_id": profile["profile_id"], "revision_id": revision["revision_id"],
             "revision_sha256": revision["content_sha256"], "lab_id": profile["lab_id"],
-            "status": "IN_SYNC" if not missing_nodes and not missing_links and not mismatched_nodes else "DRIFTED",
+            "status": "IN_SYNC" if not missing_nodes and not missing_links and not mismatched_nodes and not mismatched_links else "DRIFTED",
             "desired_node_count": len(revision["definition"]["nodes"]),
             "desired_link_count": len(revision["definition"]["links"]),
             "observed_managed_node_count": len(mapped_node_ids),
             "observed_provider_node_count": len(snapshot["nodes"]),
             "observed_provider_link_count": len(snapshot["links"]),
             "missing_nodes": missing_nodes, "missing_links": missing_links,
-            "mismatched_nodes": mismatched_nodes,
+            "mismatched_nodes": mismatched_nodes, "mismatched_links": mismatched_links,
+            "logical_to_provider": logical_to_provider,
+            "logical_to_provider_links": logical_to_provider_links,
             "unmanaged_provider_node_count": len(snapshot["nodes"]) - len(mapped_node_ids),
         }
 

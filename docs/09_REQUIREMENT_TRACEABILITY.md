@@ -10,6 +10,7 @@
 - **PLANNED:** no qualifying implementation has been identified at this baseline.
 - **GATE:** requires operator/provider evidence beyond hardware-free CI.
 - **IN_PROGRESS:** source integration and focused acceptance tests are implemented; hosted verification remains pending.
+- **CI_VERIFIED:** implementation and focused/hosted automated quality gates pass on the recorded exact commit; separate real-provider and operator acceptance gates remain explicit.
 
 ## Product foundation
 
@@ -28,7 +29,7 @@
 | RQ-010 | Organization, Project and Lab persistence | `lib/domain/resources.py`, SQLite workspace repositories, `/workspace/*` APIs | EXISTING | Shared shell selector must use authenticated visible scope |
 | RQ-011 | Project/Lab device inventory | `lib/services/device_inventory.py`, `frontend/src/pages/devices.jsx` | EXISTING | Extend capabilities only via schema/API migration |
 | RQ-012 | Canonical topology and immutable revisions | `lib/services/topology_studio.py`, `frontend/src/pages/topologies.jsx` | EXISTING | Preserve hash, logical IDs and published immutability |
-| RQ-013 | Visual editing, drag positioning and port-aware links | `frontend/src/pages/topologies.jsx`, `frontend/src/topology-editor.js`, canonical topology service | IN_PROGRESS | Verify multi-select/group move, link inspection/editing, clipboard ID remapping, keyboard actions, undo/redo and read-only viewer behavior |
+| RQ-013 | Complete visual Topology Studio | `frontend/src/pages/topologies.jsx`, `frontend/src/topology-editor.js`, `TopologyStudioService`, `TopologyApplyService`, `docs/openapi.yaml` | CI_VERIFIED | Exact PR-head workflow `45022564639` on `e1e4519278e84015c96af10c22961764338adf84`: backend, frontend/build and startup/session jobs PASS. Real GNS3 apply/recovery and interactive desktop/accessibility remain RQ-042/RQ-044 operator gates |
 | RQ-014 | Topology apply, reconciliation and recovery | `lib/services/topology_apply.py`, `/topologies/*/plan|apply|reconciliation` | EXISTING | No implicit prune; preserve lab lock/idempotency |
 | RQ-015 | GNS3 provider operations | Existing topology apply/provider services and `/labs/*/provider-*` | EXISTING | Consolidate, do not duplicate; live lab remains GATE |
 | RQ-016 | CML provider | No CML adapter found in current source inventory | PLANNED | EXP-P04 contract first; API/license/version validation |
@@ -75,5 +76,5 @@ This register is intentionally conservative. A source file or mocked contract te
 
 | ID | Requirement | Verification source | Status | Next verification |
 |---|---|---|---|---|
-| RQ-037 | Canonical, read-only topology draft validation | `POST /api/v1/topologies/validate`, `TopologyStudioService.canonical_payload`, `tests/test_topology_studio.py` | IN_PROGRESS | Verify 200 hash/count response, no revision write, 422 validation error, Project scope and topology.manage RBAC |
-| RQ-038 | Complete visual authoring interactions | `frontend/src/pages/topologies.jsx`, `frontend/src/topology-editor.js`, frontend topology editor tests | IN_PROGRESS | Exact-head frontend tests/build and backend/API regression pass; operator accessibility/desktop review remains a separate gate |
+| RQ-037 | Canonical, read-only topology draft validation | `POST /api/v1/topologies/validate`, `TopologyStudioService.canonical_payload`, `tests/test_topology_studio.py` | CI_VERIFIED | Exact PR-head backend workflow passed: hash/count response, no revision write, invalid-definition behavior, Project ownership, topology.manage and credential/configuration reference scope checks |
+| RQ-038 | Complete visual authoring interactions | `frontend/src/pages/topologies.jsx`, `frontend/src/topology-editor.js`, `frontend/src/test/topologies.test.jsx`, editor/viewport tests | CI_VERIFIED | Exact PR-head frontend test and production-build job passed: palette categories, click/drag/drop, auto-layout bounds/determinism, inspectors, port linking, console tabs, keyboard/clipboard/history, and viewer restrictions. Interactive desktop/accessibility review remains an operator gate |
