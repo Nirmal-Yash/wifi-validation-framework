@@ -52,6 +52,23 @@ def registry_for(factory):
     return registry
 
 
+def test_provider_session_service_defers_vault_validation_until_provider_use():
+    from lib.providers import ProviderSessionError, ProviderSessionService
+
+    registry = registry_for(CompleteProvider)
+    sessions = ProviderSessionService(object(), registry)
+    # Service composition is safe for pipeline paths which do not use providers.
+    with pytest.raises(ProviderSessionError, match="scoped secret resolution"):
+        sessions.with_provider(
+            {
+                "provider_id": "test", "endpoint_url": "https://127.0.0.1:3080",
+                "project_id": "project-1", "controller_device_id": "device-1",
+                "credential_id": "credential-1",
+            },
+            "operator", lambda provider: provider.version(),
+        )
+
+
 def test_provider_session_service_resolves_vault_secret_connects_and_always_disconnects():
     from lib.providers import ProviderSessionService
 

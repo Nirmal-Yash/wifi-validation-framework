@@ -13,14 +13,17 @@ class ProviderSessionService:
     """The single credential-to-adapter boundary shared by provider consumers."""
 
     def __init__(self, credential_vault, provider_registry):
-        if not callable(getattr(credential_vault, "use_secret", None)):
-            raise TypeError("credential_vault must expose use_secret")
+        # Runtime composition may be used by non-provider pipeline tests or
+        # consumers. Validate the Vault operation only when a provider session
+        # is requested, not when the service graph is constructed.
         if not callable(getattr(provider_registry, "create", None)):
             raise TypeError("provider_registry must expose create")
         self.credential_vault = credential_vault
         self.provider_registry = provider_registry
 
     def with_provider(self, binding: Mapping[str, Any], actor: str, callback: Callable[[Any], Any]):
+        if not callable(getattr(self.credential_vault, "use_secret", None)):
+            raise ProviderSessionError("credential vault does not support scoped secret resolution")
         if not isinstance(binding, Mapping):
             raise ProviderSessionError("provider binding must be a mapping")
         if not callable(callback):
