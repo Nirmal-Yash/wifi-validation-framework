@@ -292,11 +292,19 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         include_devices=require_permission("devices.read",project_id=project_id) is None
         include_topology=require_permission("topology.read",project_id=project_id) is None
         include_pipelines=require_permission("pipelines.read",project_id=project_id) is None
+        include_runs=require_permission("runs.read",project_id=project_id) is None
+        include_configuration=require_permission("configurations.read",project_id=project_id) is None
+        include_evidence=require_permission("evidence.read",project_id=project_id) is None
+        include_performance=require_permission("performance.read",project_id=project_id) is None
         return guarded(lambda:ok(query.operations_overview(
             project_id,lab_id=lab_id,
             include_devices=include_devices,
             include_topology=include_topology,
             include_pipelines=include_pipelines,
+            include_runs=include_runs,
+            include_configuration=include_configuration,
+            include_evidence=include_evidence,
+            include_performance=include_performance,
         )))
 
     @api.get("/readiness")
