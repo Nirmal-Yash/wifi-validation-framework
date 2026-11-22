@@ -81,8 +81,9 @@ describe("automatic topology layout",()=>{
   const second=autoLayoutTopology(source);
   expect(first).toEqual(second);
   expect(first.links).toEqual(source.links);
-  expect(first.nodes[0].vendor).toBe("Cisco");
-  expect(first.nodes[0].interfaces).toEqual(source.nodes[0].interfaces);
+  const router=first.nodes.find(node=>node.id==="router-a");
+  expect(router.vendor).toBe("Cisco");
+  expect(router.interfaces).toEqual(source.nodes[0].interfaces);
   expect(first.nodes.map(node=>[node.x,node.y])).not.toEqual(source.nodes.map(node=>[node.x,node.y]));
  });
  it("keeps large and disconnected topologies within canonical canvas bounds",()=>{

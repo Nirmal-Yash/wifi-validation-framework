@@ -702,11 +702,9 @@ export default function TopologyStudioPage({user}){
        </g>;
       })}
      </svg>
-     </svg>
     </div>
     {!nodes.length?<EmptyState title="Canvas is empty" message="Drag a palette item here or select one above. This adds logical intent only."/>:null}
     {selectedNodes.length>1?<div className="form-grid"><div className="context-caption">{selectedNodes.length} nodes selected · {canManage?"drag any selected node to move the group together.":"view-only selection."}</div>{canManage?<div className="form-actions"><Button type="button" variant="destructive" onClick={deleteSelectedTopology}>Delete selected nodes and attached links</Button></div>:null}</div>:null}
-   </Section>
    </Section>
    <Section title="Property inspector" subtitle="Edit logical network intent, interfaces and links. Provider IDs and operational state are actual read-only observations.">
     <div className="topology-inspector-layout">
