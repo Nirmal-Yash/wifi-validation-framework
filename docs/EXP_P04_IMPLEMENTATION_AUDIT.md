@@ -58,3 +58,13 @@ The registry is a declaration of tested adapter operations, not a statement that
 \`tests/test_provider_contract.py\` covers stable capability metadata, duplicate/unknown capability handling, unknown providers, missing contract methods, GNS3 reference registration and secret-free connection projections. Existing \`tests/test_topology_apply.py\` continues to exercise the mocked GNS3 lifecycle, idempotent apply, conflicts, recovery, reconciliation and API behavior. OpenAPI tests assert the new read-only Project-scoped route.
 
 Hosted quality status is determined from the exact commit's GitHub Actions results. These software tests do not replace live GNS3 Controller acceptance, which remains a separately evidenced operator gate (RQ-042).
+
+## Exact hosted verification record
+
+- Commit: `13fd8df0d5326a1fe34adff65938c076eeabc5c0`
+- Quality workflow: [45028046927](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45028046927) — completed successfully, 3/3 jobs PASS
+- Backend correctness/session/RBAC/API contract suite: **584 passed, 7 skipped**
+- Repeated Linux locking/process/recovery reliability suite: **108 passed**
+- Frontend tests and production build: PASS
+- Dashboard launcher/proxy/authenticated-session smoke: PASS
+- No live GNS3 controller or physical Lab was operated; external acceptance remains explicitly gated under RQ-042.
