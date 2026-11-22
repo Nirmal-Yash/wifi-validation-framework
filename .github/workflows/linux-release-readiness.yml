@@ -150,7 +150,7 @@ jobs:
           PY
 
       - name: Upload release-readiness packet
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: netregress-linux-release-readiness-${{ github.sha }}
           path: |
