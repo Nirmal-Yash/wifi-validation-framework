@@ -118,6 +118,7 @@ export default function TopologyStudioPage({user}){
  const configurationProfiles=useAsyncLoader(()=>projectId?api.configurationProfiles(projectId):Promise.resolve({items:[]}),[projectId],{enabled:Boolean(projectId&&canPerform(user,"configurations.read")),queryKey:"topology-node-configuration-profiles"});
  const [providerCatalog,setProviderCatalog]=useState(null);
  const [providerPlan,setProviderPlan]=useState(null);
+ const [providerInterfaces,setProviderInterfaces]=useState(null);
  const [reconciliation,setReconciliation]=useState(null);
  const [lastApply,setLastApply]=useState(null);
  const [confirmApply,setConfirmApply]=useState(false);
@@ -145,8 +146,9 @@ export default function TopologyStudioPage({user}){
   }
  },[projects.data,projectId,workspace.activeProjectId]);
  useEffect(()=>{if(!profileId&&profileRows.length)setProfileId(profileRows[0].profile_id);},[profiles.data,profileId]);
+ useEffect(()=>{setProviderInterfaces(null);},[selectedNode,activeLabId]);
  useEffect(()=>{
-  setProviderCatalog(null);setProviderPlan(null);setReconciliation(null);setLastApply(null);
+  setProviderCatalog(null);setProviderPlan(null);setProviderInterfaces(null);setReconciliation(null);setLastApply(null);
   setConfirmApply(false);setProviderError("");
   setBindingForm({endpoint_url:"http://127.0.0.1:3080",gns3_project_id:"",controller_device_id:"",credential_id:""});
  },[activeLabId]);
@@ -510,7 +512,7 @@ export default function TopologyStudioPage({user}){
   );
   if(result){
    await providerBinding.reload().catch(()=>null);
-   setProviderCatalog(null);setProviderPlan(null);setReconciliation(null);
+   setProviderCatalog(null);setProviderPlan(null);setProviderInterfaces(null);setReconciliation(null);
   }
  }
  async function loadProviderCatalog(){
@@ -549,8 +551,20 @@ export default function TopologyStudioPage({user}){
    await applyHistory.reload().catch(()=>null);
   }
  }
+ async function inspectSelectedProviderInterfaces(){
+  const providerNodeId=reconciliation?.logical_to_provider?.[selectedNode];
+  if(!activeLabId||!providerNodeId){
+   setProviderError("Refresh reconciliation and select an observed, mapped node before inspecting provider interfaces.");return;
+  }
+  const result=await runProvider(
+   ()=>api.topologyProviderInterfaces(activeLabId,providerNodeId),
+   "Provider-observed interfaces refreshed."
+  );
+  if(result)setProviderInterfaces(result);
+ }
  async function refreshReconciliation(){
   if(!profileId||!revisionId)return;
+  setProviderInterfaces(null);
   const result=await runProvider(
    ()=>api.reconcileTopology(profileId,revisionId),
    "Observed provider state reconciled against the selected immutable revision."
@@ -568,7 +582,8 @@ export default function TopologyStudioPage({user}){
  const nodeById=Object.fromEntries(nodes.map(item=>[item.id,item]));
  const selectedNodeMappingStatus=reconciliation?.logical_to_provider?.[selectedNode]
   ?"MAPPED":reconciliation?.missing_nodes?.includes(selectedNode)?"MISSING":"UNKNOWN";
- const selectedNodeProviderState=providerCatalog?.nodes?.find(item=>item.node_id===reconciliation?.logical_to_provider?.[selectedNode])?.status||"UNKNOWN";
+ const selectedProviderNodeId=reconciliation?.logical_to_provider?.[selectedNode]||"";
+ const selectedNodeProviderState=providerCatalog?.nodes?.find(item=>item.node_id===selectedProviderNodeId)?.status||"UNKNOWN";
  const selectedLinkMappingStatus=reconciliation?.logical_to_provider_links?.[selectedLink]
   ?"MAPPED":reconciliation?.mismatched_links?.includes(selectedLink)?"MISMATCHED"
   :reconciliation?.missing_links?.includes(selectedLink)?"MISSING":"UNKNOWN";
@@ -836,7 +851,13 @@ export default function TopologyStudioPage({user}){
     {providerBinding.loading&&!providerBinding.data?<div className="context-caption">Loading saved provider binding metadata…</div>:binding?<div className="context-caption">Active binding · {binding.endpoint_url} · GNS3 project {binding.gns3_project_id} · controller {binding.controller_device_id}</div>:providerBinding.error?<div className="context-caption">Saved provider binding is unavailable; its state is not inferred.</div>:<div className="context-caption">No active GNS3 controller is bound to this Lab.</div>}
     {canManageProvider?<form className="form-grid" onSubmit={saveProviderBinding}>
      <Field label="Private GNS3 Controller URL" required><input value={bindingForm.endpoint_url} onChange={event=>setBindingForm({...bindingForm,endpoint_url:event.target.value})} placeholder="http://127.0.0.1:3080" required/></Field>
-     <Field label="GNS3 project ID" required><input value={bindingForm.gns3_project_id} onChange={event=>setBindingForm({...bindingForm,gns3_project_id:event.target.value})} maxLength={128} required/></Field>
+     <Field label="GNS3 provider project" required>
+      {providerCatalog?.projects?.length?<select value={bindingForm.gns3_project_id} onChange={event=>setBindingForm({...bindingForm,gns3_project_id:event.target.value})} required>
+       <option value="">Select observed controller project</option>
+       {providerCatalog.projects.map(item=><option key={item.project_id} value={item.project_id}>{item.name||item.project_id} · {item.status||"UNKNOWN"} · {item.project_id}</option>)}
+      </select>:<input aria-label="GNS3 provider project ID" value={bindingForm.gns3_project_id} onChange={event=>setBindingForm({...bindingForm,gns3_project_id:event.target.value})} maxLength={128} required/>}
+      <span className="field-hint">Enter the initial project ID, then inspect the controller catalogue to select from observed projects on later binding changes.</span>
+     </Field>
      <Field label="Registered controller device" required>
       <select value={bindingForm.controller_device_id} onChange={event=>setBindingForm({...bindingForm,controller_device_id:event.target.value,credential_id:""})} required>
        <option value="">Select device</option>
@@ -859,8 +880,11 @@ export default function TopologyStudioPage({user}){
      {canManageProvider?<Button variant="ghost" onClick={()=>runProvider(()=>api.archiveTopologyProvider(activeLabId).then(async result=>{await providerBinding.reload();return result;}),"Provider binding archived. No provider resources were deleted.")} loading={providerBusy}>Archive binding</Button>:null}
     </div>:null}
     {providerCatalog?<div className="form-grid">
-     <div className="context-caption">GNS3 version · {providerCatalog.version?.version||"version available"} · projects {providerCatalog.projects?.length||0} · templates {providerCatalog.templates?.length||0}</div>
+     <div className="context-caption">GNS3 version · {providerCatalog.version?.version||"version unavailable"} · projects {providerCatalog.projects?.length||0} · templates {providerCatalog.templates?.length||0}</div>
      <div className="context-caption">Observed nodes {providerCatalog.nodes?.length||0} · links {providerCatalog.links?.length||0}</div>
+     <div className="context-caption">Compute connectivity · {(providerCatalog.resources?.computes||[]).filter(item=>item.connected===true).length} connected / {(providerCatalog.resources?.computes||[]).length} reported · {(providerCatalog.resources?.computes||[]).filter(item=>item.connected===null||item.connected===undefined).length} unknown</div>
+     <div className="context-caption">Node lifecycle · {Object.entries(providerCatalog.node_lifecycle||{}).map(([status,count])=>status+" "+count).join(" · ")||"No observed nodes"}</div>
+     <div className="context-caption">Packet capture capability · {providerCatalog.capture_support?.supported?"reported at provider level":"not reported"}; link and compute readiness is checked separately.</div>
      <div className="context-caption">Catalogue inspection is read-only; provider nodes and links are not changed.</div>
     </div>:null}
     {binding&&selectedRevision?.status==="PUBLISHED"?<div className="form-grid">
@@ -876,6 +900,16 @@ export default function TopologyStudioPage({user}){
       <div className="metric-card"><strong>{providerPlan.plan.conflicts.length}</strong><span>Conflicts</span></div>
      </div>
      <p><StatusBadge value={providerPlan.plan.can_apply?"READY":"BLOCKED"}/> <span className="context-caption">Published revision SHA-256 · {providerPlan.plan.revision_sha256}</span></p>
+     <div className="provider-plan">
+      <h5>Template and image compatibility</h5>
+      {(providerPlan.plan.template_compatibility||[]).map(item=><div className="operations-detail-row" key={item.logical_node_id}>
+       <span>{item.logical_node_id} · {item.template_name||item.template_id||"Unmapped template"} · compute {item.compute_id||"unknown"}</span>
+       <strong><StatusBadge value={item.template_status==="AVAILABLE"?item.image_status:item.template_status}/> {item.compute_connected===true?"Compute connected":item.compute_connected===false?"Compute disconnected":"Compute connectivity unknown"}</strong>
+       {item.missing_images?.length?<span>Missing images: {item.missing_images.join(", ")}</span>:null}
+      </div>)}
+      <p className="context-caption">An UNKNOWN image or compute observation is shown as unknown; only an observed missing image or disconnected assigned compute blocks the plan.</p>
+     </div>
+     <div className="context-caption">Provider compute resources · {(providerPlan.plan.resource_availability?.computes||[]).length} records · source observation is read-only.</div>
      {providerPlan.plan.conflicts.length?<ul>{providerPlan.plan.conflicts.map((item,index)=><li key={index}>{item.resource_id||"Provider"}: {item.reason}</li>)}</ul>:<p>No current template or port conflicts were found in the observed provider state.</p>}
      {canApplyTopology&&providerPlan.plan.can_apply?<label className="confirm-operation">
       <input type="checkbox" checked={confirmApply} onChange={event=>setConfirmApply(event.target.checked)}/>
@@ -888,6 +922,11 @@ export default function TopologyStudioPage({user}){
      <p><StatusBadge value={reconciliation.status}/> {reconciliation.observed_managed_node_count} of {reconciliation.desired_node_count} managed nodes observed · {reconciliation.missing_nodes.length} missing nodes · {reconciliation.missing_links.length} missing links</p>
      {reconciliation.missing_nodes.length?<p>Missing nodes: {reconciliation.missing_nodes.join(", ")}</p>:null}
      {reconciliation.missing_links.length?<p>Missing links: {reconciliation.missing_links.join(", ")}</p>:null}
+     {selectedProviderNodeId?<Button type="button" variant="outline" onClick={inspectSelectedProviderInterfaces} loading={providerBusy}>Inspect selected node provider interfaces</Button>:null}
+     {providerInterfaces?.provider_node_id===selectedProviderNodeId&&selectedProviderNodeId?<div className="provider-plan">
+      <h5>Observed interfaces · {providerInterfaces.provider_node_id}</h5>
+      {providerInterfaces.interfaces?.length?<ul>{providerInterfaces.interfaces.map((item,index)=><li key={item.adapter_number+"-"+item.port_number+"-"+index}>Adapter {item.adapter_number} · Port {item.port_number} · {item.name||item.short_name||"Unnamed"} · {item.link_type||"type unknown"}</li>)}</ul>:<p className="muted">The provider returned no interfaces for this node.</p>}
+     </div>:null}
      {canOperateProvider&&providerPlan?.plan?.already_present_nodes?.length?<div className="form-actions">
       {providerPlan.plan.already_present_nodes.map(nodeId=><span key={nodeId} className="inline-node-operation"><strong>{nodeId}</strong><Button size="sm" variant="outline" onClick={()=>operateNode(nodeId,"start")} loading={providerBusy}>Start</Button><Button size="sm" variant="ghost" onClick={()=>operateNode(nodeId,"stop")} loading={providerBusy}>Stop</Button></span>)}
      </div>:null}

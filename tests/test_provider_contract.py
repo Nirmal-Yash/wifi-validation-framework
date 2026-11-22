@@ -30,6 +30,9 @@ class CompleteProvider:
     def get_interfaces(self, project_id, node_id): return []
     def get_observed_topology(self, project_id): return {"nodes": [], "links": []}
     def capture_support(self): return {"supported": False}
+    def get_resource_availability(self): return {"computes": []}
+    def get_template_image_availability(self, template_id):
+        return {"template_id": template_id, "status": "UNKNOWN", "missing_images": []}
 
 
 class IncompleteProvider:
@@ -47,6 +50,68 @@ def registry_for(factory):
         factory,
     )
     return registry
+
+
+def test_provider_session_service_resolves_vault_secret_connects_and_always_disconnects():
+    from lib.providers import ProviderSessionService
+
+    events = []
+    captured = {}
+
+    class MemoryVault:
+        def use_secret(self, credential_id, *, project_id, device_id, credential_type, actor, consumer):
+            captured.update({
+                "credential_id": credential_id, "project_id": project_id,
+                "device_id": device_id, "credential_type": credential_type, "actor": actor,
+            })
+            return consumer({"username": "provider-user"}, "ephemeral-vault-secret")
+
+    class TrackingProvider(CompleteProvider):
+        def __init__(self, endpoint_url, username, password):
+            captured.update({"endpoint_url": endpoint_url, "username": username})
+            assert password == "ephemeral-vault-secret"
+
+        def connect(self):
+            events.append("connect")
+            return {"connected": True}
+
+        def disconnect(self):
+            events.append("disconnect")
+
+    registry = ProviderRegistry()
+    registry.register(
+        ProviderDescriptor(
+            provider_id="test", name="Test provider",
+            description="A deterministic provider session fixture.",
+            capability_ids=("projects.read",),
+        ),
+        TrackingProvider,
+    )
+    sessions = ProviderSessionService(MemoryVault(), registry)
+    binding = {
+        "provider_id": "test", "endpoint_url": "https://127.0.0.1:3080",
+        "project_id": "project-1", "controller_device_id": "device-1",
+        "credential_id": "vault-ref-1",
+    }
+    result = sessions.with_provider(
+        binding, "operator",
+        lambda provider: (events.append("callback"), provider.version())[1],
+    )
+    assert result == {"version": "test"}
+    assert events == ["connect", "callback", "disconnect"]
+    assert captured == {
+        "credential_id": "vault-ref-1", "project_id": "project-1",
+        "device_id": "device-1", "credential_type": "API_TOKEN", "actor": "operator",
+        "endpoint_url": "https://127.0.0.1:3080", "username": "provider-user",
+    }
+
+    events.clear()
+    with pytest.raises(RuntimeError, match="callback failed"):
+        sessions.with_provider(
+            binding, "operator",
+            lambda provider: (_ for _ in ()).throw(RuntimeError("callback failed")),
+        )
+    assert events == ["connect", "disconnect"]
 
 
 def test_capability_catalogue_has_stable_unique_ids_and_mutation_metadata():
@@ -140,6 +205,7 @@ def test_gns3_reference_adapter_exposes_complete_contract_without_live_network(m
 
     provider = GNS3Provider("http://127.0.0.1:3080", "test-user", "transient-secret")
     requests = []
+    image_catalogue = ["router.qcow2"]
 
     def request(method, path, *, payload=None):
         requests.append((method, path, payload))
@@ -150,7 +216,25 @@ def test_gns3_reference_adapter_exposes_complete_contract_without_live_network(m
         if method == "POST" and path == "/v2/projects":
             return {"project_id": "project-new", "name": payload["name"], "status": "opened"}
         if method == "GET" and path == "/v2/templates":
-            return [{"template_id": "template-1", "name": "Router"}]
+            return [{
+                "template_id": "template-1", "name": "Router",
+                "template_type": "qemu", "compute_id": "compute-1",
+                "hda_disk_image": "router.qcow2",
+            }]
+        if method == "GET" and path == "/v2/templates/template-1":
+            return {
+                "template_id": "template-1", "template_type": "qemu",
+                "compute_id": "compute-1", "hda_disk_image": "router.qcow2",
+            }
+        if method == "GET" and path == "/v2/computes":
+            return [{
+                "compute_id": "compute-1", "name": "Local compute",
+                "connected": True, "cpu_usage_percent": 12.5,
+                "memory_usage_percent": 45.0, "host": "must-not-be-exposed",
+                "last_error": "must-not-be-exposed",
+            }]
+        if method == "GET" and path == "/v2/computes/compute-1/qemu/images":
+            return list(image_catalogue)
         if method == "POST" and path.endswith("/templates/template-1"):
             return {"node_id": "node-1", "name": payload["name"], "status": "stopped"}
         if method == "GET" and path.endswith("/nodes/node-1"):
@@ -177,11 +261,23 @@ def test_gns3_reference_adapter_exposes_complete_contract_without_live_network(m
         "connection.health.read", "labs.create", "labs.delete",
         "topology.nodes.delete", "topology.links.delete",
         "topology.interfaces.read", "topology.observed.read",
-        "packet_capture.supported",
+        "packet_capture.supported", "resources.availability.read", "templates.images.read",
     } <= capability_ids
 
     assert provider.list_projects()[0]["project_id"] == "project-1"
     assert provider.list_templates()[0]["template_id"] == "template-1"
+    resources = provider.get_resource_availability()
+    assert resources["computes"][0]["cpu_usage_percent"] == 12.5
+    assert resources["computes"][0]["memory_usage_percent"] == 45.0
+    assert "host" not in resources["computes"][0] and "last_error" not in resources["computes"][0]
+    image_check = provider.get_template_image_availability("template-1")
+    assert image_check["status"] == "AVAILABLE"
+    assert image_check["required_images"] == ["router.qcow2"]
+    image_catalogue.clear()
+    missing_image_check = provider.get_template_image_availability("template-1")
+    assert missing_image_check["status"] == "MISSING"
+    assert missing_image_check["missing_images"] == ["router.qcow2"]
+    image_catalogue.append("router.qcow2")
     assert provider.create_lab("New Lab")["project_id"] == "project-new"
     provider.delete_lab("project-new")
     assert provider.create_node("project-1", "template-1", name="Router", x=10, y=20)["node_id"] == "node-1"

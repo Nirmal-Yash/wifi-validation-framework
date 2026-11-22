@@ -15,6 +15,7 @@ from typing import Any, Callable, Mapping
 
 from lib.services.gns3_provider import GNS3Provider, GNS3ProviderError
 from lib.services.resource_lock import ResourceLockError, ResourceLockManager
+from lib.providers import ProviderRegistry, ProviderSessionService
 
 
 class WiFiLabProvisioningError(RuntimeError):
@@ -35,12 +36,18 @@ class WiFiLabProvisioningService:
 
     def __init__(
         self, database, credential_vault, *, resource_lock_manager=None,
-        provider_factory: Callable[..., GNS3Provider] = GNS3Provider,
+        provider_factory: Callable[..., GNS3Provider] | None = None,
+        provider_registry=None, provider_session_service=None,
         sleep: Callable[[float], None] = time.sleep,
     ):
         self.database = database
         self.credential_vault = credential_vault
-        self.provider_factory = provider_factory
+        self.provider_registry = provider_registry or ProviderRegistry.with_gns3(
+            factory=provider_factory or GNS3Provider,
+        )
+        self.provider_session_service = provider_session_service or ProviderSessionService(
+            self.credential_vault, self.provider_registry,
+        )
         self.sleep = sleep
         if resource_lock_manager is None:
             from pathlib import Path
@@ -74,20 +81,23 @@ class WiFiLabProvisioningService:
         return dict(row)
 
     def _with_provider(self, binding: dict, actor: str, callback):
-        def invoke(record: Mapping[str, object], secret: str):
-            provider = self.provider_factory(
-                binding["endpoint_url"], str(record.get("username") or ""), secret,
-            )
-            return callback(provider)
+        return self.provider_session_service.with_provider(binding, actor, callback)
 
-        return self.credential_vault.use_secret(
-            binding["credential_id"],
-            project_id=binding["project_id"],
-            device_id=binding["controller_device_id"],
-            credential_type="API_TOKEN",
-            actor=actor,
-            consumer=invoke,
+    def _require_provider_capability(self, binding: Mapping[str, Any], capability_id: str) -> None:
+        self.provider_registry.require_capability(
+            str(binding.get("provider_id") or "gns3"), capability_id,
         )
+
+    @staticmethod
+    def _observed_topology(provider, project_id: str) -> tuple[list[dict], list[dict]]:
+        observed = provider.get_observed_topology(project_id)
+        if (
+            not isinstance(observed, dict)
+            or not isinstance(observed.get("nodes"), list)
+            or not isinstance(observed.get("links"), list)
+        ):
+            raise WiFiLabProvisioningError("provider returned an invalid observed-topology snapshot")
+        return observed["nodes"], observed["links"]
 
     @staticmethod
     def _port_set(node: Mapping[str, Any]) -> set[tuple[int, int]]:
@@ -230,6 +240,8 @@ class WiFiLabProvisioningService:
         binding = self._binding(str(lab_id))
         try:
             def inspect(provider):
+                self._require_provider_capability(binding, "projects.read")
+                self._require_provider_capability(binding, "topology.observed.read")
                 projects = provider.list_projects()
                 project = next(
                     (item for item in projects if item.get("project_id") == binding["gns3_project_id"]),
@@ -237,8 +249,7 @@ class WiFiLabProvisioningService:
                 )
                 if project is None:
                     raise WiFiLabProvisioningNotFound("bound GNS3 project is not visible to the linked controller credential")
-                nodes = provider.list_nodes(binding["gns3_project_id"])
-                links = provider.list_links(binding["gns3_project_id"])
+                nodes, links = self._observed_topology(provider, binding["gns3_project_id"])
                 result = self.analyze_snapshot(
                     project_id=binding["gns3_project_id"],
                     project_status=str(project.get("status", "")),
@@ -275,6 +286,8 @@ class WiFiLabProvisioningService:
 
         try:
             def execute(provider):
+                self._require_provider_capability(binding, "projects.read")
+                self._require_provider_capability(binding, "topology.observed.read")
                 projects = provider.list_projects()
                 project = next(
                     (item for item in projects if item.get("project_id") == binding["gns3_project_id"]),
@@ -286,8 +299,7 @@ class WiFiLabProvisioningService:
                     raise WiFiLabProvisioningConflict(
                         "bound GNS3 project is closed; open it in GNS3 and request a fresh plan"
                     )
-                before_nodes = provider.list_nodes(binding["gns3_project_id"])
-                before_links = provider.list_links(binding["gns3_project_id"])
+                before_nodes, before_links = self._observed_topology(provider, binding["gns3_project_id"])
                 plan = self.analyze_snapshot(
                     project_id=binding["gns3_project_id"],
                     project_status=str(project.get("status", "")),
@@ -302,6 +314,7 @@ class WiFiLabProvisioningService:
                 operations = {"created_management_link": False, "started_nodes": [], "already_running_nodes": []}
                 link = plan["management_link"]
                 if plan["mutations"]["create_management_link"]:
+                    self._require_provider_capability(binding, "topology.links.create")
                     provider.create_link(
                         binding["gns3_project_id"],
                         source_node_id=link["client_node_id"],
@@ -311,7 +324,7 @@ class WiFiLabProvisioningService:
                         target_adapter=link["switch_adapter"],
                         target_port=link["switch_port"],
                     )
-                    observed = provider.list_links(binding["gns3_project_id"])
+                    _observed_nodes, observed = self._observed_topology(provider, binding["gns3_project_id"])
                     used = self._used_ports(observed)
                     expected = {
                         (link["client_node_id"], 1, 0),
@@ -340,20 +353,17 @@ class WiFiLabProvisioningService:
                     if status in {"started", "running"}:
                         operations["already_running_nodes"].append(item)
                         continue
+                    self._require_provider_capability(binding, "topology.nodes.start")
+                    self._require_provider_capability(binding, "topology.nodes.state.read")
                     provider.start_node(binding["gns3_project_id"], node_id)
-                    refreshed = provider.list_nodes(binding["gns3_project_id"])
-                    observed_node = next(
-                        (value for value in refreshed if value.get("node_id") == node_id),
-                        None,
-                    )
+                    observed_node = provider.get_node_state(binding["gns3_project_id"], node_id)
                     if observed_node is None or str(observed_node.get("status", "")).lower() not in {"started", "running"}:
                         raise WiFiLabProvisioningError(
                             "GNS3 node lifecycle read-back did not confirm the requested started state"
                         )
                     operations["started_nodes"].append(item)
 
-                after_nodes = provider.list_nodes(binding["gns3_project_id"])
-                after_links = provider.list_links(binding["gns3_project_id"])
+                after_nodes, after_links = self._observed_topology(provider, binding["gns3_project_id"])
                 after = self.analyze_snapshot(
                     project_id=binding["gns3_project_id"],
                     project_status="opened",

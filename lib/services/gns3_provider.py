@@ -145,10 +145,103 @@ class GNS3Provider:
         value = self._request("GET", "/v2/templates")
         if not isinstance(value, list):
             raise GNS3ProviderError("GNS3 template catalogue is invalid")
+        allowed = (
+            "template_id", "name", "category", "builtin", "template_type", "compute_id",
+            "default_name_format", "symbol", "hda_disk_image", "hdb_disk_image",
+            "hdc_disk_image", "hdd_disk_image", "cdrom_image", "kernel_image",
+            "initrd", "bios_image", "image", "docker_image", "iou_path",
+            "image_name", "ram", "cpus",
+        )
         return [
-            {key: item[key] for key in ("template_id", "name", "category", "builtin") if key in item}
+            {key: item[key] for key in allowed if key in item}
             for item in value if isinstance(item, dict)
         ]
+
+    def get_resource_availability(self) -> dict:
+        """Return bounded controller observations for the registered compute pool."""
+        value = self._request("GET", "/v2/computes")
+        if not isinstance(value, list):
+            raise GNS3ProviderError("GNS3 compute availability response is invalid")
+        computes = []
+        for item in value:
+            if not isinstance(item, dict) or not isinstance(item.get("compute_id"), str):
+                continue
+            row = {
+                "compute_id": item["compute_id"],
+                "name": item.get("name") if isinstance(item.get("name"), str) else item["compute_id"],
+                "connected": item.get("connected") if isinstance(item.get("connected"), bool) else None,
+            }
+            for field in ("cpu_usage_percent", "memory_usage_percent"):
+                raw = item.get(field)
+                row[field] = (
+                    round(float(raw), 2)
+                    if isinstance(raw, (int, float)) and not isinstance(raw, bool) and 0 <= raw <= 100
+                    else None
+                )
+            computes.append(row)
+        return {
+            "computes": computes,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def get_template_image_availability(self, template_id: str) -> dict:
+        """Check declared image filenames against the assigned GNS3 compute catalogue."""
+        template = self._segment(template_id, "template_id")
+        value = self._request("GET", f"/v2/templates/{template}")
+        if not isinstance(value, dict) or value.get("template_id") != template_id:
+            raise GNS3ProviderError("GNS3 template detail response is invalid")
+        observed_at = datetime.now(timezone.utc).isoformat()
+        if value.get("builtin") is True:
+            return {
+                "template_id": template_id, "status": "NOT_REQUIRED",
+                "required_images": [], "available_images": [], "missing_images": [],
+                "observed_at": observed_at,
+            }
+        emulator_by_type = {
+            "qemu": "qemu", "dynamips": "dynamips", "iou": "iou",
+            "docker": "docker", "vmware": "vmware", "virtualbox": "virtualbox",
+        }
+        emulator = emulator_by_type.get(value.get("template_type"))
+        required_images = sorted({
+            item.strip() for key, item in value.items()
+            if isinstance(item, str) and item.strip()
+            and (key.endswith("_image") or key in {"image", "docker_image", "iou_path", "image_name"})
+        })
+        compute_id = value.get("compute_id")
+        if not emulator or not required_images or not isinstance(compute_id, str) or not compute_id:
+            return {
+                "template_id": template_id, "status": "UNKNOWN",
+                "compute_id": compute_id if isinstance(compute_id, str) else None,
+                "required_images": required_images, "available_images": [],
+                "missing_images": [],
+                "reason": "GNS3 did not expose a supported compute and explicit image requirement for this template",
+                "observed_at": observed_at,
+            }
+        compute = self._segment(compute_id, "compute_id")
+        images = self._request("GET", f"/v2/computes/{compute}/{emulator}/images")
+        if not isinstance(images, list):
+            raise GNS3ProviderError("GNS3 compute image catalogue is invalid")
+        available_names = set()
+        for item in images:
+            candidate = item if isinstance(item, str) else None
+            if isinstance(item, dict):
+                candidate = next(
+                    (item[key] for key in ("filename", "name", "image", "path") if isinstance(item.get(key), str)),
+                    None,
+                )
+            if isinstance(candidate, str) and candidate.strip():
+                available_names.add(candidate.strip().replace("\\\\", "/").rsplit("/", 1)[-1].casefold())
+        available = [
+            image for image in required_images
+            if image.replace("\\\\", "/").rsplit("/", 1)[-1].casefold() in available_names
+        ]
+        missing = [image for image in required_images if image not in available]
+        return {
+            "template_id": template_id, "compute_id": compute_id,
+            "status": "AVAILABLE" if not missing else "MISSING",
+            "required_images": required_images, "available_images": available,
+            "missing_images": missing, "observed_at": observed_at,
+        }
 
     def list_nodes(self, project_id: str) -> list[dict]:
         project = self._segment(project_id, "project_id")

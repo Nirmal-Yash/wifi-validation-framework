@@ -79,6 +79,8 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     topology_apply=TopologyApplyService(query.database,credential_vault,topology_studio)
     wifi_lab_provisioner=WiFiLabProvisioningService(
         query.database,credential_vault,resource_lock_manager=topology_apply.resource_lock_manager,
+        provider_registry=topology_apply.provider_registry,
+        provider_session_service=topology_apply.provider_session_service,
     )
     pipeline_service=PipelineService(query.database)
     organization_repository=SQLiteOrganizationRepository(query.database)
@@ -2640,6 +2642,23 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             return error("PROVIDER_CATALOG_BLOCKED", str(exc), 409)
         except TopologyApplyError as exc:
             return error("PROVIDER_CATALOG_FAILED", str(exc), 502)
+        return ok(result)
+
+    @api.get("/labs/<lab_id>/provider-nodes/<provider_node_id>/interfaces")
+    def get_topology_provider_node_interfaces(lab_id, provider_node_id):
+        _lab, denied = _provider_lab_scope(lab_id, "topology.read")
+        if denied is not None:
+            return denied
+        try:
+            result = topology_apply.provider_interfaces(
+                lab_id, provider_node_id, actor=_topology_actor(),
+            )
+        except TopologyApplyNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except TopologyApplyConflict as exc:
+            return error("PROVIDER_INTERFACE_DISCOVERY_BLOCKED", str(exc), 409)
+        except TopologyApplyError as exc:
+            return error("PROVIDER_INTERFACE_DISCOVERY_FAILED", str(exc), 502)
         return ok(result)
 
     @api.post("/topologies/<profile_id>/plan")

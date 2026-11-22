@@ -16,6 +16,8 @@ DEFAULT_CAPABILITIES = (
     ProviderCapability("labs.delete", "Delete provider labs", "Delete a provider workspace after explicit destructive confirmation.", True, True),
     ProviderCapability("packet_capture.supported", "Report packet-capture support", "Report provider packet-capture capability; individual links may impose additional constraints."),
     ProviderCapability("projects.read", "List provider projects", "Discover projects visible to the configured provider credential."),
+    ProviderCapability("resources.availability.read", "Read provider compute availability", "Read compute connectivity and reported CPU/RAM utilization without reserving resources."),
+    ProviderCapability("templates.images.read", "Check template image availability", "Compare declared template image requirements with the selected compute image catalogue."),
     ProviderCapability("templates.read", "List provider templates", "Discover available node templates without creating resources."),
     ProviderCapability("topology.interfaces.read", "Read node interfaces", "Discover interfaces, adapter numbers and ports exposed by an observed node."),
     ProviderCapability("topology.links.create", "Create topology links", "Create links between observed provider nodes and ports.", True, True),
@@ -68,7 +70,8 @@ class ProviderRegistry:
         "list_projects", "create_lab", "delete_lab", "list_templates", "list_nodes",
         "list_links", "create_node", "delete_node", "start_node", "stop_node",
         "get_node_state", "create_link", "delete_link", "get_interfaces",
-        "get_observed_topology", "capture_support",
+        "get_observed_topology", "capture_support", "get_resource_availability",
+        "get_template_image_availability",
     )
 
     def __init__(self, capability_registry: CapabilityRegistry | None = None):

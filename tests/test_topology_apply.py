@@ -12,6 +12,7 @@ from lib.services.topology_apply import (
     TopologyApplyConflict, TopologyApplyError, TopologyApplyService,
 )
 from lib.services.topology_studio import TopologyStudioService
+from lib.services.wifi_lab_provisioning import WiFiLabProvisioningService
 
 
 class MemorySecretStore:
@@ -30,6 +31,7 @@ class MemorySecretStore:
 
 class FakeGNS3Provider:
     state = None
+    session_events = []
 
     @staticmethod
     def validate_endpoint(value, *, expected_host=None):
@@ -46,9 +48,11 @@ class FakeGNS3Provider:
         self.state = type(self).state
 
     def connect(self):
+        self.session_events.append("connect")
         return self.health_check()
 
     def disconnect(self):
+        self.session_events.append("disconnect")
         return None
 
     def health_check(self):
@@ -83,6 +87,16 @@ class FakeGNS3Provider:
 
     def capture_support(self):
         return {"supported": True, "scope": "link"}
+
+    def get_resource_availability(self):
+        return {"computes": [], "observed_at": "2026-11-22T00:00:00+00:00"}
+
+    def get_template_image_availability(self, template_id):
+        status = self.state.get("image_status", "UNKNOWN")
+        return {
+            "template_id": template_id, "status": status,
+            "missing_images": ["required-image.qcow2"] if status == "MISSING" else [],
+        }
 
     def version(self):
         return {"version": "2.2.0"}
@@ -191,6 +205,7 @@ def apply_stack(tmp_path, monkeypatch):
     revision = studio.create_revision(profile["profile_id"], definition=definition(), actor="owner")
     revision = studio.publish(profile["profile_id"], revision["revision_id"], actor="owner")
     FakeGNS3Provider.state = {"nodes": [], "links": []}
+    FakeGNS3Provider.session_events = []
     monkeypatch.setattr(apply_module, "GNS3Provider", FakeGNS3Provider)
     service = TopologyApplyService(
         database, vault, studio,
@@ -201,6 +216,8 @@ def apply_stack(tmp_path, monkeypatch):
         gns3_project_id="gns3-project", controller_device_id=device["device_id"],
         credential_id=credential["credential_id"], actor="owner",
     )
+    # Binding verifies through the shared session; isolate events for each test body.
+    FakeGNS3Provider.session_events = []
     return database, store, service, profile, revision, binding, FakeGNS3Provider.state
 
 
@@ -232,13 +249,28 @@ def test_binding_requires_lab_scoped_controller_and_api_token(apply_stack):
         )
 
 
+def test_binding_verification_uses_the_shared_provider_session(apply_stack):
+    _database, _store, service, _profile, _revision, binding, _state = apply_stack
+    assert FakeGNS3Provider.session_events == []
+    service.bind(
+        "lab-1", endpoint_url=binding["endpoint_url"],
+        gns3_project_id=binding["gns3_project_id"],
+        controller_device_id=binding["controller_device_id"],
+        credential_id=binding["credential_id"], actor="owner",
+    )
+    assert FakeGNS3Provider.session_events == ["connect", "disconnect"]
+
+
 def test_dry_run_is_read_only_and_apply_is_repeatable_and_reconciles(apply_stack):
     database, store, service, profile, revision, _binding, provider_state = apply_stack
     planned = service.plan(profile["profile_id"], revision["revision_id"], actor="owner")
     assert planned["plan"]["can_apply"] is True
     assert len(planned["plan"]["nodes_to_create"]) == 2
     assert planned["plan"]["links_pending_nodes"] == ["link-a"]
+    assert {item["image_status"] for item in planned["plan"]["template_compatibility"]} == {"UNKNOWN"}
+    assert planned["plan"]["resource_availability"]["computes"] == []
     assert provider_state["nodes"] == [] and provider_state["links"] == []
+    assert FakeGNS3Provider.session_events[-2:] == ["connect", "disconnect"]
     with database.connection() as connection:
         assert connection.execute("SELECT COUNT(*) FROM topology_provider_mappings").fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM topology_apply_records").fetchone()[0] == 0
@@ -258,6 +290,10 @@ def test_dry_run_is_read_only_and_apply_is_repeatable_and_reconciles(apply_stack
         "router-a": "provider-node-1", "switch-a": "provider-node-2",
     }
     assert observed["logical_to_provider_links"] == {"link-a": "provider-link-1"}
+    interfaces = service.provider_interfaces(
+        "lab-1", observed["logical_to_provider"]["router-a"], actor="owner",
+    )
+    assert interfaces["interfaces"][0]["port_number"] == 0
 
     repeat_plan = service.plan(profile["profile_id"], revision["revision_id"], actor="owner")["plan"]
     assert repeat_plan["nodes_to_create"] == []
@@ -384,7 +420,10 @@ def test_topology_provider_dashboard_routes_are_wired_and_idempotent(apply_stack
 
     catalog = client.get("/api/v1/labs/lab-1/provider-catalog")
     assert catalog.status_code == 200
-    assert len(catalog.get_json()["data"]["catalog"]["templates"]) == 2
+    catalog_data = catalog.get_json()["data"]["catalog"]
+    assert len(catalog_data["templates"]) == 2
+    assert catalog_data["resources"]["computes"] == []
+    assert catalog_data["capture_support"]["supported"] is True
 
     planned = client.post(
         "/api/v1/topologies/" + profile["profile_id"] + "/plan",
@@ -392,7 +431,9 @@ def test_topology_provider_dashboard_routes_are_wired_and_idempotent(apply_stack
         headers={"Idempotency-Key": "topology-dashboard-plan-01"},
     )
     assert planned.status_code == 200
-    assert planned.get_json()["data"]["plan"]["can_apply"] is True
+    planned_data = planned.get_json()["data"]["plan"]
+    assert planned_data["can_apply"] is True
+    assert {item["template_status"] for item in planned_data["template_compatibility"]} == {"AVAILABLE"}
     assert state["nodes"] == [] and state["links"] == []
 
     payload = {
@@ -424,7 +465,15 @@ def test_topology_provider_dashboard_routes_are_wired_and_idempotent(apply_stack
         + "?revision_id=" + revision["revision_id"]
     )
     assert reconciled.status_code == 200
-    assert reconciled.get_json()["data"]["status"] == "IN_SYNC"
+    reconciliation_data = reconciled.get_json()["data"]
+    assert reconciliation_data["status"] == "IN_SYNC"
+
+    provider_node_id = reconciliation_data["logical_to_provider"]["router-a"]
+    interfaces = client.get(
+        "/api/v1/labs/lab-1/provider-nodes/" + provider_node_id + "/interfaces"
+    )
+    assert interfaces.status_code == 200
+    assert interfaces.get_json()["data"]["interfaces"][0]["port_number"] == 0
 
     started = client.post(
         "/api/v1/topologies/" + profile["profile_id"] + "/nodes/router-a/start",
@@ -445,6 +494,7 @@ def test_topology_provider_dashboard_routes_are_wired_and_idempotent(apply_stack
     assert "transient-provider-secret" not in json.dumps({
         "binding": current_binding.get_json(), "catalog": catalog.get_json(),
         "plan": planned.get_json(), "apply": applied.get_json(), "history": history.get_json(),
+        "interfaces": interfaces.get_json(),
     })
 
     archived = client.delete(
@@ -454,6 +504,62 @@ def test_topology_provider_dashboard_routes_are_wired_and_idempotent(apply_stack
     assert archived.status_code == 200
     assert archived.get_json()["data"]["binding"]["status"] == "ARCHIVED"
     assert client.get("/api/v1/labs/lab-1/provider-binding").get_json()["data"]["binding"] is None
+
+
+def test_template_image_missing_blocks_provider_plan_without_mutating_provider(apply_stack):
+    _database, _store, service, profile, revision, _binding, state = apply_stack
+    state["image_status"] = "MISSING"
+    plan = service.plan(profile["profile_id"], revision["revision_id"], actor="owner")["plan"]
+    assert plan["can_apply"] is False
+    assert {item["image_status"] for item in plan["template_compatibility"]} == {"MISSING"}
+    assert any("required template images are unavailable" in item["reason"] for item in plan["conflicts"])
+    assert state["nodes"] == [] and state["links"] == []
+
+
+def test_wifi_provisioner_reuses_common_registry_and_vault_session(apply_stack):
+    database, _store, topology_apply, _profile, _revision, _binding, state = apply_stack
+    nodes = [
+        {"node_id": "frr", "name": "frr-router", "status": "stopped",
+         "ports": [{"adapter_number": 0, "port_number": 0}]},
+        {"node_id": "ap", "name": "hostapd-ap", "status": "stopped",
+         "ports": [{"adapter_number": 0, "port_number": 0}]},
+        {"node_id": "client", "name": "wifi-client", "status": "stopped",
+         "ports": [{"adapter_number": 0, "port_number": 0}, {"adapter_number": 1, "port_number": 0}]},
+        {"node_id": "monitor", "name": "monitor", "status": "stopped",
+         "ports": [{"adapter_number": 0, "port_number": 0}]},
+        {"node_id": "switch", "name": "Switch1", "status": "stopped",
+         "ports": [{"adapter_number": 0, "port_number": 0}, {"adapter_number": 0, "port_number": 1}]},
+        {"node_id": "cloud", "name": "Cloud", "status": "stopped",
+         "ports": [{"adapter_number": 0, "port_number": 0}]},
+    ]
+    state["nodes"] = nodes
+    state["links"] = [{
+        "link_id": "existing-router-management",
+        "nodes": [
+            {"node_id": "switch", "adapter_number": 0, "port_number": 0},
+            {"node_id": "frr", "adapter_number": 0, "port_number": 0},
+        ],
+    }]
+    wifi = WiFiLabProvisioningService(
+        database, topology_apply.credential_vault,
+        resource_lock_manager=topology_apply.resource_lock_manager,
+        provider_registry=topology_apply.provider_registry,
+        provider_session_service=topology_apply.provider_session_service,
+    )
+    assert wifi.provider_registry is topology_apply.provider_registry
+    assert wifi.provider_session_service is topology_apply.provider_session_service
+
+    plan = wifi.plan("lab-1", actor="owner")
+    assert plan["can_apply"] is True
+    assert plan["mutations"]["create_management_link"] is True
+    assert len(state["links"]) == 1
+
+    result = wifi.apply("lab-1", confirmed=True, actor="owner")
+    assert result["status"] == "APPLIED"
+    assert result["operations"]["created_management_link"] is True
+    assert [item for item in state["nodes"] if item["status"] == "started"]
+    assert FakeGNS3Provider.session_events.count("connect") == 2
+    assert FakeGNS3Provider.session_events.count("disconnect") == 2
 
 
 def test_template_drift_blocks_apply_and_is_reported_by_reconciliation(apply_stack):

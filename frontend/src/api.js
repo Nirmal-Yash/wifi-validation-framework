@@ -136,6 +136,7 @@ export const api={
  bindTopologyProvider:(labId,payload)=>request("/labs/"+encode(labId)+"/provider-binding",{method:"PUT",body:JSON.stringify(payload),headers:{"Idempotency-Key":newKey()}}),
  archiveTopologyProvider:labId=>request("/labs/"+encode(labId)+"/provider-binding",{method:"DELETE",headers:{"Idempotency-Key":newKey()}}),
  topologyProviderCatalog:labId=>request("/labs/"+encode(labId)+"/provider-catalog"),
+ topologyProviderInterfaces:(labId,nodeId)=>request("/labs/"+encode(labId)+"/provider-nodes/"+encode(nodeId)+"/interfaces"),
  planTopologyApply:(profileId,payload)=>request("/topologies/"+encode(profileId)+"/plan",{method:"POST",body:JSON.stringify(payload)}),
  applyTopology:(profileId,payload)=>request("/topologies/"+encode(profileId)+"/apply",{method:"POST",body:JSON.stringify(payload)}),
  reconcileTopology:(profileId,revisionId)=>request("/topologies/"+encode(profileId)+"/reconciliation"+query({revision_id:revisionId})),

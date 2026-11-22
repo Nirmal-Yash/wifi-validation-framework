@@ -32,6 +32,8 @@ def build_pipeline_handlers(database, credential_vault, *, run_process_manager: 
     wifi = WiFiLabProvisioningService(
         database, credential_vault,
         resource_lock_manager=topology_apply.resource_lock_manager,
+        provider_registry=topology_apply.provider_registry,
+        provider_session_service=topology_apply.provider_session_service,
     )
     performance_policies = PerformancePolicyService(database)
     device_inventory = DeviceInventoryService(database)

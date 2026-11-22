@@ -169,6 +169,113 @@ paths:
         "400": {description: Missing project_id (INVALID_REQUEST)}
         "401": {description: Missing or expired authenticated session}
         "403": {description: Caller lacks topology.read in the selected Project}
+  /labs/{lab_id}/provider-catalog:
+    get:
+      operationId: inspectLabProviderCatalog
+      summary: Inspect the bound provider project, templates, nodes, links and compute observations
+      description: >-
+        Performs a bounded, authenticated, read-only observation through the registered
+        provider adapter and the Lab's Credential Vault reference. Requires topology.read
+        in the Lab's Project. Returns the controller project catalogue, safe template
+        metadata, actual node/link inventory, compute connectivity/utilization observations,
+        node lifecycle counts and adapter-level packet-capture capability. Image availability
+        is returned by the dry-run plan for the templates mapped by its immutable revision.
+        No provider resources are created, deleted, started, stopped or rewired.
+      parameters:
+        - name: lab_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        "200": {description: Actual provider catalogue and current compute resource observations}
+        "401": {description: Missing or expired authenticated session}
+        "403": {description: Caller lacks topology.read in the Lab's Project}
+        "404": {description: Lab or active provider binding not found}
+        "502": {description: Provider catalogue observation failed}
+  /labs/{lab_id}/provider-nodes/{provider_node_id}/interfaces:
+    get:
+      operationId: inspectLabProviderNodeInterfaces
+      summary: Inspect actual provider interfaces for an observed node
+      description: >-
+        Resolves the active Project/Lab binding, opens a read-only provider session
+        through the Credential Vault and verifies the provider node exists in the bound
+        controller project before returning its actual adapter/port inventory. Requires
+        topology.read. Does not create or modify provider resources.
+      parameters:
+        - name: lab_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - name: provider_node_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        "200":
+          description: Actual provider interface inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    required: [lab_id, project_id, provider_project_id, provider_node_id, interfaces, observed_at]
+                    properties:
+                      lab_id: {type: string}
+                      project_id: {type: string}
+                      provider_project_id: {type: string}
+                      provider_node_id: {type: string}
+                      observed_at: {type: string, format: date-time}
+                      interfaces:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            adapter_number: {type: integer, minimum: 0, maximum: 255}
+                            port_number: {type: integer, minimum: 0, maximum: 255}
+                            name: {type: string}
+                            short_name: {type: string}
+                            link_type: {type: string}
+        "401": {description: Missing or expired authenticated session}
+        "403": {description: Caller lacks topology.read in the Lab's Project}
+        "404": {description: Lab, binding or observed provider node not found}
+        "502": {description: Provider interface observation failed}
+  /topologies/{profile_id}/plan:
+    post:
+      operationId: planTopologyProviderApply
+      summary: Build a read-only provider topology apply plan
+      description: >-
+        Requires topology.read for the topology profile's Project and a published immutable
+        revision scoped to the selected Lab. Uses the common provider adapter to observe
+        provider projects, template catalogue, compute availability, mapped-template image
+        availability, actual nodes and links. The plan reports template/compute/image
+        compatibility, provider node lifecycle and port conflicts. UNKNOWN observations
+        remain explicit and do not become claims of availability. No provider resources
+        are mutated; a later apply must re-check live observations and the revision SHA-256
+        and require explicit confirmation.
+      parameters:
+        - name: profile_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revision_id]
+              properties:
+                revision_id: {type: string, minLength: 1}
+      responses:
+        "200": {description: Dry-run plan, template compatibility and actual provider observations}
+        "400": {description: Invalid plan request}
+        "401": {description: Missing or expired authenticated session}
+        "403": {description: Caller lacks topology.read in the profile's Project}
+        "404": {description: Profile, revision or active provider binding not found}
+        "409": {description: Provider state conflicts with the published topology}
+        "502": {description: Provider observation failed}
   /health: {get: {security: [], responses: {"200": {description: Healthy}}}}
   /readiness: {get: {responses: {"200": {description: Ready}}}}
   /auth/csrf:

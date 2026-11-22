@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from lib.services.gns3_provider import GNS3Provider, GNS3ProviderError
-from lib.providers import ProviderCapabilityError, ProviderConnectionRecord, ProviderRegistry
+from lib.providers import ProviderCapabilityError, ProviderConnectionRecord, ProviderRegistry, ProviderSessionService
 from lib.services.resource_lock import ResourceLockError, ResourceLockManager
 
 
@@ -33,7 +33,7 @@ class TopologyApplyConflict(TopologyApplyError):
 
 
 class TopologyApplyService:
-    def __init__(self, database, credential_vault, topology_studio, *, resource_lock_manager=None, provider_registry=None):
+    def __init__(self, database, credential_vault, topology_studio, *, resource_lock_manager=None, provider_registry=None, provider_session_service=None):
         self.database = database
         self.credential_vault = credential_vault
         self.topology_studio = topology_studio
@@ -41,6 +41,9 @@ class TopologyApplyService:
         # points while all provider consumers use the common registry.
         self.provider_registry = provider_registry or ProviderRegistry.with_gns3(
             factory=lambda *args, **kwargs: GNS3Provider(*args, **kwargs)
+        )
+        self.provider_session_service = provider_session_service or ProviderSessionService(
+            self.credential_vault, self.provider_registry,
         )
         if resource_lock_manager is None:
             directory = Path(
@@ -174,23 +177,21 @@ class TopologyApplyService:
             raise TopologyApplyConflict("an active API_TOKEN credential for the registered controller device is required")
 
         def verify(provider):
-            provider.connect()
-            try:
-                self._require_provider_capability("gns3", "projects.read")
-                projects = provider.list_projects()
-                if not any(item.get("project_id") == gns3_project_id for item in projects):
-                    raise TopologyApplyNotFound("selected GNS3 project is not available to this credential")
-                return True
-            finally:
-                provider.disconnect()
+            self._require_provider_capability("gns3", "projects.read")
+            projects = provider.list_projects()
+            if not any(item.get("project_id") == gns3_project_id for item in projects):
+                raise TopologyApplyNotFound("selected GNS3 project is not available to this credential")
+            return True
 
         try:
-            self.credential_vault.use_secret(
-                credential_id, project_id=lab["project_id"], device_id=controller_device_id,
-                credential_type="API_TOKEN", actor=actor,
-                consumer=lambda record, secret: verify(
-                    self.provider_registry.create("gns3", endpoint, str(record["username"]), secret)
-                ),
+            self.provider_session_service.with_provider(
+                {
+                    "provider_id": "gns3", "endpoint_url": endpoint,
+                    "project_id": lab["project_id"],
+                    "controller_device_id": controller_device_id,
+                    "credential_id": credential_id,
+                },
+                actor, verify,
             )
         except (TopologyApplyNotFound, TopologyApplyConflict):
             raise
@@ -289,28 +290,14 @@ class TopologyApplyService:
         return profile, revision
 
     def _with_provider(self, binding: dict, actor: str, callback):
-        provider_id = str(binding.get("provider_id") or "gns3")
+        return self.provider_session_service.with_provider(binding, actor, callback)
 
-        def invoke(record: Mapping[str, object], secret: str):
-            provider = self.provider_registry.create(
-                provider_id, binding["endpoint_url"], str(record.get("username") or ""), secret,
-            )
-            try:
-                provider.connect()
-                return callback(provider)
-            finally:
-                provider.disconnect()
-        return self.credential_vault.use_secret(
-            binding["credential_id"], project_id=binding["project_id"],
-            device_id=binding["controller_device_id"], credential_type="API_TOKEN",
-            actor=actor, consumer=invoke,
-        )
-
-    def _snapshot(self, provider, binding: dict) -> dict:
+    def _snapshot(self, provider, binding: dict, *, template_ids=()) -> dict:
         provider_id = str(binding.get("provider_id") or "gns3")
         for capability_id in (
             "controller.version.read", "projects.read", "templates.read",
             "topology.nodes.read", "topology.links.read", "topology.observed.read",
+            "resources.availability.read",
         ):
             self._require_provider_capability(provider_id, capability_id)
         projects = provider.list_projects()
@@ -319,12 +306,41 @@ class TopologyApplyService:
         observed = provider.get_observed_topology(binding["gns3_project_id"])
         if not isinstance(observed, dict) or not isinstance(observed.get("nodes"), list) or not isinstance(observed.get("links"), list):
             raise TopologyApplyError("provider returned an invalid observed-topology snapshot")
+        resources = provider.get_resource_availability()
+        if not isinstance(resources, dict) or not isinstance(resources.get("computes"), list):
+            raise TopologyApplyError("provider returned an invalid resource-availability observation")
+        templates = provider.list_templates()
+        template_images = {}
+        requested_templates = sorted({str(item).strip() for item in template_ids if isinstance(item, str) and item.strip()})
+        if requested_templates:
+            self._require_provider_capability(provider_id, "templates.images.read")
+            available_template_ids = {
+                item.get("template_id") for item in templates
+                if isinstance(item, Mapping) and isinstance(item.get("template_id"), str)
+            }
+            for template_id in requested_templates:
+                if template_id in available_template_ids:
+                    template_images[template_id] = provider.get_template_image_availability(template_id)
+                else:
+                    template_images[template_id] = {
+                        "template_id": template_id, "status": "UNAVAILABLE",
+                        "required_images": [], "available_images": [], "missing_images": [],
+                        "reason": "template is not present in the current provider catalogue",
+                    }
+        lifecycle = {}
+        for node in observed["nodes"]:
+            status = str(node.get("status") or "UNKNOWN").upper()
+            lifecycle[status] = lifecycle.get(status, 0) + 1
         return {
             "version": provider.version(),
             "projects": projects,
-            "templates": provider.list_templates(),
+            "templates": templates,
             "nodes": observed["nodes"],
             "links": observed["links"],
+            "resources": resources,
+            "node_lifecycle": lifecycle,
+            "template_images": template_images,
+            "capture_support": provider.capture_support(),
         }
 
     @staticmethod
@@ -412,11 +428,39 @@ class TopologyApplyService:
         adopt_nodes = []
         nodes_to_create = []
         conflicts = []
-        templates = {item.get("template_id") for item in snapshot["templates"] if item.get("template_id")}
+        templates_by_id = {
+            item.get("template_id"): item for item in snapshot["templates"]
+            if isinstance(item, Mapping) and isinstance(item.get("template_id"), str)
+        }
+        resources_by_id = {
+            item.get("compute_id"): item for item in snapshot.get("resources", {}).get("computes", [])
+            if isinstance(item, Mapping) and isinstance(item.get("compute_id"), str)
+        }
+        image_by_template = snapshot.get("template_images", {})
+        template_compatibility = []
         for node in desired["nodes"]:
             logical_id = node["id"]
             mapping = mappings.get(("NODE", logical_id))
             mapped_id = mapping.get("provider_resource_id") if mapping else None
+            template_id = node.get("template_id")
+            template = templates_by_id.get(template_id)
+            image_check = image_by_template.get(template_id, {}) if isinstance(image_by_template, Mapping) else {}
+            compute_id = template.get("compute_id") if isinstance(template, Mapping) else None
+            compute = resources_by_id.get(compute_id) if compute_id else None
+            compute_connected = compute.get("connected") if isinstance(compute, Mapping) else None
+            template_status = "UNMAPPED" if not template_id else "AVAILABLE" if template else "UNAVAILABLE"
+            image_status = str(image_check.get("status") or "UNKNOWN").upper()
+            template_compatibility.append({
+                "logical_node_id": logical_id,
+                "template_id": template_id or None,
+                "template_name": template.get("name") if isinstance(template, Mapping) else None,
+                "template_type": template.get("template_type") if isinstance(template, Mapping) else None,
+                "template_status": template_status,
+                "compute_id": compute_id,
+                "compute_connected": compute_connected,
+                "image_status": image_status,
+                "missing_images": list(image_check.get("missing_images", [])) if isinstance(image_check, Mapping) else [],
+            })
             remote = provider_nodes.get(mapped_id)
             managed_name = self._provider_name(profile["profile_id"], logical_id)
             if remote is not None and remote.get("template_id") != node["template_id"]:
@@ -440,8 +484,18 @@ class TopologyApplyService:
             else:
                 if not node.get("template_id"):
                     conflicts.append({"resource_id": logical_id, "reason": "logical node has no provider template mapping"})
-                elif node["template_id"] not in templates:
+                elif node["template_id"] not in templates_by_id:
                     conflicts.append({"resource_id": logical_id, "reason": "provider template is unavailable"})
+                if template and compute_connected is False:
+                    conflicts.append({
+                        "resource_id": logical_id,
+                        "reason": "provider compute assigned to the template is disconnected",
+                    })
+                if template and image_status == "MISSING":
+                    conflicts.append({
+                        "resource_id": logical_id,
+                        "reason": "one or more required template images are unavailable on the assigned compute",
+                    })
                 nodes_to_create.append({
                     "logical_node_id": logical_id, "name": node["name"],
                     "provider_name": managed_name, "template_id": node["template_id"],
@@ -507,6 +561,9 @@ class TopologyApplyService:
             "links_to_create": links_to_create, "links_pending_nodes": links_pending_nodes,
             "already_present_nodes": sorted(node_ids), "already_present_links": already_present_links,
             "already_present_link_mappings": already_present_link_mappings,
+            "template_compatibility": template_compatibility,
+            "resource_availability": snapshot.get("resources", {}),
+            "node_lifecycle": snapshot.get("node_lifecycle", {}),
             "conflicts": conflicts, "unmanaged_provider_node_count": len(snapshot["nodes"]) - len(set(node_ids.values())),
             "unmanaged_provider_link_count": len(snapshot["links"]) - len({row.get("provider_resource_id") for row in mappings.values() if row.get("resource_type") == "LINK"}),
             "can_apply": not conflicts,
@@ -532,6 +589,38 @@ class TopologyApplyService:
             "catalog": snapshot,
         }
 
+    def provider_interfaces(self, lab_id: str, provider_node_id: str, *, actor: str) -> dict:
+        actor = self._actor(actor)
+        binding = self.get_binding(lab_id)
+        if binding is None:
+            raise TopologyApplyNotFound("active GNS3 provider binding not found")
+        provider_id = str(binding.get("provider_id") or "gns3")
+        self._require_provider_capability(provider_id, "topology.observed.read")
+        self._require_provider_capability(provider_id, "topology.interfaces.read")
+
+        def inspect(provider):
+            observed = provider.get_observed_topology(binding["gns3_project_id"])
+            if not isinstance(observed, dict) or not isinstance(observed.get("nodes"), list):
+                raise TopologyApplyError("provider returned an invalid observed node inventory")
+            if not any(item.get("node_id") == provider_node_id for item in observed["nodes"]):
+                raise TopologyApplyNotFound("provider node is not present in the bound GNS3 project")
+            interfaces = provider.get_interfaces(binding["gns3_project_id"], provider_node_id)
+            if not isinstance(interfaces, list):
+                raise TopologyApplyError("provider returned an invalid interface inventory")
+            return {
+                "lab_id": lab_id, "project_id": binding["project_id"],
+                "provider_project_id": binding["gns3_project_id"],
+                "provider_node_id": provider_node_id, "interfaces": interfaces,
+                "observed_at": self._now(),
+            }
+
+        try:
+            return self._with_provider(binding, actor, inspect)
+        except (TopologyApplyError, TopologyApplyNotFound):
+            raise
+        except Exception as exc:
+            raise TopologyApplyError("provider interface discovery failed") from exc
+
     def plan(self, profile_id: str, revision_id: str, *, actor: str) -> dict:
         actor = self._actor(actor)
         profile, revision = self._profile_revision(profile_id, revision_id)
@@ -539,7 +628,8 @@ class TopologyApplyService:
         if binding is None or binding["project_id"] != profile["project_id"]:
             raise TopologyApplyNotFound("an active GNS3 provider binding is required for this Lab")
         def build(provider):
-            snapshot = self._snapshot(provider, binding)
+            template_ids = [node.get("template_id") for node in revision["definition"]["nodes"]]
+            snapshot = self._snapshot(provider, binding, template_ids=template_ids)
             plan, _node_ids = self._analyze(profile, revision, binding, snapshot)
             return {"plan": plan, "observed": snapshot}
         try:
@@ -684,7 +774,8 @@ class TopologyApplyService:
             lease.release()
 
     def _apply_locked(self, provider, profile, revision, binding, actor, expected_sha256):
-        before = self._snapshot(provider, binding)
+        template_ids = [node.get("template_id") for node in revision["definition"]["nodes"]]
+        before = self._snapshot(provider, binding, template_ids=template_ids)
         plan, _ = self._analyze(profile, revision, binding, before)
         if revision["content_sha256"] != expected_sha256 or plan["revision_sha256"] != expected_sha256:
             raise TopologyApplyConflict("published topology hash changed; no provider changes were made", plan=plan)
@@ -722,7 +813,7 @@ class TopologyApplyService:
                     provider_resource_id=provider_node_id, template_id=item["template_id"],
                 )
 
-            current_snapshot = self._snapshot(provider, binding)
+            current_snapshot = self._snapshot(provider, binding, template_ids=template_ids)
             refreshed_plan, _ = self._analyze(profile, revision, binding, current_snapshot)
             for existing_link in refreshed_plan["already_present_link_mappings"]:
                 self._save_mapping(
@@ -750,7 +841,7 @@ class TopologyApplyService:
                         logical_id=link["logical_link_id"], provider_resource_id=provider_link_id,
                     )
 
-            current_snapshot = self._snapshot(provider, binding)
+            current_snapshot = self._snapshot(provider, binding, template_ids=template_ids)
             reconciliation = self._reconcile(profile, revision, current_snapshot)
             operations["existing_links"] = refreshed_plan["already_present_links"]
             complete = reconciliation["status"] == "IN_SYNC" and not operations["conflicts"]
@@ -771,7 +862,7 @@ class TopologyApplyService:
             return self.get_apply(apply_id) or {"apply_id": apply_id, "status": status, "result": result}
         except Exception as exc:
             try:
-                current_snapshot = self._snapshot(provider, binding)
+                current_snapshot = self._snapshot(provider, binding, template_ids=template_ids)
             except Exception:
                 current_snapshot = {"observation": "unavailable"}
             attempted = operations["attempted_nodes"] or operations["attempted_links"]
