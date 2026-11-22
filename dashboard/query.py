@@ -684,6 +684,9 @@ class DashboardQueryService:
                 "pipeline_recovery_required": (
                     pipelines.get("recovery_required", 0) if include_pipelines else None
                 ),
+                "pipeline_recovery_required_steps": (
+                    pipelines.get("recovery_required_steps", 0) if include_pipelines else None
+                ),
                 "regressions": {
                     "status": "UNAVAILABLE",
                     "reason": "Blocking regression totals require an explicit baseline/current Run comparison.",

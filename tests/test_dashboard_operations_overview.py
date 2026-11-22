@@ -484,7 +484,8 @@ def test_operations_overview_includes_persisted_configuration_evidence_performan
     assert result["pipelines"]["recovery_required_steps"] == 1
     assert result["action_items"]["topology_apply_failures"] == 1
     assert result["action_items"]["configuration_deployment_failures"] == 2
-    assert result["action_items"]["pipeline_recovery_required"] == 1
+    assert result["action_items"]["pipeline_recovery_required"] == 0
+    assert result["action_items"]["pipeline_recovery_required_steps"] == 1
     assert result["action_items"]["regressions"]["status"] == "UNAVAILABLE"
     assert result["action_items"]["configuration_drift"]["status"] == "UNAVAILABLE"
     assert result["network_health"]["provider_health"] == "UNKNOWN"

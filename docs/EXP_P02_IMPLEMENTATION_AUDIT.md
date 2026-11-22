@@ -51,7 +51,7 @@ A restricted section returns `access=RESTRICTED`, null aggregate and distributio
 | Configuration deployment | `device_configuration_deployments` | Deployment totals/statuses and latest deployment identity/outcome |
 | Evidence | `artifacts`, `runs` and existing artifact read/verification boundary | Non-deleted TELEMETRY and LAB_HEALTH_SNAPSHOT counts; integrity-verified numeric Wi-Fi points grouped by metric/unit/interface with sample count, mean/min/max/latest, timestamp, interface and environment provenance |
 | Performance | `runs`, `attempts`, `test_results`, `metrics`, `samples` | Mean/min/max/latest metric sample per name/unit from latest Run attempt; valid, finite, non-warmup, non-retried samples with an actual capture timestamp; sample count, unit and source Run/test identity |
-| Action items | Topology apply, configuration deployment and pipeline execution sources | Failed/partial apply and deployment counts, recovery-required execution counts |
+| Action items | Topology apply, configuration deployment and pipeline execution sources | Failed/partial apply and deployment counts, separate recovery-required pipeline execution and step counts (not conflated or double-counted) |
 
 ## Truthful unavailability rules
 
