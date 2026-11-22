@@ -27,7 +27,7 @@ describe("shared application shell",()=>{
  afterEach(()=>{cleanup();queryClient?.clear();});
 
  it("exposes labelled navigation, active route and current workspace selectors",async()=>{
-  renderShell(<AppShell user={{username:"owner",role:"OWNER",permissions:["workspace.read"]}} routeName="dashboard" onLogout={vi.fn()}>
+  renderShell(<AppShell user={{username:"owner",role:"OWNER",permissions:["workspace.read","topology.read"]}} routeName="dashboard" onLogout={vi.fn()}>
    <h2>Page content</h2>
   </AppShell>);
   expect(screen.getByRole("navigation",{name:"Primary navigation"})).toBeTruthy();
@@ -59,7 +59,6 @@ describe("shared application shell",()=>{
   expect(await screen.findByRole("option",{name:"Lab project-org-b"})).toBeTruthy();
   await waitFor(()=>expect(screen.getByLabelText("Active project").value).toBe("project-org-b"));
  });
-});
 
  it("searches only visible modules and active workspace entries",async()=>{
   renderShell(<AppShell user={{username:"viewer",role:"VIEWER",permissions:["workspace.read","topology.read"]}} routeName="dashboard" onLogout={vi.fn()}>
@@ -94,3 +93,4 @@ describe("shared application shell",()=>{
   expect(await screen.findByRole("status",{name:"GNS3 · bound · health unknown"})).toBeTruthy();
   expect(screen.queryByText(/connected/i)).toBeNull();
  });
+});
