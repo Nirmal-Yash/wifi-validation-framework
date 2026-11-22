@@ -5,8 +5,8 @@
   --nr-content-max: 1720px;
   --nr-page-gutter: clamp(18px, 2.25vw, 34px);
 
-  --nr-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --nr-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --nr-font-sans: Roboto, "Roboto Flex", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --nr-font-mono: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --nr-type-caption: 0.6875rem;
   --nr-type-label: 0.75rem;
   --nr-type-body: 0.875rem;
