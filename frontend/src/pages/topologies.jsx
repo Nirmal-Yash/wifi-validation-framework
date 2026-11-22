@@ -794,7 +794,7 @@ export default function TopologyStudioPage({user}){
         <Field label="VLAN association"><input type="number" min="1" max="4094" value={linkEditForm.vlan_id??""} onChange={event=>setLinkEditForm({...linkEditForm,vlan_id:event.target.value===""?"":Number(event.target.value)})} disabled={!canManage}/></Field>
        </div>
        <div className="topology-observed-panel"><div className="operations-detail-row"><span>Provider link ID</span><code>{selectedLinkProviderId}</code></div><div className="operations-detail-row"><span>Operational status</span><StatusBadge value={selectedLinkMappingStatus}/></div></div>
-       <div className="form-actions"><Button type="button" onClick={saveSelectedLink} disabled={!canManage}>Save link properties</Button><Button type="button" variant="destructive" onClick={()=>removeLink(selectedLink)} disabled={!canManage}>Remove link</Button></div>
+       <div className="form-actions"><Button type="button" onClick={saveSelectedLink} disabled={!canManage}>Save link endpoint changes</Button><Button type="button" variant="destructive" onClick={()=>removeLink(selectedLink)} disabled={!canManage}>Remove link</Button></div>
       </div>:<EmptyState title="Select a node or link" message="Choose an object on the canvas to inspect properties, interfaces, provider mapping and observed status."/>}
      </div>
      <aside className="topology-inspector-summary">
