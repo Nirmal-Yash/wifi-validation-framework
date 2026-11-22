@@ -566,6 +566,13 @@ export default function TopologyStudioPage({user}){
  }
 
  const nodeById=Object.fromEntries(nodes.map(item=>[item.id,item]));
+ const selectedNodeMappingStatus=reconciliation?.logical_to_provider?.[selectedNode]
+  ?"MAPPED":reconciliation?.missing_nodes?.includes(selectedNode)?"MISSING":"UNKNOWN";
+ const selectedNodeProviderState=providerCatalog?.nodes?.find(item=>item.node_id===reconciliation?.logical_to_provider?.[selectedNode])?.status||"UNKNOWN";
+ const selectedLinkMappingStatus=reconciliation?.logical_to_provider_links?.[selectedLink]
+  ?"MAPPED":reconciliation?.mismatched_links?.includes(selectedLink)?"MISMATCHED"
+  :reconciliation?.missing_links?.includes(selectedLink)?"MISSING":"UNKNOWN";
+ const selectedLinkProviderId=reconciliation?.logical_to_provider_links?.[selectedLink]||"Not mapped";
  if(projects.loading&&!projects.data)return <LoadingState label="Loading topology workspace…"/>;
  if(projects.error&&!projects.data)return <ErrorState error={projects.error} onRetry={projects.reload}/>;
  return <div className="page-stack">
@@ -741,9 +748,9 @@ export default function TopologyStudioPage({user}){
         </select></Field>
        </div>
        <div className="topology-observed-panel">
-        <div className="topology-inspector-heading"><strong>Provider mapping and observed state</strong><StatusBadge value={reconciliation?.logical_to_provider?.[selectedNode]?"MAPPED":reconciliation&&(reconciliation.missing_nodes||[]).includes(selectedNode)?"MISSING":"UNKNOWN"}/></div>
+        <div className="topology-inspector-heading"><strong>Provider mapping and observed state</strong><StatusBadge value={selectedNodeMappingStatus}/></div>
         <div className="operations-detail-row"><span>Provider resource ID</span><code>{reconciliation?.logical_to_provider?.[selectedNode]||"Not mapped"}</code></div>
-        <div className="operations-detail-row"><span>Provider node state</span><StatusBadge value={providerCatalog?.nodes?.find(item=>item.node_id===reconciliation?.logical_to_provider?.[selectedNode])?.status||"UNKNOWN"}/></div>
+        <div className="operations-detail-row"><span>Provider node state</span><StatusBadge value={selectedNodeProviderState}/></div>
         <p className="muted">Observed state comes only from a provider catalogue or reconciliation response. Editing these fields never contacts the provider.</p>
        </div>
        <div className="topology-interface-editor">
@@ -781,7 +788,7 @@ export default function TopologyStudioPage({user}){
         <Field label="Network segment"><input value={linkEditForm.network_segment_id||""} onChange={event=>setLinkEditForm({...linkEditForm,network_segment_id:event.target.value})} disabled={!canManage}/></Field>
         <Field label="VLAN association"><input type="number" min="1" max="4094" value={linkEditForm.vlan_id??""} onChange={event=>setLinkEditForm({...linkEditForm,vlan_id:event.target.value===""?"":Number(event.target.value)})} disabled={!canManage}/></Field>
        </div>
-       <div className="topology-observed-panel"><div className="operations-detail-row"><span>Provider link ID</span><code>{reconciliation?.logical_to_provider_links?.[selectedLink]||"Not mapped"}</code></div><div className="operations-detail-row"><span>Operational status</span><StatusBadge value={reconciliation?.logical_to_provider_links?.[selectedLink]?"MAPPED":reconciliation&&(reconciliation.mismatched_links||[]).includes(selectedLink)?"MISMATCHED":reconciliation&&(reconciliation.missing_links||[]).includes(selectedLink)?"MISSING":"UNKNOWN"/></div></div>
+       <div className="topology-observed-panel"><div className="operations-detail-row"><span>Provider link ID</span><code>{selectedLinkProviderId}</code></div><div className="operations-detail-row"><span>Operational status</span><StatusBadge value={selectedLinkMappingStatus}/></div></div>
        <div className="form-actions"><Button type="button" onClick={saveSelectedLink} disabled={!canManage}>Save link properties</Button><Button type="button" variant="destructive" onClick={()=>removeLink(selectedLink)} disabled={!canManage}>Remove link</Button></div>
       </div>:<EmptyState title="Select a node or link" message="Choose an object on the canvas to inspect properties, interfaces, provider mapping and observed status."/>}
      </div>
