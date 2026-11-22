@@ -356,6 +356,7 @@ def test_immutable_revision_creation_rechecks_topology_reference_scope(topology)
     client = app.test_client()
     profile = client.post(
         "/api/v1/topologies",
+        headers={"Idempotency-Key": "topology-reference-scope-create-001"},
         json={"project_id": "project-1", "name": "Reference scope", "scope_type": "PROJECT"},
     )
     assert profile.status_code == 201
