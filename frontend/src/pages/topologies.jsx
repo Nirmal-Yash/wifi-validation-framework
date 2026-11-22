@@ -778,12 +778,17 @@ export default function TopologyStudioPage({user}){
        </div>
        <div className="topology-inspector-footer"><Button type="button" variant="destructive" disabled={!canManage} onClick={()=>removeNode(selectedNode)}>Remove node and attached links</Button></div>
       </div>:selectedLinkRecord&&linkEditForm?<div className="topology-inspector-content">
-       <div className="topology-inspector-heading"><strong>Link properties</strong><StatusBadge value={reconciliation?.logical_to_provider_links?.[selectedLink]?"MAPPED":reconciliation&&(reconciliation.missing_links||[]).includes(selectedLink)?"MISSING":"UNKNOWN"}/></div>
+       <div className="topology-inspector-heading"><strong>Link properties</strong><StatusBadge value={selectedLinkMappingStatus}/></div>
+       <div className="context-caption">Selected link · {selectedLinkRecord.id}</div>
        <div className="topology-inspector-grid">
         <Field label="Source node"><select value={linkEditForm.source_node_id} onChange={event=>setLinkEditForm({...linkEditForm,source_node_id:event.target.value})} disabled={!canManage}>{nodes.map(node=><option key={node.id} value={node.id}>{node.name}</option>)}</select></Field>
         <Field label="Source interface"><select value={linkEditForm.source_interface_name||""} onChange={event=>{const node=nodes.find(item=>item.id===linkEditForm.source_node_id);const item=(node?.interfaces||[]).find(value=>value.name===event.target.value);setLinkEditForm({...linkEditForm,source_interface_name:event.target.value,source_adapter:item?.adapter??linkEditForm.source_adapter,source_port:item?.port??linkEditForm.source_port});}} disabled={!canManage}><option value="">Select interface</option>{(nodes.find(node=>node.id===linkEditForm.source_node_id)?.interfaces||[]).map(item=><option key={item.name}>{item.name}</option>)}</select></Field>
         <Field label="Destination node"><select value={linkEditForm.target_node_id} onChange={event=>setLinkEditForm({...linkEditForm,target_node_id:event.target.value})} disabled={!canManage}>{nodes.map(node=><option key={node.id} value={node.id}>{node.name}</option>)}</select></Field>
         <Field label="Destination interface"><select value={linkEditForm.target_interface_name||""} onChange={event=>{const node=nodes.find(item=>item.id===linkEditForm.target_node_id);const item=(node?.interfaces||[]).find(value=>value.name===event.target.value);setLinkEditForm({...linkEditForm,target_interface_name:event.target.value,target_adapter:item?.adapter??linkEditForm.target_adapter,target_port:item?.port??linkEditForm.target_port});}} disabled={!canManage}><option value="">Select interface</option>{(nodes.find(node=>node.id===linkEditForm.target_node_id)?.interfaces||[]).map(item=><option key={item.name}>{item.name}</option>)}</select></Field>
+        <Field label="Edit source adapter"><input type="number" min="0" max="255" value={linkEditForm.source_adapter} onChange={event=>setLinkEditForm({...linkEditForm,source_adapter:event.target.value})} disabled={!canManage}/></Field>
+        <Field label="Edit source port"><input type="number" min="0" max="255" value={linkEditForm.source_port} onChange={event=>setLinkEditForm({...linkEditForm,source_port:event.target.value})} disabled={!canManage}/></Field>
+        <Field label="Edit target adapter"><input type="number" min="0" max="255" value={linkEditForm.target_adapter} onChange={event=>setLinkEditForm({...linkEditForm,target_adapter:event.target.value})} disabled={!canManage}/></Field>
+        <Field label="Edit target port"><input type="number" min="0" max="255" value={linkEditForm.target_port} onChange={event=>setLinkEditForm({...linkEditForm,target_port:event.target.value})} disabled={!canManage}/></Field>
         <Field label="Link type"><select value={linkEditForm.link_type||"ETHERNET"} onChange={event=>setLinkEditForm({...linkEditForm,link_type:event.target.value})} disabled={!canManage}><option>ETHERNET</option><option>WIRELESS</option><option>SERIAL</option><option>TUNNEL</option><option>OTHER</option></select></Field>
         <Field label="Network segment"><input value={linkEditForm.network_segment_id||""} onChange={event=>setLinkEditForm({...linkEditForm,network_segment_id:event.target.value})} disabled={!canManage}/></Field>
         <Field label="VLAN association"><input type="number" min="1" max="4094" value={linkEditForm.vlan_id??""} onChange={event=>setLinkEditForm({...linkEditForm,vlan_id:event.target.value===""?"":Number(event.target.value)})} disabled={!canManage}/></Field>
@@ -811,11 +816,11 @@ export default function TopologyStudioPage({user}){
     {consoleTab==="validation"?<div className="topology-console-panel" role="tabpanel">
      <div className="operations-detail-row"><span>Current draft</span><strong>{nodes.length} nodes · {links.length} links</strong></div>
      {validation?<div className="provider-plan"><p><StatusBadge value={validation.valid?"VALID":"INVALID"}/> {validation.valid?validation.node_count+" nodes · "+validation.link_count+" links · SHA-256 "+validation.content_sha256:validation.error}</p></div>:<p className="muted">No validation result exists for the current draft.</p>}
-     <div className="button-row">
-      <Button type="button" variant="outline" onClick={validateDraft} loading={validationLoading} disabled={!profileId||!canManage||revisions.loading||mutation.loading}>Validate current draft</Button>
-      <Button type="button" onClick={saveRevision} loading={mutation.loading} disabled={!profileId||!canManage||revisions.loading||validationLoading}>Validate and save new draft revision</Button>
+     {canManage||canPublish?<div className="button-row">
+      {canManage?<><Button type="button" variant="outline" onClick={validateDraft} loading={validationLoading} disabled={!profileId||revisions.loading||mutation.loading}>Validate current draft</Button>
+      <Button type="button" onClick={saveRevision} loading={mutation.loading} disabled={!profileId||revisions.loading||validationLoading}>Validate and save new draft revision</Button></>:null}
       {canPublish?<Button type="button" variant="outline" onClick={publishRevision} disabled={!revisionId||selectedRevision?.status!=="DRAFT"||mutation.loading}>Publish selected revision</Button>:null}
-     </div>
+     </div>:null}
      <p className="muted">Validation is read-only. Saving creates a new immutable revision; publishing never overwrites an existing revision.</p>
     </div>:null}
     {consoleTab==="provider"?<div className="topology-console-panel" role="tabpanel">

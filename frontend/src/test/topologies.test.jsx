@@ -117,6 +117,8 @@ describe("visual topology studio editing workflow",()=>{
   expect(screen.getByRole("button",{name:"Paste"}).disabled).toBe(true);
   expect(screen.getByRole("button",{name:"Delete selected"}).disabled).toBe(true);
   expect(screen.queryByRole("button",{name:"Validate current draft"})).toBeNull();
+  expect(screen.queryByRole("button",{name:"Validate and save new draft revision"})).toBeNull();
+  expect(screen.queryByRole("button",{name:"Publish selected revision"})).toBeNull();
  });
 
  it("shows the categorized device palette and adds provider-independent logical nodes",async()=>{
@@ -159,7 +161,7 @@ describe("visual topology studio editing workflow",()=>{
   expect(await screen.findByText("Ethernet0/2")).toBeTruthy();
 
   fireEvent.click(screen.getByRole("button",{name:"Connect port"}));
-  expect(await screen.findByRole("button",{name:/Select link link-/})).toBeTruthy();
+  expect(await screen.findAllByRole("button",{name:/Select link link-/})).toHaveLength(2);
   expect(screen.getByText("Link properties")).toBeTruthy();
   expect(screen.getByLabelText("Link type").value).toBe("ETHERNET");
  });
