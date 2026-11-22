@@ -106,4 +106,8 @@ Contract/docs:
 
 ## Acceptance state
 
-Implementation and focused tests are prepared for phase verification. EXP-P03 remains **IN_PROGRESS** until the exact PR commit passes the hosted backend, frontend/production-build and dashboard startup/session jobs. Interactive desktop viewport, keyboard/assistive-technology review and real GNS3 apply/recovery remain separate operator gates and are not claimed as performed here.
+**Status: CI VERIFIED**
+
+The exact PR head `e1e4519278e84015c96af10c22961764338adf84` passed GitHub Actions run `45022564639` on 2026-11-22. All three hosted jobs passed: backend session/RBAC/Run/evidence and Phase B–I correctness plus Linux reliability contracts; frontend tests and production build; dashboard startup, proxy and authenticated-session smoke.
+
+This confirms the software implementation and its automated regression boundaries on the recorded commit. It does **not** claim that a real GNS3 controller apply/recovery scenario or interactive desktop/keyboard/assistive-technology review was performed. Those remain explicit operator acceptance gates (RQ-042 and RQ-044).
