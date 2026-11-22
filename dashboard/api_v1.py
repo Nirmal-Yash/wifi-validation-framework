@@ -2336,6 +2336,39 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
 
 
 
+    @api.post("/topologies/validate")
+    def validate_topology_definition():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error("INVALID_REQUEST", "topology validation payload must be a JSON object", 400)
+        project_id = str(payload.get("project_id", "")).strip()
+        if not project_id:
+            return error("INVALID_REQUEST", "project_id is required", 400)
+        denied = require_permission("topology.manage", project_id=project_id)
+        if denied is not None:
+            return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND", "Project not found", 404)
+        profile_id = str(payload.get("profile_id", "")).strip()
+        if profile_id:
+            profile = topology_studio.get_profile(profile_id)
+            if profile is None or profile["project_id"] != project_id:
+                return error("NOT_FOUND", "Topology profile not found in this Project", 404)
+            if profile["status"] != "ACTIVE":
+                return error("INVALID_TOPOLOGY_PROFILE", "Archived topology profiles cannot be validated for editing", 409)
+        try:
+            normalized, _encoded, digest = topology_studio.canonical_payload(payload.get("definition"))
+        except (TopologyStudioError, TypeError, ValueError) as exc:
+            return error("INVALID_TOPOLOGY", str(exc), 422)
+        return ok({
+            "valid": True,
+            "project_id": project_id,
+            "profile_id": profile_id or None,
+            "node_count": len(normalized["nodes"]),
+            "link_count": len(normalized["links"]),
+            "content_sha256": digest,
+        })
+
     @api.get("/topologies")
     def list_topology_profiles():
         project_id=str(request.args.get("project_id","")).strip()

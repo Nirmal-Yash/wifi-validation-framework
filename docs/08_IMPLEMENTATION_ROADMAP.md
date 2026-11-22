@@ -12,7 +12,7 @@ This is an additive programme layered over the existing Runner implementation. I
 | EXP-P00 | Requirements, repository baseline and architecture freeze | Current main and canonical docs | Inventory, approved decisions, requirement traceability and exact baseline |
 | EXP-P01 | Unified design system and application shell | EXP-P00 | Existing routes work in the shared shell; tokens/theme/accessibility tests pass |
 | EXP-P02 | Operational overview dashboard | EXP-P00, dashboard query/API contracts | Real Project/Lab/provider/device/pipeline/run metrics with provenance and RBAC |
-| EXP-P03 | Complete visual Topology Studio | EXP-P00; provider actions align with EXP-P04/05 | Edit, validate, save, publish, plan and inspect without manual JSON |
+| EXP-P03 | Complete visual Topology Studio over the existing canonical profile/revision domain | EXP-P00; provider actions remain aligned with EXP-P04/05 | Accessible node/link selection and inspectors; multi-select/group movement; undo/redo; copy/paste with logical-ID remapping; keyboard actions; canonical backend validation; immutable revision save/publish; read-only plan, reconciliation and explicit confirmed apply; Project RBAC and integration tests |
 
 ## Stage B — Topology and emulator providers
 
@@ -101,3 +101,16 @@ Follow the current repository's `docs/AGENT_CONTEXT.md`: integrate on the establ
 The operational-overview increment reuses the existing SQLite workspace, device, topology/provider-binding, pipeline and Run records. The endpoint is read-only and Project/Lab scoped. Project-wide Lab totals remain stable when a single Lab filter is applied, while `in_scope` and child metrics reflect the selected Lab. Provider configuration is distinguished from live health: saved GNS3 bindings may be reported as configured, but connection health remains `UNKNOWN` until a real authenticated probe is added in the provider phase. Performance remains `UNAVAILABLE` without a persisted observation.
 
 The dashboard surfaces the Project/Lab scope, persisted status distributions, topology apply history, pipeline execution state, Run lifecycle and business outcomes, per-section source freshness, and explicit restricted/unavailable states. The integration tests exercise the authenticated Project boundary, subsystem permission redaction, Lab-scope validation, aggregation, and rendered frontend loading/error/retry and data states. This checkpoint does not certify a live external provider or physical network health.
+
+
+## EXP-P03 implementation checkpoint — visual Topology Studio
+
+The visual editor reuses `TopologyStudioService`, the existing Project/Lab profile ownership rules, canonical topology definition, immutable revision hashes and provider-apply service. No parallel topology schema, revision store or provider controller client is introduced.
+
+**Local editing workflow:** select a profile and revision; add, inspect, rename, reposition and remove logical nodes; select one or multiple nodes; move a selected group together; add, select, edit and remove adapter/port links; search nodes; pan, zoom and fit the canvas; select all; copy/paste a selection with fresh logical IDs and remapped internal links; delete a selection; undo/redo local editing commands. History is in-memory and bounded; changing Project/profile/revision resets the working history and selection.
+
+**Canonical validation:** `POST /api/v1/topologies/validate` authorizes `topology.manage` for the Project and invokes the same canonical normalizer/hash function used by immutable revision creation. It is read-only: it returns canonical node/link counts and the SHA-256 digest without writing a revision, changing a provider or making a controller request. Invalid definitions return `422 INVALID_TOPOLOGY`; an optional profile must be active and belong to the supplied Project.
+
+**Revision and provider boundaries:** saving validates again before creating a new immutable DRAFT revision. Publishing remains an explicit action permitted only for a DRAFT revision. Provider binding/catalogue inspection, dry-run planning, reconciliation, apply history and node start/stop retain their existing capability/RBAC gates. A plan does not mutate GNS3. Apply is possible only for a published Lab-scoped revision, after a conflict-free dry-run and explicit user confirmation bound to the planned revision hash. No provider operation is triggered by canvas editing, validation, revision creation or publishing.
+
+**Verification included:** canonical helper tests for group movement, bounded undo/redo, copy/paste ID remapping, connected-link handling and delete behavior; backend tests for validation hash, read-only behavior, port-conflict errors, Project scope and RBAC; frontend tests for accessible canvas controls, selection, keyboard commands, link editing, validation/save and read-only viewer behavior; OpenAPI route coverage. Hosted exact-commit verification and operator review remain required before marking the phase ACCEPTED.

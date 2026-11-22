@@ -1057,3 +1057,12 @@ The read-only endpoint `GET /api/v1/dashboard/operations-overview?project_id=<pr
 **Freshness semantics:** each section's `observed_at` is the time the query was assembled; `source_updated_at` is the most recent update timestamp among the persisted source records used for that section. A query timestamp is not a provider health timestamp. The root `observed_at` is the overall query observation time.
 
 **Errors:** missing `project_id` returns `400 INVALID_REQUEST`; missing authentication returns `401 UNAUTHENTICATED`; an unauthorized Project returns `403 FORBIDDEN`; an absent Project or Lab outside the Project returns `404 NOT_FOUND`. No schema migration is required for this read-only aggregation.
+
+
+## Visual topology draft validation API — EXP-P03
+
+`POST /api/v1/topologies/validate` accepts a JSON object containing `project_id`, an optional `profile_id`, and the canonical `definition` with `nodes` and `links` arrays. The route requires `topology.manage` in the selected Project. If a profile ID is supplied, it must identify an active profile in that same Project.
+
+The endpoint delegates to `TopologyStudioService.canonical_payload`, the same canonical normalization and hashing boundary used by immutable revision creation. On success it returns `valid: true`, the Project/profile scope, canonical node and link counts, and `content_sha256`. Definition validation failures return `422 INVALID_TOPOLOGY`; malformed/missing scope returns `400 INVALID_REQUEST`; missing or cross-Project profile returns `404 NOT_FOUND`; insufficient permission returns `403 FORBIDDEN`.
+
+This is a **read-only validation endpoint**. It does not create a DRAFT revision, update profile metadata, write an audit event, contact a provider, create provider resources or start a node. Revision persistence remains owned by `POST /api/v1/topologies/{profile_id}/revisions`, and publication remains the separate `POST /api/v1/topologies/{profile_id}/publish` action. The endpoint is included in `docs/openapi.yaml`.

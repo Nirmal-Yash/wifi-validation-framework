@@ -126,6 +126,7 @@ export const api={
  cancelPipelineExecution:id=>request("/pipeline-executions/"+encode(id)+"/cancel",{method:"POST",body:"{}"}),
  recoverPipelineExecution:id=>request("/pipeline-executions/"+encode(id)+"/recover",{method:"POST",body:JSON.stringify({confirmed:true})}),
 
+ validateTopology:payload=>request("/topologies/validate",{method:"POST",body:JSON.stringify(payload)}),
  topologies:projectId=>request("/topologies"+query({project_id:projectId})),
  createTopology:payload=>request("/topologies",{method:"POST",body:JSON.stringify(payload)}),
  topologyRevisions:profileId=>request("/topologies/"+encode(profileId)+"/revisions"),

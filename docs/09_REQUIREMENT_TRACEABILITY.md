@@ -28,7 +28,7 @@
 | RQ-010 | Organization, Project and Lab persistence | `lib/domain/resources.py`, SQLite workspace repositories, `/workspace/*` APIs | EXISTING | Shared shell selector must use authenticated visible scope |
 | RQ-011 | Project/Lab device inventory | `lib/services/device_inventory.py`, `frontend/src/pages/devices.jsx` | EXISTING | Extend capabilities only via schema/API migration |
 | RQ-012 | Canonical topology and immutable revisions | `lib/services/topology_studio.py`, `frontend/src/pages/topologies.jsx` | EXISTING | Preserve hash, logical IDs and published immutability |
-| RQ-013 | Visual editing, drag positioning and port-aware links | `frontend/src/pages/topologies.jsx`, topology service validation | EXISTING | Add canvas interaction tests for new UX |
+| RQ-013 | Visual editing, drag positioning and port-aware links | `frontend/src/pages/topologies.jsx`, `frontend/src/topology-editor.js`, canonical topology service | IN_PROGRESS | Verify multi-select/group move, link inspection/editing, clipboard ID remapping, keyboard actions, undo/redo and read-only viewer behavior |
 | RQ-014 | Topology apply, reconciliation and recovery | `lib/services/topology_apply.py`, `/topologies/*/plan|apply|reconciliation` | EXISTING | No implicit prune; preserve lab lock/idempotency |
 | RQ-015 | GNS3 provider operations | Existing topology apply/provider services and `/labs/*/provider-*` | EXISTING | Consolidate, do not duplicate; live lab remains GATE |
 | RQ-016 | CML provider | No CML adapter found in current source inventory | PLANNED | EXP-P04 contract first; API/license/version validation |
@@ -69,3 +69,11 @@
 This register is intentionally conservative. A source file or mocked contract test proves only the behavior it actually exercises; it does not mark an external provider, physical device or user workstation as accepted.
 
 | RQ-036 | Unified design tokens and accessible shared shell | `frontend/src/styles/tokens.css`, `frontend/src/styles.css`, `frontend/src/styles/product-shell.css`, AppShell frontend tests | EXISTING | Maintain light/dark, responsive, focus, navigation landmark and reduced-motion checks |
+
+
+## Visual Topology Studio — additional P03 acceptance
+
+| ID | Requirement | Verification source | Status | Next verification |
+|---|---|---|---|---|
+| RQ-037 | Canonical, read-only topology draft validation | `POST /api/v1/topologies/validate`, `TopologyStudioService.canonical_payload`, `tests/test_topology_studio.py` | IN_PROGRESS | Verify 200 hash/count response, no revision write, 422 validation error, Project scope and topology.manage RBAC |
+| RQ-038 | Complete visual authoring interactions | `frontend/src/pages/topologies.jsx`, `frontend/src/topology-editor.js`, frontend topology editor tests | IN_PROGRESS | Exact-head frontend tests/build and backend/API regression pass; operator accessibility/desktop review remains a separate gate |

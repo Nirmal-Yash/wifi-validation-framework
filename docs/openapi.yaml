@@ -7,6 +7,31 @@ servers:
 security:
   - sessionAuth: []
 paths:
+  /topologies/validate:
+    post:
+      description: Validate a visual topology draft against the canonical, read-only Project-scoped topology rules. Does not persist a revision or contact a provider.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project_id, definition]
+              properties:
+                project_id: {type: string, minLength: 1}
+                profile_id: {type: string}
+                definition:
+                  type: object
+                  required: [nodes, links]
+                  properties:
+                    nodes: {type: array, maxItems: 128, items: {type: object}}
+                    links: {type: array, maxItems: 512, items: {type: object}}
+      responses:
+        "200": {description: Canonical topology is valid; returns node/link counts and SHA-256}
+        "400": {description: Missing Project scope or malformed request}
+        "403": {description: Caller lacks topology.manage in this Project}
+        "404": {description: Project or selected profile not found in the supplied Project}
+        "422": {description: Topology definition violates the canonical schema or port constraints}
   /health: {get: {security: [], responses: {"200": {description: Healthy}}}}
   /readiness: {get: {responses: {"200": {description: Ready}}}}
   /auth/csrf:

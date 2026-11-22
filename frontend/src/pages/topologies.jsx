@@ -1,8 +1,9 @@
-import React,{useEffect,useState} from "react";
+import React,{useEffect,useRef,useState} from "react";
 import {api} from "@/api";
 import {useWorkspace} from "@/components/workspace-context";
 import {useAsyncLoader,useMutation} from "@/hooks";
 import {canPerform} from "@/permissions";
+import {copyTopologySelection,createTopologyHistory,moveTopologyNodes,pasteTopologySelection,removeTopologySelection} from "@/topology-editor";
 import {Button,DataTable,EmptyState,ErrorState,Field,InlineNotice,LoadingState,Section,StatusBadge} from "@/components/ui";
 
 export const DEFAULT_TOPOLOGY_VIEWPORT=Object.freeze({x:0,y:0,width:1000,height:620});
@@ -53,6 +54,15 @@ export default function TopologyStudioPage({user}){
  const [linkForm,setLinkForm]=useState({source_node_id:"",source_adapter:0,source_port:0,target_node_id:"",target_adapter:0,target_port:0});
  const [definition,setDefinition]=useState(emptyDefinition);
  const [selectedNode,setSelectedNode]=useState("");
+ const [selectedNodes,setSelectedNodes]=useState([]);
+ const [selectedLink,setSelectedLink]=useState("");
+ const [linkEditForm,setLinkEditForm]=useState(null);
+ const [validation,setValidation]=useState(null);
+ const [validationLoading,setValidationLoading]=useState(false);
+ const [historyVersion,setHistoryVersion]=useState(0);
+ const historyRef=useRef(null);
+ if(!historyRef.current)historyRef.current=createTopologyHistory(definition);
+ const definitionRef=useRef(definition),canvasRef=useRef(null),dragSessionRef=useRef(null),clipboardRef=useRef(null);
  const [dragging,setDragging]=useState("");
  const [viewport,setViewport]=useState({...DEFAULT_TOPOLOGY_VIEWPORT});
  const [panning,setPanning]=useState(null);
@@ -84,6 +94,7 @@ export default function TopologyStudioPage({user}){
  const [providerBusy,setProviderBusy]=useState(false);
  const [providerError,setProviderError]=useState("");
  const selectedNodeRecord=nodes.find(item=>item.id===selectedNode)||null;
+ const selectedLinkRecord=links.find(item=>item.id===selectedLink)||null;
  const canManage=canPerform(user,"topology.manage");
  const canPublish=canPerform(user,"topology.publish");
  const canManageProvider=canPerform(user,"topology.provider.manage");
@@ -96,7 +107,7 @@ export default function TopologyStudioPage({user}){
  useEffect(()=>{
   if(workspace.activeProjectId&&projectRows.some(item=>item.project_id===workspace.activeProjectId)){
    if(projectId!==workspace.activeProjectId){
-    setProjectId(workspace.activeProjectId);setProfileId("");setRevisionId("");setDefinition(emptyDefinition());
+    setProjectId(workspace.activeProjectId);setProfileId("");setRevisionId("");resetEditorDefinition(emptyDefinition());
    }
   }else if(!projectId&&projectRows.length){
    const first=projectRows[0].project_id;
@@ -121,7 +132,7 @@ export default function TopologyStudioPage({user}){
  useEffect(()=>{
   if(!revisionId&&revisionRows.length){
    setRevisionId(revisionRows[0].revision_id);
-   setDefinition(revisionRows[0].definition||emptyDefinition());
+   resetEditorDefinition(revisionRows[0].definition||emptyDefinition());
   }
  },[revisions.data,revisionId]);
  useEffect(()=>{
@@ -133,11 +144,62 @@ export default function TopologyStudioPage({user}){
    setLinkForm(value=>({...value,target_node_id:nodes[1]?.id||nodes[0]?.id||""}));
  },[definition.nodes]);
 
+
+ function setEditorDefinition(next,{record=true,previous}={}){
+  const current=definitionRef.current,candidate=typeof next==="function"?next(current):next,baseline=previous||current;
+  if((record&&JSON.stringify(baseline)===JSON.stringify(candidate))||(!record&&JSON.stringify(current)===JSON.stringify(candidate)))return;
+  if(record)historyRef.current.commit(candidate,baseline);else historyRef.current.replace(candidate);
+  definitionRef.current=candidate;setDefinition(candidate);setValidation(null);
+  if(record)setHistoryVersion(value=>value+1);
+ }
+ function resetEditorDefinition(next){
+  const value=next||emptyDefinition();historyRef.current.reset(value);definitionRef.current=value;setDefinition(value);
+  setHistoryVersion(value=>value+1);setSelectedNode("");setSelectedNodes([]);setSelectedLink("");setLinkEditForm(null);setValidation(null);
+ }
+ function undoTopologyEdit(){const value=historyRef.current.undo();if(!value)return;definitionRef.current=value;setDefinition(value);setSelectedNodes(ids=>ids.filter(id=>value.nodes.some(node=>node.id===id)));setSelectedNode(id=>value.nodes.some(node=>node.id===id)?id:"");setSelectedLink(id=>value.links.some(link=>link.id===id)?id:"");setValidation(null);setHistoryVersion(v=>v+1);}
+ function redoTopologyEdit(){const value=historyRef.current.redo();if(!value)return;definitionRef.current=value;setDefinition(value);setSelectedNodes(ids=>ids.filter(id=>value.nodes.some(node=>node.id===id)));setSelectedNode(id=>value.nodes.some(node=>node.id===id)?id:"");setSelectedLink(id=>value.links.some(link=>link.id===id)?id:"");setValidation(null);setHistoryVersion(v=>v+1);}
+ function copyTopology(){const value=copyTopologySelection(definitionRef.current,selectedNodes,selectedLink);if(!value.nodes.length){clipboardRef.current=null;return;}clipboardRef.current=value;setNotice(value.nodes.length+" node(s) and "+value.links.length+" internal link(s) copied.");}
+ function pasteTopology(){if(!canManage||!clipboardRef.current)return;try{const result=pasteTopologySelection(definitionRef.current,clipboardRef.current,{offset:40,idFactory:localId});setEditorDefinition(result.definition);setSelectedNodes(result.nodeIds);setSelectedNode(result.nodeIds[0]||"");setSelectedLink("");setNotice(result.nodeIds.length+" node(s) pasted with new logical IDs.");}catch(exc){setError(exc.message||"Clipboard content could not be pasted.");}}
+ function deleteSelectedTopology(){if(!canManage||(!selectedNodes.length&&!selectedLink))return;setEditorDefinition(removeTopologySelection(definitionRef.current,selectedNodes,selectedLink));setSelectedNodes([]);setSelectedNode("");setSelectedLink("");setLinkEditForm(null);}
+ function selectCanvasLink(link){setSelectedLink(link.id);setSelectedNodes([]);setSelectedNode("");setLinkEditForm({...link});}
+ function saveSelectedLink(event){event.preventDefault();if(!canManage||!selectedLink||!linkEditForm)return;const next={...linkEditForm,source_adapter:Number(linkEditForm.source_adapter),source_port:Number(linkEditForm.source_port),target_adapter:Number(linkEditForm.target_adapter),target_port:Number(linkEditForm.target_port)};setEditorDefinition(value=>({...value,links:value.links.map(item=>item.id===selectedLink?next:item)}));setNotice("Link endpoint references updated. Validate before saving a revision.");}
+ function startNodeDrag(event,nodeId){
+  event.preventDefault();event.stopPropagation();
+  if(!canManage){setSelectedNodes([nodeId]);setSelectedNode(nodeId);setSelectedLink("");return;}
+  if(event.ctrlKey||event.metaKey||event.shiftKey){const next=selectedNodes.includes(nodeId)?selectedNodes.filter(id=>id!==nodeId):[...selectedNodes,nodeId];setSelectedNodes(next);setSelectedNode(next[next.length-1]||"");setSelectedLink("");return;}
+  const ids=selectedNodes.includes(nodeId)?selectedNodes:[nodeId];setSelectedNodes(ids);setSelectedNode(nodeId);setSelectedLink("");
+  dragSessionRef.current={nodeIds:ids.slice(),start:canvasPoint(event),initialDefinition:JSON.parse(JSON.stringify(definitionRef.current))};
+  setDragging(nodeId);event.currentTarget.setPointerCapture?.(event.pointerId);
+ }
+ function finishCanvasInteraction(){const session=dragSessionRef.current;if(session){setEditorDefinition(definitionRef.current,{record:true,previous:session.initialDefinition});dragSessionRef.current=null;}setDragging("");setPanning(null);}
+ async function validateDraft(){
+  if(!canManage)return null;
+  setError("");setNotice("");setValidationLoading(true);
+  try{const result=await api.validateTopology({project_id:projectId,profile_id:profileId||undefined,definition:definitionRef.current});setValidation(result);setNotice("Topology definition is valid · SHA-256 "+result.content_sha256);return result;}
+  catch(exc){setValidation({valid:false,error:exc.message||"Topology validation failed.",code:exc.code||"INVALID_TOPOLOGY"});setError(exc.message||"Topology validation failed.");return null;}
+  finally{setValidationLoading(false);}
+ }
+ function selectAllNodes(){const ids=nodes.map(node=>node.id);setSelectedNodes(ids);setSelectedNode(ids[0]||"");setSelectedLink("");}
+ useEffect(()=>{
+  const handler=event=>{
+   const target=event.target,tag=String(target?.tagName||"").toLowerCase();
+   if(["input","textarea","select","button"].includes(tag)||target?.isContentEditable)return;
+   const mod=event.ctrlKey||event.metaKey,key=String(event.key||"").toLowerCase();
+   if(mod&&key==="z"){event.preventDefault();event.shiftKey?redoTopologyEdit():undoTopologyEdit();return;}
+   if(mod&&key==="y"){event.preventDefault();redoTopologyEdit();return;}
+   if(mod&&key==="a"){event.preventDefault();selectAllNodes();return;}
+   if(mod&&key==="c"){event.preventDefault();copyTopology();return;}
+   if(mod&&key==="v"){event.preventDefault();pasteTopology();return;}
+   if(key==="delete"||key==="backspace"){if(canManage&&(selectedNodes.length||selectedLink)){event.preventDefault();deleteSelectedTopology();}return;}
+   if(key==="escape"){setSelectedNodes([]);setSelectedNode("");setSelectedLink("");setLinkEditForm(null);}
+  };
+  window.addEventListener("keydown",handler);return()=>window.removeEventListener("keydown",handler);
+ },[selectedNodes,selectedLink,selectedNode,historyVersion]);
+
  function chooseRevision(id){
   setRevisionId(id);
   const revision=revisionRows.find(item=>item.revision_id===id);
-  setDefinition(revision?.definition||emptyDefinition());
-  setSelectedNode("");
+  resetEditorDefinition(revision?.definition||emptyDefinition());
  }
  async function runMutation(action,success){
   setError("");setNotice("");
@@ -158,11 +220,11 @@ export default function TopologyStudioPage({user}){
    scope_type:scope.scope_type,scope_id:scope.scope_type==="PROJECT"?projectId:scope.scope_id
   }),"Topology profile created.");
   if(result?.profile_id){
-   setProfileId(result.profile_id);setRevisionId("");setDefinition(emptyDefinition());setShowProfileForm(false);
+   setProfileId(result.profile_id);setRevisionId("");resetEditorDefinition(emptyDefinition());setShowProfileForm(false);
   }
  }
  function addNode(event){
-  event.preventDefault();setError("");setNotice("");
+  event.preventDefault();if(!canManage)return;setError("");setNotice("");
   if(!nodeForm.template_id.trim()){
    setError("Enter the provider template reference. Editing never contacts GNS3.");
    return;
@@ -171,25 +233,27 @@ export default function TopologyStudioPage({user}){
    id:localId("node"),name:nodeForm.name.trim(),node_type:nodeForm.node_type,
    template_id:nodeForm.template_id.trim(),x:Number(nodeForm.x),y:Number(nodeForm.y),properties:{}
   };
-  setDefinition(value=>({...value,nodes:[...value.nodes,node]}));
-  setSelectedNode(node.id);
+  setEditorDefinition(value=>({...value,nodes:[...value.nodes,node]}));
+  setSelectedNode(node.id);setSelectedNodes([node.id]);setSelectedLink("");
   setNodeForm(value=>({...value,
    name:value.node_type[0]+value.node_type.slice(1).toLowerCase()+" "+(nodes.length+2),
    x:Math.min(880,Number(value.x)+80),y:Math.min(520,Number(value.y)+60)
   }));
  }
  function removeNode(id){
-  setDefinition(value=>({
-   nodes:value.nodes.filter(item=>item.id!==id),
-   links:value.links.filter(item=>item.source_node_id!==id&&item.target_node_id!==id)
-  }));
+  if(!canManage)return;
+  const next=removeTopologySelection(definitionRef.current,[id],"");
+  setEditorDefinition(next);
+  setSelectedNodes(value=>value.filter(item=>item!==id));
   if(selectedNode===id)setSelectedNode("");
+  if(selectedLink&&!next.links.some(item=>item.id===selectedLink)){setSelectedLink("");setLinkEditForm(null);}
  }
  function updateNode(id,patch){
-  setDefinition(value=>({...value,nodes:value.nodes.map(item=>item.id===id?{...item,...patch}:item)}));
+  if(!canManage)return;
+  setEditorDefinition(value=>({...value,nodes:value.nodes.map(item=>item.id===id?{...item,...patch}:item)}));
  }
  function addLink(event){
-  event.preventDefault();setError("");setNotice("");
+  event.preventDefault();if(!canManage)return;setError("");setNotice("");
   if(!linkForm.source_node_id||!linkForm.target_node_id){
    setError("Select both logical node endpoints.");return;
   }
@@ -202,13 +266,14 @@ export default function TopologyStudioPage({user}){
    target_node_id:linkForm.target_node_id,target_adapter:Number(linkForm.target_adapter),
    target_port:Number(linkForm.target_port)
   };
-  setDefinition(value=>({...value,links:[...value.links,link]}));
+  setEditorDefinition(value=>({...value,links:[...value.links,link]}));setSelectedLink(link.id);setSelectedNodes([]);setSelectedNode("");setLinkEditForm({...link});
  }
  function removeLink(id){
-  setDefinition(value=>({...value,links:value.links.filter(item=>item.id!==id)}));
+  if(!canManage)return;
+  setEditorDefinition(value=>({...value,links:value.links.filter(item=>item.id!==id)}));if(selectedLink===id){setSelectedLink("");setLinkEditForm(null);}
  }
  function canvasPoint(event){
-  const rect=event.currentTarget.getBoundingClientRect();
+  const rect=(canvasRef.current||event.currentTarget).getBoundingClientRect();
   return {
    x:Math.max(0,Math.min(10000,viewport.x+(event.clientX-rect.left)*viewport.width/rect.width)),
    y:Math.max(0,Math.min(10000,viewport.y+(event.clientY-rect.top)*viewport.height/rect.height))
@@ -245,19 +310,18 @@ export default function TopologyStudioPage({user}){
    });
    return;
   }
-  if(!dragging)return;
-  const point=canvasPoint(event);
-  updateNode(dragging,{x:Math.round(point.x),y:Math.round(point.y)});
+  const session=dragSessionRef.current;if(!session)return;
+  const point=canvasPoint(event),dx=Math.round(point.x-session.start.x),dy=Math.round(point.y-session.start.y);
+  setEditorDefinition(moveTopologyNodes(session.initialDefinition,session.nodeIds,dx,dy),{record:false});
  }
  async function saveRevision(event){
-  event.preventDefault();
-  const result=await runMutation(
-   ()=>api.createTopologyRevision(profileId,{definition}),
-   "Immutable topology draft revision created."
-  );
-  if(result?.revision_id)setRevisionId(result.revision_id);
+  event.preventDefault();if(!canManage)return;
+  const checked=await validateDraft();if(!checked?.valid)return;
+  const result=await runMutation(()=>api.createTopologyRevision(profileId,{definition:definitionRef.current}),"Immutable topology draft revision created.");
+  if(result?.revision_id){setRevisionId(result.revision_id);resetEditorDefinition(result.definition||definitionRef.current);}
  }
  async function publishRevision(){
+  if(!canPublish)return;
   if(!profileId||!revisionId||selectedRevision?.status!=="DRAFT"){
    setError("Select a draft revision to publish.");return;
   }
@@ -353,13 +417,13 @@ export default function TopologyStudioPage({user}){
   <Section title="Workspace scope" subtitle="Topology profiles are isolated by Project and optionally by Lab.">
    <div className="form-grid">
     <Field label="Project">
-     <select value={projectId} onChange={event=>{const value=event.target.value;setProjectId(value);workspace.selectProject(value);setProfileId("");setRevisionId("");setDefinition(emptyDefinition());}} disabled={projects.loading}>
+     <select value={projectId} onChange={event=>{const value=event.target.value;setProjectId(value);workspace.selectProject(value);setProfileId("");setRevisionId("");resetEditorDefinition(emptyDefinition());}} disabled={projects.loading}>
       <option value="">Select Project</option>
       {projectRows.map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}
      </select>
     </Field>
     <Field label="Profile">
-     <select value={profileId} onChange={event=>{setProfileId(event.target.value);setRevisionId("");setDefinition(emptyDefinition());}} disabled={!projectId}>
+     <select value={profileId} onChange={event=>{setProfileId(event.target.value);setRevisionId("");resetEditorDefinition(emptyDefinition());}} disabled={!projectId}>
       <option value="">Select topology profile</option>
       {profileRows.map(item=><option key={item.profile_id} value={item.profile_id}>{item.name} · {item.scope_type}</option>)}
      </select>
@@ -419,25 +483,44 @@ export default function TopologyStudioPage({user}){
       <Button type="button" variant="outline" size="sm" onClick={()=>zoomCanvas(1.25)} aria-label="Zoom out">Zoom out</Button>
       <Button type="button" variant="ghost" size="sm" onClick={fitCanvas}>Fit to nodes</Button>
      </div>
+     <div className="topology-canvas-actions" aria-label="Topology edit history and selection">
+      <Button type="button" size="sm" variant="outline" onClick={undoTopologyEdit} disabled={!historyRef.current.canUndo}>Undo</Button>
+      <Button type="button" size="sm" variant="outline" onClick={redoTopologyEdit} disabled={!historyRef.current.canRedo}>Redo</Button>
+      <Button type="button" size="sm" variant="ghost" onClick={copyTopology} disabled={!selectedNodes.length&&!selectedLink}>Copy</Button>
+      <Button type="button" size="sm" variant="ghost" onClick={pasteTopology} disabled={!canManage||!clipboardRef.current}>Paste</Button>
+      <Button type="button" size="sm" variant="ghost" onClick={selectAllNodes} disabled={!nodes.length}>Select all</Button>
+      <Button type="button" size="sm" variant="destructive" onClick={deleteSelectedTopology} disabled={!canManage||(!selectedNodes.length&&!selectedLink)}>Delete selected</Button>
+     </div>
     </div>
+    <p className="muted topology-keyboard-help">Shortcuts: Ctrl/Cmd+Z undo · Ctrl/Cmd+Shift+Z redo · Ctrl/Cmd+C/V copy/paste · Ctrl/Cmd+A select all · Delete remove · Shift/Ctrl/Cmd+click add or remove nodes from selection. Shortcuts are disabled while editing form fields.</p>
     <div style={{width:"100%",overflow:"hidden",border:"1px solid var(--border)",borderRadius:12,background:"var(--card)"}}>
-     <svg viewBox={viewport.x+" "+viewport.y+" "+viewport.width+" "+viewport.height} role="img" aria-label="Topology canvas. Drag nodes to position them and drag empty space to pan." style={{display:"block",width:"100%",minWidth:620,touchAction:"none",cursor:panning?"grabbing":"grab"}}
-      onPointerDown={startCanvasPan} onPointerMove={onCanvasPointerMove} onPointerUp={()=>{setDragging("");setPanning(null);}} onPointerCancel={()=>{setDragging("");setPanning(null);}} onWheel={zoomCanvasAtPointer}>
+     <svg ref={canvasRef} viewBox={viewport.x+" "+viewport.y+" "+viewport.width+" "+viewport.height} role="application" aria-label="Interactive topology canvas. Select nodes and links, drag to move, or drag empty space to pan." style={{display:"block",width:"100%",minWidth:0,height:"auto",aspectRatio:"1000 / 620",touchAction:"none",cursor:panning?"grabbing":"grab"}}
+      onPointerDown={startCanvasPan} onPointerMove={onCanvasPointerMove} onPointerUp={finishCanvasInteraction} onPointerCancel={finishCanvasInteraction} onWheel={zoomCanvasAtPointer}>
       <defs><pattern id="topology-grid" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M 25 0 L 0 0 0 25" fill="none" stroke="currentColor" strokeOpacity=".08" strokeWidth="1"/></pattern></defs>
       <rect data-canvas-background="true" x="0" y="0" width="10000" height="10000" fill="url(#topology-grid)"/>
       {links.map(link=>{
        const source=nodeById[link.source_node_id],target=nodeById[link.target_node_id];
-       return source&&target?<g key={link.id}>
-        <line x1={source.x} y1={source.y} x2={target.x} y2={target.y} stroke="var(--primary)" strokeWidth="4"/>
+       return source&&target?<g key={link.id} role="button" tabIndex="0"
+        aria-label={"Select link "+link.id+" from "+source.name+" port "+link.source_adapter+"/"+link.source_port+" to "+target.name+" port "+link.target_adapter+"/"+link.target_port}
+        aria-pressed={selectedLink===link.id}
+        onPointerDown={event=>event.stopPropagation()}
+        onClick={event=>{event.stopPropagation();selectCanvasLink(link);}}
+        onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();selectCanvasLink(link);}}}
+        style={{cursor:"pointer"}}>
+        <line x1={source.x+68} y1={source.y} x2={target.x-68} y2={target.y} stroke={selectedLink===link.id?"var(--warning)":"var(--primary)"} strokeWidth={selectedLink===link.id?8:4}/>
+        <circle cx={source.x+68} cy={source.y} r="6" fill={selectedLink===link.id?"var(--warning)":"var(--primary)"}/>
+        <circle cx={target.x-68} cy={target.y} r="6" fill={selectedLink===link.id?"var(--warning)":"var(--primary)"}/>
         <text x={(source.x+target.x)/2} y={(source.y+target.y)/2-8} fill="currentColor" fontSize="12">{link.source_adapter}/{link.source_port} ↔ {link.target_adapter}/{link.target_port}</text>
        </g>:null;
       })}
       {nodes.map(node=>{
        const matches=!nodeSearch.trim()||[node.name,node.id,node.node_type,node.template_id].some(value=>String(value||"").toLowerCase().includes(nodeSearch.trim().toLowerCase()));
        return <g key={node.id} transform={"translate("+node.x+" "+node.y+")"}
-        onPointerDown={event=>{event.preventDefault();setSelectedNode(node.id);setPanning(null);setDragging(node.id);event.currentTarget.setPointerCapture?.(event.pointerId);}}
-        style={{cursor:"grab"}} opacity={matches?1:0.25}>
-        <rect x="-68" y="-34" width="136" height="68" rx="12" fill={selectedNode===node.id?"var(--primary)":"var(--muted)"} stroke={nodeSearch.trim()&&matches?"var(--warning)":"var(--border)"} strokeWidth={nodeSearch.trim()&&matches?4:2}/>
+        role="button" tabIndex="0" aria-label={"Select node "+node.name} aria-pressed={selectedNodes.includes(node.id)}
+        onPointerDown={event=>{setPanning(null);startNodeDrag(event,node.id);}}
+        onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();setSelectedNodes(current=>current.includes(node.id)?current:[node.id]);setSelectedNode(node.id);setSelectedLink("");}}}
+        style={{cursor:"grab",outline:"none"}} opacity={matches?1:0.25}>
+        <rect x="-68" y="-34" width="136" height="68" rx="12" fill={selectedNodes.includes(node.id)?"var(--primary)":"var(--muted)"} stroke={nodeSearch.trim()&&matches?"var(--warning)":selectedNodes.includes(node.id)?"var(--primary)":"var(--border)"} strokeWidth={nodeSearch.trim()&&matches?4:selectedNodes.includes(node.id)?4:2}/>
         <text x="0" y="-4" textAnchor="middle" fill={selectedNode===node.id?"white":"currentColor"} fontSize="14" fontWeight="600">{node.name.slice(0,18)}</text>
         <text x="0" y="16" textAnchor="middle" fill={selectedNode===node.id?"white":"currentColor"} fontSize="10">{node.node_type} · {node.id.slice(0,12)}</text>
        </g>;
@@ -445,15 +528,27 @@ export default function TopologyStudioPage({user}){
      </svg>
     </div>
     {!nodes.length?<EmptyState title="Canvas is empty" message="Add the first node using the palette above. This does not create a provider resource."/>:null}
+    {selectedNodes.length>1?<div className="form-grid"><div className="context-caption">{selectedNodes.length} nodes selected · {canManage?"drag any selected node to move the group together.":"view-only selection."}</div>{canManage?<div className="form-actions"><Button type="button" variant="destructive" onClick={deleteSelectedTopology}>Delete selected nodes and attached links</Button></div>:null}</div>:null}
     {selectedNodeRecord?<div className="form-grid">
-     <Field label="Selected node"><input value={selectedNodeRecord.name} onChange={event=>updateNode(selectedNode,{name:event.target.value})}/></Field>
-     <Field label="Template reference"><input value={selectedNodeRecord.template_id} onChange={event=>updateNode(selectedNode,{template_id:event.target.value})}/></Field>
-     <Field label="X coordinate"><input type="number" min="0" max="10000" value={selectedNodeRecord.x} onChange={event=>updateNode(selectedNode,{x:Number(event.target.value)})}/></Field>
-     <Field label="Y coordinate"><input type="number" min="0" max="10000" value={selectedNodeRecord.y} onChange={event=>updateNode(selectedNode,{y:Number(event.target.value)})}/></Field>
-     <div className="form-actions"><Button type="button" variant="destructive" onClick={()=>removeNode(selectedNode)}>Remove node and attached links</Button></div>
+     <Field label="Selected node"><input value={selectedNodeRecord.name} onChange={event=>updateNode(selectedNode,{name:event.target.value})} disabled={!canManage}/></Field>
+     <Field label="Logical node type"><select value={selectedNodeRecord.node_type} onChange={event=>updateNode(selectedNode,{node_type:event.target.value})} disabled={!canManage}>{NODE_TYPES.map(item=><option key={item}>{item}</option>)}</select></Field>
+     <Field label="Template reference"><input value={selectedNodeRecord.template_id} onChange={event=>updateNode(selectedNode,{template_id:event.target.value})} disabled={!canManage}/></Field>
+     <Field label="X coordinate"><input type="number" min="0" max="10000" value={selectedNodeRecord.x} onChange={event=>updateNode(selectedNode,{x:Number(event.target.value)})} disabled={!canManage}/></Field>
+     <Field label="Y coordinate"><input type="number" min="0" max="10000" value={selectedNodeRecord.y} onChange={event=>updateNode(selectedNode,{y:Number(event.target.value)})} disabled={!canManage}/></Field>
+     <div className="form-actions"><Button type="button" variant="destructive" onClick={()=>removeNode(selectedNode)} disabled={!canManage}>Remove node and attached links</Button></div>
     </div>:null}
    </Section>
-   <Section title="Interface and link editor" subtitle="Each endpoint is a concrete adapter/port pair. Port occupancy is validated again by the backend.">
+   <Section title="Interface and link editor" subtitle="Select a canvas link to inspect or edit its endpoint adapter/port references. Port occupancy is validated by the canonical backend validator.">
+    {selectedLinkRecord&&linkEditForm?<form className="form-grid" onSubmit={saveSelectedLink}>
+     <div className="context-caption">Selected link · {selectedLinkRecord.id}</div>
+     <Field label="Edit source node"><select value={linkEditForm.source_node_id} onChange={event=>setLinkEditForm({...linkEditForm,source_node_id:event.target.value})}>{nodes.map(item=><option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}</select></Field>
+     <Field label="Edit source adapter"><input type="number" min="0" max="255" value={linkEditForm.source_adapter} onChange={event=>setLinkEditForm({...linkEditForm,source_adapter:event.target.value})}/></Field>
+     <Field label="Edit source port"><input type="number" min="0" max="255" value={linkEditForm.source_port} onChange={event=>setLinkEditForm({...linkEditForm,source_port:event.target.value})}/></Field>
+     <Field label="Edit target node"><select value={linkEditForm.target_node_id} onChange={event=>setLinkEditForm({...linkEditForm,target_node_id:event.target.value})}>{nodes.map(item=><option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}</select></Field>
+     <Field label="Edit target adapter"><input type="number" min="0" max="255" value={linkEditForm.target_adapter} onChange={event=>setLinkEditForm({...linkEditForm,target_adapter:event.target.value})}/></Field>
+     <Field label="Edit target port"><input type="number" min="0" max="255" value={linkEditForm.target_port} onChange={event=>setLinkEditForm({...linkEditForm,target_port:event.target.value})}/></Field>
+     <div className="form-actions"><Button type="submit" disabled={!canManage}>Save link endpoint changes</Button><Button type="button" variant="destructive" onClick={()=>removeLink(selectedLink)} disabled={!canManage}>Remove link</Button></div>
+    </form>:<p className="muted">Select a connection on the canvas or from the links table to inspect its endpoints.</p>}
     <form className="form-grid" onSubmit={addLink}>
      <Field label="Source node"><select value={linkForm.source_node_id} onChange={event=>setLinkForm({...linkForm,source_node_id:event.target.value})}><option value="">Select node</option>{nodes.map(item=><option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}</select></Field>
      <Field label="Source adapter"><input type="number" min="0" max="255" value={linkForm.source_adapter} onChange={event=>setLinkForm({...linkForm,source_adapter:event.target.value})}/></Field>
@@ -464,7 +559,7 @@ export default function TopologyStudioPage({user}){
      <div className="form-actions"><Button type="submit" disabled={nodes.length<2||!canManage}>Add link</Button></div>
     </form>
     <DataTable caption="Logical topology links" rows={links} rowKey={item=>item.id} columns={[
-     {key:"id",label:"Link ID"},
+     {key:"id",label:"Link ID",render:item=><button type="button" className="table-link-select" aria-pressed={selectedLink===item.id} onClick={()=>selectCanvasLink(item)}>{item.id}</button>},
      {key:"source_node_id",label:"Source",render:item=>item.source_node_id+" · "+item.source_adapter+"/"+item.source_port},
      {key:"target_node_id",label:"Target",render:item=>item.target_node_id+" · "+item.target_adapter+"/"+item.target_port},
      {key:"actions",label:"Actions",render:item=>canManage?<Button variant="ghost" size="sm" onClick={()=>removeLink(item.id)}>Remove</Button>:"—"}
@@ -549,9 +644,11 @@ export default function TopologyStudioPage({user}){
      {key:"completed_at",label:"Completed",render:item=>item.completed_at?new Date(item.completed_at).toLocaleString():"—"}
     ]} emptyTitle="No topology applies" emptyMessage="Dry-run plans do not create history. Confirmed provider operations are retained here, including partial results."/>
    </Section>:null}
-   {canManage?<Section title="Save immutable topology revision" subtitle="Saving creates a new draft with canonical JSON and SHA-256. Existing revisions are never overwritten.">
+   {canManage?<Section title="Save immutable topology revision" subtitle="Validate the visual draft against the canonical backend rules, then save a new immutable revision with a SHA-256 identity. Existing revisions are never overwritten.">
+    {validation?<div className="provider-plan"><p><StatusBadge value={validation.valid?"VALID":"INVALID"}/> {validation.valid?validation.node_count+" nodes · "+validation.link_count+" links · SHA-256 "+validation.content_sha256:validation.error}</p></div>:null}
     <div className="button-row">
-     <Button onClick={saveRevision} loading={mutation.loading} disabled={!profileId}>Save new draft revision</Button>
+     <Button type="button" variant="outline" onClick={validateDraft} loading={validationLoading} disabled={!profileId||!canManage||mutation.loading}>Validate current draft</Button>
+     <Button onClick={saveRevision} loading={mutation.loading} disabled={!profileId||!canManage||validationLoading}>Validate and save new draft revision</Button>
      {canPublish?<Button variant="outline" onClick={publishRevision} disabled={!revisionId||selectedRevision?.status!=="DRAFT"||mutation.loading}>Publish selected revision</Button>:null}
     </div>
    </Section>:null}

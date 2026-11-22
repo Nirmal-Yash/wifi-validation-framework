@@ -2,7 +2,7 @@ from __future__ import annotations
 import sqlite3
 import pytest
 from dashboard.app import create_app
-from lib.security import AuthManager
+from lib.security import AuthManager, Role, UserRecord
 from lib.repositories import SQLiteDatabase
 from lib.services.topology_studio import TopologyStudioError, TopologyStudioNotFound, TopologyStudioService
 
@@ -99,3 +99,98 @@ def test_topology_profile_revision_api_uses_standard_envelopes_and_idempotency(t
     listed = client.get("/api/v1/topologies?project_id=project-1")
     assert listed.status_code == 200
     assert [item["profile_id"] for item in listed.get_json()["data"]["items"]] == [profile["profile_id"]]
+
+
+
+def test_topology_validation_api_returns_canonical_hash_without_persisting_revision(topology):
+    database, service = topology
+    profile = service.create_profile(
+        project_id="project-1", name="Validation target", actor="owner",
+    )
+    app = create_app(database.path, auth_manager=AuthManager((), required=False))
+    client = app.test_client()
+    with database.connection() as connection:
+        before = connection.execute(
+            "SELECT COUNT(*) FROM topology_revisions WHERE profile_id=?",
+            (profile["profile_id"],),
+        ).fetchone()[0]
+
+    response = client.post(
+        "/api/v1/topologies/validate",
+        json={
+            "project_id": "project-1",
+            "profile_id": profile["profile_id"],
+            "definition": definition(),
+        },
+    )
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["valid"] is True
+    assert data["node_count"] == 2
+    assert data["link_count"] == 1
+    assert data["content_sha256"] == service.canonical_payload(definition())[2]
+    with database.connection() as connection:
+        after = connection.execute(
+            "SELECT COUNT(*) FROM topology_revisions WHERE profile_id=?",
+            (profile["profile_id"],),
+        ).fetchone()[0]
+    assert after == before
+
+
+def test_topology_validation_api_returns_actionable_errors_for_port_conflicts(topology):
+    database, _service = topology
+    app = create_app(database.path, auth_manager=AuthManager((), required=False))
+    client = app.test_client()
+    invalid = definition()
+    invalid["links"].append({
+        "id": "link-b",
+        "source_node_id": "router-a",
+        "source_adapter": 0,
+        "source_port": 0,
+        "target_node_id": "switch-a",
+        "target_adapter": 0,
+        "target_port": 7,
+    })
+    response = client.post(
+        "/api/v1/topologies/validate",
+        json={"project_id": "project-1", "definition": invalid},
+    )
+    assert response.status_code == 422
+    assert response.get_json()["error"]["code"] == "INVALID_TOPOLOGY"
+    assert "occupied" in response.get_json()["error"]["message"]
+    with database.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM topology_revisions").fetchone()[0] == 0
+
+
+def test_topology_validation_api_rejects_cross_project_profile_and_missing_scope(topology):
+    database, service = topology
+    profile = service.create_profile(project_id="project-2", name="Other Project", actor="owner")
+    app = create_app(database.path, auth_manager=AuthManager((), required=False))
+    client = app.test_client()
+    missing = client.post("/api/v1/topologies/validate", json={"definition": definition()})
+    assert missing.status_code == 400
+    cross_scope = client.post(
+        "/api/v1/topologies/validate",
+        json={"project_id": "project-1", "profile_id": profile["profile_id"], "definition": definition()},
+    )
+    assert cross_scope.status_code == 404
+
+
+def test_topology_validation_api_requires_topology_manage_permission(topology):
+    database, _service = topology
+    password = "correct-horse-battery-staple-2026"
+    manager = AuthManager(
+        (UserRecord("viewer", AuthManager.password_hash(password), Role.VIEWER, ("project-1",)),),
+        required=True,
+    )
+    app = create_app(database.path, auth_manager=manager)
+    app.config.update(TESTING=True)
+    client = app.test_client()
+    login = client.post("/api/v1/auth/login", json={"username": "viewer", "password": password})
+    assert login.status_code == 200
+    response = client.post(
+        "/api/v1/topologies/validate",
+        json={"project_id": "project-1", "definition": definition()},
+    )
+    assert response.status_code == 403
+    assert response.get_json()["error"]["code"] == "FORBIDDEN"

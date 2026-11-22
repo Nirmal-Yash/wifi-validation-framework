@@ -79,7 +79,7 @@ The first product-expansion batch is P00–P03:
 - **P00 — Requirements and architecture freeze:** complete repository/module/API/test inventory, requirement traceability and decisions.
 - **P01 — Unified design system and application shell:** reconcile tokens, typography, navigation and global Organization/Project/Lab/provider context without changing business logic.
 - **P02 — Operational overview:** aggregate persisted Project/Lab/device/provider/pipeline/run observations with source timestamps; unavailable data remains unavailable.
-- **P03 — Visual Topology Studio:** improve the existing editor (selection, ports/links, navigation and editing affordances) while retaining the existing domain model, immutable revision and explicit provider apply flow.
+- **P03 — Visual Topology Studio:** complete the existing editor with accessible node/link inspectors, multi-selection and group movement, adapter/port link editing, canvas search/navigation, copy/paste with stable logical-ID remapping, undo/redo, keyboard interaction and canonical backend validation. Retain the existing Project/Lab topology model, immutable revision/hash lifecycle and separate explicit provider plan/apply flow; editing, validation, saving and publishing must never provision or mutate provider resources.
 
 P01–P03 are not accepted merely because the pages render. Their backend contracts, RBAC, loading/error/empty states, responsive behavior, integration tests and preservation tests must pass.
 

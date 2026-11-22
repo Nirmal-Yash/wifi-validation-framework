@@ -231,3 +231,52 @@
   .workspace-context-error { max-width:170px; }
   .workspace-context-error span { display:none; }
 }
+
+
+/* EXP-P03 — accessible topology selection, keyboard help and responsive canvas. */
+.topology-keyboard-help {
+  margin: 0 0 10px;
+  font-size: 10px;
+  line-height: 1.55;
+}
+.topology-canvas-toolbar { align-items: center; }
+.topology-canvas-toolbar .topology-canvas-actions { flex-wrap: wrap; }
+.topology-canvas-actions button:disabled { cursor: not-allowed; opacity: .45; }
+.topology-canvas-toolbar + .topology-keyboard-help { overflow-wrap: anywhere; }
+.topology-canvas-toolbar + .topology-keyboard-help + div {
+  width: 100%;
+  min-width: 0;
+}
+.topology-canvas-toolbar + .topology-keyboard-help + div svg[role="application"] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+}
+.table-link-select {
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.table-link-select:hover { text-decoration: underline; }
+.table-link-select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+svg[role="application"] g[role="button"]:focus-visible rect,
+svg[role="application"] g[role="button"]:focus-visible line {
+  stroke: var(--ring);
+  stroke-width: 5;
+}
+@media(max-width:640px) {
+  .topology-canvas-toolbar { align-items: stretch; }
+  .topology-canvas-actions { gap: 5px; }
+  .topology-keyboard-help { font-size: 9px; }
+  .topology-canvas-toolbar + .topology-keyboard-help + div { border-radius: 8px; }
+}

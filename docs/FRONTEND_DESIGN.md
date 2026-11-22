@@ -369,3 +369,14 @@ The shared token file defines typography, spacing, control heights, semantic sur
 The Network operations section consumes `GET /api/v1/dashboard/operations-overview` for the active Project and optional Lab. It surfaces Project/Lab scope, device status, topology profiles/revisions/apply records, saved provider bindings, pipeline definition/execution state, and Run lifecycle/business outcomes. Each persisted data section exposes its source update timestamp; the overall query observation time is shown separately.
 
 Subsystems remain permission-aware: restricted values are not rendered as zero, and the API marks them `RESTRICTED`. Provider binding status is not connection health; the interface keeps health `UNKNOWN` until an authenticated provider probe returns real evidence. Network performance stays `UNAVAILABLE` without an actual scoped measurement. Refreshing the overview is read-only and does not start or modify lab/provider operations.
+
+
+## 24. P03 — Visual Topology Studio interactions
+
+The topology page remains the UI for the existing canonical topology profiles and immutable revisions. Its canvas presents logical nodes and links without treating the canvas as a provider controller. Local authoring includes node inspectors, adapter/port link selection and editing, single/multi-selection, group movement, search, pan/zoom/fit, selection delete, and copy/paste. Paste creates new logical IDs and remaps only the copied internal link endpoints. A bounded in-memory undo/redo stack is reset whenever the user switches Project, profile or revision.
+
+Keyboard actions are scoped to the page and are ignored while the user is typing in form controls: Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redo, Ctrl/Cmd+A select all, Ctrl/Cmd+C/V copy/paste, Delete/Backspace remove selection, and Escape clear selection. Canvas nodes and links have accessible names, keyboard focus and selected state; the toolbar remains usable without canvas pointer gestures. Read-only viewers may inspect and select, but cannot move, paste, delete, validate or persist topology content.
+
+The Validate action calls `POST /api/v1/topologies/validate`, which applies the canonical backend validation rules and returns the exact content hash without persisting a revision. Save validates again and creates a new immutable DRAFT revision. Publish is separate. A read-only topology viewer can inspect/select/search but cannot locally mutate, validate, paste or delete topology content.
+
+Provider actions remain in their dedicated section and are not implicit side effects of editing. The existing explicit sequence remains: private controller binding, read-only catalogue, dry-run plan, conflict review, user confirmation, apply and reconciliation. Live provider acceptance is not inferred from mocked tests or a saved binding.
