@@ -64,7 +64,7 @@ def test_openapi_documents_structured_visual_topology_intent_and_provider_bounda
 
 def test_openapi_provider_registry_is_scoped_read_only_and_secret_safe():
     content = SPEC.read_text(encoding="utf-8")
-    registry = content.split("  /providers/registry:", 1)[1].split("\\n  /health:", 1)[0]
+    registry = content.split("  /providers/registry:", 1)[1].split("\n  /health:", 1)[0]
     assert "operationId: listProviderRegistry" in registry
     assert "name: project_id" in registry and "required: true" in registry
     assert "topology.read" in registry
