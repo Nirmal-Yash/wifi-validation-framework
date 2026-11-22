@@ -1,4 +1,4 @@
-import React,{createContext,useCallback,useContext,useEffect,useMemo,useState} from "react";
+import React,{createContext,useCallback,useContext,useEffect,useMemo,useRef,useState} from "react";
 import {api} from "@/api";
 
 const WorkspaceContext=createContext(null);
@@ -23,11 +23,13 @@ export function WorkspaceProvider({user,children}){
  const [projectsLoading,setProjectsLoading]=useState(false);
  const [labsLoading,setLabsLoading]=useState(false);
  const [error,setError]=useState("");
+ const savedSelection=useRef(readSelection(username));
 
  useEffect(()=>{
   let current=true;
   setOrganizationsLoading(true);setError("");
   const saved=readSelection(username);
+  savedSelection.current=saved;
   api.workspaceOrganizations().then(result=>{
    if(!current)return;
    const rows=Array.isArray(result?.items)?result.items:[];
@@ -56,7 +58,7 @@ export function WorkspaceProvider({user,children}){
    if(!current)return;
    const rows=Array.isArray(result?.items)?result.items:[];
    setProjects(rows);
-   const saved=readSelection(username);
+   const saved=savedSelection.current;
    const preferred=rows.some(item=>item.project_id===saved.projectId)?saved.projectId:(rows[0]?.project_id||"");
    setActiveProjectId(preferred);
    if(!preferred)setActiveLabId("");
@@ -77,7 +79,7 @@ export function WorkspaceProvider({user,children}){
    if(!current)return;
    const rows=Array.isArray(result?.items)?result.items:[];
    setLabs(rows);
-   const saved=readSelection(username);
+   const saved=savedSelection.current;
    setActiveLabId(rows.some(item=>item.lab_id===saved.labId)?saved.labId:"");
   }).catch(()=>{
    if(!current)return;
@@ -96,12 +98,17 @@ export function WorkspaceProvider({user,children}){
  },[username,activeOrganizationId,activeProjectId,activeLabId]);
 
  const selectOrganization=useCallback(id=>{
+  savedSelection.current={organizationId:String(id||""),projectId:"",labId:""};
   setActiveOrganizationId(String(id||""));setActiveProjectId("");setActiveLabId("");setError("");
  },[]);
  const selectProject=useCallback(id=>{
+  savedSelection.current={...savedSelection.current,organizationId:activeOrganizationId,projectId:String(id||""),labId:""};
   setActiveProjectId(String(id||""));setActiveLabId("");setError("");
- },[]);
- const selectLab=useCallback(id=>{setActiveLabId(String(id||""));setError("");},[]);
+ },[activeOrganizationId]);
+ const selectLab=useCallback(id=>{
+  savedSelection.current={...savedSelection.current,organizationId:activeOrganizationId,projectId:activeProjectId,labId:String(id||"")};
+  setActiveLabId(String(id||""));setError("");
+ },[activeOrganizationId,activeProjectId]);
 
  const value=useMemo(()=>({
   organizations,projects,labs,activeOrganizationId,activeProjectId,activeLabId,
