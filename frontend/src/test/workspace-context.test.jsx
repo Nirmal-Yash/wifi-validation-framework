@@ -55,7 +55,7 @@ describe("global workspace context",()=>{
  it("retries workspace loading after an Organization request fails",async()=>{
   api.workspaceOrganizations.mockRejectedValueOnce(new Error("offline"));
   render(<WorkspaceProvider user={{username:"owner"}}><Harness/></WorkspaceProvider>);
-  expect(await screen.findByRole("alert")).toHaveTextContent(/Could not load Organizations/);
+  expect((await screen.findByRole("alert")).textContent).toMatch(/Could not load Organizations/);
   fireEvent.click(screen.getByRole("button",{name:"Retry workspace"}));
   expect(await screen.findByRole("option",{name:"Project A"})).toBeTruthy();
   expect(await screen.findByRole("option",{name:"Lab project-a"})).toBeTruthy();
