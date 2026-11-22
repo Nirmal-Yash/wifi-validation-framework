@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from math import isfinite
 from typing import Any, Mapping
 
 from lib.domain import ArtifactType, TestResultStatus
@@ -62,7 +63,9 @@ class DashboardQueryService:
     def operations_overview(
         self, project_id: str, *, lab_id: str | None = None,
         include_devices: bool = True, include_topology: bool = True,
-        include_pipelines: bool = True,
+        include_pipelines: bool = True, include_runs: bool = True,
+        include_configuration: bool = True, include_evidence: bool = True,
+        include_performance: bool = True,
     ) -> dict[str, Any]:
         """Aggregate persisted Project/Lab operations data without mutating state.
 
@@ -130,7 +133,11 @@ class DashboardQueryService:
                     "source_updated_at": device_last_update,
                 }
             else:
-                devices = {"access": "RESTRICTED", "total": None, "source": None, "observed_at": None}
+                devices = {
+                    "access": "RESTRICTED", "total": None, "active": None,
+                    "archived": None, "by_status": None, "source": None,
+                    "observed_at": None, "source_updated_at": None,
+                }
 
             if include_topology:
                 profile_filter = " AND (lab_id=? OR lab_id IS NULL)" if lab_id else ""
@@ -155,6 +162,21 @@ class DashboardQueryService:
                     scope_params,
                 ).fetchall()
                 apply_counts = {str(row["status"]): int(row["total"]) for row in apply_rows}
+                latest_published_rows = connection.execute(
+                    "SELECT p.profile_id,p.name,r.revision_id,r.revision_number,r.published_at "
+                    "FROM topology_profiles p JOIN topology_revisions r ON r.profile_id=p.profile_id "
+                    "WHERE p.project_id=? AND p.status='ACTIVE' AND r.status='PUBLISHED'"
+                    + profile_filter.replace("lab_id", "p.lab_id")
+                    + " ORDER BY r.published_at DESC,r.revision_number DESC LIMIT 20",
+                    profile_params,
+                ).fetchall()
+                latest_published = [{
+                    "profile_id": row["profile_id"],
+                    "profile_name": row["name"],
+                    "revision_id": row["revision_id"],
+                    "revision_number": int(row["revision_number"]),
+                    "published_at": row["published_at"],
+                } for row in latest_published_rows]
                 topology_last_update = max(
                     [value for value in (profile_last_update, *(row["last_updated_at"] for row in revision_rows), *(row["last_updated_at"] for row in apply_rows)) if value],
                     default=None,
@@ -165,6 +187,7 @@ class DashboardQueryService:
                     "profiles_by_status": profile_counts,
                     "revisions": sum(revision_counts.values()),
                     "revisions_by_status": revision_counts,
+                    "latest_published_revisions": latest_published,
                     "apply_records": sum(apply_counts.values()),
                     "apply_by_status": apply_counts,
                     "source": ["topology_profiles", "topology_revisions", "topology_apply_records"],
@@ -172,7 +195,19 @@ class DashboardQueryService:
                     "source_updated_at": topology_last_update,
                 }
             else:
-                topology = {"access": "RESTRICTED", "profiles": None, "revisions": None, "apply_records": None, "source": None, "observed_at": None}
+                topology = {
+                    "access": "RESTRICTED",
+                    "profiles": None,
+                    "profiles_by_status": None,
+                    "revisions": None,
+                    "revisions_by_status": None,
+                    "latest_published_revisions": None,
+                    "apply_records": None,
+                    "apply_by_status": None,
+                    "source": None,
+                    "observed_at": None,
+                    "source_updated_at": None,
+                }
 
             if include_pipelines:
                 pipeline_rows = connection.execute(
@@ -187,8 +222,21 @@ class DashboardQueryService:
                     scope_params,
                 ).fetchall()
                 execution_counts = {str(row["status"]): int(row["total"]) for row in execution_rows}
+                step_scope_sql = " AND e.lab_id=?" if lab_id else ""
+                step_rows = connection.execute(
+                    "SELECT s.status,COUNT(*) AS total,"
+                    "MAX(COALESCE(s.completed_at,s.started_at,s.created_at)) AS last_activity_at "
+                    "FROM pipeline_steps s JOIN pipeline_executions e ON e.execution_id=s.execution_id "
+                    "WHERE e.project_id=?" + step_scope_sql + " GROUP BY s.status",
+                    scope_params,
+                ).fetchall()
+                step_counts = {str(row["status"]): int(row["total"]) for row in step_rows}
                 pipeline_last_update = max(
-                    [value for value in ( *(row["last_updated_at"] for row in pipeline_rows), *(row["last_activity_at"] for row in execution_rows)) if value],
+                    [value for value in (
+                        *(row["last_updated_at"] for row in pipeline_rows),
+                        *(row["last_activity_at"] for row in execution_rows),
+                        *(row["last_activity_at"] for row in step_rows),
+                    ) if value],
                     default=None,
                 )
                 pipelines = {
@@ -199,42 +247,312 @@ class DashboardQueryService:
                     "executions": sum(execution_counts.values()),
                     "executions_by_status": execution_counts,
                     "queued": execution_counts.get("QUEUED", 0),
-                    "running": execution_counts.get("RUNNING", 0) + execution_counts.get("CANCELLING", 0),
+                    "running": execution_counts.get("RUNNING", 0),
+                    "cancelling": execution_counts.get("CANCELLING", 0),
+                    "active_executions": sum(execution_counts.get(value, 0) for value in ("QUEUED", "RUNNING", "CANCELLING")),
                     "recovery_required": execution_counts.get("RECOVERY_REQUIRED", 0),
+                    "steps": sum(step_counts.values()),
+                    "steps_by_status": step_counts,
+                    "active_steps": sum(step_counts.get(value, 0) for value in ("PENDING", "RUNNING", "RETRY_WAIT")),
+                    "failed_steps": step_counts.get("FAILED", 0),
+                    "recovery_required_steps": step_counts.get("RECOVERY_REQUIRED", 0),
                     "source": ["pipeline_definitions", "pipeline_executions"],
                     "observed_at": observed_at,
                     "source_updated_at": pipeline_last_update,
                 }
             else:
-                pipelines = {"access": "RESTRICTED", "total": None, "executions": None, "source": None, "observed_at": None}
+                pipelines = {
+                    "access": "RESTRICTED",
+                    "total": None, "active": None, "by_status": None,
+                    "executions": None, "executions_by_status": None,
+                    "queued": None, "running": None, "cancelling": None,
+                    "active_executions": None, "recovery_required": None,
+                    "steps": None, "steps_by_status": None, "active_steps": None,
+                    "failed_steps": None, "recovery_required_steps": None,
+                    "source": None, "observed_at": None, "source_updated_at": None,
+                }
 
-            run_rows = connection.execute(
-                "SELECT lifecycle,outcome,COUNT(*) AS total,"
-                "MAX(COALESCE(completed_at,started_at,created_at)) AS last_activity_at "
-                "FROM runs WHERE project_id=?" + scope_sql + " GROUP BY lifecycle,outcome",
-                scope_params,
-            ).fetchall()
-            lifecycle_counts: dict[str, int] = {}
-            outcome_counts: dict[str, int] = {}
-            latest_run_activity = None
-            for row in run_rows:
-                lifecycle = str(row["lifecycle"])
-                outcome = str(row["outcome"] or "PENDING")
-                count = int(row["total"])
-                lifecycle_counts[lifecycle] = lifecycle_counts.get(lifecycle, 0) + count
-                outcome_counts[outcome] = outcome_counts.get(outcome, 0) + count
-                timestamp = row["last_activity_at"]
-                if timestamp and (latest_run_activity is None or timestamp > latest_run_activity):
-                    latest_run_activity = timestamp
-            runs = {
-                "total": sum(lifecycle_counts.values()),
-                "by_lifecycle": lifecycle_counts,
-                "by_outcome": outcome_counts,
-                "active": sum(lifecycle_counts.get(value, 0) for value in ("QUEUED", "PREPARING", "LAB_HEALTH_CHECK", "RUNNING")),
-                "source": "runs",
-                "observed_at": observed_at,
-                "source_updated_at": latest_run_activity,
-            }
+            if include_configuration:
+                deployment_rows = connection.execute(
+                    "SELECT status,COUNT(*) AS total,"
+                    "MAX(COALESCE(completed_at,started_at,created_at)) AS last_activity_at "
+                    "FROM device_configuration_deployments WHERE project_id=?"
+                    + scope_sql + " GROUP BY status",
+                    scope_params,
+                ).fetchall()
+                deployment_counts = {str(row["status"]): int(row["total"]) for row in deployment_rows}
+                latest_deployment_row = connection.execute(
+                    "SELECT deployment_id,device_id,lab_id,status,created_at,completed_at "
+                    "FROM device_configuration_deployments WHERE project_id=?"
+                    + scope_sql + " ORDER BY created_at DESC,deployment_id DESC LIMIT 1",
+                    scope_params,
+                ).fetchone()
+                configuration_last_update = max(
+                    (row["last_activity_at"] for row in deployment_rows if row["last_activity_at"]),
+                    default=None,
+                )
+                configuration = {
+                    "access": "AVAILABLE",
+                    "deployments": sum(deployment_counts.values()),
+                    "by_status": deployment_counts,
+                    "applying": deployment_counts.get("APPLYING", 0),
+                    "applied": deployment_counts.get("APPLIED", 0),
+                    "partial": deployment_counts.get("PARTIAL", 0),
+                    "failed": deployment_counts.get("FAILED", 0),
+                    "latest": ({
+                        "deployment_id": latest_deployment_row["deployment_id"],
+                        "device_id": latest_deployment_row["device_id"],
+                        "lab_id": latest_deployment_row["lab_id"],
+                        "status": latest_deployment_row["status"],
+                        "created_at": latest_deployment_row["created_at"],
+                        "completed_at": latest_deployment_row["completed_at"],
+                    } if latest_deployment_row else None),
+                    "source": "device_configuration_deployments",
+                    "observed_at": observed_at,
+                    "source_updated_at": configuration_last_update,
+                }
+            else:
+                configuration = {
+                    "access": "RESTRICTED", "deployments": None, "by_status": None,
+                    "applying": None, "applied": None, "partial": None, "failed": None,
+                    "latest": None, "source": None, "observed_at": None,
+                    "source_updated_at": None,
+                }
+
+            if include_runs:
+                run_rows = connection.execute(
+                    "SELECT lifecycle,outcome,COUNT(*) AS total,"
+                    "MAX(COALESCE(completed_at,started_at,created_at)) AS last_activity_at "
+                    "FROM runs WHERE project_id=?" + scope_sql + " GROUP BY lifecycle,outcome",
+                    scope_params,
+                ).fetchall()
+                lifecycle_counts: dict[str, int] = {}
+                outcome_counts: dict[str, int] = {}
+                latest_run_activity = None
+                for row in run_rows:
+                    lifecycle = str(row["lifecycle"])
+                    outcome = str(row["outcome"] or "PENDING")
+                    count = int(row["total"])
+                    lifecycle_counts[lifecycle] = lifecycle_counts.get(lifecycle, 0) + count
+                    outcome_counts[outcome] = outcome_counts.get(outcome, 0) + count
+                    timestamp = row["last_activity_at"]
+                    if timestamp and (latest_run_activity is None or timestamp > latest_run_activity):
+                        latest_run_activity = timestamp
+                runs = {
+                    "total": sum(lifecycle_counts.values()),
+                    "by_lifecycle": lifecycle_counts,
+                    "by_outcome": outcome_counts,
+                    "active": sum(lifecycle_counts.get(value, 0) for value in ("QUEUED", "PREPARING", "LAB_HEALTH_CHECK", "RUNNING")),
+                    "source": "runs",
+                    "observed_at": observed_at,
+                    "source_updated_at": latest_run_activity,
+                }
+            else:
+                runs = {
+                    "access": "RESTRICTED",
+                    "total": None,
+                    "by_lifecycle": None,
+                    "by_outcome": None,
+                    "active": None,
+                    "source": None,
+                    "observed_at": None,
+                    "source_updated_at": None,
+                }
+
+            if include_evidence:
+                evidence_rows = connection.execute(
+                    "SELECT a.artifact_type,COUNT(*) AS total,MAX(a.created_at) AS last_created_at "
+                    "FROM artifacts a JOIN runs r ON r.run_id=a.run_id "
+                    "WHERE r.project_id=?" + (" AND r.lab_id=?" if lab_id else "")
+                    + " AND a.soft_deleted_at IS NULL"
+                    + " AND a.artifact_type IN ('TELEMETRY','LAB_HEALTH_SNAPSHOT') "
+                    "GROUP BY a.artifact_type",
+                    scope_params,
+                ).fetchall()
+                evidence_counts = {str(row["artifact_type"]): int(row["total"]) for row in evidence_rows}
+                telemetry_rows = connection.execute(
+                    "SELECT a.artifact_id,a.run_id,a.created_at "
+                    "FROM artifacts a JOIN runs r ON r.run_id=a.run_id "
+                    "WHERE r.project_id=?" + (" AND r.lab_id=?" if lab_id else "")
+                    + " AND a.soft_deleted_at IS NULL AND a.artifact_type='TELEMETRY' "
+                    "ORDER BY a.created_at DESC,a.artifact_id DESC LIMIT 200",
+                    scope_params,
+                ).fetchall()
+                wifi_groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+                valid_wifi_artifacts = 0
+                for telemetry_row in telemetry_rows:
+                    artifact = self.artifact_repository.get(str(telemetry_row["artifact_id"]))
+                    snapshot = self._read_json_artifact(artifact) if artifact is not None else None
+                    if not isinstance(snapshot, dict) or not isinstance(snapshot.get("points"), list):
+                        continue
+                    valid_wifi_artifacts += 1
+                    for point in snapshot["points"]:
+                        if not isinstance(point, dict):
+                            continue
+                        name = str(point.get("metric") or "").strip()
+                        unit = str(point.get("unit") or "").strip()
+                        interface = str(point.get("interface") or snapshot.get("interface") or "").strip()
+                        raw_value = point.get("value")
+                        captured_at = point.get("captured_at") or snapshot.get("captured_at")
+                        if (
+                            not name or not unit or not interface
+                            or isinstance(raw_value, bool)
+                            or not isinstance(raw_value, (int, float))
+                            or not isfinite(float(raw_value))
+                            or not isinstance(captured_at, str) or not captured_at.strip()
+                        ):
+                            continue
+                        key = (name, unit, interface)
+                        value = float(raw_value)
+                        group = wifi_groups.setdefault(key, {
+                            "metric": name,
+                            "unit": unit,
+                            "interface": interface,
+                            "sample_count": 0,
+                            "sum_value": 0.0,
+                            "min_value": value,
+                            "max_value": value,
+                            "latest_value": value,
+                            "captured_at": captured_at,
+                            "run_id": telemetry_row["run_id"],
+                            "environment_class": point.get("environment_class") or snapshot.get("environment_class"),
+                        })
+                        group["sample_count"] += 1
+                        group["sum_value"] += value
+                        group["min_value"] = min(group["min_value"], value)
+                        group["max_value"] = max(group["max_value"], value)
+                        if captured_at >= group["captured_at"]:
+                            group["latest_value"] = value
+                            group["captured_at"] = captured_at
+                            group["run_id"] = telemetry_row["run_id"]
+                            group["environment_class"] = point.get("environment_class") or snapshot.get("environment_class")
+                wifi_metrics = [{
+                    "metric": item["metric"],
+                    "unit": item["unit"],
+                    "interface": item["interface"],
+                    "sample_count": item["sample_count"],
+                    "mean_value": item["sum_value"] / item["sample_count"],
+                    "min_value": item["min_value"],
+                    "max_value": item["max_value"],
+                    "latest_value": item["latest_value"],
+                    "captured_at": item["captured_at"],
+                    "run_id": item["run_id"],
+                    "environment_class": item["environment_class"],
+                } for item in sorted(wifi_groups.values(), key=lambda item: (item["metric"], item["interface"]))]
+                evidence_last_update = max(
+                    [
+                        value for value in (
+                            *(row["last_created_at"] for row in evidence_rows),
+                            *(item["captured_at"] for item in wifi_metrics),
+                        ) if value
+                    ],
+                    default=None,
+                )
+                evidence = {
+                    "access": "AVAILABLE",
+                    "telemetry_artifacts": evidence_counts.get("TELEMETRY", 0),
+                    "lab_health_snapshots": evidence_counts.get("LAB_HEALTH_SNAPSHOT", 0),
+                    "valid_wifi_telemetry_artifacts": valid_wifi_artifacts,
+                    "wifi_metrics": wifi_metrics,
+                    "by_type": evidence_counts,
+                    "source": ["artifacts", "runs"],
+                    "observed_at": observed_at,
+                    "source_updated_at": evidence_last_update,
+                }
+            else:
+                evidence = {
+                    "access": "RESTRICTED", "telemetry_artifacts": None,
+                    "lab_health_snapshots": None, "valid_wifi_telemetry_artifacts": None,
+                    "wifi_metrics": None, "by_type": None, "source": None,
+                    "observed_at": None, "source_updated_at": None,
+                }
+
+            performance_metrics = []
+            if include_performance:
+                metric_scope_sql = " AND r.lab_id=?" if lab_id else ""
+                metric_rows = connection.execute(
+                    "SELECT m.name,m.unit,m.authoritative,s.value,s.captured_at,r.run_id,tr.test_id "
+                    "FROM runs r "
+                    "JOIN attempts a ON a.run_id=r.run_id "
+                    "JOIN test_results tr ON tr.run_id=r.run_id AND tr.attempt_id=a.attempt_id "
+                    "JOIN metrics m ON m.test_result_id=tr.test_result_id "
+                    "JOIN samples s ON s.metric_id=m.metric_id "
+                    "WHERE r.project_id=?" + metric_scope_sql
+                    + " AND a.number=(SELECT MAX(a2.number) FROM attempts a2 WHERE a2.run_id=r.run_id)"
+                    + " AND s.status='VALID' AND s.warmup=0 AND s.retried=0 AND s.captured_at IS NOT NULL"
+                    + " AND (lower(m.name) LIKE '%throughput%' OR lower(m.name) LIKE '%bandwidth%'"
+                    + " OR lower(m.name) LIKE '%goodput%' OR lower(m.name) LIKE '%latency%'"
+                    + " OR lower(m.name) LIKE '%rtt%' OR lower(m.name) LIKE '%round_trip%'"
+                    + " OR lower(m.name) LIKE '%packet_loss%' OR lower(m.name) LIKE '%jitter%'"
+                    + " OR lower(m.name) LIKE '%utilization%' OR lower(m.name) LIKE '%data_rate%'"
+                    + " OR lower(m.name) LIKE '%tx_rate%' OR lower(m.name) LIKE '%rx_rate%'"
+                    + " OR lower(m.name) LIKE '%rssi%' OR lower(m.name) LIKE '%snr%')"
+                    + " ORDER BY s.captured_at DESC,s.sequence DESC LIMIT 2000",
+                    [project_id] + ([lab_id] if lab_id else []),
+                ).fetchall()
+                metric_groups: dict[tuple[str, str], dict[str, Any]] = {}
+                for row in metric_rows:
+                    metric_key = (str(row["name"]), str(row["unit"]))
+                    value = float(row["value"])
+                    if not isfinite(value):
+                        continue
+                    group = metric_groups.setdefault(metric_key, {
+                        "name": metric_key[0],
+                        "unit": metric_key[1],
+                        "sample_count": 0,
+                        "sum_value": 0.0,
+                        "min_value": value,
+                        "max_value": value,
+                        "value": value,
+                        "captured_at": row["captured_at"],
+                        "run_id": row["run_id"],
+                        "test_id": row["test_id"],
+                        "authoritative": bool(row["authoritative"]),
+                    })
+                    group["sample_count"] += 1
+                    group["sum_value"] += value
+                    group["min_value"] = min(group["min_value"], value)
+                    group["max_value"] = max(group["max_value"], value)
+                    if row["captured_at"] >= group["captured_at"]:
+                        group["value"] = value
+                        group["captured_at"] = row["captured_at"]
+                        group["run_id"] = row["run_id"]
+                        group["test_id"] = row["test_id"]
+                        group["authoritative"] = bool(row["authoritative"])
+                performance_metrics = [{
+                    "name": item["name"],
+                    "unit": item["unit"],
+                    "value": item["value"],
+                    "mean_value": item["sum_value"] / item["sample_count"],
+                    "min_value": item["min_value"],
+                    "max_value": item["max_value"],
+                    "sample_count": item["sample_count"],
+                    "authoritative": item["authoritative"],
+                    "captured_at": item["captured_at"],
+                    "run_id": item["run_id"],
+                    "test_id": item["test_id"],
+                } for item in sorted(metric_groups.values(), key=lambda item: (item["name"], item["unit"]))]
+                performance_source_updated = max(
+                    (item["captured_at"] for item in performance_metrics if item["captured_at"]),
+                    default=None,
+                )
+                performance = {
+                    "access": "AVAILABLE",
+                    "status": "AVAILABLE" if performance_metrics else "UNAVAILABLE",
+                    "reason": None if performance_metrics else (
+                        "No valid, non-warmup, non-retried Project/Lab performance sample with a timestamp is recorded."
+                    ),
+                    "metrics": performance_metrics,
+                    "source": ["runs", "test_results", "metrics", "samples"],
+                    "observed_at": observed_at,
+                    "source_updated_at": performance_source_updated,
+                }
+            else:
+                performance = {
+                    "access": "RESTRICTED", "status": "RESTRICTED", "reason": None,
+                    "metrics": None, "source": None, "observed_at": None,
+                    "source_updated_at": None,
+                }
 
             provider_items = []
             for item in labs:
@@ -318,11 +636,80 @@ class DashboardQueryService:
             "providers": provider_summary,
             "pipelines": pipelines,
             "runs": runs,
-            "performance": {
-                "status": "UNAVAILABLE",
-                "reason": "No current Project/Lab-scoped network performance observation is available from the operations query.",
-                "source": None,
-                "observed_at": None,
+            "configuration": configuration,
+            "evidence": evidence,
+            "performance": performance,
+            "network_health": {
+                "access": "AVAILABLE",
+                "provider_health": "UNKNOWN" if include_topology else "RESTRICTED",
+                "device_reachability": {
+                    "status": "UNAVAILABLE" if include_devices else "RESTRICTED",
+                    "reason": (
+                        "No current Project/Lab device reachability probe is available."
+                        if include_devices else None
+                    ),
+                },
+                "configuration_sync": {
+                    "status": "UNAVAILABLE" if include_configuration else "RESTRICTED",
+                    "reason": (
+                        "Deployment history is available, but no current desired-versus-observed configuration drift source exists."
+                        if include_configuration else None
+                    ),
+                },
+                "infrastructure_resources": {
+                    "status": "UNAVAILABLE",
+                    "reason": "No Project/Lab-scoped OpenTofu resource observation is currently recorded.",
+                },
+                "source": ["labs", "devices", "device_configuration_deployments"],
+                "observed_at": observed_at,
+                "source_updated_at": max(
+                    (value for value in (
+                        latest_lab_update,
+                        devices.get("source_updated_at"),
+                        configuration.get("source_updated_at"),
+                    ) if value),
+                    default=None,
+                ),
+            },
+            "action_items": {
+                "access": "AVAILABLE",
+                "topology_apply_failures": (
+                    apply_counts.get("FAILED", 0) + apply_counts.get("PARTIAL", 0)
+                    if include_topology else None
+                ),
+                "configuration_deployment_failures": (
+                    configuration.get("failed", 0) + configuration.get("partial", 0)
+                    if include_configuration else None
+                ),
+                "pipeline_recovery_required": (
+                    pipelines.get("recovery_required", 0) if include_pipelines else None
+                ),
+                "regressions": {
+                    "status": "UNAVAILABLE",
+                    "reason": "Blocking regression totals require an explicit baseline/current Run comparison.",
+                    "source": None,
+                    "observed_at": observed_at,
+                },
+                "configuration_drift": {
+                    "status": "UNAVAILABLE" if include_configuration else "RESTRICTED",
+                    "reason": (
+                        "No current desired-versus-observed configuration comparison is persisted."
+                        if include_configuration else None
+                    ),
+                    "source": None,
+                    "observed_at": observed_at if include_configuration else None,
+                },
+                "provider_sync_errors": {
+                    "status": "UNAVAILABLE",
+                    "reason": "No separate current provider synchronization observation is persisted; apply failures remain visible in topology history.",
+                    "source": None,
+                    "observed_at": observed_at,
+                },
+                "source": [
+                    "topology_apply_records", "device_configuration_deployments",
+                    "pipeline_executions",
+                ],
+                "observed_at": observed_at,
             },
         }
 

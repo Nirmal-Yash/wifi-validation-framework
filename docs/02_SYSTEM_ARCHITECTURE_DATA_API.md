@@ -1038,27 +1038,29 @@ The command is operational visibility only. It does not transfer artifacts or Ru
 
 ## Project/Lab operations overview API — EXP-P02
 
-The read-only endpoint `GET /api/v1/dashboard/operations-overview?project_id=<project-id>&lab_id=<optional-lab-id>` is the cross-domain source for the dashboard's operational summary. It reads persisted Project, Lab, device, topology, provider-binding, pipeline and Run records through `DashboardQueryService.operations_overview`; it does not mutate records, start Runs, contact provider controllers or synthesize telemetry.
+The read-only endpoint `GET /api/v1/dashboard/operations-overview?project_id=<project-id>&lab_id=<optional-lab-id>` is the cross-domain source for the dashboard's operational summary. It reads persisted Project, Lab, device, topology, provider-binding, configuration deployment, pipeline, Run, artifact and performance sample records through `DashboardQueryService.operations_overview`. It does not mutate records, start Runs, deploy configuration, apply topology, contact provider controllers or synthesize telemetry.
 
-**Scope and authorization:** the caller must have `workspace.read` for the requested Project. An optional Lab ID is accepted only when the Lab belongs to that Project; a foreign or unknown Lab returns `404 NOT_FOUND`. Device counts require `devices.read`; topology and provider-binding details require `topology.read`; pipeline counts require `pipelines.read`. The dashboard returns a section with `access: RESTRICTED` and null aggregate values when a subsystem permission is missing, rather than exposing that subsystem's records. When topology read is restricted, provider IDs and topology versions are also redacted from Lab summaries.
+**Scope and authorization:** the caller must have `workspace.read` for the requested Project. An optional Lab ID is accepted only when the Lab belongs to that Project; a foreign or unknown Lab returns `404 NOT_FOUND`. Each child domain is independently authorized: `devices.read`, `topology.read`, `pipelines.read`, `runs.read`, `configurations.read`, `evidence.read`, and `performance.read`. A restricted section returns `access: RESTRICTED`, null aggregate/status-distribution values, and no source/freshness metadata. It must not be interpreted as zero. When topology read is restricted, provider IDs and topology versions are also redacted from Lab summaries.
 
 **Response sections:**
 
-- `scope.project`: Project ID, Organization ID, name, lifecycle status, source and source update timestamp.
-- `scope.lab_id`: selected Lab filter or null.
+- `scope.project` and `scope.lab_id`: Project identity and optional selected Lab filter.
 - `labs`: `total` is always the Project-wide Lab count; `in_scope` and `items` reflect the optional Lab filter. Status counts and the latest persisted Lab update are included.
 - `devices`: persisted counts by status, total/active/archived counts and source update timestamp, or restricted metadata.
-- `topology`: profile, immutable revision and provider-apply counts by status with a latest source update timestamp, or restricted metadata.
-- `providers`: provider ID, Lab binding status, source metadata and source update timestamp. `connection_health` remains `UNKNOWN` and `last_health_check_at` remains null until a separately authorized, real provider health probe exists. `CONFIGURED` means a saved binding only.
-- `pipelines`: definition and execution counts by status, queued/running/recovery-required summaries and source update timestamp.
-- `runs`: lifecycle and business-outcome counts, active count and latest persisted Run activity timestamp.
-- `performance`: remains `UNAVAILABLE` until an actual Project/Lab-scoped performance observation with source provenance is available.
+- `topology`: profile/revision/apply counts by status, latest published revisions and source update timestamp, or restricted metadata.
+- `providers`: Lab provider binding metadata and provenance. `connection_health` remains `UNKNOWN` and `last_health_check_at` remains null until a separately authorized, real provider health probe exists. `CONFIGURED` means a saved binding only.
+- `pipelines`: definition and execution counts by status; queued, `RUNNING`, `CANCELLING`, and recovery-required execution summaries; step counts by status; active, failed and recovery-required step totals. `RUNNING` and `CANCELLING` are separate states.
+- `runs`: lifecycle and business-outcome counts, active Run count and latest persisted Run activity timestamp. This section requires `runs.read`.
+- `configuration`: deployment counts by status and latest deployment summary from `device_configuration_deployments`. This is historical deployment evidence, not a live desired-versus-observed drift check.
+- `evidence`: persisted, non-deleted TELEMETRY and LAB_HEALTH_SNAPSHOT artifact counts plus integrity-verified numeric Wi-Fi telemetry points grouped by metric, unit and interface (mean/min/max/latest, sample count, capture time, Run and environment provenance). Artifact JSON is read through the existing results-root containment and SHA-256 verification boundary; invalid or missing artifacts contribute counts only, never measurement values.
+- `performance`: Project/Lab metric sample groups per metric name/unit, selected from the latest Run attempt and only from VALID, finite, non-warmup, non-retried samples with a real capture timestamp. Each group includes mean/min/max/latest values, unit, sample count, latest observation time, Run/test provenance and authoritative flag. If no matching sample exists, the section is `UNAVAILABLE`; it never invents a value.
+- `network_health`: provider health, device reachability, configuration synchronization and infrastructure resource availability. Provider health stays `UNKNOWN`; device reachability, current configuration drift and OpenTofu resource state stay `UNAVAILABLE` until separately persisted observations exist.
+- `action_items`: topology apply failure/partial counts, configuration deployment failure/partial counts and pipeline recovery-required counts when the caller has the matching read permission. Regression totals require an explicit baseline/current Run comparison and remain `UNAVAILABLE` here. Configuration drift and provider synchronization errors also remain `UNAVAILABLE` until their real source observations are implemented.
 
-**Freshness semantics:** each section's `observed_at` is the time the query was assembled; `source_updated_at` is the most recent update timestamp among the persisted source records used for that section. A query timestamp is not a provider health timestamp. The root `observed_at` is the overall query observation time.
+**Freshness semantics:** each accessible section's `observed_at` is the query assembly time; `source_updated_at` is the latest persisted timestamp among the source rows used for that section. These timestamps are not a live health check. Restricted sections withhold both fields. The root `observed_at` is the overall query observation time.
 
-**Errors:** missing `project_id` returns `400 INVALID_REQUEST`; missing authentication returns `401 UNAUTHENTICATED`; an unauthorized Project returns `403 FORBIDDEN`; an absent Project or Lab outside the Project returns `404 NOT_FOUND`. No schema migration is required for this read-only aggregation.
-
-
+**Errors:** missing `project_id` returns `400 INVALID_REQUEST`; missing authentication returns `401 UNAUTHENTICATED`; an unauthorized Project returns `403 FORBIDDEN`; an absent Project or Lab outside the Project returns `404 NOT_FOUND`. No schema migration is required; this read model reuses existing tables and existing authorization permissions.
+ 
 ## Visual topology draft validation API — EXP-P03
 
 `POST /api/v1/topologies/validate` accepts a JSON object containing `project_id`, an optional `profile_id`, and the canonical `definition` with `nodes` and `links` arrays. The route requires `topology.manage` in the selected Project. If a profile ID is supplied, it must identify an active profile in that same Project.

@@ -32,6 +32,60 @@ paths:
         "403": {description: Caller lacks topology.manage in this Project}
         "404": {description: Project or selected profile not found in the supplied Project}
         "422": {description: Topology definition violates the canonical schema or port constraints}
+  /dashboard/operations-overview:
+    get:
+      summary: Read a Project/Lab operational overview
+      operationId: getOperationsOverview
+      description: >-
+        Read-only aggregation of persisted Project, Lab, device, topology, provider binding,
+        configuration deployment, pipeline, Run, evidence and valid performance sample records.
+        Requires workspace.read for the Project. Section data is independently redacted by
+        devices.read, topology.read, pipelines.read, runs.read, configurations.read,
+        evidence.read and performance.read. Does not launch Runs, mutate records, contact
+        provider controllers, synthesize telemetry, infer device reachability or infer drift.
+        Provider health remains UNKNOWN until an actual health observation is recorded.
+      parameters:
+        - name: project_id
+          in: query
+          required: true
+          description: Project whose persisted operational records are summarized.
+          schema: {type: string, minLength: 1}
+        - name: lab_id
+          in: query
+          required: false
+          description: Optional Lab filter owned by project_id; labs.total remains Project-wide.
+          schema: {type: string, minLength: 1}
+      responses:
+        "200":
+          description: Project/Lab operational overview with independent access flags, source provenance, and query/source timestamps
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [observed_at, scope, labs, devices, topology, providers, pipelines, runs, configuration, evidence, performance, network_health, action_items]
+                    properties:
+                      observed_at: {type: string, format: date-time}
+                      scope: {type: object}
+                      labs: {type: object}
+                      devices: {type: object}
+                      topology: {type: object}
+                      providers: {type: object}
+                      pipelines: {type: object}
+                      runs: {type: object}
+                      configuration: {type: object}
+                      evidence: {type: object}
+                      performance: {type: object}
+                      network_health: {type: object}
+                      action_items: {type: object}
+        "400": {description: Missing project_id or invalid request (INVALID_REQUEST)}
+        "401": {description: Missing or invalid authenticated session (UNAUTHENTICATED)}
+        "403": {description: Caller cannot access the selected Project (FORBIDDEN)}
+        "404": {description: Project or Lab not found in the selected Project (NOT_FOUND)}
+        "500": {description: Unexpected dashboard query failure}
   /health: {get: {security: [], responses: {"200": {description: Healthy}}}}
   /readiness: {get: {responses: {"200": {description: Ready}}}}
   /auth/csrf:

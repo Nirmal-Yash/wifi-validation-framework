@@ -58,3 +58,9 @@ The additive P00–P17 network-engineering programme is documented in:
 - [Implementation Decisions](10_IMPLEMENTATION_DECISIONS.md)
 
 The new expansion phases are prefixed **EXP-** in repository traceability to distinguish them from historical Stage D/E/F phase IDs. The current first batch is EXP-P00–EXP-P03.
+
+Implementation audit records for the first batch:
+- [EXP-P01 Design System and Application Shell Audit](EXP_P01_IMPLEMENTATION_AUDIT.md)
+- [EXP-P02 Operational Overview Audit](EXP_P02_IMPLEMENTATION_AUDIT.md)
+
+These audit records document existing functionality retained, additive changes, source-of-truth and RBAC rules, test evidence and the remaining exact-commit acceptance gates. They do not replace the canonical roadmap or requirement traceability register.
