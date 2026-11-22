@@ -104,8 +104,10 @@ Frontend:
 Contract/docs:
 - OpenAPI entry for the versioned endpoint, required/optional query parameters, access semantics and error responses.
 - Architecture/API contract and implementation roadmap updated.
-- RQ-034 remains `IN_PROGRESS` until exact-commit verification evidence is recorded.
+- RQ-034 is recorded as `CI_VERIFIED` in the requirement traceability register after the subsequent implementation and regression-fix commits.
 
 ## Acceptance state
 
-Source and test changes are prepared for consolidated phase review. P02 is not accepted solely because code or tests have been authored. The exact feature commit must pass the complete relevant hosted backend, frontend and build workflows. A red quality gate blocks merge. Manual viewport/keyboard review and live provider/physical lab qualification remain separate; this phase does not claim those external tests have been performed.
+**Status: CI VERIFIED.** The operational overview implementation was merged in `1f242cdd7e7c0a6b4634e30840c36ed2e13649b7`, with execution/recovery and assertion corrections in `dcb8e4ab88b819fef4723c66500d8915942c2bff`. The successful exact-main quality-gates run [45028391952](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45028391952) on 2026-11-22 passed backend session/RBAC/Run/evidence contracts, frontend tests/production build and dashboard startup/proxy/session smoke.
+
+This verifies the software aggregation, authorization, provenance, unavailable/restricted-state and UI contracts. It does not claim a live provider-health observation, physical-network telemetry, drift check or real-lab qualification. Manual viewport/accessibility review and RQ-042/RQ-044 remain separate operator gates.

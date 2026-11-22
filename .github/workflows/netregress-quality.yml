@@ -183,6 +183,7 @@ jobs:
           tests/test_pipeline_runtime.py
           tests/test_managed_device_binding.py
           tests/test_topology_studio.py
+          tests/test_provider_contract.py
           tests/test_topology_apply.py
           tests/test_configuration_deployer.py
           tests/test_configuration_schema_registry.py

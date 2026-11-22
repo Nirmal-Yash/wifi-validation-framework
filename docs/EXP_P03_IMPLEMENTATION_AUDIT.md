@@ -108,6 +108,6 @@ Contract/docs:
 
 **Status: CI VERIFIED**
 
-The exact PR head `e1e4519278e84015c96af10c22961764338adf84` passed GitHub Actions run `45022564639` on 2026-11-22. All three hosted jobs passed: backend session/RBAC/Run/evidence and Phase B–I correctness plus Linux reliability contracts; frontend tests and production build; dashboard startup, proxy and authenticated-session smoke.
+The P03 implementation was integrated on `main` by `d633dd6047f9b365f4e5a7acbea8e59773411d70`. The subsequent push-triggered quality-gates run [45023213023](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45023213023) completed successfully on 2026-11-22 with all three jobs passing: backend correctness/session/RBAC/reliability, frontend tests and production build, and dashboard startup/proxy/authenticated-session smoke. A later current-main quality-gates run [45028391952](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45028391952) also passed all three jobs.
 
-This confirms the software implementation and its automated regression boundaries on the recorded commit. It does **not** claim that a real GNS3 controller apply/recovery scenario or interactive desktop/keyboard/assistive-technology review was performed. Those remain explicit operator acceptance gates (RQ-042 and RQ-044).
+This confirms the software implementation and its automated regression boundaries. It does **not** claim that a real GNS3 controller apply/recovery scenario or interactive desktop/keyboard/assistive-technology review was performed. Those remain explicit operator acceptance gates (RQ-042 and RQ-044).

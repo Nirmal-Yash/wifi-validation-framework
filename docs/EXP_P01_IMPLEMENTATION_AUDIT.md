@@ -39,6 +39,8 @@
 | Component tests | `frontend/src/test/layout.test.jsx` |
 | Existing page/authorization preservation | Existing routes and API guards unchanged |
 
-## Qualification boundary
+## Acceptance state
 
-The source changes and focused tests are prepared. Hosted PR CI and manual viewport/assistive-technology review must pass before P01 is accepted. Do not label the provider connected from binding metadata.
+**Status: CI VERIFIED.** The shell, route-permission filtering, workspace-context behavior, command search and provider-state presentation are included in the merged P01/P03 source and the successful hosted quality-gates run [45023213023](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45023213023) on 2026-11-22. The latest main quality-gates run before this P04 completion commit, [45028391952](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45028391952), also passed all three jobs.
+
+This acceptance covers software tests and production build/startup smoke only. Manual viewport, keyboard and assistive-technology review remains an operator gate. Provider binding metadata must continue to be labelled as bound/configured with health unknown unless an actual probe observation exists.

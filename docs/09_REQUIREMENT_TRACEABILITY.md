@@ -11,6 +11,7 @@
 - **GATE:** requires operator/provider evidence beyond hardware-free CI.
 - **IN_PROGRESS:** source integration and focused acceptance tests are implemented; hosted verification remains pending.
 - **CI_VERIFIED:** implementation and focused/hosted automated quality gates pass on the recorded exact commit; separate real-provider and operator acceptance gates remain explicit.
+- **READY_FOR_CI:** implementation, focused tests and CI wiring are integrated; the new exact-main hosted workflow has not yet reported its result.
 
 ## Product foundation
 
@@ -84,5 +85,5 @@ This register is intentionally conservative. A source file or mocked contract te
 
 | ID | Requirement | Verification source | Status | Next verification |
 |---|---|---|---|---|
-| RQ-039 | Common provider adapter contract and capability registry | `lib/providers/contracts.py`, `lib/providers/registry.py`, `tests/test_provider_contract.py` | CI_VERIFIED | Exact-head quality workflow `45028046927` on `13fd8df0d5326a1fe34adff65938c076eeabc5c0`: backend contract/correctness and reliability suites PASS; all three quality jobs PASS. GNS3 is the only registered provider in P04 |
+| RQ-039 | Complete common provider adapter contract and capability registry | `lib/providers/contracts.py`, `lib/providers/registry.py`, `lib/services/gns3_provider.py`, `tests/test_provider_contract.py`, `tests/test_topology_apply.py`, hosted quality workflow | READY_FOR_CI | The interface requires connect/disconnect, health, capability discovery, project/lab lifecycle, template/node/link lifecycle, node state, interface and observed-topology reads, and packet-capture capability reporting. GNS3 implements the full contract; every mutating capability is marked confirmation-required. The provider contract tests are explicitly added to the hosted backend test command. Exact-main CI result is the remaining automated gate; live provider qualification remains separate |
 | RQ-045 | Project/Lab-scoped provider connection projection and registry discovery | Existing `gns3_lab_bindings`, `ProviderConnectionRecord`, `GET /api/v1/providers/registry`, OpenAPI contract tests | CI_VERIFIED | Exact-head workflow `45028046927` verifies Project-scoped read-only registry discovery and Vault-secret-safe projection. Live controller reachability remains RQ-042 |

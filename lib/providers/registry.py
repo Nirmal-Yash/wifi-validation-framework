@@ -10,15 +10,24 @@ from .contracts import (
 )
 
 DEFAULT_CAPABILITIES = (
+    ProviderCapability("connection.health.read", "Check provider health", "Perform a bounded, authenticated read-only health check."),
     ProviderCapability("controller.version.read", "Read controller version", "Read controller version and declared API metadata."),
+    ProviderCapability("labs.create", "Create provider labs", "Create a provider workspace after explicit approval.", True, True),
+    ProviderCapability("labs.delete", "Delete provider labs", "Delete a provider workspace after explicit destructive confirmation.", True, True),
+    ProviderCapability("packet_capture.supported", "Report packet-capture support", "Report provider packet-capture capability; individual links may impose additional constraints."),
     ProviderCapability("projects.read", "List provider projects", "Discover projects visible to the configured provider credential."),
     ProviderCapability("templates.read", "List provider templates", "Discover available node templates without creating resources."),
+    ProviderCapability("topology.interfaces.read", "Read node interfaces", "Discover interfaces, adapter numbers and ports exposed by an observed node."),
     ProviderCapability("topology.links.create", "Create topology links", "Create links between observed provider nodes and ports.", True, True),
+    ProviderCapability("topology.links.delete", "Delete topology links", "Delete an existing provider link after explicit confirmation.", True, True),
     ProviderCapability("topology.links.read", "Read topology links", "Observe provider link inventory and actual endpoints."),
     ProviderCapability("topology.nodes.create", "Create topology nodes", "Create nodes from an explicitly mapped provider template.", True, True),
+    ProviderCapability("topology.nodes.delete", "Delete topology nodes", "Delete an existing provider node after explicit confirmation.", True, True),
     ProviderCapability("topology.nodes.read", "Read topology nodes", "Observe provider node inventory and actual node state."),
     ProviderCapability("topology.nodes.start", "Start topology nodes", "Explicitly start a mapped node and verify observed state.", True, True),
+    ProviderCapability("topology.nodes.state.read", "Read topology node state", "Read the provider-observed state of a single node."),
     ProviderCapability("topology.nodes.stop", "Stop topology nodes", "Explicitly stop a mapped node and verify observed state.", True, True),
+    ProviderCapability("topology.observed.read", "Read observed topology", "Retrieve the provider's actual node and link inventory."),
 )
 
 
@@ -55,8 +64,11 @@ class ProviderRegistry:
     """Application-scoped registry; registrations are not process-global."""
 
     REQUIRED_METHODS = (
-        "version", "list_projects", "list_templates", "list_nodes", "list_links",
-        "create_node", "create_link", "start_node", "stop_node",
+        "connect", "disconnect", "health_check", "get_capabilities", "version",
+        "list_projects", "create_lab", "delete_lab", "list_templates", "list_nodes",
+        "list_links", "create_node", "delete_node", "start_node", "stop_node",
+        "get_node_state", "create_link", "delete_link", "get_interfaces",
+        "get_observed_topology", "capture_support",
     )
 
     def __init__(self, capability_registry: CapabilityRegistry | None = None):

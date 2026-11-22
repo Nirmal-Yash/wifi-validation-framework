@@ -4,6 +4,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import re
+from datetime import datetime, timezone
 from urllib.parse import quote, urlsplit
 
 import requests
@@ -30,6 +31,8 @@ class GNS3Provider:
         self._username = username
         self._password = password
         self._session_factory = session_factory or requests.Session
+        # HTTP sessions are short-lived per operation; connect() does not retain sockets.
+        self._connected = False
 
     @staticmethod
     def validate_endpoint(value: object, *, expected_host: str | None = None) -> str:
@@ -225,3 +228,127 @@ class GNS3Provider:
         if value is not None and not isinstance(value, dict):
             raise GNS3ProviderError("GNS3 returned an invalid link creation response")
         return value or {}
+
+    def connect(self) -> dict:
+        """Verify the controller is reachable without retaining a long-lived session."""
+        result = self.health_check()
+        self._connected = True
+        return {"connected": True, **result}
+
+    def disconnect(self) -> None:
+        """Close the logical provider session; HTTP sessions are closed per request."""
+        self._connected = False
+
+    def health_check(self) -> dict:
+        """Return a fresh authenticated controller observation or raise a typed error."""
+        version = self.version()
+        return {
+            "status": "HEALTHY",
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "version": version,
+        }
+
+    def get_capabilities(self) -> list[dict]:
+        """Expose only the operations this reference adapter implements."""
+        from lib.providers.registry import DEFAULT_CAPABILITIES
+        return [item.as_dict() for item in DEFAULT_CAPABILITIES]
+
+    def create_lab(
+        self, name: str, *, scene_width: int = 1600, scene_height: int = 900,
+    ) -> dict:
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 120:
+            raise GNS3ProviderError("lab name must contain 1 to 120 characters")
+        if (
+            type(scene_width) is not int or type(scene_height) is not int
+            or not 100 <= scene_width <= 10000 or not 100 <= scene_height <= 10000
+        ):
+            raise GNS3ProviderError("lab canvas dimensions must be integers between 100 and 10000")
+        value = self._request(
+            "POST", "/v2/projects",
+            payload={
+                "name": name.strip(),
+                "scene_width": scene_width,
+                "scene_height": scene_height,
+            },
+        )
+        if not isinstance(value, dict) or not isinstance(value.get("project_id"), str):
+            raise GNS3ProviderError("GNS3 did not return a usable project identifier")
+        return {
+            key: value[key] for key in ("project_id", "name", "status", "scene_width", "scene_height")
+            if key in value
+        }
+
+    def delete_lab(self, project_id: str) -> dict:
+        project = self._segment(project_id, "project_id")
+        self._request("DELETE", f"/v2/projects/{project}")
+        return {"project_id": project_id, "deleted": True}
+
+    def delete_node(self, project_id: str, node_id: str) -> dict:
+        project = self._segment(project_id, "project_id")
+        node = self._segment(node_id, "node_id")
+        self._request("DELETE", f"/v2/projects/{project}/nodes/{node}")
+        return {"project_id": project_id, "node_id": node_id, "deleted": True}
+
+    def get_node_state(self, project_id: str, node_id: str) -> dict:
+        project = self._segment(project_id, "project_id")
+        node = self._segment(node_id, "node_id")
+        value = self._request("GET", f"/v2/projects/{project}/nodes/{node}")
+        if not isinstance(value, dict) or value.get("node_id") != node_id:
+            raise GNS3ProviderError("GNS3 node-state response is invalid")
+        allowed = (
+            "node_id", "name", "node_type", "status", "template_id", "compute_id",
+            "console_type", "console_host", "console", "x", "y", "ports",
+        )
+        result = {key: value[key] for key in allowed if key in value}
+        ports = value.get("ports")
+        if isinstance(ports, list):
+            result["ports"] = [
+                {
+                    key: port[key]
+                    for key in ("adapter_number", "port_number", "name", "short_name", "link_type")
+                    if key in port
+                }
+                for port in ports if isinstance(port, dict)
+            ]
+        return result
+
+    def delete_link(self, project_id: str, link_id: str) -> dict:
+        project = self._segment(project_id, "project_id")
+        link = self._segment(link_id, "link_id")
+        self._request("DELETE", f"/v2/projects/{project}/links/{link}")
+        return {"project_id": project_id, "link_id": link_id, "deleted": True}
+
+    def get_interfaces(self, project_id: str, node_id: str) -> list[dict]:
+        node = self.get_node_state(project_id, node_id)
+        ports = node.get("ports")
+        if not isinstance(ports, list):
+            return []
+        return [
+            {
+                "adapter_number": item.get("adapter_number"),
+                "port_number": item.get("port_number"),
+                "name": item.get("name"),
+                "short_name": item.get("short_name"),
+                "link_type": item.get("link_type"),
+            }
+            for item in ports if isinstance(item, dict)
+        ]
+
+    def get_observed_topology(self, project_id: str) -> dict:
+        """Read actual nodes and links; this never creates or repairs provider resources."""
+        return {
+            "project_id": project_id,
+            "nodes": self.list_nodes(project_id),
+            "links": self.list_links(project_id),
+        }
+
+    def capture_support(self) -> dict:
+        """Report adapter-level link-capture support, not per-link readiness."""
+        return {
+            "supported": True,
+            "scope": "link",
+            "start_path": "/v2/projects/{project_id}/links/{link_id}/start_capture",
+            "stop_path": "/v2/projects/{project_id}/links/{link_id}/stop_capture",
+            "readiness": "Controller, compute and link availability must be checked for each capture",
+        }
+

@@ -174,11 +174,15 @@ class TopologyApplyService:
             raise TopologyApplyConflict("an active API_TOKEN credential for the registered controller device is required")
 
         def verify(provider):
-            self._require_provider_capability("gns3", "projects.read")
-            projects = provider.list_projects()
-            if not any(item.get("project_id") == gns3_project_id for item in projects):
-                raise TopologyApplyNotFound("selected GNS3 project is not available to this credential")
-            return True
+            provider.connect()
+            try:
+                self._require_provider_capability("gns3", "projects.read")
+                projects = provider.list_projects()
+                if not any(item.get("project_id") == gns3_project_id for item in projects):
+                    raise TopologyApplyNotFound("selected GNS3 project is not available to this credential")
+                return True
+            finally:
+                provider.disconnect()
 
         try:
             self.credential_vault.use_secret(
@@ -291,7 +295,11 @@ class TopologyApplyService:
             provider = self.provider_registry.create(
                 provider_id, binding["endpoint_url"], str(record.get("username") or ""), secret,
             )
-            return callback(provider)
+            try:
+                provider.connect()
+                return callback(provider)
+            finally:
+                provider.disconnect()
         return self.credential_vault.use_secret(
             binding["credential_id"], project_id=binding["project_id"],
             device_id=binding["controller_device_id"], credential_type="API_TOKEN",
@@ -302,18 +310,21 @@ class TopologyApplyService:
         provider_id = str(binding.get("provider_id") or "gns3")
         for capability_id in (
             "controller.version.read", "projects.read", "templates.read",
-            "topology.nodes.read", "topology.links.read",
+            "topology.nodes.read", "topology.links.read", "topology.observed.read",
         ):
             self._require_provider_capability(provider_id, capability_id)
         projects = provider.list_projects()
         if not any(item.get("project_id") == binding["gns3_project_id"] for item in projects):
             raise TopologyApplyNotFound("bound GNS3 project is no longer available")
+        observed = provider.get_observed_topology(binding["gns3_project_id"])
+        if not isinstance(observed, dict) or not isinstance(observed.get("nodes"), list) or not isinstance(observed.get("links"), list):
+            raise TopologyApplyError("provider returned an invalid observed-topology snapshot")
         return {
             "version": provider.version(),
             "projects": projects,
             "templates": provider.list_templates(),
-            "nodes": provider.list_nodes(binding["gns3_project_id"]),
-            "links": provider.list_links(binding["gns3_project_id"]),
+            "nodes": observed["nodes"],
+            "links": observed["links"],
         }
 
     @staticmethod

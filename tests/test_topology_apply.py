@@ -45,6 +45,45 @@ class FakeGNS3Provider:
         assert password == "transient-provider-secret"
         self.state = type(self).state
 
+    def connect(self):
+        return self.health_check()
+
+    def disconnect(self):
+        return None
+
+    def health_check(self):
+        return {"status": "HEALTHY", "version": self.version(), "observed_at": "2026-11-22T00:00:00+00:00"}
+
+    def get_capabilities(self):
+        from lib.providers.registry import DEFAULT_CAPABILITIES
+        return [item.as_dict() for item in DEFAULT_CAPABILITIES]
+
+    def create_lab(self, name, *, scene_width=1600, scene_height=900):
+        return {"project_id": "new-project", "name": name}
+
+    def delete_lab(self, project_id):
+        return {"project_id": project_id, "deleted": True}
+
+    def delete_node(self, project_id, node_id):
+        self.state["nodes"] = [item for item in self.state["nodes"] if item["node_id"] != node_id]
+        return {"project_id": project_id, "node_id": node_id, "deleted": True}
+
+    def get_node_state(self, project_id, node_id):
+        return dict(next(item for item in self.state["nodes"] if item["node_id"] == node_id))
+
+    def delete_link(self, project_id, link_id):
+        self.state["links"] = [item for item in self.state["links"] if item["link_id"] != link_id]
+        return {"project_id": project_id, "link_id": link_id, "deleted": True}
+
+    def get_interfaces(self, project_id, node_id):
+        return list(self.get_node_state(project_id, node_id).get("ports", []))
+
+    def get_observed_topology(self, project_id):
+        return {"project_id": project_id, "nodes": self.list_nodes(project_id), "links": self.list_links(project_id)}
+
+    def capture_support(self):
+        return {"supported": True, "scope": "link"}
+
     def version(self):
         return {"version": "2.2.0"}
 
