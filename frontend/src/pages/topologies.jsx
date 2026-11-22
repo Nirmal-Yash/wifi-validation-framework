@@ -647,8 +647,8 @@ export default function TopologyStudioPage({user}){
    {canManage?<Section title="Save immutable topology revision" subtitle="Validate the visual draft against the canonical backend rules, then save a new immutable revision with a SHA-256 identity. Existing revisions are never overwritten.">
     {validation?<div className="provider-plan"><p><StatusBadge value={validation.valid?"VALID":"INVALID"}/> {validation.valid?validation.node_count+" nodes · "+validation.link_count+" links · SHA-256 "+validation.content_sha256:validation.error}</p></div>:null}
     <div className="button-row">
-     <Button type="button" variant="outline" onClick={validateDraft} loading={validationLoading} disabled={!profileId||!canManage||mutation.loading}>Validate current draft</Button>
-     <Button onClick={saveRevision} loading={mutation.loading} disabled={!profileId||!canManage||validationLoading}>Validate and save new draft revision</Button>
+     <Button type="button" variant="outline" onClick={validateDraft} loading={validationLoading} disabled={!profileId||!canManage||revisions.loading||mutation.loading}>Validate current draft</Button>
+     <Button onClick={saveRevision} loading={mutation.loading} disabled={!profileId||!canManage||revisions.loading||validationLoading}>Validate and save new draft revision</Button>
      {canPublish?<Button variant="outline" onClick={publishRevision} disabled={!revisionId||selectedRevision?.status!=="DRAFT"||mutation.loading}>Publish selected revision</Button>:null}
     </div>
    </Section>:null}

@@ -188,8 +188,10 @@ def test_topology_validation_api_requires_topology_manage_permission(topology):
     client = app.test_client()
     login = client.post("/api/v1/auth/login", json={"username": "viewer", "password": password})
     assert login.status_code == 200
+    csrf = login.get_json()["data"]["csrf_token"]
     response = client.post(
         "/api/v1/topologies/validate",
+        headers={"X-CSRF-Token": csrf},
         json={"project_id": "project-1", "definition": definition()},
     )
     assert response.status_code == 403

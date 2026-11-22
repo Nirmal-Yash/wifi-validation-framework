@@ -70,7 +70,7 @@ describe("Project/Lab operations overview",()=>{
   expect(screen.getByText("Topology inventory")).toBeTruthy();
   expect(screen.getByText("Pipeline execution state")).toBeTruthy();
   expect(screen.getByText("Business outcomes")).toBeTruthy();
-  expect(screen.getByText(/Rejected/i)).toBeTruthy();
+  expect(screen.getByText("REJECTED")).toBeTruthy();
   expect(screen.getByText(/Connection health remains unknown/i)).toBeTruthy();
   expect(screen.getAllByText(/Unavailable/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/Source updated/i).length).toBeGreaterThan(0);

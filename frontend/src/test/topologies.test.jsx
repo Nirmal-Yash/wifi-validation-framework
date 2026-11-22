@@ -89,6 +89,7 @@ describe("visual topology studio editing workflow",()=>{
 
  it("runs canonical backend validation from the visible editor action",async()=>{
   renderPage();
+  await screen.findByRole("button",{name:"Select node Router A"});
   await screen.findByRole("button",{name:"Validate current draft"});
   fireEvent.click(screen.getByRole("button",{name:"Validate current draft"}));
   await waitFor(()=>expect(api.validateTopology).toHaveBeenCalledWith({
@@ -99,11 +100,11 @@ describe("visual topology studio editing workflow",()=>{
 
  it("validates before saving a new immutable revision",async()=>{
   renderPage();
+  await screen.findByRole("button",{name:"Select node Router A"});
   fireEvent.click(await screen.findByRole("button",{name:"Validate and save new draft revision"}));
   await waitFor(()=>expect(api.validateTopology).toHaveBeenCalledTimes(1));
   await waitFor(()=>expect(api.createTopologyRevision).toHaveBeenCalledWith("profile-a",{definition}));
  });
-});
 
 
  it("keeps a Project-scoped topology viewer read-only on the canvas",async()=>{
@@ -117,3 +118,4 @@ describe("visual topology studio editing workflow",()=>{
   expect(screen.getByRole("button",{name:"Delete selected"}).disabled).toBe(true);
   expect(screen.queryByRole("button",{name:"Validate current draft"})).toBeNull();
  });
+});
