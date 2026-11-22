@@ -1,10 +1,13 @@
 import React from "react";
+import {useAsyncLoader} from "@/hooks";
+import {api} from "@/api";
+import {GlobalSearch} from "@/components/global-search";
 import {
  Activity,BarChart3,ChevronDown,ChevronRight,ClipboardList,FileArchive,Workflow,RefreshCw,
  FileCheck2,GitCompare,LayoutDashboard,LogOut,SlidersHorizontal,Wifi,ShieldCheck,Users,KeyRound,Settings2,Router,
 } from "lucide-react";
 import {navigate} from "@/router";
-import {canAdmin,canExecute,canPerform} from "@/permissions";
+import {canAccessRoute,canExecute,canPerform} from "@/permissions";
 import {DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuLabel,DropdownMenuSeparator,DropdownMenuTrigger} from "@/components/ui/dropdown-menu";
 import {
  Sidebar,SidebarContent,SidebarFooter,SidebarGroup,SidebarGroupLabel,
@@ -84,13 +87,46 @@ function UserMenu({user,onLogout}){
   </DropdownMenuContent>
  </DropdownMenu>;
 }
+function ProviderConnectivityIndicator({workspace,user}){
+ const lab=workspace.selectedLab;
+ const canRead=canPerform(user,"topology.read");
+ const providerId=String(canRead?lab?.provider_id||"": "").trim().toLowerCase();
+ const binding=useAsyncLoader(
+  ()=>api.topologyProviderBinding(lab.lab_id),
+  [lab?.lab_id,providerId],
+  {enabled:Boolean(lab?.lab_id&&providerId==="gns3"&&canRead),queryKey:"shell-provider-binding",staleTime:30000},
+ );
+ let label="Provider · select Lab";
+ let detail="Choose a Lab to inspect its provider binding.";
+ if(lab&&!canRead){
+  label="Provider · restricted";
+  detail="Provider details require topology read permission.";
+ }else if(lab&&!providerId){
+  label="Provider · not assigned";
+  detail="No provider is assigned to the selected Lab.";
+ }else if(providerId==="gns3"){
+  if(binding.loading&&!binding.data){label="GNS3 · loading binding";detail="Reading saved binding metadata only.";}
+  else if(binding.error){label="GNS3 · binding unavailable";detail="Saved binding metadata could not be read; connectivity is not verified.";}
+  else if(binding.data?.binding){label="GNS3 · bound · health unknown";detail="A saved binding is configuration metadata, not a live controller health check.";}
+  else{label="GNS3 · not bound";detail="No active GNS3 binding is saved for this Lab.";}
+ }else if(lab){
+  label=providerId.toUpperCase()+" · health unknown";
+  detail="This shell does not infer connectivity for the selected provider.";
+ }
+ return <span className="provider-connectivity" role="status" aria-label={label} title={detail}>
+  <span className="provider-connectivity-indicator" aria-hidden="true"/>
+  <span>{label}</span>
+ </span>;
+}
+
 function AppShellContent({user,routeName,onLogout,children}){
  const meta=pageMeta[routeName]||{section:"Workspace",title:"Runner",description:"NetRegress standalone validation operations."};
  const workspace=useWorkspace();
  const visibleGroups=navGroups.map(group=>({
   ...group,
-  items:group.items.filter(([key])=>key!=="baselines"||canPerform(user,"baselines.manage")).filter(([key])=>key!=="operations"||canExecute(user)).filter(([key])=>key!=="administration"||canPerform(user,"users.read")||canPerform(user,"roles.read")||canPerform(user,"permissions.read")||canPerform(user,"audit.read")).filter(([key])=>key!=="pipelines"||canPerform(user,"pipelines.read")),
+  items:group.items.filter(([key])=>canAccessRoute(user,key)),
  })).filter(group=>group.items.length);
+ const searchItems=visibleGroups.flatMap(group=>group.items.map(([key,href,label])=>({key,href,label,group:group.title})));
  const activeKey=routeName==="run"||routeName==="test"?"runs":routeName;
  const go=(event,href)=>{event.preventDefault();navigate(href);};
  return <SidebarProvider>
@@ -105,7 +141,7 @@ function AppShellContent({user,routeName,onLogout,children}){
       {workspace.selectedProject?.name||"No Project selected"}{workspace.selectedLab?.name?" · "+workspace.selectedLab.name:""}
      </small>
     </span>
-    <span className="workspace-status" title="Local session">LOCAL</span>
+    <span className="workspace-status" title="Standalone local application">LOCAL MODE</span>
    </div>
    <SidebarContent role="navigation" aria-label="Primary navigation">
     {visibleGroups.map(group=><SidebarGroup key={group.title}>
@@ -138,7 +174,12 @@ function AppShellContent({user,routeName,onLogout,children}){
       {workspace.labs.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name}</option>)}
      </select></label>
     </div>
-    <div className="topbar-end">{workspace.error?<span className="workspace-context-error" role="status"><span>{workspace.error}</span><button type="button" onClick={workspace.retry} aria-label="Retry loading workspace context" title="Retry workspace context"><RefreshCw size={13}/>Retry</button></span>:null}<span className="local-pill"><span className="presence-indicator"/>Local runtime</span><span className="topbar-divider"/><ThemeToggle/><UserMenu user={user} onLogout={onLogout}/></div>
+    <div className="topbar-end">
+     <GlobalSearch navigationItems={searchItems} workspace={workspace}/>
+     <ProviderConnectivityIndicator workspace={workspace} user={user}/>
+     {workspace.error?<span className="workspace-context-error" role="status"><span>{workspace.error}</span><button type="button" onClick={workspace.retry} aria-label="Retry loading workspace context" title="Retry workspace context"><RefreshCw size={13}/>Retry</button></span>:null}
+     <span className="local-pill" title="Standalone local application runtime">Local runtime</span><span className="topbar-divider"/><ThemeToggle/><UserMenu user={user} onLogout={onLogout}/>
+    </div>
    </header>
    <main id="main-content" className="content-body" tabIndex="-1">
     <div className="content-intro"><div><div className="eyebrow">{meta.section}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="content-intro-meta"><span className="role-chip">{user.role}</span></div></div>

@@ -8,6 +8,7 @@ vi.mock("@/api",()=>({api:{
  workspaceOrganizations:vi.fn(),
  workspaceProjects:vi.fn(),
  workspaceLabs:vi.fn(),
+ topologyProviderBinding:vi.fn(),
 }}));
 
 describe("shared application shell",()=>{
@@ -16,7 +17,8 @@ describe("shared application shell",()=>{
   globalThis.sessionStorage.clear();
   api.workspaceOrganizations.mockResolvedValue({items:[{organization_id:"org-a",name:"Organization A"}]});
   api.workspaceProjects.mockResolvedValue({items:[{project_id:"project-a",name:"Project A"}]});
-  api.workspaceLabs.mockResolvedValue({items:[{lab_id:"lab-a",name:"Lab A"}]});
+  api.workspaceLabs.mockResolvedValue({items:[{lab_id:"lab-a",name:"Lab A",provider_id:"gns3"}]});
+  api.topologyProviderBinding.mockResolvedValue({binding:{binding_id:"binding-a",lab_id:"lab-a",status:"ACTIVE"}});
  });
  afterEach(()=>cleanup());
 
@@ -33,6 +35,8 @@ describe("shared application shell",()=>{
   const summary=screen.getByRole("group",{name:"Current workspace"});
   await waitFor(()=>expect(summary.textContent).toContain("Project A"));
   expect(summary.textContent).toContain("Organization A");
+  expect(await screen.findByText("GNS3 · bound · health unknown")).toBeTruthy();
+  expect(screen.getByRole("button",{name:"Search pages and workspace"})).toBeTruthy();
  });
  it("updates Project and Lab choices when Organization changes",async()=>{
   api.workspaceOrganizations.mockResolvedValue({items:[
@@ -52,3 +56,37 @@ describe("shared application shell",()=>{
   await waitFor(()=>expect(screen.getByLabelText("Active project").value).toBe("project-org-b"));
  });
 });
+
+ it("searches only visible modules and active workspace entries",async()=>{
+  render(<AppShell user={{username:"viewer",role:"VIEWER",permissions:["workspace.read","topology.read"]}} routeName="dashboard" onLogout={vi.fn()}>
+   <h2>Page content</h2>
+  </AppShell>);
+  fireEvent.click(screen.getByRole("button",{name:"Search pages and workspace"}));
+  const input=screen.getByRole("searchbox",{name:"Search NetRegress"});
+  fireEvent.change(input,{target:{value:"topology"}});
+  expect(await screen.findByRole("option",{name:/Topology studio/})).toBeTruthy();
+  fireEvent.keyDown(input,{key:"ArrowDown"});
+  expect(screen.getByRole("option",{name:/Topology studio/}).getAttribute("aria-selected")).toBe("true");
+  expect(screen.queryByRole("option",{name:/Administration/})).toBeNull();
+  fireEvent.keyDown(input,{key:"Enter"});
+  await waitFor(()=>expect(window.location.pathname).toBe("/topologies"));
+ });
+
+ it("opens global search with Ctrl or Cmd+K and closes with Escape",async()=>{
+  render(<AppShell user={{username:"owner",role:"OWNER",permissions:["workspace.read"]}} routeName="dashboard" onLogout={vi.fn()}>
+   <h2>Page content</h2>
+  </AppShell>);
+  fireEvent.keyDown(window,{key:"k",ctrlKey:true});
+  expect(await screen.findByRole("dialog",{name:"Search NetRegress"})).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole("searchbox",{name:"Search NetRegress"}),{key:"Escape"});
+  await waitFor(()=>expect(screen.queryByRole("dialog")).toBeNull());
+ });
+
+ it("does not claim a provider is connected when only binding metadata exists",async()=>{
+  api.topologyProviderBinding.mockResolvedValue({binding:{binding_id:"binding-a",lab_id:"lab-a",status:"ACTIVE"}});
+  render(<AppShell user={{username:"viewer",role:"VIEWER",permissions:["workspace.read","topology.read"]}} routeName="dashboard" onLogout={vi.fn()}>
+   <h2>Page content</h2>
+  </AppShell>);
+  expect(await screen.findByRole("status",{name:"GNS3 · bound · health unknown"})).toBeTruthy();
+  expect(screen.queryByText(/connected/i)).toBeNull();
+ });
