@@ -40,6 +40,16 @@ describe("global workspace context",()=>{
   expect(api.workspaceProjects).toHaveBeenCalledWith({organization_id:"org-a"});
   expect(api.workspaceLabs).toHaveBeenCalledWith("project-a");
  });
+ it("restores a valid previously selected Project and Lab for the signed-in user",async()=>{
+  globalThis.sessionStorage.setItem("netregress.workspace.owner",JSON.stringify({
+   organizationId:"org-b",projectId:"project-b",labId:"lab-project-b"
+  }));
+  render(<WorkspaceProvider user={{username:"owner"}}><Harness/></WorkspaceProvider>);
+  expect(await screen.findByRole("option",{name:"Lab project-b"})).toBeTruthy();
+  await waitFor(()=>expect(screen.getByText("org-b|project-b|lab-project-b")).toBeTruthy());
+  expect(api.workspaceProjects).toHaveBeenCalledWith({organization_id:"org-b"});
+  expect(api.workspaceLabs).toHaveBeenCalledWith("project-b");
+ });
  it("clears dependent Project and Lab selection when the Organization changes",async()=>{
   render(<WorkspaceProvider user={{username:"owner"}}><Harness/></WorkspaceProvider>);
   await screen.findByRole("option",{name:"Lab project-a"});
