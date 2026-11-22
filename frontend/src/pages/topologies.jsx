@@ -11,7 +11,7 @@ const localId=prefix=>prefix+"-"+(globalThis.crypto?.randomUUID?globalThis.crypt
 
 export default function TopologyStudioPage({user}){
  const workspace=useWorkspace();
- const projects=useAsyncLoader(()=>api.workspaceProjects(),[],{queryKey:"topology-studio-projects"});
+ const projects=useAsyncLoader(()=>workspace.activeOrganizationId?api.workspaceProjects({organization_id:workspace.activeOrganizationId}):Promise.resolve({items:[]}),[workspace.activeOrganizationId],{enabled:Boolean(workspace.activeOrganizationId),queryKey:"topology-studio-projects"});
  const [projectId,setProjectId]=useState(workspace.activeProjectId||"");
  const [profileId,setProfileId]=useState("");
  const [revisionId,setRevisionId]=useState("");
