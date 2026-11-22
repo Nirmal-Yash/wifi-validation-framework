@@ -54,7 +54,7 @@ def test_openapi_documents_structured_visual_topology_intent_and_provider_bounda
     assert "credential_ref_id is an opaque Credential Vault reference ID only" in topology
     assert "unmapped provider-independent logical node" in topology
     assert "Does not persist a revision or contact a provider" in topology
-    assert "configuration_profile_id and" in topology
+    assert "configuration_profile_id must identify a PUBLISHED profile" in topology
     assert "PUBLISHED profile backed by an ACTIVE schema" in topology
     assert "ACTIVE Vault record in the same Project" in topology
     assert '"404": {description: Project, selected profile, credential or configuration profile not found' in topology
