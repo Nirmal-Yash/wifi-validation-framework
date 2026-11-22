@@ -258,6 +258,22 @@ class DashboardQueryService:
                     "source_updated_at": binding_updated,
                 })
 
+        provider_summary = {
+            "access": "AVAILABLE",
+            "items": provider_items,
+            "configured": sum(1 for item in provider_items if item["binding_status"] == "CONFIGURED"),
+            "health": "UNKNOWN",
+            "source": ["labs", "gns3_lab_bindings"],
+            "observed_at": observed_at,
+        } if include_topology else {
+            "access": "RESTRICTED",
+            "items": [],
+            "configured": None,
+            "health": "UNKNOWN",
+            "source": None,
+            "observed_at": None,
+        }
+
         return {
             "observed_at": observed_at,
             "scope": {
@@ -288,13 +304,7 @@ class DashboardQueryService:
             },
             "devices": devices,
             "topology": topology,
-            "providers": {
-                "items": provider_items,
-                "configured": sum(1 for item in provider_items if item["binding_status"] == "CONFIGURED"),
-                "health": "UNKNOWN",
-                "source": ["labs", "gns3_lab_bindings"],
-                "observed_at": observed_at,
-            },
+            "providers": provider_summary,
             "pipelines": pipelines,
             "runs": runs,
             "performance": {

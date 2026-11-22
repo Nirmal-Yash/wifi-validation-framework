@@ -119,6 +119,22 @@ def test_operations_overview_rejects_lab_outside_project_scope(tmp_path):
     assert response.get_json()["error"]["code"] == "NOT_FOUND"
 
 
+def test_operations_overview_redacts_provider_binding_without_topology_permission(tmp_path):
+    database_path = tmp_path / "overview-permissions.sqlite"
+    database = SQLiteDatabase(database_path)
+    database.initialize()
+    _seed_workspace(database)
+    from dashboard.query import DashboardQueryService
+
+    result = DashboardQueryService(database).operations_overview(
+        "project-a", lab_id="lab-a", include_topology=False,
+    )
+    assert result["topology"]["access"] == "RESTRICTED"
+    assert result["providers"]["access"] == "RESTRICTED"
+    assert result["providers"]["items"] == []
+    assert result["providers"]["configured"] is None
+
+
 def test_operations_overview_requires_a_project(tmp_path):
     app = create_app(tmp_path / "overview-empty.sqlite", auth_manager=AuthManager((), required=False))
     response = app.test_client().get("/api/v1/dashboard/operations-overview")
