@@ -144,7 +144,9 @@ def test_release_manifest_is_deterministic_and_verifiable(tmp_path):
     assert first["dependencies"]["status"] == "COMPLETE"
     assert first["application"]["version"] == "0.1.0"
     assert first["application"]["version_status"] == "DECLARED_IN_TAURI_CONFIGURATION"
-    assert first["production_reproducible"] is True
+    assert first["production_reproducible"] is (
+        first["release_ready"] and first["dependencies"]["complete"]
+    )
     assert first["application"]["frontend_package_version"]
 
     manifest_path = service.write_manifest(tmp_path / "release-manifest.json")

@@ -45,4 +45,6 @@ def test_release_manifest_schema_is_stable():
     assert dependencies["complete"] is True
     assert payload["application"]["version"] == "0.1.0"
     assert payload["application"]["version_status"] == "DECLARED_IN_TAURI_CONFIGURATION"
-    assert payload["production_reproducible"] is True
+    assert payload["production_reproducible"] is (
+        payload["release_ready"] and dependencies["complete"]
+    )
