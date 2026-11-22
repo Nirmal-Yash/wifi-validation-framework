@@ -1,5 +1,6 @@
 import React,{useEffect,useState} from "react";
 import {api} from "@/api";
+import {useWorkspace} from "@/components/workspace-context";
 import {useAsyncLoader,useMutation} from "@/hooks";
 import {canPerform} from "@/permissions";
 import {Button,DataTable,EmptyState,ErrorState,Field,InlineNotice,LoadingState,Section,StatusBadge} from "@/components/ui";
@@ -17,9 +18,10 @@ const emptyForm=()=>({
 });
 
 export default function DevicesPage({user}){
- const projects=useAsyncLoader(()=>api.workspaceProjects(),[],{queryKey:"device-inventory-projects"});
- const [projectId,setProjectId]=useState("");
- const [labId,setLabId]=useState("");
+ const workspace=useWorkspace();
+ const projects=useAsyncLoader(()=>workspace.activeOrganizationId?api.workspaceProjects({organization_id:workspace.activeOrganizationId}):Promise.resolve({items:[]}),[workspace.activeOrganizationId],{enabled:Boolean(workspace.activeOrganizationId),queryKey:"device-inventory-projects"});
+ const [projectId,setProjectId]=useState(workspace.activeProjectId||"");
+ const [labId,setLabId]=useState(workspace.activeLabId||"");
  const [form,setForm]=useState(emptyForm);
  const [showCreate,setShowCreate]=useState(false);
  const [selectedDeviceId,setSelectedDeviceId]=useState("");
@@ -35,8 +37,23 @@ export default function DevicesPage({user}){
  const projectItems=projects.data?.items||[];
  const labItems=(labs.data?.items||[]).filter(item=>item.status==="ACTIVE");
 
- useEffect(()=>{if(!projectId&&projectItems.length)setProjectId(projectItems[0].project_id);},[projects.data,projectId]);
- useEffect(()=>{if(labId&&!labItems.some(item=>item.lab_id===labId))setLabId("");},[labs.data,labId]);
+ useEffect(()=>{
+  if(workspace.activeProjectId&&projectItems.some(item=>item.project_id===workspace.activeProjectId)){
+   if(projectId!==workspace.activeProjectId){
+    setProjectId(workspace.activeProjectId);setLabId(workspace.activeLabId||"");
+    setShowCreate(false);setSelectedDeviceId("");setCredentialReference("");
+   }
+  }else if(projectId&&!projectItems.some(item=>item.project_id===projectId)){
+   setProjectId("");setLabId("");setSelectedDeviceId("");setCredentialReference("");
+  }else if(!projectId&&projectItems.length){
+   const first=projectItems[0].project_id;setProjectId(first);workspace.selectProject(first);
+  }
+ },[projects.data,projectId,workspace.activeProjectId,workspace.activeLabId]);
+ useEffect(()=>{
+  if(!labs.loading&&labs.data&&labId&&!labItems.some(item=>item.lab_id===labId)){
+   setLabId("");workspace.selectLab("");
+  }
+ },[labs.data,labs.loading,labId]);
  async function createDevice(event){
   event.preventDefault();setError("");setNotice("");
   let capabilities,metadata;
@@ -81,8 +98,8 @@ export default function DevicesPage({user}){
   <div className="module-intro"><div className="module-intro-icon"><RouterIcon/></div><div><strong>Managed device inventory</strong><p>Devices are owned by a Project and Lab. Secrets remain in the OS credential vault; the database stores only an opaque credential reference.</p></div></div>
   <Section title="Inventory scope" subtitle="Select the Project and optionally narrow the list to one Lab." actions={canManage?<Button size="sm" onClick={()=>{setForm({...emptyForm(),lab_id:labId});setShowCreate(value=>!value);}}>{showCreate?"Close":"Register device"}</Button>:null}>
    <div className="form-grid">
-    <Field label="Project"><select value={projectId} onChange={event=>{setProjectId(event.target.value);setLabId("");setShowCreate(false);}}><option value="">Select Project</option>{projectItems.map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}</select></Field>
-    <Field label="Lab filter"><select value={labId} onChange={event=>setLabId(event.target.value)} disabled={!projectId||labs.loading}><option value="">All Labs</option>{labItems.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name}</option>)}</select></Field>
+    <Field label="Project"><select value={projectId} onChange={event=>{const value=event.target.value;setProjectId(value);workspace.selectProject(value);setLabId("");setShowCreate(false);}}><option value="">Select Project</option>{projectItems.map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}</select></Field>
+    <Field label="Lab filter"><select value={labId} onChange={event=>{setLabId(event.target.value);workspace.selectLab(event.target.value);}} disabled={!projectId||labs.loading}><option value="">All Labs</option>{labItems.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name}</option>)}</select></Field>
    </div>
    {projects.error?<InlineNotice tone="danger">{projects.error.message}</InlineNotice>:null}
    {labs.error?<InlineNotice tone="danger">{labs.error.message}</InlineNotice>:null}

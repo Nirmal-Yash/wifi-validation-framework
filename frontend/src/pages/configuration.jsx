@@ -1,18 +1,31 @@
 import React,{useEffect,useMemo,useState} from "react";
 import {KeyRound,LockKeyhole,RefreshCw,Settings2,ShieldCheck,UploadCloud} from "lucide-react";
 import {api} from "@/api";
+import {useWorkspace} from "@/components/workspace-context";
 import {useAsyncLoader,useMutation} from "@/hooks";
 import {canPerform} from "@/permissions";
 import {Button,DataTable,EmptyState,ErrorState,Field,InlineNotice,LoadingState,Section,StatusBadge} from "@/components/ui";
 
 function useProjectSelection(){
- const projects=useAsyncLoader(()=>api.workspaceProjects({}),[],{queryKey:"configuration-projects"});
- const [projectId,setProjectId]=useState("");
+ const workspace=useWorkspace();
+ const projects=useAsyncLoader(
+  ()=>workspace.activeOrganizationId?api.workspaceProjects({organization_id:workspace.activeOrganizationId}):Promise.resolve({items:[]}),
+  [workspace.activeOrganizationId],
+  {enabled:Boolean(workspace.activeOrganizationId),queryKey:"configuration-projects"}
+ );
+ const [projectId,setProjectId]=useState(workspace.activeProjectId||"");
  useEffect(()=>{
   const rows=projects.data?.items||[];
-  if(!projectId&&rows.length)setProjectId(rows[0].project_id);
- },[projects.data,projectId]);
- return {projects,projectId,setProjectId};
+  if(workspace.activeProjectId&&rows.some(item=>item.project_id===workspace.activeProjectId)){
+   if(projectId!==workspace.activeProjectId)setProjectId(workspace.activeProjectId);
+  }else if(projectId&&!rows.some(item=>item.project_id===projectId)){
+   setProjectId("");
+  }else if(!projectId&&rows.length){
+   const first=rows[0].project_id;setProjectId(first);workspace.selectProject(first);
+  }
+ },[projects.data,projectId,workspace.activeProjectId]);
+ const selectProject=id=>{setProjectId(id);workspace.selectProject(id);};
+ return {projects,projectId,setProjectId:selectProject};
 }
 function ProjectPicker({projects,projectId,onChange}){
  const rows=projects.data?.items||[];

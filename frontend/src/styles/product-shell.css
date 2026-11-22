@@ -203,3 +203,31 @@
 .topology-search-count { color:var(--muted-foreground); padding-bottom:8px; font-size:10px; white-space:nowrap; }
 .topology-canvas-actions { display:flex; align-items:center; gap:6px; margin-left:auto; }
 @media(max-width:640px) { .topology-canvas-actions { width:100%; margin-left:0; } .topology-canvas-actions button { flex:1; } }
+
+
+/* P01 shared workspace identity and predictable control typography. */
+.workspace-copy { min-width:0; }
+.workspace-copy strong,.workspace-copy small {
+  display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.workspace-copy strong { font-size:var(--nr-type-label); }
+.workspace-copy small { font-size:var(--nr-type-caption); }
+.workspace-context-controls select {
+  min-height:var(--nr-control-height-sm);
+  font-family:var(--nr-font-sans);
+  font-size:var(--nr-type-label);
+}
+.workspace-context-error { display:flex; align-items:center; gap:7px; max-width:260px; }
+.workspace-context-error span { max-width:190px; line-height:1.35; }
+.workspace-context-error button {
+  display:inline-flex; align-items:center; gap:4px; flex:none;
+  min-height:27px; padding:3px 7px; border:1px solid var(--border);
+  border-radius:6px; background:var(--surface-2); color:var(--foreground);
+  font:inherit; font-size:9px;
+}
+.workspace-context-error button:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+@media(max-width:800px) { .workspace-context-error span { max-width:140px; } }
+@media(max-width:640px) {
+  .workspace-context-error { max-width:170px; }
+  .workspace-context-error span { display:none; }
+}

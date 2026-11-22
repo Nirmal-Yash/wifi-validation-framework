@@ -6,12 +6,14 @@ import {useAsyncLoader,useMutation} from "../hooks";
 import {formatDate} from "../utils";
 import {Button,DataTable,ErrorState,Field,InlineNotice,LoadingState,Pagination,Section,StatusBadge} from "../components/ui";
 import {canPerform} from "../permissions";
+import {useWorkspace} from "@/components/workspace-context";
 import {Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle} from "@/components/ui/dialog";
 
 export default function RunsPage({user}){
- const[filters,setFilters]=useState({project_id:"",firmware:"",lab:"",profile:"",status:"",outcome:"",page:1});
- const[form,setForm]=useState({firmware_version:"v1.0",tests:"",project_id:"",lab_id:"",performance_policy_revision_id:""}),[showLaunch,setShowLaunch]=useState(()=>new URLSearchParams(window.location.search).get("launch")==="1");
- const workspaceProjects=useAsyncLoader(()=>api.workspaceProjects(),[],{queryKey:"run-visible-projects"});
+ const workspace=useWorkspace();
+ const[filters,setFilters]=useState({project_id:workspace.activeProjectId||"",firmware:"",lab:workspace.activeLabId||"",profile:"",status:"",outcome:"",page:1});
+ const[form,setForm]=useState({firmware_version:"v1.0",tests:"",project_id:workspace.activeProjectId||"",lab_id:workspace.activeLabId||"",performance_policy_revision_id:""}),[showLaunch,setShowLaunch]=useState(()=>new URLSearchParams(window.location.search).get("launch")==="1");
+ const workspaceProjects=useAsyncLoader(()=>workspace.activeOrganizationId?api.workspaceProjects({organization_id:workspace.activeOrganizationId}):Promise.resolve({items:[]}),[workspace.activeOrganizationId],{enabled:Boolean(workspace.activeOrganizationId),queryKey:"run-visible-projects"});
  const workspaceLabs=useAsyncLoader(()=>form.project_id?api.workspaceLabs(form.project_id):Promise.resolve({items:[]}),[form.project_id],{enabled:showLaunch&&Boolean(form.project_id),queryKey:"run-launch-labs"});
  const workspacePerformanceAssignments=useAsyncLoader(()=>form.project_id?api.performanceAssignments(form.project_id):Promise.resolve({items:[]}),[form.project_id],{enabled:showLaunch&&Boolean(form.project_id),queryKey:"run-launch-performance-assignments"});
  const selectedPerformanceAssignment=(workspacePerformanceAssignments.data?.items||[]).find(item=>item.lab_id===form.lab_id)||null;
@@ -20,11 +22,16 @@ export default function RunsPage({user}){
  const selectedRunPolicyRevision=(runPolicyRevisions.data?.items||[]).find(item=>item.revision_id===form.performance_policy_revision_id)||null;
  const assignedRunPolicyProfile=(runPolicyProfiles.data?.items||[]).find(item=>item.policy_profile_id===selectedPerformanceAssignment?.policy_profile_id)||null;
  useEffect(()=>{setForm(current=>({...current,performance_policy_revision_id:selectedPerformanceAssignment?.revision_id||""}));},[selectedPerformanceAssignment?.revision_id]);
+ useEffect(()=>{
+  if(workspace.activeProjectId&&filters.project_id!==workspace.activeProjectId) setFilters(current=>({...current,project_id:workspace.activeProjectId,page:1}));
+  if(!workspace.activeProjectId&&workspace.activeOrganizationId&&filters.project_id) setFilters(current=>({...current,project_id:"",lab:"",page:1}));
+  if(showLaunch&&workspace.activeProjectId&&form.project_id!==workspace.activeProjectId) setForm(current=>({...current,project_id:workspace.activeProjectId,lab_id:workspace.activeLabId||"",performance_policy_revision_id:""}));
+ },[workspace.activeOrganizationId,workspace.activeProjectId,workspace.activeLabId]);
  const loader=useAsyncLoader(()=>api.runs({project_id:filters.project_id,firmware:filters.firmware,lab:filters.lab,profile:filters.profile,status:filters.status,outcome:filters.outcome,page:filters.page,limit:25}),[filters.project_id,filters.firmware,filters.lab,filters.profile,filters.status,filters.outcome,filters.page],{refreshMs:10000});
  const mutation=useMutation(),canLaunch=canPerform(user,"runs.execute");
  const statusOptions=useMemo(()=>["","QUEUED","PREPARING","LAB_HEALTH_CHECK","RUNNING","FINALIZING","COMPLETED","FAILED","LAB_FAILED","CANCELLED","ABORTED"],[]);
  const apply=event=>{event.preventDefault();setFilters(current=>({...current,page:1}));};
- const clearFilters=()=>setFilters({project_id:"",firmware:"",lab:"",profile:"",status:"",outcome:"",page:1});
+ const clearFilters=()=>setFilters({project_id:workspace.activeProjectId||"",firmware:"",lab:workspace.activeLabId||"",profile:"",status:"",outcome:"",page:1});
  const activeFilterCount=[filters.project_id,filters.firmware,filters.lab,filters.profile,filters.status,filters.outcome].filter(Boolean).length;
  const startRun=async event=>{event.preventDefault();try{
   await mutation.run(()=>api.launch({
@@ -45,7 +52,7 @@ export default function RunsPage({user}){
   {mutation.error?<InlineNotice tone="danger">{mutation.error.message}</InlineNotice>:mutation.success?<InlineNotice tone="success">The Runner accepted the Run request. Refreshing persisted history.</InlineNotice>:null}
   <Section title="Filter history" subtitle="Filters are applied by the Runner API." actions={<span className="filter-count">{activeFilterCount} active</span>}>
    <form className="filter-grid" onSubmit={apply}>
-    <Field label="Project"><select value={filters.project_id} onChange={e=>setFilters({...filters,project_id:e.target.value,page:1})}><option value="">All assigned Projects</option>{(workspaceProjects.data?.items||[]).map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}</select></Field>
+    <Field label="Project"><select value={filters.project_id} onChange={e=>{setFilters({...filters,project_id:e.target.value,page:1});if(e.target.value)workspace.selectProject(e.target.value);}}><option value="">All assigned Projects</option>{(workspaceProjects.data?.items||[]).map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}</select></Field>
     <Field label="Firmware"><input value={filters.firmware} onChange={e=>setFilters({...filters,firmware:e.target.value,page:1})} placeholder="e.g. v1.0"/></Field>
     <Field label="Lab"><input value={filters.lab} onChange={e=>setFilters({...filters,lab:e.target.value,page:1})} placeholder="Lab ID"/></Field>
     <Field label="Profile"><input value={filters.profile} onChange={e=>setFilters({...filters,profile:e.target.value,page:1})} placeholder="Validation profile"/></Field>
@@ -71,13 +78,13 @@ export default function RunsPage({user}){
     <DialogHeader><DialogTitle>Start validation Run</DialogTitle><DialogDescription>The Runner validates authorization, configuration and idempotency. This form submits the requested execution scope.</DialogDescription></DialogHeader>
     <form className="form-stack" onSubmit={startRun}>
      <Field label="Organization Project" required hint="Choose a Project where your account has Run execution permission.">
-      <select value={form.project_id} onChange={event=>setForm(current=>({...current,project_id:event.target.value,lab_id:"",performance_policy_revision_id:""}))} required disabled={workspaceProjects.loading}>
+      <select value={form.project_id} onChange={event=>{const value=event.target.value;setForm(current=>({...current,project_id:value,lab_id:"",performance_policy_revision_id:""}));workspace.selectProject(value);}} required disabled={workspaceProjects.loading}>
        <option value="">Select Project</option>
        {(workspaceProjects.data?.items||[]).filter(item=>item.status==="ACTIVE").map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}
       </select>
      </Field>
      <Field label="Lab" required hint={form.project_id?(workspaceLabs.loading?"Loading Labs…":"Choose an active Lab belonging to the selected Project."):"Select a Project first."}>
-      <select value={form.lab_id} onChange={event=>setForm(current=>({...current,lab_id:event.target.value,performance_policy_revision_id:""}))} required disabled={!form.project_id||workspaceLabs.loading}>
+      <select value={form.lab_id} onChange={event=>{const value=event.target.value;setForm(current=>({...current,lab_id:value,performance_policy_revision_id:""}));workspace.selectLab(value);}} required disabled={!form.project_id||workspaceLabs.loading}>
        <option value="">Select Lab</option>
        {(workspaceLabs.data?.items||[]).filter(item=>item.status==="ACTIVE").map(item=><option key={item.lab_id} value={item.lab_id}>{item.name} · {item.provider_id}</option>)}
       </select>

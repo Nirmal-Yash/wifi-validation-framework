@@ -53,7 +53,7 @@
 | RQ-032 | Existing Run/Attempt, evidence and regression | `lib/services/run_service.py`, repositories and dashboard query layer | EXISTING | No rewrite; maintain baseline and ownership checks |
 | RQ-033 | Existing Wi-Fi telemetry and capture evidence | Existing telemetry/capture/artifact services | EXISTING | Add metrics only with real observation provenance |
 | RQ-034 | Cross-domain operations overview | `DashboardQueryService` and `frontend/src/pages/dashboard.jsx` currently focus on Runs/readiness | EXTEND | Real Project/Lab/provider/device/pipeline aggregates with source timestamps |
-| RQ-035 | Shared Organization/Project/Lab shell context | Workspace APIs exist; global selectors are not in current shell | EXTEND | Persist selection safely; enforce server-side permissions |
+| RQ-035 | Shared Organization/Project/Lab shell context | `frontend/src/components/workspace-context.jsx`, `frontend/src/components/layout.jsx`, existing workspace APIs | EXISTING | Keep per-user reset, cross-page context adoption and Project/Lab scope tests green |
 
 ## Acceptance and evidence
 
@@ -66,3 +66,5 @@
 | RQ-044 | Clean-machine interactive desktop and restore qualification | Operator installation/recovery records | GATE |
 
 This register is intentionally conservative. A source file or mocked contract test proves only the behavior it actually exercises; it does not mark an external provider, physical device or user workstation as accepted.
+
+| RQ-036 | Unified design tokens and accessible shared shell | `frontend/src/styles/tokens.css`, `frontend/src/styles.css`, `frontend/src/styles/product-shell.css`, AppShell frontend tests | EXISTING | Maintain light/dark, responsive, focus, navigation landmark and reduced-motion checks |

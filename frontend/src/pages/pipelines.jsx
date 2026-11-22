@@ -1,5 +1,6 @@
 import React,{useEffect,useState} from "react";
 import {api} from "@/api";
+import {useWorkspace} from "@/components/workspace-context";
 import {useAsyncLoader,useMutation} from "@/hooks";
 import {canPerform} from "@/permissions";
 import {Button,DataTable,EmptyState,ErrorState,Field,InlineNotice,LoadingState,Section,StatusBadge} from "@/components/ui";
@@ -23,13 +24,14 @@ Opaque Credential Vault IDs only.`;
 const stamp=value=>value?new Date(value).toLocaleString():"—";
 
 export default function PipelinesPage({user}){
- const [projectId,setProjectId]=useState("");const [labId,setLabId]=useState("");
+ const workspace=useWorkspace();
+ const [projectId,setProjectId]=useState(workspace.activeProjectId||"");const [labId,setLabId]=useState(workspace.activeLabId||"");
  const [pipelineId,setPipelineId]=useState("");const [executionId,setExecutionId]=useState("");
  const [name,setName]=useState("Reference Wi-Fi pipeline");const [description,setDescription]=useState("");
  const [definitionText,setDefinitionText]=useState(STARTER);const [showEditor,setShowEditor]=useState(false);
  const [notice,setNotice]=useState("");const [error,setError]=useState("");
  const canManage=canPerform(user,"pipelines.manage");const canExecute=canPerform(user,"pipelines.execute");
- const projects=useAsyncLoader(()=>api.workspaceProjects(),[],{queryKey:"pipeline-projects"});
+ const projects=useAsyncLoader(()=>workspace.activeOrganizationId?api.workspaceProjects({organization_id:workspace.activeOrganizationId}):Promise.resolve({items:[]}),[workspace.activeOrganizationId],{enabled:Boolean(workspace.activeOrganizationId),queryKey:"pipeline-projects"});
  const projectRows=projects.data?.items||[];
  const labs=useAsyncLoader(()=>projectId?api.workspaceLabs(projectId):Promise.resolve({items:[]}),[projectId],{enabled:Boolean(projectId),queryKey:"pipeline-labs"});
  const labRows=(labs.data?.items||[]).filter(item=>item.status==="ACTIVE");
@@ -44,8 +46,22 @@ export default function PipelinesPage({user}){
  const selectedExecution=executionRows.find(item=>item.execution_id===executionId)||executionRows[0]||null;
  const executionDetail=useAsyncLoader(()=>selectedExecution?.execution_id?api.pipelineExecution(selectedExecution.execution_id):Promise.resolve(null),[selectedExecution?.execution_id],{enabled:Boolean(selectedExecution?.execution_id),queryKey:"pipeline-execution-detail",refreshMs:5000});
  const mutation=useMutation();
- useEffect(()=>{if(!projectId&&projectRows.length)setProjectId(projectRows[0].project_id);},[projects.data,projectId]);
- useEffect(()=>{if(labId&&!labRows.some(item=>item.lab_id===labId))setLabId("");},[labs.data,labId]);
+ useEffect(()=>{
+  if(workspace.activeProjectId&&projectRows.some(item=>item.project_id===workspace.activeProjectId)){
+   if(projectId!==workspace.activeProjectId){
+    setProjectId(workspace.activeProjectId);setLabId(workspace.activeLabId||"");setPipelineId("");setExecutionId("");
+   }
+  }else if(projectId&&!projectRows.some(item=>item.project_id===projectId)){
+   setProjectId("");setLabId("");setPipelineId("");setExecutionId("");
+  }else if(!projectId&&projectRows.length){
+   const first=projectRows[0].project_id;setProjectId(first);workspace.selectProject(first);
+  }
+ },[projects.data,projectId,workspace.activeProjectId,workspace.activeLabId]);
+ useEffect(()=>{
+  if(!labs.loading&&labs.data&&labId&&!labRows.some(item=>item.lab_id===labId)){
+   setLabId("");workspace.selectLab("");
+  }
+ },[labs.data,labs.loading,labId]);
  useEffect(()=>{if(!pipelineId&&pipelineRows.length)setPipelineId(pipelineRows[0].pipeline_id);},[pipelines.data,pipelineId]);
  useEffect(()=>{if(pipelineId&&!pipelineRows.some(item=>item.pipeline_id===pipelineId))setPipelineId("");},[pipelines.data,pipelineId]);
  useEffect(()=>{if(selectedExecution?.execution_id&&!executionId)setExecutionId(selectedExecution.execution_id);},[executionRows,executionId,selectedExecution?.execution_id]);
@@ -104,8 +120,8 @@ export default function PipelinesPage({user}){
   {notice?<InlineNotice tone="success">{notice}</InlineNotice>:null}{error?<InlineNotice tone="danger">{error}</InlineNotice>:null}
   <Section title="Pipeline scope" subtitle="Select the Project and Lab whose devices, credentials, topology and provider access the workflow may use." actions={<Button size="sm" variant="outline" onClick={()=>{pipelines.reload();executions.reload();executionDetail.reload();}}>Refresh</Button>}>
    <div className="form-grid">
-    <Field label="Project"><select value={projectId} onChange={event=>{setProjectId(event.target.value);setLabId("");setPipelineId("");setExecutionId("");}}><option value="">Select Project</option>{projectRows.map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}</select></Field>
-    <Field label="Lab"><select value={labId} onChange={event=>{setLabId(event.target.value);setPipelineId("");setExecutionId("");}} disabled={!projectId||labs.loading}><option value="">All Labs</option>{labRows.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name}</option>)}</select></Field>
+    <Field label="Project"><select value={projectId} onChange={event=>{const value=event.target.value;setProjectId(value);workspace.selectProject(value);setLabId("");setPipelineId("");setExecutionId("");}}><option value="">Select Project</option>{projectRows.map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}</select></Field>
+    <Field label="Lab"><select value={labId} onChange={event=>{setLabId(event.target.value);workspace.selectLab(event.target.value);setPipelineId("");setExecutionId("");}} disabled={!projectId||labs.loading}><option value="">All Labs</option>{labRows.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name}</option>)}</select></Field>
     <Field label="Pipeline"><select value={pipelineId} onChange={event=>{setPipelineId(event.target.value);setExecutionId("");}} disabled={!projectId||pipelines.loading}><option value="">Select pipeline</option>{pipelineRows.map(item=><option key={item.pipeline_id} value={item.pipeline_id}>{item.name} · {item.latest_revision?.status||"DRAFT"}</option>)}</select></Field>
    </div>
    {labs.error?<InlineNotice tone="danger">{labs.error.message}</InlineNotice>:null}{pipelines.error?<InlineNotice tone="danger">{pipelines.error.message}</InlineNotice>:null}

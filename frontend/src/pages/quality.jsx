@@ -1,6 +1,7 @@
 import React,{useEffect,useState} from "react";
 import {Activity,ArrowUpRight,GitCompare,TrendingDown,TrendingUp,Wifi} from "lucide-react";
 import {api} from "../api";
+import {useWorkspace} from "@/components/workspace-context";
 import {navigate} from "../router";
 import {useAsyncLoader,useMutation} from "../hooks";
 import {canPerform} from "../permissions";
@@ -99,9 +100,10 @@ const DEFAULT_PERFORMANCE_POLICY=JSON.stringify({
 },null,2);
 
 function PerformancePolicyWorkspace({user}){
- const projects=useAsyncLoader(()=>api.workspaceProjects({}),[],{queryKey:"performance-policy-projects"});
- const [projectId,setProjectId]=useState("");
- const [labId,setLabId]=useState("");
+ const workspace=useWorkspace();
+ const projects=useAsyncLoader(()=>workspace.activeOrganizationId?api.workspaceProjects({organization_id:workspace.activeOrganizationId}):Promise.resolve({items:[]}),[workspace.activeOrganizationId],{enabled:Boolean(workspace.activeOrganizationId),queryKey:"performance-policy-projects"});
+ const [projectId,setProjectId]=useState(workspace.activeProjectId||"");
+ const [labId,setLabId]=useState(workspace.activeLabId||"");
  const [profileId,setProfileId]=useState("");
  const [revisionId,setRevisionId]=useState("");
  const [definitionText,setDefinitionText]=useState(DEFAULT_PERFORMANCE_POLICY);
@@ -130,12 +132,24 @@ function PerformancePolicyWorkspace({user}){
  const selectedProfile=profileRows.find(item=>item.policy_profile_id===profileId)||null;
 
  useEffect(()=>{
-  const first=projects.data?.items?.[0];
-  if(!projectId&&first)setProjectId(first.project_id);
- },[projects.data,projectId]);
+  const projectRows=projects.data?.items||[];
+  if(workspace.activeProjectId&&projectRows.some(item=>item.project_id===workspace.activeProjectId)){
+   if(projectId!==workspace.activeProjectId){
+    setProjectId(workspace.activeProjectId);setLabId(workspace.activeLabId||"");setProfileId("");setRevisionId("");
+   }
+  }else if(projectId&&!projectRows.some(item=>item.project_id===projectId)){
+   setProjectId("");setLabId("");setProfileId("");setRevisionId("");
+  }else if(!projectId&&projectRows.length){
+   const first=projectRows[0].project_id;setProjectId(first);workspace.selectProject(first);
+  }
+ },[projects.data,projectId,workspace.activeProjectId,workspace.activeLabId]);
  useEffect(()=>{
-  if(!labId&&labRows.length)setLabId(labRows[0].lab_id);
- },[labs.data,labId]);
+  if(!labs.loading&&labs.data&&labId&&!labRows.some(item=>item.lab_id===labId)){
+   setLabId("");workspace.selectLab("");
+  }else if(!labs.loading&&labs.data&&!labId&&labRows.length){
+   const first=labRows[0].lab_id;setLabId(first);workspace.selectLab(first);
+  }
+ },[labs.data,labs.loading,labId]);
  useEffect(()=>{
   if(!profileId&&profileRows.length)setProfileId(profileRows[0].policy_profile_id);
  },[profiles.data,profileId]);
@@ -180,10 +194,10 @@ function PerformancePolicyWorkspace({user}){
   <div className="module-intro"><div className="module-intro-icon"><Activity size={19}/></div><div><strong>Versioned performance policy</strong><p>Manage immutable threshold revisions per Project or Lab. Publishing freezes the selected revision; assignment controls which published revision is selected for future Runs.</p></div></div>
   <Section title="Project and Lab scope" subtitle="Policy records and Lab assignments are isolated by Project.">
    <div className="form-grid">
-    <Field label="Project"><select value={projectId} onChange={event=>{setProjectId(event.target.value);setProfileId("");setRevisionId("");setLabId("");}} disabled={projects.loading}>
+    <Field label="Project"><select value={projectId} onChange={event=>{const value=event.target.value;setProjectId(value);workspace.selectProject(value);setProfileId("");setRevisionId("");setLabId("");}} disabled={projects.loading}>
      <option value="">Select Project</option>{(projects.data?.items||[]).map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}
     </select></Field>
-    <Field label="Lab for effective policy"><select value={labId} onChange={event=>setLabId(event.target.value)} disabled={!projectId||labs.loading}>
+    <Field label="Lab for effective policy"><select value={labId} onChange={event=>{setLabId(event.target.value);workspace.selectLab(event.target.value);}} disabled={!projectId||labs.loading}>
      <option value="">Select active Lab</option>{labRows.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name} · {item.provider_id}</option>)}
     </select></Field>
    </div>

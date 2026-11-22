@@ -422,7 +422,7 @@ export default function TopologyStudioPage({user}){
     </div>
     <div style={{width:"100%",overflow:"hidden",border:"1px solid var(--border)",borderRadius:12,background:"var(--card)"}}>
      <svg viewBox={viewport.x+" "+viewport.y+" "+viewport.width+" "+viewport.height} role="img" aria-label="Topology canvas. Drag nodes to position them and drag empty space to pan." style={{display:"block",width:"100%",minWidth:620,touchAction:"none",cursor:panning?"grabbing":"grab"}}
-      onPointerDown={startCanvasPan} onPointerMove={onCanvasPointerMove} onPointerUp={()=>{setDragging("");setPanning(null);}}>
+      onPointerDown={startCanvasPan} onPointerMove={onCanvasPointerMove} onPointerUp={()=>{setDragging("");setPanning(null);}} onPointerCancel={()=>{setDragging("");setPanning(null);}} onWheel={zoomCanvasAtPointer}>
       <defs><pattern id="topology-grid" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M 25 0 L 0 0 0 25" fill="none" stroke="currentColor" strokeOpacity=".08" strokeWidth="1"/></pattern></defs>
       <rect data-canvas-background="true" x="0" y="0" width="10000" height="10000" fill="url(#topology-grid)"/>
       {links.map(link=>{

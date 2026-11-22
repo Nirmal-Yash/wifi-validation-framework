@@ -23,6 +23,7 @@ export function WorkspaceProvider({user,children}){
  const [projectsLoading,setProjectsLoading]=useState(false);
  const [labsLoading,setLabsLoading]=useState(false);
  const [error,setError]=useState("");
+ const [retryKey,setRetryKey]=useState(0);
  const savedSelection=useRef(readSelection(username));
 
  useEffect(()=>{
@@ -41,15 +42,16 @@ export function WorkspaceProvider({user,children}){
    if(!current)return;
    setOrganizations([]);setProjects([]);setLabs([]);
    setActiveOrganizationId("");setActiveProjectId("");setActiveLabId("");
-   setError("ORGANIZATIONS_UNAVAILABLE");
+   setError("Could not load Organizations. Check the connection and retry.");
   }).finally(()=>{if(current)setOrganizationsLoading(false);});
   return()=>{current=false;};
- },[username]);
+ },[username,retryKey]);
 
  useEffect(()=>{
   if(organizationsLoading)return undefined;
   if(!activeOrganizationId){
    setProjects([]);setLabs([]);setActiveProjectId("");setActiveLabId("");
+   setProjectsLoading(false);setLabsLoading(false);
    return undefined;
   }
   let current=true;
@@ -65,14 +67,14 @@ export function WorkspaceProvider({user,children}){
   }).catch(()=>{
    if(!current)return;
    setProjects([]);setLabs([]);setActiveProjectId("");setActiveLabId("");
-   setError("PROJECTS_UNAVAILABLE");
+   setError("Could not load Projects for this Organization. Check access and retry.");
   }).finally(()=>{if(current)setProjectsLoading(false);});
   return()=>{current=false;};
  },[activeOrganizationId,organizationsLoading,username]);
 
  useEffect(()=>{
-  if(projectsLoading)return undefined;
-  if(!activeProjectId){setLabs([]);setActiveLabId("");return undefined;}
+  if(organizationsLoading||projectsLoading)return undefined;
+  if(!activeProjectId){setLabs([]);setActiveLabId("");setLabsLoading(false);return undefined;}
   let current=true;
   setLabsLoading(true);setLabs([]);
   api.workspaceLabs(activeProjectId).then(result=>{
@@ -84,10 +86,10 @@ export function WorkspaceProvider({user,children}){
   }).catch(()=>{
    if(!current)return;
    setLabs([]);setActiveLabId("");
-   setError("LABS_UNAVAILABLE");
+   setError("Could not load Labs for this Project. Check access and retry.");
   }).finally(()=>{if(current)setLabsLoading(false);});
   return()=>{current=false;};
- },[activeProjectId,projectsLoading,username]);
+ },[activeProjectId,organizationsLoading,projectsLoading,username]);
 
  useEffect(()=>{
   try{
@@ -110,12 +112,17 @@ export function WorkspaceProvider({user,children}){
   setActiveLabId(String(id||""));setError("");
  },[activeOrganizationId,activeProjectId]);
 
+ const retry=useCallback(()=>setRetryKey(value=>value+1),[]);
+ const selectedOrganization=organizations.find(item=>item.organization_id===activeOrganizationId)||null;
+ const selectedProject=projects.find(item=>item.project_id===activeProjectId)||null;
+ const selectedLab=labs.find(item=>item.lab_id===activeLabId)||null;
  const value=useMemo(()=>({
   organizations,projects,labs,activeOrganizationId,activeProjectId,activeLabId,
+  selectedOrganization,selectedProject,selectedLab,retry,
   organizationsLoading,projectsLoading,labsLoading,
   loading:organizationsLoading||projectsLoading||labsLoading,
   error,selectOrganization,selectProject,selectLab
- }),[organizations,projects,labs,activeOrganizationId,activeProjectId,activeLabId,organizationsLoading,projectsLoading,labsLoading,error,selectOrganization,selectProject,selectLab]);
+ }),[organizations,projects,labs,activeOrganizationId,activeProjectId,activeLabId,selectedOrganization,selectedProject,selectedLab,organizationsLoading,projectsLoading,labsLoading,error,retry,selectOrganization,selectProject,selectLab]);
  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }
 

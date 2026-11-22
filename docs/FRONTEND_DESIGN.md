@@ -349,3 +349,16 @@ The Run model has no project ID, so the API and legacy Flask interface both fail
 
 
 See the Dashboard Startup, Port Mapping and Verification Audit in DASHBOARD_VERIFICATION_AUDIT.md for the canonical Node engine range, service map, runtime log location and startup smoke-test contract.
+
+
+## 22. P01 — unified application shell and design system
+
+The shared AppShell owns the active Organization, Project and Lab context. It exposes authenticated, scoped selectors in the top bar and a current-workspace summary in the sidebar. Context is resolved only through existing `/api/v1/workspace/*` contracts; Project lists are filtered by Organization and Lab lists by Project. Changing a parent scope clears dependent selections. A selected context is persisted in per-user session storage as a non-secret UI preference only; the API remains authoritative for every resource read and mutation.
+
+Workspace context is consumed by the dashboard, Run history/launch, Device Inventory, Credentials, Configuration Profiles, Performance Policy, Topology Studio and Pipelines. Workspace administration retains its own Organization/Project management workflow. The shell remounts context when the authenticated username changes so one account's selection is not carried into another account's session.
+
+Organization/Project/Lab loading and request failures are explicit. The context exposes retry; retry reloads the organization scope and then re-resolves dependent Projects and Labs. Unknown or unavailable provider state is never labelled as connected.
+
+The shared token file defines typography, spacing, control heights, semantic surfaces, focus treatment, radius, elevation, motion and layer scales. Light/dark semantic colors remain owned by the existing theme variables in `styles.css`. Global navigation is a labelled navigation landmark, the active route uses `aria-current`, the skip link targets main content, selectors retain accessible labels and loading state, and reduced-motion preferences disable non-essential transitions and scrolling animation. No remote font or UI runtime dependency is introduced.
+
+**Acceptance boundary:** automated tests verify context restoration, parent-scope resets, retry after API failure, the primary navigation landmark, accessible context controls and active route state. Hosted CI verifies frontend build and regression. Interactive desktop review across viewport sizes and assistive technologies remains a separate human acceptance check.

@@ -1,15 +1,58 @@
-/* NetRegress product design tokens — shared by all feature modules. */
+/* NetRegress shared design tokens — semantic values map to the active theme. */
 :root {
   --nr-sidebar-expanded: 270px;
   --nr-sidebar-collapsed: 76px;
   --nr-content-max: 1720px;
   --nr-page-gutter: clamp(18px, 2.25vw, 34px);
+
+  --nr-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --nr-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --nr-type-caption: 0.6875rem;
+  --nr-type-label: 0.75rem;
+  --nr-type-body: 0.875rem;
+  --nr-type-section: 1rem;
+  --nr-type-title: clamp(1.55rem, 2.15vw, 2.05rem);
+  --nr-line-tight: 1.2;
+  --nr-line-body: 1.5;
+
+  --nr-space-1: 4px;
+  --nr-space-2: 8px;
+  --nr-space-3: 12px;
+  --nr-space-4: 16px;
+  --nr-space-5: 20px;
+  --nr-space-6: 24px;
+  --nr-space-8: 32px;
+  --nr-space-10: 40px;
+
+  --nr-control-height-sm: 32px;
+  --nr-control-height-md: 38px;
+  --nr-control-height-lg: 44px;
   --nr-radius-sm: 8px;
   --nr-radius-md: 12px;
   --nr-radius-lg: 16px;
+  --nr-border-width: 1px;
   --nr-shadow-soft: 0 8px 28px rgba(22, 35, 55, 0.055);
   --nr-shadow-raised: 0 14px 42px rgba(22, 35, 55, 0.10);
   --nr-focus-ring: 0 0 0 3px color-mix(in srgb, var(--ring) 24%, transparent);
+
+  --nr-canvas: var(--background);
+  --nr-surface: var(--card);
+  --nr-surface-raised: var(--popover);
+  --nr-surface-muted: var(--muted);
+  --nr-text: var(--foreground);
+  --nr-text-muted: var(--muted-foreground);
+  --nr-outline: var(--border);
+  --nr-accent: var(--primary);
+  --nr-positive: var(--success);
+  --nr-caution: var(--warning);
+  --nr-negative: var(--danger);
+
+  --nr-z-sidebar: 30;
+  --nr-z-overlay: 60;
+  --nr-z-dialog: 80;
+  --nr-motion-fast: 120ms;
+  --nr-motion-normal: 180ms;
+  --nr-motion-slow: 240ms;
 }
 :root[data-theme="dark"] {
   --nr-shadow-soft: 0 8px 28px rgba(0, 0, 0, 0.18);

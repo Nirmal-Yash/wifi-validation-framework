@@ -26,6 +26,14 @@ describe("topology viewport helpers",()=>{
   expect(newAnchor.x).toBeCloseTo(oldAnchor.x);
   expect(newAnchor.y).toBeCloseTo(oldAnchor.y);
  });
+ it("keeps repeated zoom input within supported viewport bounds",()=>{
+  let view={...DEFAULT_TOPOLOGY_VIEWPORT};
+  for(let index=0;index<40;index++)view=zoomTopologyViewport(view,0.9,0.5,0.5);
+  expect(view.width).toBe(250);
+  for(let index=0;index<40;index++)view=zoomTopologyViewport(view,1.1,0.5,0.5);
+  expect(view.width).toBeGreaterThanOrEqual(250);
+  expect(view.width).toBeLessThanOrEqual(2500);
+ });
  it("clamps extreme zoom requests to supported bounds",()=>{
   expect(zoomTopologyViewport(DEFAULT_TOPOLOGY_VIEWPORT,0.001).width).toBe(250);
   expect(zoomTopologyViewport(DEFAULT_TOPOLOGY_VIEWPORT,100).width).toBe(2500);

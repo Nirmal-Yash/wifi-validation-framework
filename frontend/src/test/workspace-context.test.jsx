@@ -23,6 +23,8 @@ function Harness(){
    {workspace.labs.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name}</option>)}
   </select>
   <output>{workspace.activeOrganizationId}|{workspace.activeProjectId}|{workspace.activeLabId}</output>
+  <button type="button" onClick={workspace.retry}>Retry workspace</button>
+  {workspace.error?<p role="alert">{workspace.error}</p>:null}
  </div>;
 }
 describe("global workspace context",()=>{
@@ -49,6 +51,15 @@ describe("global workspace context",()=>{
   await waitFor(()=>expect(screen.getByText("org-b|project-b|lab-project-b")).toBeTruthy());
   expect(api.workspaceProjects).toHaveBeenCalledWith({organization_id:"org-b"});
   expect(api.workspaceLabs).toHaveBeenCalledWith("project-b");
+ });
+ it("retries workspace loading after an Organization request fails",async()=>{
+  api.workspaceOrganizations.mockRejectedValueOnce(new Error("offline"));
+  render(<WorkspaceProvider user={{username:"owner"}}><Harness/></WorkspaceProvider>);
+  expect(await screen.findByRole("alert")).toHaveTextContent(/Could not load Organizations/);
+  fireEvent.click(screen.getByRole("button",{name:"Retry workspace"}));
+  expect(await screen.findByRole("option",{name:"Project A"})).toBeTruthy();
+  expect(await screen.findByRole("option",{name:"Lab project-a"})).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
  });
  it("clears dependent Project and Lab selection when the Organization changes",async()=>{
   render(<WorkspaceProvider user={{username:"owner"}}><Harness/></WorkspaceProvider>);

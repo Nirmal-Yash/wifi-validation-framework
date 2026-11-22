@@ -1,6 +1,6 @@
 import React from "react";
 import {
- Activity,BarChart3,ChevronDown,ChevronRight,ClipboardList,FileArchive,Workflow,
+ Activity,BarChart3,ChevronDown,ChevronRight,ClipboardList,FileArchive,Workflow,RefreshCw,
  FileCheck2,GitCompare,LayoutDashboard,LogOut,SlidersHorizontal,Wifi,ShieldCheck,Users,KeyRound,Settings2,Router,
 } from "lucide-react";
 import {navigate} from "@/router";
@@ -97,12 +97,17 @@ function AppShellContent({user,routeName,onLogout,children}){
   <a className="skip-link" href="#main-content">Skip to main content</a>
   <Sidebar>
    <SidebarHeader><Brand/><SidebarTrigger/></SidebarHeader>
-   <div className="workspace-card">
+   <div className="workspace-card" role="group" aria-label="Current workspace">
     <span className="workspace-icon"><Activity size={16}/></span>
-    <span className="workspace-copy"><strong>Reference workspace</strong><small>Local network environment</small></span>
+    <span className="workspace-copy">
+     <strong title={workspace.selectedOrganization?.name||"No Organization selected"}>{workspace.selectedOrganization?.name||(workspace.organizationsLoading?"Loading workspace…":"Choose Organization")}</strong>
+     <small title={[workspace.selectedProject?.name,workspace.selectedLab?.name].filter(Boolean).join(" · ")}>
+      {workspace.selectedProject?.name||"No Project selected"}{workspace.selectedLab?.name?" · "+workspace.selectedLab.name:""}
+     </small>
+    </span>
     <span className="workspace-status" title="Local session">LOCAL</span>
    </div>
-   <SidebarContent>
+   <SidebarContent role="navigation" aria-label="Primary navigation">
     {visibleGroups.map(group=><SidebarGroup key={group.title}>
      <SidebarGroupLabel>{group.title}</SidebarGroupLabel>
      <SidebarMenu>{group.items.map(([key,href,label,Icon])=><SidebarMenuItem key={key}>
@@ -119,21 +124,21 @@ function AppShellContent({user,routeName,onLogout,children}){
   <SidebarInset>
    <header className="topbar">
     <div className="topbar-start"><SidebarTrigger/><div className="breadcrumbs"><span>NetRegress</span><ChevronRight size={13}/><span>{meta.section}</span><ChevronRight size={13}/><strong>{meta.title}</strong></div></div>
-    <div className="workspace-context-controls" aria-label="Active workspace context">
+    <div className="workspace-context-controls" aria-label="Active workspace context" aria-busy={workspace.loading}>
      <label><span>Organization</span><select aria-label="Active organization" value={workspace.activeOrganizationId} onChange={event=>workspace.selectOrganization(event.target.value)} disabled={workspace.organizationsLoading||!workspace.organizations.length}>
-      <option value="">No organization</option>
+      <option value="">{workspace.organizationsLoading?"Loading organizations…":workspace.organizations.length?"Select organization":"No organizations available"}</option>
       {workspace.organizations.map(item=><option key={item.organization_id} value={item.organization_id}>{item.name}</option>)}
      </select></label>
      <label><span>Project</span><select aria-label="Active project" value={workspace.activeProjectId} onChange={event=>workspace.selectProject(event.target.value)} disabled={!workspace.activeOrganizationId||workspace.projectsLoading||!workspace.projects.length}>
-      <option value="">No project</option>
+      <option value="">{!workspace.activeOrganizationId?"Select organization first":workspace.projectsLoading?"Loading projects…":workspace.projects.length?"Select project":"No projects available"}</option>
       {workspace.projects.map(item=><option key={item.project_id} value={item.project_id}>{item.name}</option>)}
      </select></label>
      <label><span>Lab</span><select aria-label="Active lab" value={workspace.activeLabId} onChange={event=>workspace.selectLab(event.target.value)} disabled={!workspace.activeProjectId||workspace.labsLoading||!workspace.labs.length}>
-      <option value="">No lab selected</option>
+      <option value="">{!workspace.activeProjectId?"Select project first":workspace.labsLoading?"Loading labs…":workspace.labs.length?"No lab selected":"No labs available"}</option>
       {workspace.labs.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name}</option>)}
      </select></label>
     </div>
-    <div className="topbar-end">{workspace.error?<span className="workspace-context-error" role="status">Workspace context unavailable</span>:null}<span className="local-pill"><span className="presence-indicator"/>Local runtime</span><span className="topbar-divider"/><ThemeToggle/><UserMenu user={user} onLogout={onLogout}/></div>
+    <div className="topbar-end">{workspace.error?<span className="workspace-context-error" role="status"><span>{workspace.error}</span><button type="button" onClick={workspace.retry} aria-label="Retry loading workspace context" title="Retry workspace context"><RefreshCw size={13}/>Retry</button></span>:null}<span className="local-pill"><span className="presence-indicator"/>Local runtime</span><span className="topbar-divider"/><ThemeToggle/><UserMenu user={user} onLogout={onLogout}/></div>
    </header>
    <main id="main-content" className="content-body" tabIndex="-1">
     <div className="content-intro"><div><div className="eyebrow">{meta.section}</div><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="content-intro-meta"><span className="role-chip">{user.role}</span></div></div>
@@ -145,5 +150,5 @@ function AppShellContent({user,routeName,onLogout,children}){
 }
 
 export default function AppShell(props){
- return <WorkspaceProvider user={props.user}><AppShellContent {...props}/></WorkspaceProvider>;
+ return <WorkspaceProvider key={props.user?.username||"anonymous"} user={props.user}><AppShellContent {...props}/></WorkspaceProvider>;
 }
