@@ -32,10 +32,18 @@ describe("topology viewport helpers",()=>{
   expect(view.width).toBe(250);
   for(let index=0;index<40;index++)view=zoomTopologyViewport(view,1.1,0.5,0.5);
   expect(view.width).toBeGreaterThanOrEqual(250);
-  expect(view.width).toBeLessThanOrEqual(2500);
+  expect(view.width).toBeLessThanOrEqual(16000);
  });
  it("clamps extreme zoom requests to supported bounds",()=>{
   expect(zoomTopologyViewport(DEFAULT_TOPOLOGY_VIEWPORT,0.001).width).toBe(250);
-  expect(zoomTopologyViewport(DEFAULT_TOPOLOGY_VIEWPORT,100).width).toBe(2500);
+  expect(zoomTopologyViewport(DEFAULT_TOPOLOGY_VIEWPORT,100).width).toBe(16000);
  });
 });
+
+ it("fits wide and tall topologies without clipping the world coordinate extent",()=>{
+  const wide=fitTopologyViewport([{x:0,y:100},{x:9500,y:300}]);
+  const tall=fitTopologyViewport([{x:160,y:0},{x:240,y:9800}]);
+  expect(wide.width).toBeGreaterThanOrEqual(9760);
+  expect(tall.width).toBeGreaterThanOrEqual(16000);
+  expect(tall.height).toBeLessThanOrEqual(10000);
+ });

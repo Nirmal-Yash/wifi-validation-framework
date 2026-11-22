@@ -215,6 +215,10 @@ def test_dry_run_is_read_only_and_apply_is_repeatable_and_reconciles(apply_stack
     observed = service.reconcile(profile["profile_id"], revision["revision_id"], actor="owner")
     assert observed["status"] == "IN_SYNC"
     assert observed["missing_nodes"] == [] and observed["missing_links"] == []
+    assert observed["logical_to_provider"] == {
+        "router-a": "provider-node-1", "switch-a": "provider-node-2",
+    }
+    assert observed["logical_to_provider_links"] == {"link-a": "provider-link-1"}
 
     repeat_plan = service.plan(profile["profile_id"], revision["revision_id"], actor="owner")["plan"]
     assert repeat_plan["nodes_to_create"] == []
@@ -455,3 +459,47 @@ def test_node_lifecycle_requires_verified_provider_state(apply_stack, monkeypatc
     with pytest.raises(TopologyApplyError, match="did not reach the explicitly requested lifecycle state"):
         service.operate_node(profile["profile_id"], "router-a", action="START", actor="owner")
     assert state["nodes"][0]["status"] == "stopped"
+
+
+def test_missing_logical_node_template_blocks_provider_plan_without_mutation(apply_stack):
+    database, _store, service, profile, _revision, _binding, provider_state = apply_stack
+    from lib.services.topology_studio import TopologyStudioService
+
+    definition_without_mapping = definition()
+    definition_without_mapping["nodes"][0]["template_id"] = ""
+    studio = TopologyStudioService(database)
+    draft = studio.create_revision(profile["profile_id"], definition=definition_without_mapping, actor="owner")
+    published = studio.publish(profile["profile_id"], draft["revision_id"], actor="owner")
+
+    plan = service.plan(profile["profile_id"], published["revision_id"], actor="owner")["plan"]
+    assert plan["can_apply"] is False
+    assert any(
+        item["resource_id"] == "router-a"
+        and item["reason"] == "logical node has no provider template mapping"
+        for item in plan["conflicts"]
+    )
+    assert provider_state == {"nodes": [], "links": []}
+    with database.connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM topology_apply_records").fetchone()[0] == 0
+
+
+def test_reconciliation_does_not_mark_unmapped_observed_provider_links_in_sync(apply_stack):
+    database, _store, service, profile, revision, _binding, provider_state = apply_stack
+    planned = service.plan(profile["profile_id"], revision["revision_id"], actor="owner")
+    service.apply(
+        profile["profile_id"], revision["revision_id"], actor="owner",
+        expected_sha256=planned["plan"]["revision_sha256"], confirmed=True,
+    )
+    # New logical link ID has no durable provider mapping, although an observed provider
+    # link still has the same endpoint signature. This must not be called IN_SYNC.
+    from lib.services.topology_studio import TopologyStudioService
+    studio = TopologyStudioService(database)
+    next_definition = definition()
+    next_definition["links"][0]["id"] = "link-new"
+    draft = studio.create_revision(profile["profile_id"], definition=next_definition, actor="owner")
+    published = studio.publish(profile["profile_id"], draft["revision_id"], actor="owner")
+
+    observed = service.reconcile(profile["profile_id"], published["revision_id"], actor="owner")
+    assert "link-new" in observed["mismatched_links"]
+    assert "link-new" not in observed["logical_to_provider_links"]
+    assert observed["status"] == "DRIFTED"

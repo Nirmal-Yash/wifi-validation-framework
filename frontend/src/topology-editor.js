@@ -103,3 +103,76 @@ export function createTopologyHistory(initial,maxEntries=60){
   },
  };
 }
+
+
+export function autoLayoutTopology(definition, options = {}) {
+ const nodes=(definition?.nodes||[]).map(clone).sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+ const links=(definition?.links||[]).map(clone);
+ if(nodes.length<2)return clone(definition||{nodes:[],links:[]});
+ const adjacency=new Map(nodes.map(node=>[node.id,new Set()]));
+ for(const link of links){
+  if(adjacency.has(link.source_node_id)&&adjacency.has(link.target_node_id)){
+   adjacency.get(link.source_node_id).add(link.target_node_id);
+   adjacency.get(link.target_node_id).add(link.source_node_id);
+  }
+ }
+ const visited=new Set(),components=[];
+ for(const node of nodes){
+  if(visited.has(node.id))continue;
+  const queue=[node.id],component=[];
+  visited.add(node.id);
+  while(queue.length){
+   const current=queue.shift();
+   component.push(current);
+   for(const neighbor of [...(adjacency.get(current)||[])].sort()){
+    if(!visited.has(neighbor)){visited.add(neighbor);queue.push(neighbor);}
+   }
+  }
+  const root=[...component].sort((a,b)=>
+   (adjacency.get(b)?.size||0)-(adjacency.get(a)?.size||0)||a.localeCompare(b)
+  )[0];
+  const levels=new Map([[root,0]]),walk=[root];
+  for(let index=0;index<walk.length;index++){
+   const current=walk[index];
+   for(const neighbor of [...(adjacency.get(current)||[])].sort()){
+    if(!levels.has(neighbor)){levels.set(neighbor,levels.get(current)+1);walk.push(neighbor);}
+   }
+  }
+  const buckets=new Map();
+  for(const id of component){
+   const level=levels.get(id)||0;
+   if(!buckets.has(level))buckets.set(level,[]);
+   buckets.get(level).push(id);
+  }
+  for(const bucket of buckets.values())bucket.sort();
+  components.push({levels:buckets,depth:Math.max(...buckets.keys())});
+ }
+ const total=nodes.length;
+ const maxDepth=Math.max(...components.map(component=>component.depth));
+ const vertical=maxDepth>18;
+ const columns=Math.max(1,Math.min(Math.ceil(Math.sqrt(total)),Math.floor(9600/176)));
+ const columnGap=Math.min(options.columnGap||250,Math.max(150,Math.floor(9600/Math.max(1,columns-1))));
+ const rowGap=Math.max(74,Math.min(options.rowGap||170,Math.floor(9600/total)));
+ const positions=new Map();
+ let rowOffset=0;
+ for(const component of components){
+  const levels=[...component.levels.keys()].sort((a,b)=>a-b);
+  for(const level of levels){
+   const ids=component.levels.get(level);
+   ids.forEach((id,index)=>{
+    const column=index%columns;
+    const subRow=Math.floor(index/columns);
+    positions.set(id,{
+     x:Math.min(10000,160+(vertical?0:level*250)+column*columnGap),
+     y:Math.min(10000,120+rowOffset+subRow*rowGap),
+    });
+   });
+   rowOffset+=Math.ceil(ids.length/columns)*rowGap;
+  }
+ }
+ return {
+  ...clone(definition),
+  nodes:nodes.map(node=>({...node,...(positions.get(node.id)||{x:node.x,y:node.y})})),
+  links,
+ };
+}

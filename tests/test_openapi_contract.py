@@ -37,3 +37,26 @@ def test_openapi_documents_operations_overview_scope_permissions_and_sections():
         assert section in overview
     for status in ('"400":', '"401":', '"403":', '"404":'):
         assert status in overview
+
+
+def test_openapi_documents_structured_visual_topology_intent_and_provider_boundaries():
+    content = SPEC.read_text(encoding="utf-8")
+    topology = content.split("  /topologies/validate:", 1)[1].split("\n  /dashboard/operations-overview:", 1)[0]
+    for field in (
+        "vendor", "operating_system", "image", "cpu_cores", "memory_mb",
+        "management_address", "default_gateway", "vlan_id",
+        "configuration_profile_id", "credential_ref_id", "interfaces",
+        "source_interface_name", "target_interface_name", "link_type",
+        "network_segment_id",
+    ):
+        assert field in topology
+    assert "Optional provider-specific template mapping" in topology
+    assert "credential_ref_id is an opaque Credential Vault reference ID only" in topology
+    assert "unmapped provider-independent logical node" in topology
+    assert "Does not persist a revision or contact a provider" in topology
+    assert "configuration_profile_id and" in topology
+    assert "PUBLISHED profile backed by an ACTIVE schema" in topology
+    assert "ACTIVE Vault record in the same Project" in topology
+    assert '"404": {description: Project, selected profile, credential or configuration profile not found' in topology
+    assert '"422": {description: Topology definition, interface or reference state' in topology
+

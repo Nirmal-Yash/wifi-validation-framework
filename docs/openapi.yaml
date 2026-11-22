@@ -9,7 +9,15 @@ security:
 paths:
   /topologies/validate:
     post:
-      description: Validate a visual topology draft against the canonical, read-only Project-scoped topology rules. Does not persist a revision or contact a provider.
+      operationId: validateTopologyDraft
+      description: >-
+        Validate a visual topology draft against the canonical, read-only Project-scoped topology rules.
+        Optional logical node and interface network-intent fields are normalized and hashed with the
+        definition. template_id may be empty for an unmapped provider-independent logical node; a
+        later provider dry-run blocks unmapped nodes. configuration_profile_id must identify a PUBLISHED profile backed by an ACTIVE schema in the
+        same Project. credential_ref_id must identify an ACTIVE Vault record in the same Project. Their read permissions are checked when
+        the reference is supplied. credential_ref_id is an opaque Credential Vault reference ID only; never credential material or a
+        secret value is accepted or returned. Does not persist a revision or contact a provider.
       requestBody:
         required: true
         content:
@@ -24,14 +32,69 @@ paths:
                   type: object
                   required: [nodes, links]
                   properties:
-                    nodes: {type: array, maxItems: 128, items: {type: object}}
-                    links: {type: array, maxItems: 512, items: {type: object}}
+                    nodes:
+                      type: array
+                      maxItems: 128
+                      items:
+                        type: object
+                        required: [id, name, node_type, x, y]
+                        properties:
+                          id: {type: string, maxLength: 64}
+                          name: {type: string, maxLength: 120}
+                          node_type: {type: string, enum: [ROUTER, SWITCH, ACCESS_POINT, CLIENT, MONITOR, CLOUD, OTHER]}
+                          template_id: {type: string, maxLength: 128, description: Optional provider-specific template mapping; empty means logical-only/unmapped}
+                          x: {type: number, minimum: 0, maximum: 10000}
+                          y: {type: number, minimum: 0, maximum: 10000}
+                          vendor: {type: string, maxLength: 80}
+                          operating_system: {type: string, maxLength: 80}
+                          image: {type: string, maxLength: 128}
+                          cpu_cores: {type: integer, minimum: 1, maximum: 128}
+                          memory_mb: {type: integer, minimum: 128, maximum: 1048576}
+                          management_address: {type: string, maxLength: 64, description: IPv4/IPv6 address with optional prefix}
+                          default_gateway: {type: string, maxLength: 64}
+                          vlan_id: {type: integer, minimum: 1, maximum: 4094}
+                          configuration_profile_id: {type: string, maxLength: 128}
+                          credential_ref_id: {type: string, maxLength: 128, description: Opaque Credential Vault reference ID only; never a secret}
+                          properties: {type: object, maxProperties: 32}
+                          interfaces:
+                            type: array
+                            maxItems: 64
+                            items:
+                              type: object
+                              required: [name, adapter, port]
+                              properties:
+                                name: {type: string, maxLength: 64}
+                                adapter: {type: integer, minimum: 0, maximum: 255}
+                                port: {type: integer, minimum: 0, maximum: 255}
+                                mode: {type: string, enum: [ACCESS, TRUNK, ROUTED, WIRELESS, OTHER]}
+                                ip_address: {type: string, maxLength: 64}
+                                vlan_id: {type: integer, minimum: 1, maximum: 4094}
+                                description: {type: string, maxLength: 160}
+                    links:
+                      type: array
+                      maxItems: 512
+                      items:
+                        type: object
+                        required: [id, source_node_id, source_adapter, source_port, target_node_id, target_adapter, target_port]
+                        properties:
+                          id: {type: string, maxLength: 64}
+                          source_node_id: {type: string, maxLength: 64}
+                          source_adapter: {type: integer, minimum: 0, maximum: 255}
+                          source_port: {type: integer, minimum: 0, maximum: 255}
+                          source_interface_name: {type: string, maxLength: 64}
+                          target_node_id: {type: string, maxLength: 64}
+                          target_adapter: {type: integer, minimum: 0, maximum: 255}
+                          target_port: {type: integer, minimum: 0, maximum: 255}
+                          target_interface_name: {type: string, maxLength: 64}
+                          link_type: {type: string, enum: [ETHERNET, WIRELESS, SERIAL, TUNNEL, OTHER]}
+                          network_segment_id: {type: string, maxLength: 128}
+                          vlan_id: {type: integer, minimum: 1, maximum: 4094}
       responses:
         "200": {description: Canonical topology is valid; returns node/link counts and SHA-256}
         "400": {description: Missing Project scope or malformed request}
         "403": {description: Caller lacks topology.manage in this Project}
-        "404": {description: Project or selected profile not found in the supplied Project}
-        "422": {description: Topology definition violates the canonical schema or port constraints}
+        "404": {description: Project, selected profile, credential or configuration profile not found in the supplied Project}
+        "422": {description: Topology definition, interface or reference state violates canonical constraints}
   /dashboard/operations-overview:
     get:
       summary: Read a Project/Lab operational overview

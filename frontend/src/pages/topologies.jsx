@@ -3,7 +3,7 @@ import {api} from "@/api";
 import {useWorkspace} from "@/components/workspace-context";
 import {useAsyncLoader,useMutation} from "@/hooks";
 import {canPerform} from "@/permissions";
-import {copyTopologySelection,createTopologyHistory,moveTopologyNodes,pasteTopologySelection,removeTopologySelection} from "@/topology-editor";
+import {autoLayoutTopology,copyTopologySelection,createTopologyHistory,moveTopologyNodes,pasteTopologySelection,removeTopologySelection} from "@/topology-editor";
 import {Button,DataTable,EmptyState,ErrorState,Field,InlineNotice,LoadingState,Section,StatusBadge} from "@/components/ui";
 
 export const DEFAULT_TOPOLOGY_VIEWPORT=Object.freeze({x:0,y:0,width:1000,height:620});
@@ -11,7 +11,7 @@ const VIEWPORT_RATIO=0.62;
 const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
 
 export function zoomTopologyViewport(viewport,factor,anchorX=0.5,anchorY=0.5){
- const width=clamp(viewport.width*factor,250,2500);
+ const width=clamp(viewport.width*factor,250,16000);
  const height=width*VIEWPORT_RATIO;
  const worldX=viewport.x+viewport.width*clamp(anchorX,0,1);
  const worldY=viewport.y+viewport.height*clamp(anchorY,0,1);
@@ -28,7 +28,7 @@ export function fitTopologyViewport(nodes){
  const ys=nodes.map(node=>Number(node.y)||0);
  const minX=Math.min(...xs),maxX=Math.max(...xs);
  const minY=Math.min(...ys),maxY=Math.max(...ys);
- const width=clamp(Math.max(420,maxX-minX+260,(maxY-minY+260)/VIEWPORT_RATIO),250,2500);
+ const width=clamp(Math.max(420,maxX-minX+260,(maxY-minY+260)/VIEWPORT_RATIO),250,16000);
  const height=width*VIEWPORT_RATIO;
  const centerX=(minX+maxX)/2,centerY=(minY+maxY)/2;
  return {
@@ -38,6 +38,29 @@ export function fitTopologyViewport(nodes){
  };
 }
 
+const NODE_PALETTE=[
+ {group:"Routers",label:"Cisco IOS Router",node_type:"ROUTER",vendor:"Cisco",operating_system:"IOS",image:"IOSv"},
+ {group:"Routers",label:"Arista Router",node_type:"ROUTER",vendor:"Arista",operating_system:"EOS",image:"vEOS"},
+ {group:"Routers",label:"Juniper Router",node_type:"ROUTER",vendor:"Juniper",operating_system:"Junos",image:"vSRX"},
+ {group:"Routers",label:"FRR Router",node_type:"ROUTER",vendor:"FRRouting",operating_system:"FRR",image:"FRR"},
+ {group:"Routers",label:"VyOS Router",node_type:"ROUTER",vendor:"VyOS",operating_system:"VyOS",image:"VyOS"},
+ {group:"Switches",label:"Cisco Switch",node_type:"SWITCH",vendor:"Cisco",operating_system:"IOS",image:"IOSvL2"},
+ {group:"Switches",label:"Arista Switch",node_type:"SWITCH",vendor:"Arista",operating_system:"EOS",image:"vEOS"},
+ {group:"Switches",label:"Open vSwitch",node_type:"SWITCH",vendor:"Open vSwitch",operating_system:"Linux",image:"Open vSwitch"},
+ {group:"Firewalls",label:"Palo Alto Firewall",node_type:"OTHER",vendor:"Palo Alto",operating_system:"PAN-OS",image:"VM-Series"},
+ {group:"Firewalls",label:"Linux Firewall",node_type:"OTHER",vendor:"Linux",operating_system:"nftables",image:"Linux"},
+ {group:"Wireless",label:"OpenWrt Access Point",node_type:"ACCESS_POINT",vendor:"OpenWrt",operating_system:"OpenWrt",image:"OpenWrt"},
+ {group:"Wireless",label:"hostapd Access Point",node_type:"ACCESS_POINT",vendor:"Linux",operating_system:"hostapd",image:"Linux"},
+ {group:"Servers",label:"Linux Server",node_type:"OTHER",vendor:"Linux",operating_system:"Ubuntu",image:"Ubuntu Server"},
+ {group:"Servers",label:"Docker Host",node_type:"OTHER",vendor:"Docker",operating_system:"Linux",image:"Docker"},
+ {group:"Endpoints",label:"Linux Client",node_type:"CLIENT",vendor:"Linux",operating_system:"Ubuntu",image:"Ubuntu Desktop"},
+ {group:"Endpoints",label:"Windows Client",node_type:"CLIENT",vendor:"Microsoft",operating_system:"Windows",image:"Windows"},
+ {group:"Network utilities",label:"NAT Gateway",node_type:"OTHER",vendor:"NetRegress",operating_system:"NAT",image:"NAT"},
+ {group:"Network utilities",label:"Linux Bridge",node_type:"SWITCH",vendor:"Linux",operating_system:"Bridge",image:"Linux bridge"},
+ {group:"Network utilities",label:"Cloud Connection",node_type:"CLOUD",vendor:"NetRegress",operating_system:"Cloud",image:"Cloud"},
+ {group:"Network utilities",label:"Network Segment",node_type:"OTHER",vendor:"NetRegress",operating_system:"Segment",image:"Network segment"},
+];
+const PALETTE_GROUPS=[...new Set(NODE_PALETTE.map(item=>item.group))];
 const NODE_TYPES=["ROUTER","SWITCH","ACCESS_POINT","CLIENT","MONITOR","CLOUD","OTHER"];
 const emptyDefinition=()=>({nodes:[],links:[]});
 const localId=prefix=>prefix+"-"+(globalThis.crypto?.randomUUID?globalThis.crypto.randomUUID().slice(0,12):Math.random().toString(36).slice(2,14));
@@ -51,7 +74,8 @@ export default function TopologyStudioPage({user}){
  const [scope,setScope]=useState({scope_type:"PROJECT",scope_id:""});
  const [profileForm,setProfileForm]=useState({name:"Wireless topology",description:""});
  const [nodeForm,setNodeForm]=useState({node_type:"ROUTER",name:"Router",template_id:"",x:160,y:180});
- const [linkForm,setLinkForm]=useState({source_node_id:"",source_adapter:0,source_port:0,target_node_id:"",target_adapter:0,target_port:0});
+ const [linkForm,setLinkForm]=useState({source_node_id:"",source_adapter:0,source_port:0,source_interface_name:"",target_node_id:"",target_adapter:0,target_port:0,target_interface_name:"",link_type:"ETHERNET",network_segment_id:"",vlan_id:""});
+ const [interfaceForm,setInterfaceForm]=useState({name:"GigabitEthernet0/0",adapter:0,port:0,mode:"ROUTED",ip_address:"",vlan_id:""});
  const [definition,setDefinition]=useState(emptyDefinition);
  const [selectedNode,setSelectedNode]=useState("");
  const [selectedNodes,setSelectedNodes]=useState([]);
@@ -67,6 +91,10 @@ export default function TopologyStudioPage({user}){
  const [viewport,setViewport]=useState({...DEFAULT_TOPOLOGY_VIEWPORT});
  const [panning,setPanning]=useState(null);
  const [nodeSearch,setNodeSearch]=useState("");
+ const [consoleTab,setConsoleTab]=useState("validation");
+ const [sessionLogs,setSessionLogs]=useState([]);
+ const [paletteDropActive,setPaletteDropActive]=useState(false);
+ const [portSelection,setPortSelection]=useState(null);
  const [notice,setNotice]=useState("");
  const [error,setError]=useState("");
  const [showProfileForm,setShowProfileForm]=useState(false);
@@ -86,6 +114,8 @@ export default function TopologyStudioPage({user}){
  const applyHistory=useAsyncLoader(()=>profileId&&activeLabId?api.topologyApplies(profileId):Promise.resolve({items:[]}),[profileId,activeLabId],{enabled:Boolean(profileId&&activeLabId),queryKey:"topology-apply-history"});
  const providerDevices=useAsyncLoader(()=>activeLabId&&projectId?api.devices(projectId,activeLabId,"ACTIVE"):Promise.resolve({items:[]}),[activeLabId,projectId],{enabled:Boolean(activeLabId&&projectId),queryKey:"topology-provider-devices"});
  const providerCredentials=useAsyncLoader(()=>bindingForm.controller_device_id?api.credentials(projectId,bindingForm.controller_device_id):Promise.resolve({items:[]}),[projectId,bindingForm.controller_device_id],{enabled:Boolean(projectId&&bindingForm.controller_device_id),queryKey:"topology-provider-credentials"});
+ const nodeCredentials=useAsyncLoader(()=>projectId?api.credentials(projectId):Promise.resolve({items:[]}),[projectId],{enabled:Boolean(projectId&&canPerform(user,"credentials.read")),queryKey:"topology-node-credential-references"});
+ const configurationProfiles=useAsyncLoader(()=>projectId?api.configurationProfiles(projectId):Promise.resolve({items:[]}),[projectId],{enabled:Boolean(projectId&&canPerform(user,"configurations.read")),queryKey:"topology-node-configuration-profiles"});
  const [providerCatalog,setProviderCatalog]=useState(null);
  const [providerPlan,setProviderPlan]=useState(null);
  const [reconciliation,setReconciliation]=useState(null);
@@ -145,6 +175,131 @@ export default function TopologyStudioPage({user}){
  },[definition.nodes]);
 
 
+ function appendSessionLog(level,message){
+  const entry={id:localId("log"),at:new Date().toISOString(),level,message:String(message||"")};
+  setSessionLogs(items=>[entry,...items].slice(0,100));
+ }
+ function updateNodeField(nodeId,field,value){
+  if(!canManage)return;
+  setEditorDefinition(current=>({
+   ...current,
+   nodes:current.nodes.map(node=>{
+    if(node.id!==nodeId)return node;
+    const next={...node};
+    if(value===undefined||value===null||value==="")delete next[field];
+    else next[field]=value;
+    return next;
+   }),
+  }));
+ }
+ function addNodeFromPalette(item,point){
+  if(!canManage)return null;
+  if(nodes.length>=128){setError("The canonical topology limit is 128 nodes.");return null;}
+  const ordinal=nodes.length+1;
+  const node={
+   id:localId("node"),name:item.label+" "+ordinal,node_type:item.node_type,template_id:"",
+   x:Math.round(point?.x??(160+(ordinal%5)*150)),
+   y:Math.round(point?.y??(180+Math.floor((ordinal-1)/5)*120)),
+   properties:{},vendor:item.vendor,operating_system:item.operating_system,image:item.image,interfaces:[],
+  };
+  setEditorDefinition(value=>({...value,nodes:[...value.nodes,node]}));
+  setSelectedNode(node.id);setSelectedNodes([node.id]);setSelectedLink("");setLinkEditForm(null);
+  setNotice("Logical node added. Choose a provider template only when a provider mapping is available.");
+  appendSessionLog("INFO","Added logical node "+node.name+" ("+node.node_type+")");
+  return node;
+ }
+ function startPaletteDrag(event,item){
+  if(!canManage){event.preventDefault();return;}
+  const index=NODE_PALETTE.indexOf(item);
+  event.dataTransfer?.setData("application/x-netregress-topology-node",String(index));
+  event.dataTransfer?.setData("text/plain","netregress-topology-node:"+index);
+  if(event.dataTransfer)event.dataTransfer.effectAllowed="copy";
+ }
+ function allowPaletteDrop(event){
+  if(!canManage)return;
+  event.preventDefault();
+  if(event.dataTransfer)event.dataTransfer.dropEffect="copy";
+  setPaletteDropActive(true);
+ }
+ function dropPaletteNode(event){
+  event.preventDefault();setPaletteDropActive(false);
+  if(!canManage)return;
+  const raw=event.dataTransfer?.getData("application/x-netregress-topology-node")
+   ||event.dataTransfer?.getData("text/plain")?.replace("netregress-topology-node:","");
+  if(typeof raw!=="string"||!raw.trim())return;
+  const index=Number(raw);
+  if(!Number.isInteger(index)||index<0||index>=NODE_PALETTE.length)return;
+  addNodeFromPalette(NODE_PALETTE[index],canvasPoint(event));
+ }
+ function autoLayoutDraft(){
+  if(!canManage||!nodes.length)return;
+  const arranged=autoLayoutTopology(definitionRef.current);
+  setEditorDefinition(arranged);
+  setViewport(fitTopologyViewport(arranged.nodes));
+  setNotice("Automatic layered layout applied to the local draft.");
+  appendSessionLog("INFO","Applied automatic topology layout to "+nodes.length+" nodes");
+ }
+ function addNodeInterface(nodeId){
+  if(!canManage)return;
+  const name=String(interfaceForm.name||"").trim();
+  const adapter=Number(interfaceForm.adapter),port=Number(interfaceForm.port);
+  if(!name||!Number.isInteger(adapter)||!Number.isInteger(port)||adapter<0||adapter>255||port<0||port>255){
+   setError("Enter an interface name and valid adapter/port numbers from 0 to 255.");return;
+  }
+  const existing=nodes.find(node=>node.id===nodeId)?.interfaces||[];
+  if(existing.length>=64){setError("A logical node can declare at most 64 interfaces.");return;}
+  if(existing.some(item=>item.name===name||(item.adapter===adapter&&item.port===port))){
+   setError("Interface names and adapter/port assignments must be unique on a node.");return;
+  }
+  const item={name,adapter,port,mode:interfaceForm.mode};
+  if(interfaceForm.ip_address.trim())item.ip_address=interfaceForm.ip_address.trim();
+  if(String(interfaceForm.vlan_id).trim())item.vlan_id=Number(interfaceForm.vlan_id);
+  updateNode(nodeId,{interfaces:[...existing,item].sort((a,b)=>a.adapter-b.adapter||a.port-b.port)});
+  setInterfaceForm(value=>({...value,name:"Ethernet"+(existing.length+1),port:Number(value.port)+1,ip_address:"",vlan_id:""}));
+  setError("");
+  appendSessionLog("INFO","Added planned interface "+name+" to "+nodeId);
+ }
+ function removeNodeInterface(nodeId,interfaceName){
+  if(!canManage)return;
+  const referenced=links.some(link=>
+   (link.source_node_id===nodeId&&link.source_interface_name===interfaceName)
+   ||(link.target_node_id===nodeId&&link.target_interface_name===interfaceName)
+  );
+  if(referenced){setError("This interface is referenced by a link. Remove or reassign that link first.");return;}
+  const node=nodes.find(item=>item.id===nodeId);
+  updateNode(nodeId,{interfaces:(node?.interfaces||[]).filter(item=>item.name!==interfaceName)});
+ }
+ function updateNodeInterface(nodeId,interfaceName,patch){
+  if(!canManage)return;
+  const node=nodes.find(item=>item.id===nodeId);
+  updateNode(nodeId,{interfaces:(node?.interfaces||[]).map(item=>item.name===interfaceName?{...item,...patch}:item)});
+ }
+ function chooseTopologyPort(node,interfaceItem){
+  if(!canManage)return;
+  const selected={node_id:node.id,interface_name:interfaceItem.name,adapter:interfaceItem.adapter,port:interfaceItem.port};
+  if(!portSelection){
+   setPortSelection(selected);
+   setNotice("Source port "+node.name+" · "+interfaceItem.name+" selected. Choose a destination port.");
+   return;
+  }
+  if(portSelection.node_id===selected.node_id){
+   setError("A topology link must connect two different logical nodes.");
+   setPortSelection(selected);return;
+  }
+  if(links.length>=512){setError("The canonical topology limit is 512 links.");setPortSelection(null);return;}
+  const link={
+   id:localId("link"),
+   source_node_id:portSelection.node_id,source_adapter:portSelection.adapter,source_port:portSelection.port,
+   source_interface_name:portSelection.interface_name,
+   target_node_id:selected.node_id,target_adapter:selected.adapter,target_port:selected.port,
+   target_interface_name:selected.interface_name,link_type:"ETHERNET",
+  };
+  setEditorDefinition(value=>({...value,links:[...value.links,link]}));
+  setSelectedLink(link.id);setSelectedNodes([]);setSelectedNode("");setLinkEditForm({...link});
+  setPortSelection(null);
+  setNotice("Logical link created from the selected ports. Validate before saving.");
+  appendSessionLog("INFO","Connected "+portSelection.node_id+"/"+portSelection.interface_name+" to "+selected.node_id+"/"+selected.interface_name);
+ }
  function setEditorDefinition(next,{record=true,previous}={}){
   const current=definitionRef.current,candidate=typeof next==="function"?next(current):next,baseline=previous||current;
   if((record&&JSON.stringify(baseline)===JSON.stringify(candidate))||(!record&&JSON.stringify(current)===JSON.stringify(candidate)))return;
@@ -154,15 +309,15 @@ export default function TopologyStudioPage({user}){
  }
  function resetEditorDefinition(next){
   const value=next||emptyDefinition();historyRef.current.reset(value);definitionRef.current=value;setDefinition(value);
-  setHistoryVersion(value=>value+1);setSelectedNode("");setSelectedNodes([]);setSelectedLink("");setLinkEditForm(null);setValidation(null);
+  setHistoryVersion(value=>value+1);setSelectedNode("");setSelectedNodes([]);setSelectedLink("");setLinkEditForm(null);setPortSelection(null);setValidation(null);
  }
  function undoTopologyEdit(){const value=historyRef.current.undo();if(!value)return;definitionRef.current=value;setDefinition(value);setSelectedNodes(ids=>ids.filter(id=>value.nodes.some(node=>node.id===id)));setSelectedNode(id=>value.nodes.some(node=>node.id===id)?id:"");setSelectedLink(id=>value.links.some(link=>link.id===id)?id:"");setValidation(null);setHistoryVersion(v=>v+1);}
  function redoTopologyEdit(){const value=historyRef.current.redo();if(!value)return;definitionRef.current=value;setDefinition(value);setSelectedNodes(ids=>ids.filter(id=>value.nodes.some(node=>node.id===id)));setSelectedNode(id=>value.nodes.some(node=>node.id===id)?id:"");setSelectedLink(id=>value.links.some(link=>link.id===id)?id:"");setValidation(null);setHistoryVersion(v=>v+1);}
  function copyTopology(){const value=copyTopologySelection(definitionRef.current,selectedNodes,selectedLink);if(!value.nodes.length){clipboardRef.current=null;return;}clipboardRef.current=value;setNotice(value.nodes.length+" node(s) and "+value.links.length+" internal link(s) copied.");}
  function pasteTopology(){if(!canManage||!clipboardRef.current)return;try{const result=pasteTopologySelection(definitionRef.current,clipboardRef.current,{offset:40,idFactory:localId});setEditorDefinition(result.definition);setSelectedNodes(result.nodeIds);setSelectedNode(result.nodeIds[0]||"");setSelectedLink("");setNotice(result.nodeIds.length+" node(s) pasted with new logical IDs.");}catch(exc){setError(exc.message||"Clipboard content could not be pasted.");}}
  function deleteSelectedTopology(){if(!canManage||(!selectedNodes.length&&!selectedLink))return;setEditorDefinition(removeTopologySelection(definitionRef.current,selectedNodes,selectedLink));setSelectedNodes([]);setSelectedNode("");setSelectedLink("");setLinkEditForm(null);}
- function selectCanvasLink(link){setSelectedLink(link.id);setSelectedNodes([]);setSelectedNode("");setLinkEditForm({...link});}
- function saveSelectedLink(event){event.preventDefault();if(!canManage||!selectedLink||!linkEditForm)return;const next={...linkEditForm,source_adapter:Number(linkEditForm.source_adapter),source_port:Number(linkEditForm.source_port),target_adapter:Number(linkEditForm.target_adapter),target_port:Number(linkEditForm.target_port)};setEditorDefinition(value=>({...value,links:value.links.map(item=>item.id===selectedLink?next:item)}));setNotice("Link endpoint references updated. Validate before saving a revision.");}
+ function selectCanvasLink(link){setSelectedLink(link.id);setSelectedNodes([]);setSelectedNode("");setLinkEditForm({...link,link_type:link.link_type||"ETHERNET"});}
+ function saveSelectedLink(event){event?.preventDefault?.();if(!canManage||!selectedLink||!linkEditForm)return;const next={...linkEditForm,source_adapter:Number(linkEditForm.source_adapter),source_port:Number(linkEditForm.source_port),target_adapter:Number(linkEditForm.target_adapter),target_port:Number(linkEditForm.target_port)};setEditorDefinition(value=>({...value,links:value.links.map(item=>item.id===selectedLink?next:item)}));setNotice("Link endpoint references updated. Validate before saving a revision.");appendSessionLog("INFO","Updated link "+selectedLink+" interface and network intent");}
  function startNodeDrag(event,nodeId){
   event.preventDefault();event.stopPropagation();
   if(!canManage){setSelectedNodes([nodeId]);setSelectedNode(nodeId);setSelectedLink("");return;}
@@ -175,8 +330,8 @@ export default function TopologyStudioPage({user}){
  async function validateDraft(){
   if(!canManage)return null;
   setError("");setNotice("");setValidationLoading(true);
-  try{const result=await api.validateTopology({project_id:projectId,profile_id:profileId||undefined,definition:definitionRef.current});setValidation(result);setNotice("Topology definition is valid · SHA-256 "+result.content_sha256);return result;}
-  catch(exc){setValidation({valid:false,error:exc.message||"Topology validation failed.",code:exc.code||"INVALID_TOPOLOGY"});setError(exc.message||"Topology validation failed.");return null;}
+  try{const result=await api.validateTopology({project_id:projectId,profile_id:profileId||undefined,definition:definitionRef.current});setValidation(result);setNotice("Topology definition is valid · SHA-256 "+result.content_sha256);appendSessionLog("INFO","Validated draft: "+result.node_count+" nodes and "+result.link_count+" links");return result;}
+  catch(exc){setValidation({valid:false,error:exc.message||"Topology validation failed.",code:exc.code||"INVALID_TOPOLOGY"});setError(exc.message||"Topology validation failed.");appendSessionLog("ERROR","Draft validation failed: "+(exc.message||"Unknown error"));return null;}
   finally{setValidationLoading(false);}
  }
  function selectAllNodes(){const ids=nodes.map(node=>node.id);setSelectedNodes(ids);setSelectedNode(ids[0]||"");setSelectedLink("");}
@@ -206,10 +361,12 @@ export default function TopologyStudioPage({user}){
   try{
    const result=await mutation.run(action);
    setNotice(success);
+   appendSessionLog("INFO",success);
    await Promise.all([profiles.reload().catch(()=>null),revisions.reload().catch(()=>null)]);
    return result;
   }catch(exc){
    setError(exc.message||"Topology operation failed.");
+   appendSessionLog("ERROR",exc.message||"Topology operation failed.");
    return null;
   }
  }
@@ -336,9 +493,11 @@ export default function TopologyStudioPage({user}){
   try{
    const value=await action();
    if(success)setNotice(success);
+   appendSessionLog("INFO",success||"Provider operation completed.");
    return value;
   }catch(exc){
    setProviderError(exc.message||"Provider operation failed.");
+   appendSessionLog("ERROR",exc.message||"Provider operation failed.");
    return null;
   }finally{setProviderBusy(false);}
  }
@@ -464,16 +623,20 @@ export default function TopologyStudioPage({user}){
      {key:"created_at",label:"Created"},{key:"published_at",label:"Published"}
     ]} emptyTitle="No topology revisions" emptyMessage="Add nodes and links, then save the first immutable draft revision."/>
    </Section>
-   <Section title="Node palette" subtitle="Choose a logical type, display name and provider template reference. Template lookup is deferred to the explicit provider workflow.">
-    <form className="form-grid" onSubmit={addNode}>
-     <Field label="Node type"><select value={nodeForm.node_type} onChange={event=>setNodeForm({...nodeForm,node_type:event.target.value})}>{NODE_TYPES.map(item=><option key={item}>{item}</option>)}</select></Field>
-     <Field label="Node name"><input value={nodeForm.name} onChange={event=>setNodeForm({...nodeForm,name:event.target.value})} maxLength={120} required/></Field>
-     <Field label="Provider template reference"><input value={nodeForm.template_id} onChange={event=>setNodeForm({...nodeForm,template_id:event.target.value})} maxLength={128} required/></Field>
-     <Field label="Initial X"><input type="number" min="0" max="10000" value={nodeForm.x} onChange={event=>setNodeForm({...nodeForm,x:event.target.value})}/></Field>
-     <Field label="Initial Y"><input type="number" min="0" max="10000" value={nodeForm.y} onChange={event=>setNodeForm({...nodeForm,y:event.target.value})}/></Field>
-     <div className="form-actions"><Button type="submit" disabled={!canManage||mutation.loading}>Add node</Button></div>
-    </form>
+   <Section title="Node palette" subtitle="Drag or select a logical device type. Provider templates and images are mapped separately after selecting a provider.">
+    <div className="topology-palette-groups">
+     {PALETTE_GROUPS.map(group=><div className="topology-palette-group" key={group}>
+      <h3>{group}</h3><div className="topology-palette-items">
+       {NODE_PALETTE.filter(item=>item.group===group).map(item=><button key={item.label} type="button" className="topology-palette-item" draggable={canManage} disabled={!canManage} onDragStart={event=>startPaletteDrag(event,item)} onClick={()=>addNodeFromPalette(item)}>
+        <span className="topology-palette-glyph">{item.node_type==="ROUTER"?"R":item.node_type==="SWITCH"?"S":item.node_type==="ACCESS_POINT"?"W":item.node_type==="CLIENT"?"C":item.node_type==="CLOUD"?"☁":"N"}</span>
+        <span><strong>{item.label}</strong><small>{item.vendor} · {item.operating_system}</small></span>
+       </button>)}
+      </div>
+     </div>)}
+    </div>
+    <p className="muted">Palette entries define logical intent only. Provider template IDs remain blank until a compatible template is selected.</p>
    </Section>
+   <div className="topology-workbench-layout">
    <Section title="Visual canvas" subtitle="Drag nodes to position them. Pan by dragging empty canvas; zoom with the wheel or controls. Canvas editing does not issue provider calls.">
     <div className="topology-canvas-toolbar">
      <label className="topology-node-search"><span>Find node</span><input aria-label="Search topology nodes" value={nodeSearch} onChange={event=>setNodeSearch(event.target.value)} placeholder="Name, ID, type or template"/></label>
@@ -482,6 +645,7 @@ export default function TopologyStudioPage({user}){
       <Button type="button" variant="outline" size="sm" onClick={()=>zoomCanvas(0.8)} aria-label="Zoom in">Zoom in</Button>
       <Button type="button" variant="outline" size="sm" onClick={()=>zoomCanvas(1.25)} aria-label="Zoom out">Zoom out</Button>
       <Button type="button" variant="ghost" size="sm" onClick={fitCanvas}>Fit to nodes</Button>
+      <Button type="button" variant="outline" size="sm" onClick={autoLayoutDraft} disabled={!canManage||!nodes.length}>Auto layout</Button>
      </div>
      <div className="topology-canvas-actions" aria-label="Topology edit history and selection">
       <Button type="button" size="sm" variant="outline" onClick={undoTopologyEdit} disabled={!historyRef.current.canUndo}>Undo</Button>
@@ -493,7 +657,9 @@ export default function TopologyStudioPage({user}){
      </div>
     </div>
     <p className="muted topology-keyboard-help">Shortcuts: Ctrl/Cmd+Z undo · Ctrl/Cmd+Shift+Z redo · Ctrl/Cmd+C/V copy/paste · Ctrl/Cmd+A select all · Delete remove · Shift/Ctrl/Cmd+click add or remove nodes from selection. Shortcuts are disabled while editing form fields.</p>
-    <div style={{width:"100%",overflow:"hidden",border:"1px solid var(--border)",borderRadius:12,background:"var(--card)"}}>
+    <div className={"topology-canvas-dropzone"+(paletteDropActive?" is-drop-active":"")} onDragOver={allowPaletteDrop}
+     onDragLeave={event=>{if(event.currentTarget===event.target)setPaletteDropActive(false);}} onDrop={dropPaletteNode}>
+     <div className="topology-canvas-drop-hint" aria-live="polite">{paletteDropActive?"Release to add a logical node":"Drop a palette node here · drag empty canvas to pan"}</div>
      <svg ref={canvasRef} viewBox={viewport.x+" "+viewport.y+" "+viewport.width+" "+viewport.height} role="application" aria-label="Interactive topology canvas. Select nodes and links, drag to move, or drag empty space to pan." style={{display:"block",width:"100%",minWidth:0,height:"auto",aspectRatio:"1000 / 620",touchAction:"none",cursor:panning?"grabbing":"grab"}}
       onPointerDown={startCanvasPan} onPointerMove={onCanvasPointerMove} onPointerUp={finishCanvasInteraction} onPointerCancel={finishCanvasInteraction} onWheel={zoomCanvasAtPointer}>
       <defs><pattern id="topology-grid" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M 25 0 L 0 0 0 25" fill="none" stroke="currentColor" strokeOpacity=".08" strokeWidth="1"/></pattern></defs>
@@ -510,7 +676,7 @@ export default function TopologyStudioPage({user}){
         <line x1={source.x+68} y1={source.y} x2={target.x-68} y2={target.y} stroke={selectedLink===link.id?"var(--warning)":"var(--primary)"} strokeWidth={selectedLink===link.id?8:4}/>
         <circle cx={source.x+68} cy={source.y} r="6" fill={selectedLink===link.id?"var(--warning)":"var(--primary)"}/>
         <circle cx={target.x-68} cy={target.y} r="6" fill={selectedLink===link.id?"var(--warning)":"var(--primary)"}/>
-        <text x={(source.x+target.x)/2} y={(source.y+target.y)/2-8} fill="currentColor" fontSize="12">{link.source_adapter}/{link.source_port} ↔ {link.target_adapter}/{link.target_port}</text>
+        <text x={(source.x+target.x)/2} y={(source.y+target.y)/2-8} fill="currentColor" fontSize="12">{link.source_interface_name||link.source_adapter+"/"+link.source_port} ↔ {link.target_interface_name||link.target_adapter+"/"+link.target_port}</text>
        </g>:null;
       })}
       {nodes.map(node=>{
@@ -523,55 +689,141 @@ export default function TopologyStudioPage({user}){
         <rect x="-68" y="-34" width="136" height="68" rx="12" fill={selectedNodes.includes(node.id)?"var(--primary)":"var(--muted)"} stroke={nodeSearch.trim()&&matches?"var(--warning)":selectedNodes.includes(node.id)?"var(--primary)":"var(--border)"} strokeWidth={nodeSearch.trim()&&matches?4:selectedNodes.includes(node.id)?4:2}/>
         <text x="0" y="-4" textAnchor="middle" fill={selectedNode===node.id?"white":"currentColor"} fontSize="14" fontWeight="600">{node.name.slice(0,18)}</text>
         <text x="0" y="16" textAnchor="middle" fill={selectedNode===node.id?"white":"currentColor"} fontSize="10">{node.node_type} · {node.id.slice(0,12)}</text>
+        {(node.interfaces||[]).map((interfaceItem,index)=>{
+         const cx=(index%2===0?-1:1)*70,cy=-21+Math.floor(index/2)*15;
+         return <g key={interfaceItem.name} role="button" tabIndex="0" aria-label={"Connect port "+node.name+" "+interfaceItem.name}
+          onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();chooseTopologyPort(node,interfaceItem);}}
+          onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();chooseTopologyPort(node,interfaceItem);}}}
+          style={{cursor:canManage?"crosshair":"pointer"}}>
+          <circle cx={cx} cy={cy} r="6" fill={portSelection?.node_id===node.id&&portSelection?.interface_name===interfaceItem.name?"var(--warning)":"var(--primary)"} stroke="var(--background)" strokeWidth="2"/>
+          <title>{interfaceItem.name} · {interfaceItem.adapter}/{interfaceItem.port}</title>
+         </g>;
+        })}
        </g>;
       })}
      </svg>
+     </svg>
     </div>
-    {!nodes.length?<EmptyState title="Canvas is empty" message="Add the first node using the palette above. This does not create a provider resource."/>:null}
+    {!nodes.length?<EmptyState title="Canvas is empty" message="Drag a palette item here or select one above. This adds logical intent only."/>:null}
     {selectedNodes.length>1?<div className="form-grid"><div className="context-caption">{selectedNodes.length} nodes selected · {canManage?"drag any selected node to move the group together.":"view-only selection."}</div>{canManage?<div className="form-actions"><Button type="button" variant="destructive" onClick={deleteSelectedTopology}>Delete selected nodes and attached links</Button></div>:null}</div>:null}
-    {selectedNodeRecord?<div className="form-grid">
-     <Field label="Selected node"><input value={selectedNodeRecord.name} onChange={event=>updateNode(selectedNode,{name:event.target.value})} disabled={!canManage}/></Field>
-     <Field label="Logical node type"><select value={selectedNodeRecord.node_type} onChange={event=>updateNode(selectedNode,{node_type:event.target.value})} disabled={!canManage}>{NODE_TYPES.map(item=><option key={item}>{item}</option>)}</select></Field>
-     <Field label="Template reference"><input value={selectedNodeRecord.template_id} onChange={event=>updateNode(selectedNode,{template_id:event.target.value})} disabled={!canManage}/></Field>
-     <Field label="X coordinate"><input type="number" min="0" max="10000" value={selectedNodeRecord.x} onChange={event=>updateNode(selectedNode,{x:Number(event.target.value)})} disabled={!canManage}/></Field>
-     <Field label="Y coordinate"><input type="number" min="0" max="10000" value={selectedNodeRecord.y} onChange={event=>updateNode(selectedNode,{y:Number(event.target.value)})} disabled={!canManage}/></Field>
-     <div className="form-actions"><Button type="button" variant="destructive" onClick={()=>removeNode(selectedNode)} disabled={!canManage}>Remove node and attached links</Button></div>
+   </Section>
+   </Section>
+   <Section title="Property inspector" subtitle="Edit logical network intent, interfaces and links. Provider IDs and operational state are actual read-only observations.">
+    <div className="topology-inspector-layout">
+     <div className="topology-inspector-pane">
+      {selectedNodeRecord?<div className="topology-inspector-content">
+       <div className="topology-inspector-heading"><strong>Node properties</strong><StatusBadge value={selectedNodeRecord.node_type}/></div>
+       <div className="topology-inspector-grid">
+        <Field label="Name"><input value={selectedNodeRecord.name} onChange={event=>updateNodeField(selectedNode,"name",event.target.value)} disabled={!canManage}/></Field>
+        <Field label="Logical ID"><input value={selectedNodeRecord.id} readOnly/></Field>
+        <Field label="Node type"><select value={selectedNodeRecord.node_type} onChange={event=>updateNodeField(selectedNode,"node_type",event.target.value)} disabled={!canManage}>{NODE_TYPES.map(type=><option key={type}>{type}</option>)}</select></Field>
+        <Field label="Canvas X"><input type="number" min="0" max="10000" value={selectedNodeRecord.x} onChange={event=>updateNodeField(selectedNode,"x",Number(event.target.value))} disabled={!canManage}/></Field>
+        <Field label="Canvas Y"><input type="number" min="0" max="10000" value={selectedNodeRecord.y} onChange={event=>updateNodeField(selectedNode,"y",Number(event.target.value))} disabled={!canManage}/></Field>
+        <Field label="Vendor"><input value={selectedNodeRecord.vendor||""} onChange={event=>updateNodeField(selectedNode,"vendor",event.target.value)} disabled={!canManage}/></Field>
+        <Field label="Operating system"><input value={selectedNodeRecord.operating_system||""} onChange={event=>updateNodeField(selectedNode,"operating_system",event.target.value)} disabled={!canManage}/></Field>
+        <Field label="Image / OS image"><input value={selectedNodeRecord.image||""} onChange={event=>updateNodeField(selectedNode,"image",event.target.value)} disabled={!canManage}/></Field>
+        <Field label="Provider template ID">
+         {providerCatalog?.templates?.length?<select value={selectedNodeRecord.template_id||""} onChange={event=>updateNodeField(selectedNode,"template_id",event.target.value)} disabled={!canManage}>
+          <option value="">Unmapped logical node</option>{providerCatalog.templates.map(item=><option key={item.template_id} value={item.template_id}>{item.name||item.template_id} · {item.template_id}</option>)}
+          {selectedNodeRecord.template_id&&!providerCatalog.templates.some(item=>item.template_id===selectedNodeRecord.template_id)?<option value={selectedNodeRecord.template_id}>{selectedNodeRecord.template_id} · not present in current catalogue</option>:null}
+         </select>:<input value={selectedNodeRecord.template_id||""} onChange={event=>updateNodeField(selectedNode,"template_id",event.target.value)} disabled={!canManage} placeholder="Unmapped logical node"/>}
+        </Field>
+        <Field label="CPU cores"><input type="number" min="1" max="128" value={selectedNodeRecord.cpu_cores??""} onChange={event=>updateNodeField(selectedNode,"cpu_cores",event.target.value===""?undefined:Number(event.target.value))} disabled={!canManage}/></Field>
+        <Field label="Memory (MB)"><input type="number" min="128" max="1048576" value={selectedNodeRecord.memory_mb??""} onChange={event=>updateNodeField(selectedNode,"memory_mb",event.target.value===""?undefined:Number(event.target.value))} disabled={!canManage}/></Field>
+        <Field label="Management IP / prefix"><input value={selectedNodeRecord.management_address||""} onChange={event=>updateNodeField(selectedNode,"management_address",event.target.value)} disabled={!canManage} placeholder="192.0.2.10/24"/></Field>
+        <Field label="Default gateway"><input value={selectedNodeRecord.default_gateway||""} onChange={event=>updateNodeField(selectedNode,"default_gateway",event.target.value)} disabled={!canManage} placeholder="192.0.2.1"/></Field>
+        <Field label="VLAN ID"><input type="number" min="1" max="4094" value={selectedNodeRecord.vlan_id??""} onChange={event=>updateNodeField(selectedNode,"vlan_id",event.target.value===""?undefined:Number(event.target.value))} disabled={!canManage}/></Field>
+        <Field label="Configuration profile"><select value={selectedNodeRecord.configuration_profile_id||""} onChange={event=>updateNodeField(selectedNode,"configuration_profile_id",event.target.value)} disabled={!canManage||!canPerform(user,"configurations.read")}>
+         <option value="">No profile bound</option>{configurationProfiles.data?.items?.map(item=><option key={item.profile_id} value={item.profile_id}>{item.name} · {item.status}</option>)}
+         {selectedNodeRecord.configuration_profile_id&&!configurationProfiles.data?.items?.some(item=>item.profile_id===selectedNodeRecord.configuration_profile_id)?<option value={selectedNodeRecord.configuration_profile_id}>{selectedNodeRecord.configuration_profile_id} · outside available list</option>:null}
+        </select></Field>
+        <Field label="Credential Vault reference"><select value={selectedNodeRecord.credential_ref_id||""} onChange={event=>updateNodeField(selectedNode,"credential_ref_id",event.target.value)} disabled={!canManage||!canPerform(user,"credentials.read")}>
+         <option value="">No credential reference</option>{nodeCredentials.data?.items?.map(item=><option key={item.credential_id} value={item.credential_id}>{item.label} · {item.credential_id}</option>)}
+         {selectedNodeRecord.credential_ref_id&&!nodeCredentials.data?.items?.some(item=>item.credential_id===selectedNodeRecord.credential_ref_id)?<option value={selectedNodeRecord.credential_ref_id}>{selectedNodeRecord.credential_ref_id} · outside available list</option>:null}
+        </select></Field>
+       </div>
+       <div className="topology-observed-panel">
+        <div className="topology-inspector-heading"><strong>Provider mapping and observed state</strong><StatusBadge value={reconciliation?.logical_to_provider?.[selectedNode]?"MAPPED":reconciliation&&(reconciliation.missing_nodes||[]).includes(selectedNode)?"MISSING":"UNKNOWN"}/></div>
+        <div className="operations-detail-row"><span>Provider resource ID</span><code>{reconciliation?.logical_to_provider?.[selectedNode]||"Not mapped"}</code></div>
+        <div className="operations-detail-row"><span>Provider node state</span><StatusBadge value={providerCatalog?.nodes?.find(item=>item.node_id===reconciliation?.logical_to_provider?.[selectedNode])?.status||"UNKNOWN"}/></div>
+        <p className="muted">Observed state comes only from a provider catalogue or reconciliation response. Editing these fields never contacts the provider.</p>
+       </div>
+       <div className="topology-interface-editor">
+        <div className="topology-inspector-heading"><strong>Network interfaces and ports</strong><span className="muted">{(selectedNodeRecord.interfaces||[]).length} planned</span></div>
+        {(selectedNodeRecord.interfaces||[]).map(item=><div className="topology-interface-row" key={item.name}>
+         <div className="topology-interface-heading"><strong>{item.name}</strong><small>Planned interface · {item.adapter}/{item.port}</small></div>
+         {canManage?<div className="topology-interface-edit-grid">
+          <Field label="Mode"><select aria-label={"Mode "+item.name} value={item.mode||"OTHER"} onChange={event=>updateNodeInterface(selectedNode,item.name,{mode:event.target.value})}><option>ACCESS</option><option>TRUNK</option><option>ROUTED</option><option>WIRELESS</option><option>OTHER</option></select></Field>
+          <Field label="Adapter"><input aria-label={"Adapter "+item.name} type="number" min="0" max="255" value={item.adapter} onChange={event=>updateNodeInterface(selectedNode,item.name,{adapter:Number(event.target.value)})}/></Field>
+          <Field label="Port"><input aria-label={"Port "+item.name} type="number" min="0" max="255" value={item.port} onChange={event=>updateNodeInterface(selectedNode,item.name,{port:Number(event.target.value)})}/></Field>
+          <Field label="IP address"><input aria-label={"IP address "+item.name} value={item.ip_address||""} onChange={event=>updateNodeInterface(selectedNode,item.name,{ip_address:event.target.value})}/></Field>
+          <Field label="VLAN"><input aria-label={"VLAN "+item.name} type="number" min="1" max="4094" value={item.vlan_id??""} onChange={event=>updateNodeInterface(selectedNode,item.name,{vlan_id:event.target.value===""?undefined:Number(event.target.value)})}/></Field>
+         </div>:<small>{item.mode||"Mode unspecified"} · {item.ip_address||"No IP"}{item.vlan_id?" · VLAN "+item.vlan_id:""}</small>}
+         <div className="topology-interface-actions"><Button type="button" size="sm" variant="outline" onClick={()=>chooseTopologyPort(selectedNodeRecord,item)} disabled={!canManage}>Connect port</Button><Button type="button" size="sm" variant="ghost" onClick={()=>removeNodeInterface(selectedNode,item.name)} disabled={!canManage}>Remove</Button></div>
+        </div>)}
+        {canManage?<form className="form-grid topology-interface-form" onSubmit={event=>{event.preventDefault();addNodeInterface(selectedNode);}}>
+         <Field label="Interface name"><input value={interfaceForm.name} onChange={event=>setInterfaceForm({...interfaceForm,name:event.target.value})} required/></Field>
+         <Field label="Adapter"><input type="number" min="0" max="255" value={interfaceForm.adapter} onChange={event=>setInterfaceForm({...interfaceForm,adapter:event.target.value})}/></Field>
+         <Field label="Port"><input type="number" min="0" max="255" value={interfaceForm.port} onChange={event=>setInterfaceForm({...interfaceForm,port:event.target.value})}/></Field>
+         <Field label="Mode"><select value={interfaceForm.mode} onChange={event=>setInterfaceForm({...interfaceForm,mode:event.target.value})}><option>ACCESS</option><option>TRUNK</option><option>ROUTED</option><option>WIRELESS</option><option>OTHER</option></select></Field>
+         <Field label="IP address / prefix"><input value={interfaceForm.ip_address} onChange={event=>setInterfaceForm({...interfaceForm,ip_address:event.target.value})}/></Field>
+         <Field label="VLAN"><input type="number" min="1" max="4094" value={interfaceForm.vlan_id} onChange={event=>setInterfaceForm({...interfaceForm,vlan_id:event.target.value})}/></Field>
+         <div className="form-actions"><Button type="submit">Add interface</Button></div>
+        </form>:null}
+       </div>
+       <div className="topology-inspector-footer"><Button type="button" variant="destructive" disabled={!canManage} onClick={()=>removeNode(selectedNode)}>Remove node and attached links</Button></div>
+      </div>:selectedLinkRecord&&linkEditForm?<div className="topology-inspector-content">
+       <div className="topology-inspector-heading"><strong>Link properties</strong><StatusBadge value={reconciliation?.logical_to_provider_links?.[selectedLink]?"MAPPED":reconciliation&&(reconciliation.missing_links||[]).includes(selectedLink)?"MISSING":"UNKNOWN"}/></div>
+       <div className="topology-inspector-grid">
+        <Field label="Source node"><select value={linkEditForm.source_node_id} onChange={event=>setLinkEditForm({...linkEditForm,source_node_id:event.target.value})} disabled={!canManage}>{nodes.map(node=><option key={node.id} value={node.id}>{node.name}</option>)}</select></Field>
+        <Field label="Source interface"><select value={linkEditForm.source_interface_name||""} onChange={event=>{const node=nodes.find(item=>item.id===linkEditForm.source_node_id);const item=(node?.interfaces||[]).find(value=>value.name===event.target.value);setLinkEditForm({...linkEditForm,source_interface_name:event.target.value,source_adapter:item?.adapter??linkEditForm.source_adapter,source_port:item?.port??linkEditForm.source_port});}} disabled={!canManage}><option value="">Select interface</option>{(nodes.find(node=>node.id===linkEditForm.source_node_id)?.interfaces||[]).map(item=><option key={item.name}>{item.name}</option>)}</select></Field>
+        <Field label="Destination node"><select value={linkEditForm.target_node_id} onChange={event=>setLinkEditForm({...linkEditForm,target_node_id:event.target.value})} disabled={!canManage}>{nodes.map(node=><option key={node.id} value={node.id}>{node.name}</option>)}</select></Field>
+        <Field label="Destination interface"><select value={linkEditForm.target_interface_name||""} onChange={event=>{const node=nodes.find(item=>item.id===linkEditForm.target_node_id);const item=(node?.interfaces||[]).find(value=>value.name===event.target.value);setLinkEditForm({...linkEditForm,target_interface_name:event.target.value,target_adapter:item?.adapter??linkEditForm.target_adapter,target_port:item?.port??linkEditForm.target_port});}} disabled={!canManage}><option value="">Select interface</option>{(nodes.find(node=>node.id===linkEditForm.target_node_id)?.interfaces||[]).map(item=><option key={item.name}>{item.name}</option>)}</select></Field>
+        <Field label="Link type"><select value={linkEditForm.link_type||"ETHERNET"} onChange={event=>setLinkEditForm({...linkEditForm,link_type:event.target.value})} disabled={!canManage}><option>ETHERNET</option><option>WIRELESS</option><option>SERIAL</option><option>TUNNEL</option><option>OTHER</option></select></Field>
+        <Field label="Network segment"><input value={linkEditForm.network_segment_id||""} onChange={event=>setLinkEditForm({...linkEditForm,network_segment_id:event.target.value})} disabled={!canManage}/></Field>
+        <Field label="VLAN association"><input type="number" min="1" max="4094" value={linkEditForm.vlan_id??""} onChange={event=>setLinkEditForm({...linkEditForm,vlan_id:event.target.value===""?"":Number(event.target.value)})} disabled={!canManage}/></Field>
+       </div>
+       <div className="topology-observed-panel"><div className="operations-detail-row"><span>Provider link ID</span><code>{reconciliation?.logical_to_provider_links?.[selectedLink]||"Not mapped"}</code></div><div className="operations-detail-row"><span>Operational status</span><StatusBadge value={reconciliation?.logical_to_provider_links?.[selectedLink]?"MAPPED":reconciliation&&(reconciliation.mismatched_links||[]).includes(selectedLink)?"MISMATCHED":reconciliation&&(reconciliation.missing_links||[]).includes(selectedLink)?"MISSING":"UNKNOWN"/></div></div>
+       <div className="form-actions"><Button type="button" onClick={saveSelectedLink} disabled={!canManage}>Save link properties</Button><Button type="button" variant="destructive" onClick={()=>removeLink(selectedLink)} disabled={!canManage}>Remove link</Button></div>
+      </div>:<EmptyState title="Select a node or link" message="Choose an object on the canvas to inspect properties, interfaces, provider mapping and observed status."/>}
+     </div>
+     <aside className="topology-inspector-summary">
+      <div className="operations-detail-row"><span>Logical nodes</span><strong>{nodes.length}</strong></div>
+      <div className="operations-detail-row"><span>Logical links</span><strong>{links.length}</strong></div>
+      <div className="operations-detail-row"><span>Unmapped templates</span><strong>{nodes.filter(node=>!node.template_id).length}</strong></div>
+      <div className="operations-detail-row"><span>Unmapped provider nodes</span><strong>{nodes.filter(node=>!reconciliation?.logical_to_provider?.[node.id]).length}</strong></div>
+      <div className="operations-detail-row"><span>Revision</span><strong>{selectedRevision?"r"+selectedRevision.revision_number:"Local draft"}</strong></div>
+      <p className="muted">Logical intent is authoritative. Provider IDs and runtime status are observed, not editable desired-state fields.</p>
+     </aside>
+    </div>
+   </Section>
+   </div>
+
+   <Section title="Operational console" subtitle="Validation, provider operations, session logs, apply history, reconciliation and warnings for the current topology workspace.">
+    <div className="topology-console-tabs" role="tablist" aria-label="Topology operational console">
+     {["validation","provider","logs","apply-history","reconciliation","warnings"].map(tab=><button key={tab} type="button" role="tab" aria-selected={consoleTab===tab} onClick={()=>setConsoleTab(tab)}>{({validation:"Validation",provider:"Provider operations",logs:"Logs","apply-history":"Apply history",reconciliation:"Reconciliation",warnings:"Warnings"})[tab]}</button>)}
+    </div>
+    {consoleTab==="validation"?<div className="topology-console-panel" role="tabpanel">
+     <div className="operations-detail-row"><span>Current draft</span><strong>{nodes.length} nodes · {links.length} links</strong></div>
+     {validation?<div className="provider-plan"><p><StatusBadge value={validation.valid?"VALID":"INVALID"}/> {validation.valid?validation.node_count+" nodes · "+validation.link_count+" links · SHA-256 "+validation.content_sha256:validation.error}</p></div>:<p className="muted">No validation result exists for the current draft.</p>}
+     <div className="button-row">
+      <Button type="button" variant="outline" onClick={validateDraft} loading={validationLoading} disabled={!profileId||!canManage||revisions.loading||mutation.loading}>Validate current draft</Button>
+      <Button type="button" onClick={saveRevision} loading={mutation.loading} disabled={!profileId||!canManage||revisions.loading||validationLoading}>Validate and save new draft revision</Button>
+      {canPublish?<Button type="button" variant="outline" onClick={publishRevision} disabled={!revisionId||selectedRevision?.status!=="DRAFT"||mutation.loading}>Publish selected revision</Button>:null}
+     </div>
+     <p className="muted">Validation is read-only. Saving creates a new immutable revision; publishing never overwrites an existing revision.</p>
     </div>:null}
-   </Section>
-   <Section title="Interface and link editor" subtitle="Select a canvas link to inspect or edit its endpoint adapter/port references. Port occupancy is validated by the canonical backend validator.">
-    {selectedLinkRecord&&linkEditForm?<form className="form-grid" onSubmit={saveSelectedLink}>
-     <div className="context-caption">Selected link · {selectedLinkRecord.id}</div>
-     <Field label="Edit source node"><select value={linkEditForm.source_node_id} onChange={event=>setLinkEditForm({...linkEditForm,source_node_id:event.target.value})}>{nodes.map(item=><option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}</select></Field>
-     <Field label="Edit source adapter"><input type="number" min="0" max="255" value={linkEditForm.source_adapter} onChange={event=>setLinkEditForm({...linkEditForm,source_adapter:event.target.value})}/></Field>
-     <Field label="Edit source port"><input type="number" min="0" max="255" value={linkEditForm.source_port} onChange={event=>setLinkEditForm({...linkEditForm,source_port:event.target.value})}/></Field>
-     <Field label="Edit target node"><select value={linkEditForm.target_node_id} onChange={event=>setLinkEditForm({...linkEditForm,target_node_id:event.target.value})}>{nodes.map(item=><option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}</select></Field>
-     <Field label="Edit target adapter"><input type="number" min="0" max="255" value={linkEditForm.target_adapter} onChange={event=>setLinkEditForm({...linkEditForm,target_adapter:event.target.value})}/></Field>
-     <Field label="Edit target port"><input type="number" min="0" max="255" value={linkEditForm.target_port} onChange={event=>setLinkEditForm({...linkEditForm,target_port:event.target.value})}/></Field>
-     <div className="form-actions"><Button type="submit" disabled={!canManage}>Save link endpoint changes</Button><Button type="button" variant="destructive" onClick={()=>removeLink(selectedLink)} disabled={!canManage}>Remove link</Button></div>
-    </form>:<p className="muted">Select a connection on the canvas or from the links table to inspect its endpoints.</p>}
-    <form className="form-grid" onSubmit={addLink}>
-     <Field label="Source node"><select value={linkForm.source_node_id} onChange={event=>setLinkForm({...linkForm,source_node_id:event.target.value})}><option value="">Select node</option>{nodes.map(item=><option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}</select></Field>
-     <Field label="Source adapter"><input type="number" min="0" max="255" value={linkForm.source_adapter} onChange={event=>setLinkForm({...linkForm,source_adapter:event.target.value})}/></Field>
-     <Field label="Source port"><input type="number" min="0" max="255" value={linkForm.source_port} onChange={event=>setLinkForm({...linkForm,source_port:event.target.value})}/></Field>
-     <Field label="Target node"><select value={linkForm.target_node_id} onChange={event=>setLinkForm({...linkForm,target_node_id:event.target.value})}><option value="">Select node</option>{nodes.map(item=><option key={item.id} value={item.id}>{item.name} · {item.id}</option>)}</select></Field>
-     <Field label="Target adapter"><input type="number" min="0" max="255" value={linkForm.target_adapter} onChange={event=>setLinkForm({...linkForm,target_adapter:event.target.value})}/></Field>
-     <Field label="Target port"><input type="number" min="0" max="255" value={linkForm.target_port} onChange={event=>setLinkForm({...linkForm,target_port:event.target.value})}/></Field>
-     <div className="form-actions"><Button type="submit" disabled={nodes.length<2||!canManage}>Add link</Button></div>
-    </form>
-    <DataTable caption="Logical topology links" rows={links} rowKey={item=>item.id} columns={[
-     {key:"id",label:"Link ID",render:item=><button type="button" className="table-link-select" aria-pressed={selectedLink===item.id} onClick={()=>selectCanvasLink(item)}>{item.id}</button>},
-     {key:"source_node_id",label:"Source",render:item=>item.source_node_id+" · "+item.source_adapter+"/"+item.source_port},
-     {key:"target_node_id",label:"Target",render:item=>item.target_node_id+" · "+item.target_adapter+"/"+item.target_port},
-     {key:"actions",label:"Actions",render:item=>canManage?<Button variant="ghost" size="sm" onClick={()=>removeLink(item.id)}>Remove</Button>:"—"}
-    ]} emptyTitle="No links" emptyMessage="Connect two nodes using their exact adapter and port numbers."/>
-   </Section>
-   {activeLabId?<Section title="GNS3 provider and topology apply" subtitle="Bind a private GNS3 controller to this Lab, inspect its catalogue, plan changes and apply only after explicit confirmation.">
+    {consoleTab==="provider"?<div className="topology-console-panel" role="tabpanel">
+     <div className="operations-detail-row"><span>Saved binding</span><StatusBadge value={!activeLabId?"NOT APPLICABLE":providerBinding.loading&&!providerBinding.data?"UNKNOWN":providerBinding.error?"UNKNOWN":binding?"CONFIGURED":"NOT CONFIGURED"}/></div>
+     <div className="operations-detail-row"><span>Provider health</span><StatusBadge value="UNKNOWN"/></div>
+     <p className="muted">A saved binding is not proof of provider availability. Catalogue, dry-run, apply and reconciliation retrieve actual provider observations.</p>
+     {activeLabId?<Section title="GNS3 provider and topology apply" subtitle="Bind a private GNS3 controller to this Lab, inspect its catalogue, plan changes and apply only after explicit confirmation.">
     <div className="module-intro">
      <div className="module-intro-icon">⇄</div>
      <div><strong>Explicit provider boundary</strong><p>Editing and publishing remain local-only. The provider is contacted only when you verify a binding, inspect the catalogue, request a dry-run, reconcile, apply, or explicitly start/stop a mapped node. Unmanaged resources are never pruned.</p></div>
     </div>
     {providerBinding.error?<InlineNotice tone="danger">{providerBinding.error.message}</InlineNotice>:null}
-    {binding?<div className="context-caption">Active binding · {binding.endpoint_url} · GNS3 project {binding.gns3_project_id} · controller {binding.controller_device_id}</div>:<div className="context-caption">No active GNS3 controller is bound to this Lab.</div>}
+    {providerBinding.loading&&!providerBinding.data?<div className="context-caption">Loading saved provider binding metadata…</div>:binding?<div className="context-caption">Active binding · {binding.endpoint_url} · GNS3 project {binding.gns3_project_id} · controller {binding.controller_device_id}</div>:providerBinding.error?<div className="context-caption">Saved provider binding is unavailable; its state is not inferred.</div>:<div className="context-caption">No active GNS3 controller is bound to this Lab.</div>}
     {canManageProvider?<form className="form-grid" onSubmit={saveProviderBinding}>
      <Field label="Private GNS3 Controller URL" required><input value={bindingForm.endpoint_url} onChange={event=>setBindingForm({...bindingForm,endpoint_url:event.target.value})} placeholder="http://127.0.0.1:3080" required/></Field>
      <Field label="GNS3 project ID" required><input value={bindingForm.gns3_project_id} onChange={event=>setBindingForm({...bindingForm,gns3_project_id:event.target.value})} maxLength={128} required/></Field>
@@ -636,22 +888,40 @@ export default function TopologyStudioPage({user}){
      <pre className="code-block">{JSON.stringify(lastApply.result,null,2)}</pre>
     </div>:null}
     {applyHistory.error?<InlineNotice tone="danger">{applyHistory.error.message}</InlineNotice>:null}
-    <DataTable caption="Topology apply and recovery history" rows={applyHistory.data?.items||[]} rowKey={item=>item.apply_id} columns={[
-     {key:"apply_id",label:"Apply record",render:item=><code>{item.apply_id}</code>},
-     {key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>},
-     {key:"revision_id",label:"Revision"},
-     {key:"created_at",label:"Started",render:item=>new Date(item.created_at).toLocaleString()},
-     {key:"completed_at",label:"Completed",render:item=>item.completed_at?new Date(item.completed_at).toLocaleString():"—"}
-    ]} emptyTitle="No topology applies" emptyMessage="Dry-run plans do not create history. Confirmed provider operations are retained here, including partial results."/>
-   </Section>:null}
-   {canManage?<Section title="Save immutable topology revision" subtitle="Validate the visual draft against the canonical backend rules, then save a new immutable revision with a SHA-256 identity. Existing revisions are never overwritten.">
-    {validation?<div className="provider-plan"><p><StatusBadge value={validation.valid?"VALID":"INVALID"}/> {validation.valid?validation.node_count+" nodes · "+validation.link_count+" links · SHA-256 "+validation.content_sha256:validation.error}</p></div>:null}
-    <div className="button-row">
-     <Button type="button" variant="outline" onClick={validateDraft} loading={validationLoading} disabled={!profileId||!canManage||revisions.loading||mutation.loading}>Validate current draft</Button>
-     <Button onClick={saveRevision} loading={mutation.loading} disabled={!profileId||!canManage||revisions.loading||validationLoading}>Validate and save new draft revision</Button>
-     {canPublish?<Button variant="outline" onClick={publishRevision} disabled={!revisionId||selectedRevision?.status!=="DRAFT"||mutation.loading}>Publish selected revision</Button>:null}
-    </div>
-   </Section>:null}
+    </Section>:null}
+    </div>:null}
+    {consoleTab==="logs"?<div className="topology-console-panel" role="tabpanel">
+     <p className="muted">Session activity for this editor only; it is not a persistent audit history.</p>
+     {sessionLogs.length?sessionLogs.map(entry=><div className="topology-console-log" key={entry.id}><time>{new Date(entry.at).toLocaleTimeString()}</time><StatusBadge value={entry.level}/><span>{entry.message}</span></div>):<EmptyState title="No session activity" message="Editor actions will be recorded here for this browser session."/>}
+    </div>:null}
+    {consoleTab==="apply-history"?<div className="topology-console-panel" role="tabpanel">
+     {activeLabId?<DataTable caption="Topology apply and recovery history" rows={applyHistory.data?.items||[]} rowKey={item=>item.apply_id} columns={[
+      {key:"apply_id",label:"Apply record",render:item=><code>{item.apply_id}</code>},
+      {key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>},
+      {key:"revision_id",label:"Revision"},{key:"created_at",label:"Started",render:item=>new Date(item.created_at).toLocaleString()},
+      {key:"completed_at",label:"Completed",render:item=>item.completed_at?new Date(item.completed_at).toLocaleString():"—"}
+     ]} emptyTitle="No topology applies" emptyMessage="Dry-run plans do not create history. Confirmed provider operations are retained here, including partial results."/>:<p className="muted">Apply history requires a Lab-scoped topology profile.</p>}
+    </div>:null}
+    {consoleTab==="reconciliation"?<div className="topology-console-panel" role="tabpanel">
+     {reconciliation?<><div className="operations-detail-row"><span>Observed reconciliation</span><StatusBadge value={reconciliation.status}/></div>
+      <div className="operations-detail-row"><span>Managed nodes observed</span><strong>{reconciliation.observed_managed_node_count} / {reconciliation.desired_node_count}</strong></div>
+      <div className="operations-detail-row"><span>Unmanaged provider nodes</span><strong>{reconciliation.unmanaged_provider_node_count}</strong></div>
+      <div className="operations-detail-row"><span>Missing nodes</span><strong>{reconciliation.missing_nodes.join(", ")||"None"}</strong></div>
+      <div className="operations-detail-row"><span>Missing links</span><strong>{reconciliation.missing_links.join(", ")||"None"}</strong></div>
+      <div className="operations-detail-row"><span>Mismatched nodes / links</span><strong>{(reconciliation.mismatched_nodes||[]).length} / {(reconciliation.mismatched_links||[]).length}</strong></div>
+      <p className="muted">These mappings and counts come from the actual provider read-back and stored mappings.</p>
+     </>:<p className="muted">No reconciliation result has been retrieved for this immutable revision.</p>}
+     {activeLabId?<Button type="button" variant="outline" onClick={refreshReconciliation} loading={providerBusy} disabled={!revisionId||!binding}>Refresh reconciliation</Button>:null}
+    </div>:null}
+    {consoleTab==="warnings"?<div className="topology-console-panel" role="tabpanel">
+     {nodes.filter(node=>!node.template_id).map(node=><div className="topology-warning-row" key={"template-"+node.id}><StatusBadge value="UNMAPPED"/> {node.name} has no provider template mapping.</div>)}
+     {links.filter(link=>(link.source_interface_name&&!nodes.find(node=>node.id===link.source_node_id)?.interfaces?.some(item=>item.name===link.source_interface_name))
+      ||(link.target_interface_name&&!nodes.find(node=>node.id===link.target_node_id)?.interfaces?.some(item=>item.name===link.target_interface_name))).map(link=><div className="topology-warning-row" key={"interface-"+link.id}><StatusBadge value="INVALID"/> {link.id} references a missing interface.</div>)}
+     {validation&&!validation.valid?<div className="topology-warning-row"><StatusBadge value="INVALID"/> {validation.error}</div>:null}
+     {!nodes.some(node=>!node.template_id)&&!links.some(link=>(link.source_interface_name&&!nodes.find(node=>node.id===link.source_node_id)?.interfaces?.some(item=>item.name===link.source_interface_name))
+      ||(link.target_interface_name&&!nodes.find(node=>node.id===link.target_node_id)?.interfaces?.some(item=>item.name===link.target_interface_name)))&&!(validation&&!validation.valid)?<p className="muted">No local topology warnings. Provider/controller health remains unknown until observed.</p>:null}
+    </div>:null}
+   </Section>
   </>:<EmptyState title="Select or create a topology profile" message="Choose a Project and a profile to open the local topology canvas."/>}
  </div>;
 }
