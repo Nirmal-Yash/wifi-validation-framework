@@ -32,7 +32,7 @@ The platform remains an API-first modular monolith in the existing Tauri + React
 | OpenTofu | Infrastructure lifecycle engine | Planned |
 | Visual pipelines | Extend existing persistent PipelineService and handlers | Existing pipeline foundation |
 | Telemetry, packet capture and evidence | Extend current provenance-aware services and immutable evidence | Existing foundation |
-| Operations dashboard | Aggregate real Project/Lab/provider/device/pipeline/run observations | Partial Run/readiness overview |
+| Operations dashboard | Aggregate real Project/Lab/provider/device/pipeline/run observations | Read-only Project/Lab overview with source timestamps and subsystem RBAC; live provider health and performance remain unavailable until actually observed |
 | AI/LLM/agent functions | Explicitly excluded from this programme | Future scope only |
 
 ## 3. Initial network and device coverage

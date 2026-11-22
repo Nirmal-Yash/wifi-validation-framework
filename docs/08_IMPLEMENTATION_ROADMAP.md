@@ -94,3 +94,10 @@ Every work item must specify objective, current state, file scope, dependencies,
 ## Git and release controls
 
 Follow the current repository's `docs/AGENT_CONTEXT.md`: integrate on the established `main` branch using the repository's single-main-branch discipline, small logical commits and fast-forward-only updates. Never rewrite history or force-push. Do not commit credentials, database files, private keys, OpenTofu state, PCAPs or generated runtime artifacts. Do not mark mocked-provider tests as real provider acceptance.
+
+
+## EXP-P02 implementation checkpoint — operational overview
+
+The operational-overview increment reuses the existing SQLite workspace, device, topology/provider-binding, pipeline and Run records. The endpoint is read-only and Project/Lab scoped. Project-wide Lab totals remain stable when a single Lab filter is applied, while `in_scope` and child metrics reflect the selected Lab. Provider configuration is distinguished from live health: saved GNS3 bindings may be reported as configured, but connection health remains `UNKNOWN` until a real authenticated probe is added in the provider phase. Performance remains `UNAVAILABLE` without a persisted observation.
+
+The dashboard surfaces the Project/Lab scope, persisted status distributions, topology apply history, pipeline execution state, Run lifecycle and business outcomes, per-section source freshness, and explicit restricted/unavailable states. The integration tests exercise the authenticated Project boundary, subsystem permission redaction, Lab-scope validation, aggregation, and rendered frontend loading/error/retry and data states. This checkpoint does not certify a live external provider or physical network health.

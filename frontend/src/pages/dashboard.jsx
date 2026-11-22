@@ -72,30 +72,58 @@ export default function DashboardPage({user}){
    {operations.error?<ErrorState error={operations.error} onRetry={operations.reload}/>:null}
    {operations.data?<>
     <div className="operations-summary-grid">
-     <StatCard label="Labs in scope" value={operations.data.labs?.in_scope??0} hint={(operations.data.labs?.by_status?.ACTIVE||0)+" active · persisted Lab records"} icon={<Database size={17}/>} />
-     <StatCard label="Managed devices" value={operations.data.devices?.access==="RESTRICTED"?"Restricted":(operations.data.devices?.total??0)} hint={operations.data.devices?.access==="RESTRICTED"?"Device inventory permission required":(operations.data.devices?.active||0)+" active · "+(operations.data.devices?.archived||0)+" archived"} icon={<Activity size={17}/>} />
-     <StatCard label="Topology profiles" value={operations.data.topology?.access==="RESTRICTED"?"Restricted":(operations.data.topology?.profiles??0)} hint={operations.data.topology?.access==="RESTRICTED"?"Topology read permission required":(operations.data.topology?.revisions||0)+" revisions"} icon={<BookOpen size={17}/>} />
-     <StatCard label="Pipelines" value={operations.data.pipelines?.access==="RESTRICTED"?"Restricted":(operations.data.pipelines?.total??0)} hint={operations.data.pipelines?.access==="RESTRICTED"?"Pipeline read permission required":(operations.data.pipelines?.queued||0)+" queued · "+(operations.data.pipelines?.running||0)+" running"} icon={<Play size={17}/>} />
+     <StatCard label="Labs in scope" value={operations.data.labs?.in_scope??0} hint={(operations.data.labs?.by_status?.ACTIVE||0)+" active · "+(operations.data.labs?.total??0)+" total in Project"} footnote={"Source updated "+formatDate(operations.data.labs?.source_updated_at)} icon={<Database size={17}/>} />
+     <StatCard label="Managed devices" value={operations.data.devices?.access==="RESTRICTED"?"Restricted":(operations.data.devices?.total??0)} hint={operations.data.devices?.access==="RESTRICTED"?"Device inventory permission required":(operations.data.devices?.active||0)+" active · "+(operations.data.devices?.archived||0)+" archived"} footnote={operations.data.devices?.access==="RESTRICTED"?undefined:"Source updated "+formatDate(operations.data.devices?.source_updated_at)} icon={<Activity size={17}/>} />
+     <StatCard label="Topology profiles" value={operations.data.topology?.access==="RESTRICTED"?"Restricted":(operations.data.topology?.profiles??0)} hint={operations.data.topology?.access==="RESTRICTED"?"Topology read permission required":(operations.data.topology?.revisions||0)+" revisions"} footnote={operations.data.topology?.access==="RESTRICTED"?undefined:"Source updated "+formatDate(operations.data.topology?.source_updated_at)} icon={<BookOpen size={17}/>} />
+     <StatCard label="Pipelines" value={operations.data.pipelines?.access==="RESTRICTED"?"Restricted":(operations.data.pipelines?.total??0)} hint={operations.data.pipelines?.access==="RESTRICTED"?"Pipeline read permission required":(operations.data.pipelines?.queued||0)+" queued · "+(operations.data.pipelines?.running||0)+" running"} footnote={operations.data.pipelines?.access==="RESTRICTED"?undefined:"Source updated "+formatDate(operations.data.pipelines?.source_updated_at)} icon={<Play size={17}/>} />
     </div>
     <div className="operations-detail-grid">
      <div className="operations-detail-panel">
+      <h3>Project and Lab scope</h3>
+      <div className="operations-detail-row"><span><strong>{operations.data.scope?.project?.name||"Selected Project"}</strong><small>{operations.data.scope?.project?.project_id||projectId}</small></span><StatusBadge value={operations.data.scope?.project?.status}/></div>
+      <div className="operations-detail-row"><span>Labs in Project</span><strong>{operations.data.labs?.total??0}</strong></div>
+      <div className="operations-detail-row"><span>Labs in current scope</span><strong>{operations.data.labs?.in_scope??0}</strong></div>
+      {Object.entries(operations.data.labs?.by_status||{}).map(([status,count])=><div className="operations-detail-row" key={status}><span>{status.replaceAll("_"," ")}</span><strong>{count}</strong></div>)}
+      <p className="muted">Project source updated at {formatDate(operations.data.scope?.project?.source_updated_at)} · Lab source updated at {formatDate(operations.data.labs?.source_updated_at)}</p>
+     </div>
+     <div className="operations-detail-panel">
       <h3>Provider bindings</h3>
-      {(operations.data.providers?.items||[]).length?(operations.data.providers.items.map(item=><div className="operations-detail-row" key={item.lab_id}><span><strong>{item.provider_id||"Provider"} · {item.lab_id}</strong><small>Binding: {item.binding_status}</small></span><StatusBadge value={item.connection_health}/></div>)):<p className="muted">No Lab provider bindings are recorded in this scope.</p>}
-      <p className="chart-disclaimer">A saved binding is not a live health check. Connection health remains unknown until an authenticated provider probe is performed.</p>
+      {operations.data.providers?.access==="RESTRICTED"?<p className="muted">Provider binding details require topology read permission.</p>:(operations.data.providers?.items||[]).length?operations.data.providers.items.map(item=><div className="operations-detail-row" key={item.lab_id}><span><strong>{item.provider_id||"Provider not recorded"} · {item.lab_id}</strong><small>Binding: {item.binding_status} · Source updated {formatDate(item.source_updated_at)}</small></span><StatusBadge value={item.connection_health}/></div>):<p className="muted">No Lab provider bindings are recorded in this scope.</p>}
+      <p className="chart-disclaimer">A saved binding is configuration metadata, not a live health check. Connection health remains unknown until an authenticated provider probe returns real evidence.</p>
+     </div>
+     <div className="operations-detail-panel">
+      <h3>Device inventory</h3>
+      {operations.data.devices?.access==="RESTRICTED"?<p className="muted">Device inventory counts are restricted by Project permissions.</p>:Object.entries(operations.data.devices?.by_status||{}).length?Object.entries(operations.data.devices.by_status).map(([status,count])=><div className="operations-detail-row" key={status}><span>{status.replaceAll("_"," ")}</span><strong>{count}</strong></div>):<p className="muted">No persisted devices are recorded in this scope.</p>}
+      {operations.data.devices?.access!=="RESTRICTED"?<p className="muted">Source updated at {formatDate(operations.data.devices?.source_updated_at)}</p>:null}
+     </div>
+     <div className="operations-detail-panel">
+      <h3>Topology inventory</h3>
+      {operations.data.topology?.access==="RESTRICTED"?<p className="muted">Topology and provider metadata require topology read permission.</p>:<>
+       <div className="operations-detail-row"><span>Profiles</span><strong>{operations.data.topology?.profiles??0}</strong></div>
+       <div className="operations-detail-row"><span>Revisions</span><strong>{operations.data.topology?.revisions??0}</strong></div>
+       <div className="operations-detail-row"><span>Provider apply records</span><strong>{operations.data.topology?.apply_records??0}</strong></div>
+       {Object.entries(operations.data.topology?.apply_by_status||{}).map(([status,count])=><div className="operations-detail-row" key={status}><span>Apply · {status.replaceAll("_"," ")}</span><strong>{count}</strong></div>)}
+       <p className="muted">Source updated at {formatDate(operations.data.topology?.source_updated_at)}</p>
+      </>}
      </div>
      <div className="operations-detail-panel">
       <h3>Pipeline execution state</h3>
       {operations.data.pipelines?.access==="RESTRICTED"?<p className="muted">Pipeline execution counts are restricted by Project permissions.</p>:<>
+       <div className="operations-detail-row"><span>Definitions</span><strong>{operations.data.pipelines?.total??0}</strong></div>
        <div className="operations-detail-row"><span>Queued</span><strong>{operations.data.pipelines?.queued||0}</strong></div>
        <div className="operations-detail-row"><span>Running / cancelling</span><strong>{operations.data.pipelines?.running||0}</strong></div>
        <div className="operations-detail-row"><span>Recovery required</span><strong>{operations.data.pipelines?.recovery_required||0}</strong></div>
-       <div className="operations-detail-row"><span>Total executions</span><strong>{operations.data.pipelines?.executions||0}</strong></div>
+       <div className="operations-detail-row"><span>Total executions</span><strong>{operations.data.pipelines?.executions??0}</strong></div>
+       <p className="muted">Source updated at {formatDate(operations.data.pipelines?.source_updated_at)}</p>
       </>}
      </div>
      <div className="operations-detail-panel">
       <h3>Validation activity</h3>
+      <small className="muted">Run lifecycle</small>
       {Object.entries(operations.data.runs?.by_lifecycle||{}).length?Object.entries(operations.data.runs.by_lifecycle).map(([status,count])=><div className="operations-detail-row" key={status}><span>{status.replaceAll("_"," ")}</span><strong>{count}</strong></div>):<p className="muted">No persisted Runs are recorded for this Project/Lab selection.</p>}
-      <p className="muted">Source timestamp: {formatDate(operations.data.runs?.source_updated_at)}</p>
+      <small className="muted">Business outcomes</small>
+      {Object.entries(operations.data.runs?.by_outcome||{}).map(([outcome,count])=><div className="operations-detail-row" key={outcome}><span>{outcome.replaceAll("_"," ")}</span><strong>{count}</strong></div>)}
+      <p className="muted">Source updated at {formatDate(operations.data.runs?.source_updated_at)}</p>
      </div>
      <div className="operations-detail-panel">
       <h3>Network performance</h3>

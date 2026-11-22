@@ -9,6 +9,7 @@
 - **EXTEND:** an existing contract is present but the expansion requirement is not complete.
 - **PLANNED:** no qualifying implementation has been identified at this baseline.
 - **GATE:** requires operator/provider evidence beyond hardware-free CI.
+- **IN_PROGRESS:** source integration and focused acceptance tests are implemented; hosted verification remains pending.
 
 ## Product foundation
 
@@ -52,7 +53,7 @@
 | RQ-031 | Visual topology-style pipeline canvas | Existing pipeline management page is not yet a full visual workflow editor | EXTEND | Build canvas; do not expose unimplemented steps |
 | RQ-032 | Existing Run/Attempt, evidence and regression | `lib/services/run_service.py`, repositories and dashboard query layer | EXISTING | No rewrite; maintain baseline and ownership checks |
 | RQ-033 | Existing Wi-Fi telemetry and capture evidence | Existing telemetry/capture/artifact services | EXISTING | Add metrics only with real observation provenance |
-| RQ-034 | Cross-domain operations overview | `DashboardQueryService` and `frontend/src/pages/dashboard.jsx` currently focus on Runs/readiness | EXTEND | Real Project/Lab/provider/device/pipeline aggregates with source timestamps |
+| RQ-034 | Cross-domain operations overview | `DashboardQueryService.operations_overview`, `GET /api/v1/dashboard/operations-overview`, and `frontend/src/pages/dashboard.jsx` | IN_PROGRESS | Preserve Project/Lab scope, subsystem RBAC redaction and source provenance; extend only from real provider probes and measured observations |
 | RQ-035 | Shared Organization/Project/Lab shell context | `frontend/src/components/workspace-context.jsx`, `frontend/src/components/layout.jsx`, existing workspace APIs | EXISTING | Keep per-user reset, cross-page context adoption and Project/Lab scope tests green |
 
 ## Acceptance and evidence

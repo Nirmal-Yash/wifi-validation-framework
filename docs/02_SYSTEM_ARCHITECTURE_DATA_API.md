@@ -1034,3 +1034,26 @@ python scripts/netregress_sync.py --status
 ~~~
 
 The command is operational visibility only. It does not transfer artifacts or Run snapshots, create a remote identity, or prove that a remote receiver accepted data. Local Project membership and Run authorization are enforced by the standalone identity/API layer; cross-Runner Cloud tenant authorization, short-lived Runner credentials, remote schema negotiation and human release workflows remain future Phase O contracts.
+
+
+## Project/Lab operations overview API — EXP-P02
+
+The read-only endpoint `GET /api/v1/dashboard/operations-overview?project_id=<project-id>&lab_id=<optional-lab-id>` is the cross-domain source for the dashboard's operational summary. It reads persisted Project, Lab, device, topology, provider-binding, pipeline and Run records through `DashboardQueryService.operations_overview`; it does not mutate records, start Runs, contact provider controllers or synthesize telemetry.
+
+**Scope and authorization:** the caller must have `workspace.read` for the requested Project. An optional Lab ID is accepted only when the Lab belongs to that Project; a foreign or unknown Lab returns `404 NOT_FOUND`. Device counts require `devices.read`; topology and provider-binding details require `topology.read`; pipeline counts require `pipelines.read`. The dashboard returns a section with `access: RESTRICTED` and null aggregate values when a subsystem permission is missing, rather than exposing that subsystem's records. When topology read is restricted, provider IDs and topology versions are also redacted from Lab summaries.
+
+**Response sections:**
+
+- `scope.project`: Project ID, Organization ID, name, lifecycle status, source and source update timestamp.
+- `scope.lab_id`: selected Lab filter or null.
+- `labs`: `total` is always the Project-wide Lab count; `in_scope` and `items` reflect the optional Lab filter. Status counts and the latest persisted Lab update are included.
+- `devices`: persisted counts by status, total/active/archived counts and source update timestamp, or restricted metadata.
+- `topology`: profile, immutable revision and provider-apply counts by status with a latest source update timestamp, or restricted metadata.
+- `providers`: provider ID, Lab binding status, source metadata and source update timestamp. `connection_health` remains `UNKNOWN` and `last_health_check_at` remains null until a separately authorized, real provider health probe exists. `CONFIGURED` means a saved binding only.
+- `pipelines`: definition and execution counts by status, queued/running/recovery-required summaries and source update timestamp.
+- `runs`: lifecycle and business-outcome counts, active count and latest persisted Run activity timestamp.
+- `performance`: remains `UNAVAILABLE` until an actual Project/Lab-scoped performance observation with source provenance is available.
+
+**Freshness semantics:** each section's `observed_at` is the time the query was assembled; `source_updated_at` is the most recent update timestamp among the persisted source records used for that section. A query timestamp is not a provider health timestamp. The root `observed_at` is the overall query observation time.
+
+**Errors:** missing `project_id` returns `400 INVALID_REQUEST`; missing authentication returns `401 UNAUTHENTICATED`; an unauthorized Project returns `403 FORBIDDEN`; an absent Project or Lab outside the Project returns `404 NOT_FOUND`. No schema migration is required for this read-only aggregation.

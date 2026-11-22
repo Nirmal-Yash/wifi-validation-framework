@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 
 from dashboard.app import create_app
 from lib.repositories import SQLiteDatabase
-from lib.security import AuthManager
+from lib.security import AuthManager, Role, UserRecord
+from lib.services.identity import IdentityStore
 
 
 def _seed_workspace(database: SQLiteDatabase) -> None:
@@ -25,6 +26,10 @@ def _seed_workspace(database: SQLiteDatabase) -> None:
         connection.execute(
             "INSERT INTO labs(lab_id,project_id,name,provider_id,status,topology_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
             ("lab-a", "project-a", "Lab A", "gns3", "ACTIVE", 1, now, now),
+        )
+        connection.execute(
+            "INSERT INTO labs(lab_id,project_id,name,provider_id,status,topology_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+            ("lab-a2", "project-a", "Lab A2", "cml", "ACTIVE", 2, now, now),
         )
         connection.execute(
             "INSERT INTO labs(lab_id,project_id,name,provider_id,status,topology_version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
@@ -91,6 +96,7 @@ def test_operations_overview_aggregates_real_project_lab_records(tmp_path):
     data = response.get_json()["data"]
 
     assert data["scope"]["project"]["project_id"] == "project-a"
+    assert data["labs"]["total"] == 2
     assert data["labs"]["in_scope"] == 1
     assert data["devices"]["total"] == 1
     assert data["topology"]["profiles"] == 1
@@ -100,6 +106,8 @@ def test_operations_overview_aggregates_real_project_lab_records(tmp_path):
     assert data["runs"]["total"] == 0
     assert data["providers"]["items"][0]["binding_status"] == "NOT_CONFIGURED"
     assert data["providers"]["items"][0]["connection_health"] == "UNKNOWN"
+    assert data["providers"]["items"][0]["source"] == ["labs", "gns3_lab_bindings"]
+    assert data["providers"]["source_updated_at"] is not None
     assert data["performance"]["status"] == "UNAVAILABLE"
     assert data["devices"]["source"] == "devices"
     assert data["devices"]["source_updated_at"] is not None
@@ -167,6 +175,9 @@ def test_operations_overview_redacts_provider_binding_without_topology_permissio
     assert result["providers"]["access"] == "RESTRICTED"
     assert result["providers"]["items"] == []
     assert result["providers"]["configured"] is None
+    assert result["providers"]["source_updated_at"] is None
+    assert result["labs"]["items"][0]["provider_id"] is None
+    assert result["labs"]["items"][0]["topology_version"] is None
 
 
 def test_operations_overview_requires_a_project(tmp_path):
@@ -174,3 +185,85 @@ def test_operations_overview_requires_a_project(tmp_path):
     response = app.test_client().get("/api/v1/dashboard/operations-overview")
     assert response.status_code == 400
     assert response.get_json()["error"]["code"] == "INVALID_REQUEST"
+
+
+
+def _authenticated_project_client(tmp_path):
+    database_path = tmp_path / "overview-authenticated.sqlite"
+    database = SQLiteDatabase(database_path)
+    database.initialize()
+    _seed_workspace(database)
+
+    password = "correct-horse-battery-staple-2026"
+    manager = AuthManager(
+        (UserRecord(
+            "ops-admin",
+            AuthManager.password_hash(password),
+            Role.ADMIN,
+            ("project-a",),
+        ),),
+        required=True,
+    )
+    app = create_app(database_path, auth_manager=manager)
+    app.config.update(TESTING=True)
+    client = app.test_client()
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "ops-admin", "password": password},
+    )
+    assert login.status_code == 200
+    return app, client
+
+
+def test_operations_overview_api_enforces_project_membership(tmp_path):
+    _, client = _authenticated_project_client(tmp_path)
+    response = client.get(
+        "/api/v1/dashboard/operations-overview?project_id=project-b&lab_id=lab-b"
+    )
+    assert response.status_code == 403
+    assert response.get_json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_operations_overview_api_redacts_subsystems_by_project_role(tmp_path):
+    app, client = _authenticated_project_client(tmp_path)
+    identity = IdentityStore(app.config["NETREGRESS_QUERY"].database)
+    role = identity.create_role(
+        name="Dashboard reader",
+        scope_type="PROJECT",
+        description="Read operational overview without topology access",
+        actor="ops-admin",
+    )
+    identity.set_role_permissions(
+        role["role_id"],
+        ["workspace.read", "devices.read", "pipelines.read"],
+        "ops-admin",
+    )
+    identity.assign_project_role("ops-admin", "project-a", role["role_id"], "ops-admin")
+
+    response = client.get(
+        "/api/v1/dashboard/operations-overview?project_id=project-a&lab_id=lab-a"
+    )
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["devices"]["access"] == "AVAILABLE"
+    assert data["topology"]["access"] == "RESTRICTED"
+    assert data["providers"]["access"] == "RESTRICTED"
+    assert data["providers"]["items"] == []
+    assert data["providers"]["configured"] is None
+    assert data["providers"]["source_updated_at"] is None
+    assert data["labs"]["items"][0]["provider_id"] is None
+    assert data["labs"]["items"][0]["topology_version"] is None
+    assert data["pipelines"]["access"] == "AVAILABLE"
+
+
+def test_operations_overview_api_requires_authentication_when_enabled(tmp_path):
+    app = create_app(
+        tmp_path / "overview-unauthenticated.sqlite",
+        auth_manager=AuthManager((), required=True),
+    )
+    app.config.update(TESTING=True)
+    response = app.test_client().get(
+        "/api/v1/dashboard/operations-overview?project_id=project-a"
+    )
+    assert response.status_code == 401
+    assert response.get_json()["error"]["code"] == "UNAUTHENTICATED"

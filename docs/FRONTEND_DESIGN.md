@@ -362,3 +362,10 @@ Organization/Project/Lab loading and request failures are explicit. The context 
 The shared token file defines typography, spacing, control heights, semantic surfaces, focus treatment, radius, elevation, motion and layer scales. Light/dark semantic colors remain owned by the existing theme variables in `styles.css`. Global navigation is a labelled navigation landmark, the active route uses `aria-current`, the skip link targets main content, selectors retain accessible labels and loading state, and reduced-motion preferences disable non-essential transitions and scrolling animation. No remote font or UI runtime dependency is introduced.
 
 **Acceptance boundary:** automated tests verify context restoration, parent-scope resets, retry after API failure, the primary navigation landmark, accessible context controls and active route state. Hosted CI verifies frontend build and regression. Interactive desktop review across viewport sizes and assistive technologies remains a separate human acceptance check.
+
+
+## 23. P02 — Project/Lab operational overview
+
+The Network operations section consumes `GET /api/v1/dashboard/operations-overview` for the active Project and optional Lab. It surfaces Project/Lab scope, device status, topology profiles/revisions/apply records, saved provider bindings, pipeline definition/execution state, and Run lifecycle/business outcomes. Each persisted data section exposes its source update timestamp; the overall query observation time is shown separately.
+
+Subsystems remain permission-aware: restricted values are not rendered as zero, and the API marks them `RESTRICTED`. Provider binding status is not connection health; the interface keeps health `UNKNOWN` until an authenticated provider probe returns real evidence. Network performance stays `UNAVAILABLE` without an actual scoped measurement. Refreshing the overview is read-only and does not start or modify lab/provider operations.

@@ -249,13 +249,18 @@ class DashboardQueryService:
                 else:
                     binding_status = "NOT_APPLICABLE"
                     binding_updated = None
+                provider_source_updated = max(
+                    (value for value in (item["updated_at"], binding_updated) if value),
+                    default=None,
+                )
                 provider_items.append({
                     "lab_id": item["lab_id"],
                     "provider_id": provider_id,
                     "binding_status": binding_status,
                     "connection_health": "UNKNOWN",
                     "last_health_check_at": None,
-                    "source_updated_at": binding_updated,
+                    "source": ["labs", "gns3_lab_bindings"] if provider_id.lower() == "gns3" else ["labs"],
+                    "source_updated_at": provider_source_updated,
                 })
 
         provider_summary = {
@@ -265,6 +270,10 @@ class DashboardQueryService:
             "health": "UNKNOWN",
             "source": ["labs", "gns3_lab_bindings"],
             "observed_at": observed_at,
+            "source_updated_at": max(
+                (item["source_updated_at"] for item in provider_items if item["source_updated_at"]),
+                default=None,
+            ),
         } if include_topology else {
             "access": "RESTRICTED",
             "items": [],
@@ -272,6 +281,7 @@ class DashboardQueryService:
             "health": "UNKNOWN",
             "source": None,
             "observed_at": None,
+            "source_updated_at": None,
         }
 
         return {
@@ -289,13 +299,14 @@ class DashboardQueryService:
                 "lab_id": lab_id,
             },
             "labs": {
-                "total": int(all_lab_count) if not lab_id else len(labs),
+                "total": int(all_lab_count),
                 "in_scope": len(labs),
                 "by_status": lab_status_counts,
                 "items": [{
                     "lab_id": item["lab_id"], "name": item["name"],
-                    "provider_id": item["provider_id"], "status": item["status"],
-                    "topology_version": item["topology_version"],
+                    "provider_id": item["provider_id"] if include_topology else None,
+                    "status": item["status"],
+                    "topology_version": item["topology_version"] if include_topology else None,
                     "source_updated_at": item["updated_at"],
                 } for item in labs],
                 "source": "labs",
