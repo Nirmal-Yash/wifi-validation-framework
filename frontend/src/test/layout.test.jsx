@@ -1,5 +1,6 @@
 import React from "react";
 import {cleanup,fireEvent,render,screen,waitFor} from "@testing-library/react";
+import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
 import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import {api} from "@/api";
 import AppShell from "@/components/layout";
@@ -12,7 +13,10 @@ vi.mock("@/api",()=>({api:{
 }}));
 
 describe("shared application shell",()=>{
+ let queryClient;
+ const renderShell=element=>render(<QueryClientProvider client={queryClient}>{element}</QueryClientProvider>);
  beforeEach(()=>{
+  queryClient=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   vi.clearAllMocks();
   globalThis.sessionStorage.clear();
   api.workspaceOrganizations.mockResolvedValue({items:[{organization_id:"org-a",name:"Organization A"}]});
@@ -20,10 +24,10 @@ describe("shared application shell",()=>{
   api.workspaceLabs.mockResolvedValue({items:[{lab_id:"lab-a",name:"Lab A",provider_id:"gns3"}]});
   api.topologyProviderBinding.mockResolvedValue({binding:{binding_id:"binding-a",lab_id:"lab-a",status:"ACTIVE"}});
  });
- afterEach(()=>cleanup());
+ afterEach(()=>{cleanup();queryClient?.clear();});
 
  it("exposes labelled navigation, active route and current workspace selectors",async()=>{
-  render(<AppShell user={{username:"owner",role:"OWNER",permissions:["workspace.read"]}} routeName="dashboard" onLogout={vi.fn()}>
+  renderShell(<AppShell user={{username:"owner",role:"OWNER",permissions:["workspace.read"]}} routeName="dashboard" onLogout={vi.fn()}>
    <h2>Page content</h2>
   </AppShell>);
   expect(screen.getByRole("navigation",{name:"Primary navigation"})).toBeTruthy();
@@ -46,7 +50,7 @@ describe("shared application shell",()=>{
    {project_id:"project-"+organization_id,name:"Project "+organization_id}
   ]}));
   api.workspaceLabs.mockImplementation(async projectId=>({items:[{lab_id:"lab-"+projectId,name:"Lab "+projectId}]}));
-  render(<AppShell user={{username:"owner",role:"OWNER",permissions:["workspace.read"]}} routeName="dashboard" onLogout={vi.fn()}>
+  renderShell(<AppShell user={{username:"owner",role:"OWNER",permissions:["workspace.read"]}} routeName="dashboard" onLogout={vi.fn()}>
    <h2>Page content</h2>
   </AppShell>);
   expect(await screen.findByRole("option",{name:"Lab project-org-a"})).toBeTruthy();
@@ -58,7 +62,7 @@ describe("shared application shell",()=>{
 });
 
  it("searches only visible modules and active workspace entries",async()=>{
-  render(<AppShell user={{username:"viewer",role:"VIEWER",permissions:["workspace.read","topology.read"]}} routeName="dashboard" onLogout={vi.fn()}>
+  renderShell(<AppShell user={{username:"viewer",role:"VIEWER",permissions:["workspace.read","topology.read"]}} routeName="dashboard" onLogout={vi.fn()}>
    <h2>Page content</h2>
   </AppShell>);
   fireEvent.click(screen.getByRole("button",{name:"Search pages and workspace"}));
@@ -73,7 +77,7 @@ describe("shared application shell",()=>{
  });
 
  it("opens global search with Ctrl or Cmd+K and closes with Escape",async()=>{
-  render(<AppShell user={{username:"owner",role:"OWNER",permissions:["workspace.read"]}} routeName="dashboard" onLogout={vi.fn()}>
+  renderShell(<AppShell user={{username:"owner",role:"OWNER",permissions:["workspace.read"]}} routeName="dashboard" onLogout={vi.fn()}>
    <h2>Page content</h2>
   </AppShell>);
   fireEvent.keyDown(window,{key:"k",ctrlKey:true});
@@ -84,7 +88,7 @@ describe("shared application shell",()=>{
 
  it("does not claim a provider is connected when only binding metadata exists",async()=>{
   api.topologyProviderBinding.mockResolvedValue({binding:{binding_id:"binding-a",lab_id:"lab-a",status:"ACTIVE"}});
-  render(<AppShell user={{username:"viewer",role:"VIEWER",permissions:["workspace.read","topology.read"]}} routeName="dashboard" onLogout={vi.fn()}>
+  renderShell(<AppShell user={{username:"viewer",role:"VIEWER",permissions:["workspace.read","topology.read"]}} routeName="dashboard" onLogout={vi.fn()}>
    <h2>Page content</h2>
   </AppShell>);
   expect(await screen.findByRole("status",{name:"GNS3 · bound · health unknown"})).toBeTruthy();
