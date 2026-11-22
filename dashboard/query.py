@@ -58,6 +58,253 @@ class DashboardQueryService:
     def _iso(value: Any) -> str | None:
         return value.isoformat() if value is not None else None
 
+
+    def operations_overview(
+        self, project_id: str, *, lab_id: str | None = None,
+        include_devices: bool = True, include_topology: bool = True,
+        include_pipelines: bool = True,
+    ) -> dict[str, Any]:
+        """Aggregate persisted Project/Lab operations data without mutating state.
+
+        Every section identifies its source and request observation time. Provider
+        binding is configuration metadata only; this method never claims that a
+        controller is reachable or healthy.
+        """
+        project_id = str(project_id or "").strip()
+        lab_id = str(lab_id or "").strip() or None
+        if not project_id:
+            raise DashboardQueryError("project_id is required")
+
+        from datetime import datetime, timezone
+
+        observed_at = datetime.now(timezone.utc).isoformat()
+        with self.database.read_only_connection() as connection:
+            project = connection.execute(
+                "SELECT project_id,organization_id,name,status,updated_at FROM projects WHERE project_id=?",
+                (project_id,),
+            ).fetchone()
+            if project is None:
+                raise DashboardQueryError("Project not found")
+
+            lab_sql = (
+                "SELECT lab_id,name,provider_id,status,topology_version,created_at,updated_at "
+                "FROM labs WHERE project_id=?"
+            )
+            lab_params: list[object] = [project_id]
+            if lab_id:
+                lab_sql += " AND lab_id=?"
+                lab_params.append(lab_id)
+            lab_sql += " ORDER BY name COLLATE NOCASE,lab_id"
+            labs = connection.execute(lab_sql, lab_params).fetchall()
+            if lab_id and not labs:
+                raise DashboardQueryError("Lab not found in this Project")
+
+            lab_status_counts: dict[str, int] = {}
+            for item in labs:
+                status = str(item["status"])
+                lab_status_counts[status] = lab_status_counts.get(status, 0) + 1
+            all_lab_count = connection.execute(
+                "SELECT COUNT(*) FROM labs WHERE project_id=?", (project_id,)
+            ).fetchone()[0]
+            latest_lab_update = max((item["updated_at"] for item in labs if item["updated_at"]), default=None)
+
+            scope_sql = " AND lab_id=?" if lab_id else ""
+            scope_params: list[object] = [project_id] + ([lab_id] if lab_id else [])
+
+            if include_devices:
+                device_rows = connection.execute(
+                    "SELECT status,COUNT(*) AS total,MAX(updated_at) AS last_updated_at "
+                    "FROM devices WHERE project_id=?" + scope_sql + " GROUP BY status",
+                    scope_params,
+                ).fetchall()
+                device_counts = {str(row["status"]): int(row["total"]) for row in device_rows}
+                device_last_update = max((row["last_updated_at"] for row in device_rows if row["last_updated_at"]), default=None)
+                devices = {
+                    "access": "AVAILABLE",
+                    "total": sum(device_counts.values()),
+                    "active": device_counts.get("ACTIVE", 0),
+                    "archived": device_counts.get("ARCHIVED", 0),
+                    "by_status": device_counts,
+                    "source": "devices",
+                    "observed_at": observed_at,
+                    "source_updated_at": device_last_update,
+                }
+            else:
+                devices = {"access": "RESTRICTED", "total": None, "source": None, "observed_at": None}
+
+            if include_topology:
+                profile_filter = " AND (lab_id=? OR lab_id IS NULL)" if lab_id else ""
+                profile_params: list[object] = [project_id] + ([lab_id] if lab_id else [])
+                profile_rows = connection.execute(
+                    "SELECT status,COUNT(*) AS total,MAX(updated_at) AS last_updated_at "
+                    "FROM topology_profiles WHERE project_id=?" + profile_filter + " GROUP BY status",
+                    profile_params,
+                ).fetchall()
+                profile_counts = {str(row["status"]): int(row["total"]) for row in profile_rows}
+                profile_last_update = max((row["last_updated_at"] for row in profile_rows if row["last_updated_at"]), default=None)
+                revision_rows = connection.execute(
+                    "SELECT r.status,COUNT(*) AS total,MAX(COALESCE(r.published_at,r.created_at)) AS last_updated_at "
+                    "FROM topology_revisions r JOIN topology_profiles p ON p.profile_id=r.profile_id "
+                    "WHERE p.project_id=?" + profile_filter.replace("lab_id", "p.lab_id") + " GROUP BY r.status",
+                    profile_params,
+                ).fetchall()
+                revision_counts = {str(row["status"]): int(row["total"]) for row in revision_rows}
+                apply_rows = connection.execute(
+                    "SELECT status,COUNT(*) AS total,MAX(COALESCE(completed_at,started_at,created_at)) AS last_updated_at "
+                    "FROM topology_apply_records WHERE project_id=?" + scope_sql + " GROUP BY status",
+                    scope_params,
+                ).fetchall()
+                apply_counts = {str(row["status"]): int(row["total"]) for row in apply_rows}
+                topology_last_update = max(
+                    [value for value in (profile_last_update, *(row["last_updated_at"] for row in revision_rows), *(row["last_updated_at"] for row in apply_rows)) if value],
+                    default=None,
+                )
+                topology = {
+                    "access": "AVAILABLE",
+                    "profiles": sum(profile_counts.values()),
+                    "profiles_by_status": profile_counts,
+                    "revisions": sum(revision_counts.values()),
+                    "revisions_by_status": revision_counts,
+                    "apply_records": sum(apply_counts.values()),
+                    "apply_by_status": apply_counts,
+                    "source": ["topology_profiles", "topology_revisions", "topology_apply_records"],
+                    "observed_at": observed_at,
+                    "source_updated_at": topology_last_update,
+                }
+            else:
+                topology = {"access": "RESTRICTED", "profiles": None, "revisions": None, "apply_records": None, "source": None, "observed_at": None}
+
+            if include_pipelines:
+                pipeline_rows = connection.execute(
+                    "SELECT status,COUNT(*) AS total,MAX(updated_at) AS last_updated_at "
+                    "FROM pipeline_definitions WHERE project_id=?" + scope_sql + " GROUP BY status",
+                    scope_params,
+                ).fetchall()
+                pipeline_counts = {str(row["status"]): int(row["total"]) for row in pipeline_rows}
+                execution_rows = connection.execute(
+                    "SELECT status,COUNT(*) AS total,MAX(COALESCE(completed_at,started_at,created_at)) AS last_activity_at "
+                    "FROM pipeline_executions WHERE project_id=?" + scope_sql + " GROUP BY status",
+                    scope_params,
+                ).fetchall()
+                execution_counts = {str(row["status"]): int(row["total"]) for row in execution_rows}
+                pipeline_last_update = max(
+                    [value for value in ( *(row["last_updated_at"] for row in pipeline_rows), *(row["last_activity_at"] for row in execution_rows)) if value],
+                    default=None,
+                )
+                pipelines = {
+                    "access": "AVAILABLE",
+                    "total": sum(pipeline_counts.values()),
+                    "active": pipeline_counts.get("ACTIVE", 0),
+                    "by_status": pipeline_counts,
+                    "executions": sum(execution_counts.values()),
+                    "executions_by_status": execution_counts,
+                    "queued": execution_counts.get("QUEUED", 0),
+                    "running": execution_counts.get("RUNNING", 0) + execution_counts.get("CANCELLING", 0),
+                    "recovery_required": execution_counts.get("RECOVERY_REQUIRED", 0),
+                    "source": ["pipeline_definitions", "pipeline_executions"],
+                    "observed_at": observed_at,
+                    "source_updated_at": pipeline_last_update,
+                }
+            else:
+                pipelines = {"access": "RESTRICTED", "total": None, "executions": None, "source": None, "observed_at": None}
+
+            run_rows = connection.execute(
+                "SELECT lifecycle,outcome,COUNT(*) AS total,"
+                "MAX(COALESCE(completed_at,started_at,created_at)) AS last_activity_at "
+                "FROM runs WHERE project_id=?" + scope_sql + " GROUP BY lifecycle,outcome",
+                scope_params,
+            ).fetchall()
+            lifecycle_counts: dict[str, int] = {}
+            outcome_counts: dict[str, int] = {}
+            latest_run_activity = None
+            for row in run_rows:
+                lifecycle = str(row["lifecycle"])
+                outcome = str(row["outcome"] or "PENDING")
+                count = int(row["total"])
+                lifecycle_counts[lifecycle] = lifecycle_counts.get(lifecycle, 0) + count
+                outcome_counts[outcome] = outcome_counts.get(outcome, 0) + count
+                timestamp = row["last_activity_at"]
+                if timestamp and (latest_run_activity is None or timestamp > latest_run_activity):
+                    latest_run_activity = timestamp
+            runs = {
+                "total": sum(lifecycle_counts.values()),
+                "by_lifecycle": lifecycle_counts,
+                "by_outcome": outcome_counts,
+                "active": sum(lifecycle_counts.get(value, 0) for value in ("CREATED", "QUEUED", "RUNNING", "CANCELLING")),
+                "source": "runs",
+                "observed_at": observed_at,
+                "source_updated_at": latest_run_activity,
+            }
+
+            provider_items = []
+            for item in labs:
+                provider_id = str(item["provider_id"] or "")
+                if provider_id.lower() == "gns3":
+                    binding = connection.execute(
+                        "SELECT status,updated_at FROM gns3_lab_bindings WHERE project_id=? AND lab_id=?",
+                        (project_id, item["lab_id"]),
+                    ).fetchone()
+                    binding_status = "CONFIGURED" if binding and binding["status"] == "ACTIVE" else "NOT_CONFIGURED"
+                    binding_updated = binding["updated_at"] if binding else None
+                else:
+                    binding_status = "NOT_APPLICABLE"
+                    binding_updated = None
+                provider_items.append({
+                    "lab_id": item["lab_id"],
+                    "provider_id": provider_id,
+                    "binding_status": binding_status,
+                    "connection_health": "UNKNOWN",
+                    "last_health_check_at": None,
+                    "source_updated_at": binding_updated,
+                })
+
+        return {
+            "observed_at": observed_at,
+            "scope": {
+                "project": {
+                    "project_id": project["project_id"],
+                    "organization_id": project["organization_id"],
+                    "name": project["name"],
+                    "status": project["status"],
+                    "source": "projects",
+                    "observed_at": observed_at,
+                    "source_updated_at": project["updated_at"],
+                },
+                "lab_id": lab_id,
+            },
+            "labs": {
+                "total": int(all_lab_count) if not lab_id else len(labs),
+                "in_scope": len(labs),
+                "by_status": lab_status_counts,
+                "items": [{
+                    "lab_id": item["lab_id"], "name": item["name"],
+                    "provider_id": item["provider_id"], "status": item["status"],
+                    "topology_version": item["topology_version"],
+                    "source_updated_at": item["updated_at"],
+                } for item in labs],
+                "source": "labs",
+                "observed_at": observed_at,
+                "source_updated_at": latest_lab_update,
+            },
+            "devices": devices,
+            "topology": topology,
+            "providers": {
+                "items": provider_items,
+                "configured": sum(1 for item in provider_items if item["binding_status"] == "CONFIGURED"),
+                "health": "UNKNOWN",
+                "source": ["labs", "gns3_lab_bindings"],
+                "observed_at": observed_at,
+            },
+            "pipelines": pipelines,
+            "runs": runs,
+            "performance": {
+                "status": "UNAVAILABLE",
+                "reason": "No current Project/Lab-scoped network performance observation is available from the operations query.",
+                "source": None,
+                "observed_at": None,
+            },
+        }
+
     def runs(self, *, firmware=None, lab=None, profile=None, status=None,
              outcome=None, page=1, limit=50, project_ids=None) -> dict[str, Any]:
         runs = self.run_repository.list()

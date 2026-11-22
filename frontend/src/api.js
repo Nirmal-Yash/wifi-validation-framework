@@ -170,6 +170,7 @@ export const api={
  login:(username,password)=>request("/auth/login",{method:"POST",body:JSON.stringify({username,password})}),
  logout:()=>request("/auth/logout",{method:"POST"}),me:()=>request("/auth/me"),
  activity:()=>request("/auth/activity",{method:"POST",body:"{}"}),
+ operationsOverview:(projectId,labId)=>request("/dashboard/operations-overview"+query({project_id:projectId,lab_id:labId})),
  runs:(params={},options={})=>request("/runs"+query(params),options),run:(id,options={})=>request("/runs/"+encode(id),options),
  tests:(id,options={})=>request("/runs/"+encode(id)+"/tests",options),test:(runId,testId,options={})=>request("/runs/"+encode(runId)+"/tests/"+encode(testId),options),
  runMetrics:(id,options={})=>request("/runs/"+encode(id)+"/metrics",options),metricsHistory:(id,options={})=>request("/tests/"+encode(id)+"/metrics",options),

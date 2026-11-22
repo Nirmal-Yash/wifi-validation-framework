@@ -179,3 +179,17 @@
   .workspace-context-controls label > span { font-size: 7px; }
   .workspace-context-controls select { min-height: 30px; padding-inline: 6px; font-size: 9px; }
 }
+
+
+/* P02 — information-dense operations summary with clear source/unknown states. */
+.operations-summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.operations-detail-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:14px; }
+.operations-detail-panel { min-width:0; padding:15px; border:1px solid var(--border); border-radius:11px; background:var(--card); }
+.operations-detail-panel h3 { margin:0 0 12px; font-size:12px; font-weight:750; }
+.operations-detail-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:33px; padding:6px 0; border-bottom:1px solid var(--border); font-size:11px; }
+.operations-detail-row:last-of-type { border-bottom:0; }
+.operations-detail-row>span:first-child { display:grid; gap:3px; min-width:0; }
+.operations-detail-row strong { overflow-wrap:anywhere; font-weight:650; }
+.operations-detail-row small { color:var(--muted-foreground); font-size:9px; }
+@media(max-width:1000px) { .operations-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:640px) { .operations-summary-grid,.operations-detail-grid { grid-template-columns:1fr; } .operations-detail-panel { padding:12px; } }

@@ -276,6 +276,29 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
 
     @api.get("/health")
     def health():return ok({"status":"ok"})
+
+    @api.get("/dashboard/operations-overview")
+    def dashboard_operations_overview():
+        project_id=str(request.args.get("project_id","")).strip()
+        lab_id=str(request.args.get("lab_id","")).strip() or None
+        if not project_id:
+            return error("INVALID_REQUEST","project_id query parameter is required",400)
+        denied=require("view",project_id=project_id)
+        if denied is not None:
+            return denied
+
+        # Each subdomain is independently redacted when its read permission is absent.
+        # The general Project view permission does not grant access to every subsystem.
+        include_devices=require_permission("devices.read",project_id=project_id) is None
+        include_topology=require_permission("topology.read",project_id=project_id) is None
+        include_pipelines=require_permission("pipelines.read",project_id=project_id) is None
+        return guarded(lambda:ok(query.operations_overview(
+            project_id,lab_id=lab_id,
+            include_devices=include_devices,
+            include_topology=include_topology,
+            include_pipelines=include_pipelines,
+        )))
+
     @api.get("/readiness")
     def readiness():
         denied = require("view")
