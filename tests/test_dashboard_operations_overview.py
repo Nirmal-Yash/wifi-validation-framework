@@ -105,6 +105,40 @@ def test_operations_overview_aggregates_real_project_lab_records(tmp_path):
     assert data["devices"]["source_updated_at"] is not None
 
 
+
+def test_operations_overview_counts_actual_active_run_lifecycle_states(tmp_path):
+    database_path = tmp_path / "overview-run-states.sqlite"
+    database = SQLiteDatabase(database_path)
+    database.initialize()
+    _seed_workspace(database)
+    now = datetime.now(timezone.utc).isoformat()
+    active_states = ("QUEUED", "PREPARING", "LAB_HEALTH_CHECK", "RUNNING")
+    terminal_states = ("COMPLETED", "FAILED")
+    with database.transaction(immediate=True) as connection:
+        for index, lifecycle in enumerate(active_states + terminal_states):
+            connection.execute(
+                """INSERT INTO runs(
+                   run_id,display_id,firmware_version,lab_id,validation_profile,
+                   selected_tests_json,test_definition_versions_json,resolved_config_json,
+                   configuration_hash,repository_commit,lifecycle,outcome,created_at,
+                   provenance,project_id
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (f"run-{index}", f"RUN-{index}", "1.0", "lab-a", "smoke",
+                 "{}", "{}", "{}", "c" * 64, "test-commit", lifecycle, None,
+                 now, "NATIVE", "project-a"),
+            )
+
+    from dashboard.query import DashboardQueryService
+    result = DashboardQueryService(database).operations_overview("project-a", lab_id="lab-a")
+
+    assert result["runs"]["total"] == 6
+    assert result["runs"]["active"] == 4
+    assert result["runs"]["by_lifecycle"] == {
+        "QUEUED": 1, "PREPARING": 1, "LAB_HEALTH_CHECK": 1,
+        "RUNNING": 1, "COMPLETED": 1, "FAILED": 1,
+    }
+
+
 def test_operations_overview_rejects_lab_outside_project_scope(tmp_path):
     database_path = tmp_path / "overview-scope.sqlite"
     database = SQLiteDatabase(database_path)

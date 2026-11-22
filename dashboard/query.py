@@ -230,7 +230,7 @@ class DashboardQueryService:
                 "total": sum(lifecycle_counts.values()),
                 "by_lifecycle": lifecycle_counts,
                 "by_outcome": outcome_counts,
-                "active": sum(lifecycle_counts.get(value, 0) for value in ("CREATED", "QUEUED", "RUNNING", "CANCELLING")),
+                "active": sum(lifecycle_counts.get(value, 0) for value in ("QUEUED", "PREPARING", "LAB_HEALTH_CHECK", "RUNNING")),
                 "source": "runs",
                 "observed_at": observed_at,
                 "source_updated_at": latest_run_activity,
