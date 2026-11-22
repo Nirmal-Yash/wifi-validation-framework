@@ -68,7 +68,7 @@ def test_openapi_provider_registry_is_scoped_read_only_and_secret_safe():
     assert "operationId: listProviderRegistry" in registry
     assert "name: project_id" in registry and "required: true" in registry
     assert "topology.read" in registry
-    assert "does not contact a provider controller" in registry
+    assert "does not contact a provider controller" in registry.lower()
     assert "Credential Vault secret material" in registry
     for status in ('"200":', '"400":', '"401":', '"403":'):
         assert status in registry

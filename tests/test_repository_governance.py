@@ -67,7 +67,6 @@ def test_read_only_connection_rejects_schema_mutations(tmp_path):
 def test_sync_status_reports_queue_states_without_remote_transport(tmp_path, monkeypatch, capsys):
     database = _database_with_run(tmp_path / "sync-status.sqlite")
     queue = SQLiteSyncQueueRepository(database)
-    now = datetime.now(timezone.utc)
 
     queued = queue.enqueue(_envelope(1))
     in_flight = queue.enqueue(_envelope(2))
@@ -75,6 +74,9 @@ def test_sync_status_reports_queue_states_without_remote_transport(tmp_path, mon
     failed = queue.enqueue(_envelope(4))
     blocked = queue.enqueue(_envelope(5))
 
+    # The claim clock must be after every envelope's created_at/next_attempt_at.
+    # Capture it after enqueue rather than racing the first row by a few microseconds.
+    now = datetime.now(timezone.utc) + timedelta(seconds=1)
     lease = queue.claim(in_flight.envelope.envelope_id, now, now + timedelta(minutes=2))
     assert lease is not None
 
