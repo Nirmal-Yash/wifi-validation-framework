@@ -1,6 +1,6 @@
 import React from "react";
 import {QueryClient,QueryClientProvider} from "@tanstack/react-query";
-import {cleanup,fireEvent,render,screen} from "@testing-library/react";
+import {cleanup,fireEvent,render,screen,waitFor} from "@testing-library/react";
 import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import {api} from "@/api";
 import DashboardPage from "@/pages/dashboard";
@@ -64,6 +64,7 @@ describe("Project/Lab operations overview",()=>{
  it("renders persisted Project/Lab metrics, freshness, outcomes and honest unknown states",async()=>{
   renderDashboard(queryClient);
   expect(await screen.findByText("Project Alpha")).toBeTruthy();
+  await waitFor(()=>expect(api.operationsOverview).toHaveBeenCalledWith("project-a","lab-a"));
   expect(screen.getByText("Project and Lab scope")).toBeTruthy();
   expect(screen.getByText("Device inventory")).toBeTruthy();
   expect(screen.getByText("Topology inventory")).toBeTruthy();
@@ -77,13 +78,18 @@ describe("Project/Lab operations overview",()=>{
  });
 
  it("shows an API error and retries the read-only overview",async()=>{
-  api.operationsOverview
-   .mockRejectedValueOnce(new Error("operations endpoint temporarily unavailable"))
-   .mockResolvedValueOnce(overviewData());
+  let labRequestFailurePending=true;
+  api.operationsOverview.mockImplementation(async(_projectId,labId)=>{
+   if(labId==="lab-a"&&labRequestFailurePending){
+    labRequestFailurePending=false;
+    throw new Error("operations endpoint temporarily unavailable");
+   }
+   return overviewData();
+  });
   renderDashboard(queryClient);
   expect(await screen.findByText("operations endpoint temporarily unavailable")).toBeTruthy();
   fireEvent.click(screen.getByRole("button",{name:/try again/i}));
   expect(await screen.findByText("Project and Lab scope")).toBeTruthy();
-  expect(api.operationsOverview).toHaveBeenCalledTimes(2);
+  await waitFor(()=>expect(api.operationsOverview.mock.calls.filter(([,labId])=>labId==="lab-a")).toHaveLength(2));
  });
 });
