@@ -5,6 +5,38 @@ import {useAsyncLoader,useMutation} from "@/hooks";
 import {canPerform} from "@/permissions";
 import {Button,DataTable,EmptyState,ErrorState,Field,InlineNotice,LoadingState,Section,StatusBadge} from "@/components/ui";
 
+export const DEFAULT_TOPOLOGY_VIEWPORT=Object.freeze({x:0,y:0,width:1000,height:620});
+const VIEWPORT_RATIO=0.62;
+const clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
+
+export function zoomTopologyViewport(viewport,factor,anchorX=0.5,anchorY=0.5){
+ const width=clamp(viewport.width*factor,250,2500);
+ const height=width*VIEWPORT_RATIO;
+ const worldX=viewport.x+viewport.width*clamp(anchorX,0,1);
+ const worldY=viewport.y+viewport.height*clamp(anchorY,0,1);
+ return {
+  x:clamp(worldX-width*clamp(anchorX,0,1),0,Math.max(0,10000-width)),
+  y:clamp(worldY-height*clamp(anchorY,0,1),0,Math.max(0,10000-height)),
+  width,height,
+ };
+}
+
+export function fitTopologyViewport(nodes){
+ if(!Array.isArray(nodes)||!nodes.length)return {...DEFAULT_TOPOLOGY_VIEWPORT};
+ const xs=nodes.map(node=>Number(node.x)||0);
+ const ys=nodes.map(node=>Number(node.y)||0);
+ const minX=Math.min(...xs),maxX=Math.max(...xs);
+ const minY=Math.min(...ys),maxY=Math.max(...ys);
+ const width=clamp(Math.max(420,maxX-minX+260,(maxY-minY+260)/VIEWPORT_RATIO),250,2500);
+ const height=width*VIEWPORT_RATIO;
+ const centerX=(minX+maxX)/2,centerY=(minY+maxY)/2;
+ return {
+  x:clamp(centerX-width/2,0,Math.max(0,10000-width)),
+  y:clamp(centerY-height/2,0,Math.max(0,10000-height)),
+  width,height,
+ };
+}
+
 const NODE_TYPES=["ROUTER","SWITCH","ACCESS_POINT","CLIENT","MONITOR","CLOUD","OTHER"];
 const emptyDefinition=()=>({nodes:[],links:[]});
 const localId=prefix=>prefix+"-"+(globalThis.crypto?.randomUUID?globalThis.crypto.randomUUID().slice(0,12):Math.random().toString(36).slice(2,14));
@@ -22,6 +54,9 @@ export default function TopologyStudioPage({user}){
  const [definition,setDefinition]=useState(emptyDefinition);
  const [selectedNode,setSelectedNode]=useState("");
  const [dragging,setDragging]=useState("");
+ const [viewport,setViewport]=useState({...DEFAULT_TOPOLOGY_VIEWPORT});
+ const [panning,setPanning]=useState(null);
+ const [nodeSearch,setNodeSearch]=useState("");
  const [notice,setNotice]=useState("");
  const [error,setError]=useState("");
  const [showProfileForm,setShowProfileForm]=useState(false);
@@ -175,11 +210,41 @@ export default function TopologyStudioPage({user}){
  function canvasPoint(event){
   const rect=event.currentTarget.getBoundingClientRect();
   return {
-   x:Math.max(0,Math.min(1000,(event.clientX-rect.left)*1000/rect.width)),
-   y:Math.max(0,Math.min(620,(event.clientY-rect.top)*620/rect.height))
+   x:Math.max(0,Math.min(10000,viewport.x+(event.clientX-rect.left)*viewport.width/rect.width)),
+   y:Math.max(0,Math.min(10000,viewport.y+(event.clientY-rect.top)*viewport.height/rect.height))
   };
  }
+ function startCanvasPan(event){
+  const target=event.target;
+  const isBackground=target===event.currentTarget||target?.dataset?.canvasBackground==="true";
+  if(!isBackground||event.button!==0)return;
+  event.preventDefault();
+  setPanning({clientX:event.clientX,clientY:event.clientY,viewport});
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+ }
+ function zoomCanvas(factor,anchorX=0.5,anchorY=0.5){
+  setViewport(value=>zoomTopologyViewport(value,factor,anchorX,anchorY));
+ }
+ function zoomCanvasAtPointer(event){
+  event.preventDefault();
+  const rect=event.currentTarget.getBoundingClientRect();
+  const anchorX=(event.clientX-rect.left)/rect.width;
+  const anchorY=(event.clientY-rect.top)/rect.height;
+  zoomCanvas(event.deltaY<0?0.9:1.1,anchorX,anchorY);
+ }
+ function fitCanvas(){setViewport(fitTopologyViewport(nodes));}
  function onCanvasPointerMove(event){
+  if(panning){
+   const rect=event.currentTarget.getBoundingClientRect();
+   const dx=(event.clientX-panning.clientX)*panning.viewport.width/rect.width;
+   const dy=(event.clientY-panning.clientY)*panning.viewport.height/rect.height;
+   setViewport({
+    ...panning.viewport,
+    x:Math.max(0,Math.min(10000-panning.viewport.width,panning.viewport.x-dx)),
+    y:Math.max(0,Math.min(10000-panning.viewport.height,panning.viewport.y-dy))
+   });
+   return;
+  }
   if(!dragging)return;
   const point=canvasPoint(event);
   updateNode(dragging,{x:Math.round(point.x),y:Math.round(point.y)});
@@ -345,12 +410,21 @@ export default function TopologyStudioPage({user}){
      <div className="form-actions"><Button type="submit" disabled={!canManage||mutation.loading}>Add node</Button></div>
     </form>
    </Section>
-   <Section title="Visual canvas" subtitle="Drag nodes to position them. The canvas is local-only and does not issue GNS3 calls.">
-    <div style={{width:"100%",overflowX:"auto",border:"1px solid var(--border)",borderRadius:12,background:"var(--card)"}}>
-     <svg viewBox="0 0 1000 620" role="img" aria-label="Topology canvas. Select and drag nodes to arrange them." style={{display:"block",width:"100%",minWidth:620,touchAction:"none"}}
-      onPointerMove={onCanvasPointerMove} onPointerUp={()=>setDragging("")} onPointerLeave={()=>setDragging("")}>
+   <Section title="Visual canvas" subtitle="Drag nodes to position them. Pan by dragging empty canvas; zoom with the wheel or controls. Canvas editing does not issue provider calls.">
+    <div className="topology-canvas-toolbar">
+     <label className="topology-node-search"><span>Find node</span><input aria-label="Search topology nodes" value={nodeSearch} onChange={event=>setNodeSearch(event.target.value)} placeholder="Name, ID, type or template"/></label>
+     <span className="topology-search-count" role="status">{nodes.filter(node=>!nodeSearch.trim()||[node.name,node.id,node.node_type,node.template_id].some(value=>String(value||"").toLowerCase().includes(nodeSearch.trim().toLowerCase()))).length} / {nodes.length} nodes</span>
+     <div className="topology-canvas-actions">
+      <Button type="button" variant="outline" size="sm" onClick={()=>zoomCanvas(0.8)} aria-label="Zoom in">Zoom in</Button>
+      <Button type="button" variant="outline" size="sm" onClick={()=>zoomCanvas(1.25)} aria-label="Zoom out">Zoom out</Button>
+      <Button type="button" variant="ghost" size="sm" onClick={fitCanvas}>Fit to nodes</Button>
+     </div>
+    </div>
+    <div style={{width:"100%",overflow:"hidden",border:"1px solid var(--border)",borderRadius:12,background:"var(--card)"}}>
+     <svg viewBox={viewport.x+" "+viewport.y+" "+viewport.width+" "+viewport.height} role="img" aria-label="Topology canvas. Drag nodes to position them and drag empty space to pan." style={{display:"block",width:"100%",minWidth:620,touchAction:"none",cursor:panning?"grabbing":"grab"}}
+      onPointerDown={startCanvasPan} onPointerMove={onCanvasPointerMove} onPointerUp={()=>{setDragging("");setPanning(null);}}>
       <defs><pattern id="topology-grid" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M 25 0 L 0 0 0 25" fill="none" stroke="currentColor" strokeOpacity=".08" strokeWidth="1"/></pattern></defs>
-      <rect x="0" y="0" width="1000" height="620" fill="url(#topology-grid)"/>
+      <rect data-canvas-background="true" x="0" y="0" width="10000" height="10000" fill="url(#topology-grid)"/>
       {links.map(link=>{
        const source=nodeById[link.source_node_id],target=nodeById[link.target_node_id];
        return source&&target?<g key={link.id}>
@@ -358,13 +432,16 @@ export default function TopologyStudioPage({user}){
         <text x={(source.x+target.x)/2} y={(source.y+target.y)/2-8} fill="currentColor" fontSize="12">{link.source_adapter}/{link.source_port} ↔ {link.target_adapter}/{link.target_port}</text>
        </g>:null;
       })}
-      {nodes.map(node=><g key={node.id} transform={"translate("+node.x+" "+node.y+")"}
-       onPointerDown={event=>{event.preventDefault();setSelectedNode(node.id);setDragging(node.id);event.currentTarget.setPointerCapture?.(event.pointerId);}}
-       style={{cursor:"grab"}}>
-       <rect x="-68" y="-34" width="136" height="68" rx="12" fill={selectedNode===node.id?"var(--primary)":"var(--muted)"} stroke="var(--border)" strokeWidth="2"/>
-       <text x="0" y="-4" textAnchor="middle" fill={selectedNode===node.id?"white":"currentColor"} fontSize="14" fontWeight="600">{node.name.slice(0,18)}</text>
-       <text x="0" y="16" textAnchor="middle" fill={selectedNode===node.id?"white":"currentColor"} fontSize="10">{node.node_type} · {node.id.slice(0,12)}</text>
-      </g>)}
+      {nodes.map(node=>{
+       const matches=!nodeSearch.trim()||[node.name,node.id,node.node_type,node.template_id].some(value=>String(value||"").toLowerCase().includes(nodeSearch.trim().toLowerCase()));
+       return <g key={node.id} transform={"translate("+node.x+" "+node.y+")"}
+        onPointerDown={event=>{event.preventDefault();setSelectedNode(node.id);setPanning(null);setDragging(node.id);event.currentTarget.setPointerCapture?.(event.pointerId);}}
+        style={{cursor:"grab"}} opacity={matches?1:0.25}>
+        <rect x="-68" y="-34" width="136" height="68" rx="12" fill={selectedNode===node.id?"var(--primary)":"var(--muted)"} stroke={nodeSearch.trim()&&matches?"var(--warning)":"var(--border)"} strokeWidth={nodeSearch.trim()&&matches?4:2}/>
+        <text x="0" y="-4" textAnchor="middle" fill={selectedNode===node.id?"white":"currentColor"} fontSize="14" fontWeight="600">{node.name.slice(0,18)}</text>
+        <text x="0" y="16" textAnchor="middle" fill={selectedNode===node.id?"white":"currentColor"} fontSize="10">{node.node_type} · {node.id.slice(0,12)}</text>
+       </g>;
+      })}
      </svg>
     </div>
     {!nodes.length?<EmptyState title="Canvas is empty" message="Add the first node using the palette above. This does not create a provider resource."/>:null}
