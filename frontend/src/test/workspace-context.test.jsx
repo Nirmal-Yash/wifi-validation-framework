@@ -12,6 +12,7 @@ function Harness(){
  const workspace=useWorkspace();
  return <div>
   <select aria-label="Active organization" value={workspace.activeOrganizationId} onChange={event=>workspace.selectOrganization(event.target.value)}>
+   <option value="">Select organization</option>
    {workspace.organizations.map(item=><option key={item.organization_id} value={item.organization_id}>{item.name}</option>)}
   </select>
   <select aria-label="Active project" value={workspace.activeProjectId} onChange={event=>workspace.selectProject(event.target.value)}>
@@ -64,6 +65,13 @@ describe("global workspace context",()=>{
   expect(await screen.findByRole("option",{name:"Project A"})).toBeTruthy();
   expect(await screen.findByRole("option",{name:"Lab project-a"})).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
+ });
+ it("persists an intentionally cleared Organization selection",async()=>{
+  render(<WorkspaceProvider user={{username:"owner"}}><Harness/></WorkspaceProvider>);
+  await screen.findByRole("option",{name:"Lab project-a"});
+  fireEvent.change(screen.getByLabelText("Active organization"),{target:{value:""}});
+  await waitFor(()=>expect(screen.getByText("||")).toBeTruthy());
+  await waitFor(()=>expect(JSON.parse(globalThis.sessionStorage.getItem("netregress.workspace.owner")).organizationId).toBe(""));
  });
  it("clears dependent Project and Lab selection when the Organization changes",async()=>{
   render(<WorkspaceProvider user={{username:"owner"}}><Harness/></WorkspaceProvider>);

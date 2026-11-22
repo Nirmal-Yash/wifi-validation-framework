@@ -55,7 +55,7 @@ export function WorkspaceProvider({user,children}){
   if(organizationsLoading)return undefined;
   if(!activeOrganizationId){
    setProjects([]);setLabs([]);setActiveProjectId("");setActiveLabId("");
-   setProjectsLoading(false);setLabsLoading(false);
+   setProjectsLoading(false);setLabsLoading(false);setContextResolved(true);
    return undefined;
   }
   let current=true;
