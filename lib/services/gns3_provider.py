@@ -1,4 +1,4 @@
-"""Bounded, credential-injected client for the local GNS3 Controller API."""
+"""Bounded GNS3 reference adapter implementing the shared ProviderAdapter contract."""
 from __future__ import annotations
 
 import ipaddress
@@ -17,6 +17,7 @@ _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 
 
 class GNS3Provider:
+    provider_id = "gns3"
     MAX_RESPONSE_BYTES = 2 * 1024 * 1024
     TIMEOUT = (3.05, 20.0)
 

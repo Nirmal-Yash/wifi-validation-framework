@@ -81,3 +81,12 @@
 - Runtime dependency installation/bundling and platform packaging implications for Ansible/OpenTofu.
 
 These are research/specification tasks in the corresponding phase. Do not invent endpoint behavior or assume feature support before verification.
+
+
+## EXP-ADR-014 — Common provider adapter contract and explicit capabilities
+
+**Decision:** Provider integrations implement a structural `ProviderAdapter` contract and register through an application-scoped `ProviderRegistry`. Stable capability IDs are declared separately from adapter method names and are checked before discovery or mutation. Provider descriptors report only capabilities an adapter explicitly advertises. Unsupported operations fail closed with a typed capability error.
+
+**Connection records:** Existing provider connection persistence remains authoritative. P04 projects GNS3's existing Project/Lab binding into a typed provider-neutral connection record and exposes the registry through an RBAC-protected read-only API. The record may include an opaque Credential Vault reference but must never expose credential material. Do not add parallel binding storage.
+
+**Compatibility:** GNS3 remains the sole registered reference adapter. Its REST client is constructed through the registry, while existing topology services continue to own locks, apply confirmation, idempotency, history, read-back and recovery. Other adapters must prove their capability set and contract before registration; no CML/EVE-NG support is implied.

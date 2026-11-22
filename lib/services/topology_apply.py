@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from lib.services.gns3_provider import GNS3Provider, GNS3ProviderError
+from lib.providers import ProviderCapabilityError, ProviderConnectionRecord, ProviderRegistry
 from lib.services.resource_lock import ResourceLockError, ResourceLockManager
 
 
@@ -32,10 +33,15 @@ class TopologyApplyConflict(TopologyApplyError):
 
 
 class TopologyApplyService:
-    def __init__(self, database, credential_vault, topology_studio, *, resource_lock_manager=None):
+    def __init__(self, database, credential_vault, topology_studio, *, resource_lock_manager=None, provider_registry=None):
         self.database = database
         self.credential_vault = credential_vault
         self.topology_studio = topology_studio
+        # Resolve the module-level GNS3Provider lazily to preserve existing injection
+        # points while all provider consumers use the common registry.
+        self.provider_registry = provider_registry or ProviderRegistry.with_gns3(
+            factory=lambda *args, **kwargs: GNS3Provider(*args, **kwargs)
+        )
         if resource_lock_manager is None:
             directory = Path(
                 os.getenv("NETREGRESS_LOCK_DIRECTORY")
@@ -82,7 +88,7 @@ class TopologyApplyService:
     def _serialize_binding(row) -> dict | None:
         if row is None:
             return None
-        return {key: row[key] for key in (
+        return {"provider_id": "gns3"} | {key: row[key] for key in (
             "binding_id", "project_id", "lab_id", "endpoint_url", "gns3_project_id",
             "controller_device_id", "credential_id", "status", "created_at", "updated_at",
             "created_by", "updated_by",
@@ -103,6 +109,25 @@ class TopologyApplyService:
                 (project_id,),
             ).fetchall()
         return [self._serialize_binding(row) for row in rows]
+
+    def get_provider_connection(self, lab_id: str, *, include_archived: bool = False) -> dict | None:
+        binding = self.get_binding(lab_id, include_archived=include_archived)
+        return ProviderConnectionRecord.from_gns3_binding(binding).as_dict() if binding else None
+
+    def provider_registry_snapshot(self, project_id: str) -> dict:
+        if not isinstance(project_id, str) or not project_id.strip():
+            raise ValueError("project_id is required")
+        connections = [
+            ProviderConnectionRecord.from_gns3_binding(binding).as_dict()
+            for binding in self.list_bindings(project_id)
+        ]
+        return {"providers": self.provider_registry.list_descriptors(), "connections": connections}
+
+    def _require_provider_capability(self, provider_id: str, capability_id: str) -> None:
+        try:
+            self.provider_registry.require_capability(provider_id, capability_id)
+        except ProviderCapabilityError as exc:
+            raise TopologyApplyConflict(str(exc)) from exc
 
     def bind(
         self, lab_id: str, *, endpoint_url: str, gns3_project_id: str,
@@ -148,7 +173,8 @@ class TopologyApplyService:
         ):
             raise TopologyApplyConflict("an active API_TOKEN credential for the registered controller device is required")
 
-        def verify(provider: GNS3Provider):
+        def verify(provider):
+            self._require_provider_capability("gns3", "projects.read")
             projects = provider.list_projects()
             if not any(item.get("project_id") == gns3_project_id for item in projects):
                 raise TopologyApplyNotFound("selected GNS3 project is not available to this credential")
@@ -158,7 +184,9 @@ class TopologyApplyService:
             self.credential_vault.use_secret(
                 credential_id, project_id=lab["project_id"], device_id=controller_device_id,
                 credential_type="API_TOKEN", actor=actor,
-                consumer=lambda record, secret: verify(GNS3Provider(endpoint, str(record["username"]), secret)),
+                consumer=lambda record, secret: verify(
+                    self.provider_registry.create("gns3", endpoint, str(record["username"]), secret)
+                ),
             )
         except (TopologyApplyNotFound, TopologyApplyConflict):
             raise
@@ -257,8 +285,12 @@ class TopologyApplyService:
         return profile, revision
 
     def _with_provider(self, binding: dict, actor: str, callback):
+        provider_id = str(binding.get("provider_id") or "gns3")
+
         def invoke(record: Mapping[str, object], secret: str):
-            provider = GNS3Provider(binding["endpoint_url"], str(record.get("username") or ""), secret)
+            provider = self.provider_registry.create(
+                provider_id, binding["endpoint_url"], str(record.get("username") or ""), secret,
+            )
             return callback(provider)
         return self.credential_vault.use_secret(
             binding["credential_id"], project_id=binding["project_id"],
@@ -266,7 +298,13 @@ class TopologyApplyService:
             actor=actor, consumer=invoke,
         )
 
-    def _snapshot(self, provider: GNS3Provider, binding: dict) -> dict:
+    def _snapshot(self, provider, binding: dict) -> dict:
+        provider_id = str(binding.get("provider_id") or "gns3")
+        for capability_id in (
+            "controller.version.read", "projects.read", "templates.read",
+            "topology.nodes.read", "topology.links.read",
+        ):
+            self._require_provider_capability(provider_id, capability_id)
         projects = provider.list_projects()
         if not any(item.get("project_id") == binding["gns3_project_id"] for item in projects):
             raise TopologyApplyNotFound("bound GNS3 project is no longer available")
@@ -475,7 +513,13 @@ class TopologyApplyService:
             if isinstance(exc, TopologyApplyError):
                 raise
             raise TopologyApplyError("GNS3 provider discovery failed") from exc
-        return {"binding": binding, "catalog": snapshot}
+        provider_id = str(binding.get("provider_id") or "gns3")
+        return {
+            "binding": binding,
+            "connection": ProviderConnectionRecord.from_gns3_binding(binding).as_dict(),
+            "provider": self.provider_registry.descriptor(provider_id).as_dict(self.provider_registry.capability_registry),
+            "catalog": snapshot,
+        }
 
     def plan(self, profile_id: str, revision_id: str, *, actor: str) -> dict:
         actor = self._actor(actor)
@@ -635,6 +679,11 @@ class TopologyApplyService:
             raise TopologyApplyConflict("published topology hash changed; no provider changes were made", plan=plan)
         if not plan["can_apply"]:
             raise TopologyApplyConflict("dry-run found provider conflicts; no provider changes were made", plan=plan)
+        provider_id = str(binding.get("provider_id") or "gns3")
+        if plan["nodes_to_create"]:
+            self._require_provider_capability(provider_id, "topology.nodes.create")
+        if plan["links_to_create"]:
+            self._require_provider_capability(provider_id, "topology.links.create")
         apply_id = self._insert_apply(profile, revision, actor, plan, before)
         operations = {
             "attempted_nodes": [], "attempted_links": [],
@@ -779,6 +828,11 @@ class TopologyApplyService:
         mapping = mappings.get(("NODE", logical_node_id))
         if mapping is None:
             raise TopologyApplyNotFound("logical node has not been mapped to a provider node")
+        provider_id = str(binding.get("provider_id") or "gns3")
+        self._require_provider_capability(provider_id, "topology.nodes.read")
+        self._require_provider_capability(
+            provider_id, "topology.nodes.start" if action == "START" else "topology.nodes.stop",
+        )
         try:
             lease = self.resource_lock_manager.acquire(
                 "lab:" + profile["lab_id"], "topology-node:" + actor[:80],

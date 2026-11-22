@@ -2554,6 +2554,17 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             return None, error("INVALID_TOPOLOGY_SCOPE", "Provider operations require a Lab-scoped topology profile", 409)
         return profile, None
 
+    @api.get("/providers/registry")
+    def get_provider_registry():
+        project_id = str(request.args.get("project_id", "")).strip()
+        if not project_id:
+            return error("INVALID_REQUEST", "project_id query parameter is required", 400)
+        denied = require_permission("topology.read", project_id=project_id)
+        if denied is not None:
+            return denied
+        # Local/read-only discovery: do not call controllers or resolve Vault secrets.
+        return ok(topology_apply.provider_registry_snapshot(project_id))
+
     @api.get("/labs/<lab_id>/provider-binding")
     def get_topology_provider_binding(lab_id):
         _lab, denied = _provider_lab_scope(lab_id, "topology.read")

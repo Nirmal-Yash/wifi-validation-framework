@@ -78,3 +78,11 @@ This register is intentionally conservative. A source file or mocked contract te
 |---|---|---|---|---|
 | RQ-037 | Canonical, read-only topology draft validation | `POST /api/v1/topologies/validate`, `TopologyStudioService.canonical_payload`, `tests/test_topology_studio.py` | CI_VERIFIED | Exact PR-head backend workflow passed: hash/count response, no revision write, invalid-definition behavior, Project ownership, topology.manage and credential/configuration reference scope checks |
 | RQ-038 | Complete visual authoring interactions | `frontend/src/pages/topologies.jsx`, `frontend/src/topology-editor.js`, `frontend/src/test/topologies.test.jsx`, editor/viewport tests | CI_VERIFIED | Exact PR-head frontend test and production-build job passed: palette categories, click/drag/drop, auto-layout bounds/determinism, inspectors, port linking, console tabs, keyboard/clipboard/history, and viewer restrictions. Interactive desktop/accessibility review remains an operator gate |
+
+
+## Common provider contract — EXP-P04
+
+| ID | Requirement | Verification source | Status | Next verification |
+|---|---|---|---|---|
+| RQ-039 | Common provider adapter contract and capability registry | `lib/providers/contracts.py`, `lib/providers/registry.py`, `tests/test_provider_contract.py` | IN_PROGRESS | Run contract and existing GNS3 apply/reconciliation regression suites on the exact phase commit; only GNS3 is registered in P04 |
+| RQ-045 | Project/Lab-scoped provider connection projection and registry discovery | Existing `gns3_lab_bindings`, `ProviderConnectionRecord`, `GET /api/v1/providers/registry`, OpenAPI contract tests | IN_PROGRESS | Verify Project RBAC, read-only behavior, no Vault secret material and exact-commit hosted CI; live controller reachability remains RQ-042 |

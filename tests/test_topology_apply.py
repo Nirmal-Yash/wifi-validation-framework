@@ -307,6 +307,25 @@ def test_topology_provider_dashboard_routes_are_wired_and_idempotent(apply_stack
     app = create_app(database.path, auth_manager=AuthManager((), required=False))
     client = app.test_client()
 
+    missing_project = client.get("/api/v1/providers/registry")
+    assert missing_project.status_code == 400
+
+    registry_response = client.get("/api/v1/providers/registry?project_id=project-1")
+    assert registry_response.status_code == 200
+    registry_data = registry_response.get_json()["data"]
+    assert [item["provider_id"] for item in registry_data["providers"]] == ["gns3"]
+    assert {item["id"] for item in registry_data["providers"][0]["capabilities"]} >= {
+        "projects.read", "topology.nodes.create", "topology.links.create",
+        "topology.nodes.start", "topology.nodes.stop",
+    }
+    assert len(registry_data["connections"]) == 1
+    connection = registry_data["connections"][0]
+    assert connection["provider_id"] == "gns3"
+    assert connection["credential_reference_id"] == binding["credential_id"]
+    assert connection["lab_id"] == "lab-1"
+    assert "password" not in connection and "secret" not in connection and "token" not in connection
+    assert "transient-provider-secret" not in json.dumps(registry_data)
+
     current_binding = client.get("/api/v1/labs/lab-1/provider-binding")
     assert current_binding.status_code == 200
     assert current_binding.get_json()["data"]["binding"]["binding_id"] == binding["binding_id"]

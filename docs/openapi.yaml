@@ -149,6 +149,26 @@ paths:
         "403": {description: Caller cannot access the selected Project (FORBIDDEN)}
         "404": {description: Project or Lab not found in the selected Project (NOT_FOUND)}
         "500": {description: Unexpected dashboard query failure}
+  /providers/registry:
+    get:
+      operationId: listProviderRegistry
+      summary: List registered provider adapters, capabilities and Project connections
+      description: >-
+        Read-only local registry discovery scoped by project_id and topology.read.
+        Returns registered adapter metadata, declared capabilities and persisted
+        Project/Lab connection references. Does not contact a provider controller,
+        verify live connectivity or resolve/return Credential Vault secret material.
+        Provider operational health remains UNKNOWN until an explicit source observation exists.
+      parameters:
+        - name: project_id
+          in: query
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        "200": {description: Provider descriptors and persisted scoped connection references}
+        "400": {description: Missing project_id (INVALID_REQUEST)}
+        "401": {description: Missing or expired authenticated session}
+        "403": {description: Caller lacks topology.read in the selected Project}
   /health: {get: {security: [], responses: {"200": {description: Healthy}}}}
   /readiness: {get: {responses: {"200": {description: Ready}}}}
   /auth/csrf:

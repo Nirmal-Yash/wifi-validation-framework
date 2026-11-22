@@ -9,7 +9,7 @@ def test_openapi_path_keys_are_unique_and_cover_runtime_routes():
     content = SPEC.read_text(encoding="utf-8")
     paths = re.findall(r"^  (/[^\n:]+):", content, flags=re.MULTILINE)
     assert len(paths) == len(set(paths)), "duplicate OpenAPI path key"
-    assert {"/auth/activity", "/readiness", "/runs/{run_id}/release-gate", "/waivers", "/sync/queue", "/firmware/{device_id}/rollback", "/topologies/validate", "/dashboard/operations-overview"} <= set(paths)
+    assert {"/auth/activity", "/readiness", "/runs/{run_id}/release-gate", "/waivers", "/sync/queue", "/firmware/{device_id}/rollback", "/topologies/validate", "/dashboard/operations-overview", "/providers/registry"} <= set(paths)
 
 
 def test_openapi_auth_cookie_and_runtime_protection_match_flask():
@@ -60,3 +60,15 @@ def test_openapi_documents_structured_visual_topology_intent_and_provider_bounda
     assert '"404": {description: Project, selected profile, credential or configuration profile not found' in topology
     assert '"422": {description: Topology definition, interface or reference state' in topology
 
+
+
+def test_openapi_provider_registry_is_scoped_read_only_and_secret_safe():
+    content = SPEC.read_text(encoding="utf-8")
+    registry = content.split("  /providers/registry:", 1)[1].split("\\n  /health:", 1)[0]
+    assert "operationId: listProviderRegistry" in registry
+    assert "name: project_id" in registry and "required: true" in registry
+    assert "topology.read" in registry
+    assert "does not contact a provider controller" in registry
+    assert "Credential Vault secret material" in registry
+    for status in ('"200":', '"400":', '"401":', '"403":'):
+        assert status in registry
