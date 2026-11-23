@@ -199,6 +199,7 @@ describe("visual topology studio editing workflow",()=>{
   const provider=await screen.findByLabelText("Provider");
   expect(provider.querySelector('option[value="gns3"]')).toBeTruthy();
   expect(provider.querySelector('option[value="cml"]')).toBeTruthy();
+  expect(provider.querySelector('option[value="eve-ng"]')).toBeTruthy();
   fireEvent.change(provider,{target:{value:"cml"}});
   expect(provider.value).toBe("cml");
   expect(screen.getByLabelText("Provider workspace ID")).toBeTruthy();

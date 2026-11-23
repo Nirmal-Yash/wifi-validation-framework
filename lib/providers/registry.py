@@ -167,3 +167,27 @@ class ProviderRegistry:
             cml_factory,
         )
         return registry
+
+    @classmethod
+    def with_stage_b(
+        cls, *, gns3_factory: Callable[..., Any] | None = None,
+        cml_factory: Callable[..., Any] | None = None,
+        eve_ng_factory: Callable[..., Any] | None = None,
+    ) -> "ProviderRegistry":
+        """Register GNS3, CML and EVE-NG as independent Stage B adapters."""
+        if eve_ng_factory is None:
+            from .eve_ng import EVENGProvider
+            eve_ng_factory = EVENGProvider
+        registry = cls.with_cml(gns3_factory=gns3_factory, cml_factory=cml_factory)
+        registry.register(
+            ProviderDescriptor(
+                provider_id="eve-ng", name="EVE-NG",
+                description="EVE-NG REST adapter using native .unl paths, JSend responses and observed Ethernet/serial interfaces; serial link creation and packet capture are not advertised.",
+                capability_ids=tuple(
+                    item.capability_id for item in DEFAULT_CAPABILITIES
+                    if item.capability_id != "packet_capture.supported"
+                ),
+            ),
+            eve_ng_factory,
+        )
+        return registry

@@ -16,6 +16,7 @@ from typing import Any, Mapping
 from lib.services.gns3_provider import GNS3Provider, GNS3ProviderError
 from lib.providers import ProviderCapabilityError, ProviderConnectionRecord, ProviderRegistry, ProviderSessionService, validate_provider_endpoint
 from lib.providers.cml import CMLProvider
+from lib.providers.eve_ng import EVENGProvider
 from lib.services.resource_lock import ResourceLockError, ResourceLockManager
 
 
@@ -40,7 +41,7 @@ class TopologyApplyService:
         self.topology_studio = topology_studio
         # Resolve the module-level GNS3Provider lazily to preserve existing injection
         # points while all provider consumers use the common registry.
-        self.provider_registry = provider_registry or ProviderRegistry.with_cml(
+        self.provider_registry = provider_registry or ProviderRegistry.with_stage_b(
             gns3_factory=lambda *args, **kwargs: GNS3Provider(*args, **kwargs)
         )
         self.provider_session_service = provider_session_service or ProviderSessionService(
@@ -173,6 +174,8 @@ class TopologyApplyService:
                 GNS3Provider._segment(workspace_id, "provider_workspace_id")
             elif provider_id == "cml":
                 CMLProvider._segment(workspace_id, "provider_workspace_id")
+            elif provider_id == "eve-ng":
+                EVENGProvider._path(workspace_id, "provider_workspace_id")
             endpoint = validate_provider_endpoint(endpoint_url)
         except Exception as exc:
             raise TopologyApplyError("provider is not registered or endpoint is not a permitted private controller URL") from exc

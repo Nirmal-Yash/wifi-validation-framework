@@ -388,7 +388,7 @@ def test_topology_provider_dashboard_routes_are_wired_and_idempotent(apply_stack
     registry_response = client.get("/api/v1/providers/registry?project_id=project-1")
     assert registry_response.status_code == 200
     registry_data = registry_response.get_json()["data"]
-    assert [item["provider_id"] for item in registry_data["providers"]] == ["cml", "gns3"]
+    assert [item["provider_id"] for item in registry_data["providers"]] == ["cml", "eve-ng", "gns3"]
     assert {item["id"] for item in registry_data["providers"][0]["capabilities"]} >= {
         "projects.read", "topology.nodes.create", "topology.links.create",
         "topology.nodes.start", "topology.nodes.stop",

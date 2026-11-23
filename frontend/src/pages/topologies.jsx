@@ -860,7 +860,7 @@ export default function TopologyStudioPage({user}){
        <option value="">Select observed provider workspace</option>
        {providerCatalog.projects.map(item=><option key={item.project_id} value={item.project_id}>{item.name||item.project_id} · {item.status||"UNKNOWN"} · {item.project_id}</option>)}
       </select>:<input aria-label="Provider workspace ID" value={bindingForm.provider_workspace_id||""} onChange={event=>setBindingForm({...bindingForm,provider_workspace_id:event.target.value,gns3_project_id:event.target.value})} maxLength={512} required/>}
-      <span className="field-hint">Enter the initial workspace identifier, then inspect the controller catalogue to select an observed workspace when changing the binding.</span>
+      <span className="field-hint">{bindingForm.provider_id==="eve-ng"?"EVE-NG workspaces must be absolute .unl paths, for example /User1/Lab.unl.":"Enter the initial workspace identifier, then inspect the controller catalogue to select an observed workspace when changing the binding."}</span>
      </Field>
      <Field label="Registered controller device" required>
       <select aria-label="Registered controller device" value={bindingForm.controller_device_id} onChange={event=>setBindingForm({...bindingForm,controller_device_id:event.target.value,credential_id:""})} required>
