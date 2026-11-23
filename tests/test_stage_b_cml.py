@@ -109,6 +109,8 @@ def test_cml_auth_catalogue_compute_licensing_and_image_discovery():
     assert image["required_images"] == ["refplat-iosv"]
     assert image["available_images"] == []
     assert image["image_definitions_registered"] == ["refplat-iosv"]
+    assert provider.capture_support()["supported"] is False
+    assert "packet_capture.supported" not in {item["id"] for item in provider.get_capabilities()}
     assert provider.create_lab("New Lab")["project_id"] == "lab-created"
     assert provider.delete_lab("lab-created") == {"project_id": "lab-created", "deleted": True}
     provider.disconnect()

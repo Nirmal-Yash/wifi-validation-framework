@@ -124,7 +124,10 @@ class CMLProvider:
 
     def get_capabilities(self):
         from lib.providers.registry import DEFAULT_CAPABILITIES
-        return [item.as_dict() for item in DEFAULT_CAPABILITIES]
+        return [
+            item.as_dict() for item in DEFAULT_CAPABILITIES
+            if item.capability_id != "packet_capture.supported"
+        ]
 
     def list_projects(self):
         value = self._data(self._request("GET", "/api/v0/labs", params={"with_data": "false"}))
@@ -173,7 +176,7 @@ class CMLProvider:
                 "name": str(item.get("description") or item.get("label") or item.get("id") or definition_id)[:120],
                 "category": str(item.get("device_type") or item.get("group") or "node"),
                 "template_type": str(item.get("device_type") or item.get("sim_type") or "cml"),
-                "compute_id": str(item.get("compute_id") or "cml-controller"),
+                "compute_id": str(item["compute_id"]) if isinstance(item.get("compute_id"), str) and item["compute_id"] else None,
                 "image_definition_ids": item.get("image_definitions") if isinstance(item.get("image_definitions"), list) else [],
                 "resource_requirements": {
                     key: item[key] for key in ("ram", "cpus", "cpu_limit", "data_volume")
@@ -429,8 +432,7 @@ class CMLProvider:
 
     def capture_support(self):
         return {
-            "supported": True, "scope": "link",
-            "mechanism": "CML link packet capture",
-            "availability": "requires an active link and a licensed/authorized CML instance",
+            "supported": False, "scope": "none",
+            "reason": "The CML packet-capture operation is not implemented by this adapter version.",
         }
 

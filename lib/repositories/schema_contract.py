@@ -96,7 +96,7 @@ EXPECTED_TABLE_COLUMNS = {
     "devices": ("device_id", "project_id", "lab_id", "device_key", "name", "device_type", "host", "port", "vendor", "model", "username", "credential_id", "capabilities_json", "metadata_json", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "topology_profiles": ("profile_id", "project_id", "name", "description", "scope_type", "scope_id", "lab_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "topology_revisions": ("revision_id", "profile_id", "revision_number", "definition_json", "content_sha256", "status", "created_at", "created_by", "published_at", "published_by"),
-    "gns3_lab_bindings": ("binding_id", "project_id", "lab_id", "endpoint_url", "gns3_project_id", "controller_device_id", "credential_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
+    "gns3_lab_bindings": ("binding_id", "project_id", "lab_id", "endpoint_url", "gns3_project_id", "controller_device_id", "credential_id", "status", "created_at", "updated_at", "created_by", "updated_by", "provider_id", "provider_workspace_id"),
     "topology_provider_mappings": ("mapping_id", "project_id", "lab_id", "profile_id", "resource_type", "logical_id", "provider_resource_id", "template_id", "created_at", "updated_at"),
     "topology_apply_records": ("apply_id", "project_id", "lab_id", "profile_id", "revision_id", "content_sha256", "status", "plan_json", "observed_before_json", "observed_after_json", "result_json", "created_at", "started_at", "completed_at", "created_by"),
     "device_configuration_deployments": ("deployment_id", "project_id", "lab_id", "device_id", "profile_id", "revision_id", "schema_record_id", "configuration_hash", "status", "plan_json", "result_json", "created_at", "started_at", "completed_at", "created_by"),
@@ -133,6 +133,8 @@ EXPECTED_TRIGGERS = (
     "trg_gns3_bindings_credential_scope_insert",
     "trg_gns3_bindings_credential_scope_update",
     "trg_gns3_bindings_no_delete",
+    "trg_provider_bindings_workspace_insert",
+    "trg_provider_bindings_workspace_update",
     "trg_topology_provider_mappings_scope_insert",
     "trg_topology_provider_mappings_scope_update",
     "trg_topology_provider_mappings_no_delete",
@@ -409,9 +411,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "25":
+        if metadata.get("version") != "26":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '25'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '26'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

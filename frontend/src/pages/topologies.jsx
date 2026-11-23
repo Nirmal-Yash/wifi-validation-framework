@@ -154,7 +154,8 @@ export default function TopologyStudioPage({user}){
  },[activeLabId]);
  useEffect(()=>{
   const item=providerBinding.data?.binding;
-  if(item)setBindingForm({endpoint_url:item.endpoint_url,gns3_project_id:item.gns3_project_id,
+  if(item)setBindingForm({provider_id:item.provider_id||"gns3",endpoint_url:item.endpoint_url,
+   provider_workspace_id:item.provider_workspace_id||item.gns3_project_id||"",gns3_project_id:item.gns3_project_id||item.provider_workspace_id||"",
    controller_device_id:item.controller_device_id,credential_id:item.credential_id});
  },[providerBinding.data]);
  useEffect(()=>{
@@ -850,27 +851,30 @@ export default function TopologyStudioPage({user}){
     {providerBinding.error?<InlineNotice tone="danger">{providerBinding.error.message}</InlineNotice>:null}
     {providerBinding.loading&&!providerBinding.data?<div className="context-caption">Loading saved provider binding metadata…</div>:binding?<div className="context-caption">Active binding · {binding.provider_id||"gns3"} · {binding.endpoint_url} · workspace {binding.provider_workspace_id||binding.gns3_project_id} · controller {binding.controller_device_id}</div>:providerBinding.error?<div className="context-caption">Saved provider binding is unavailable; its state is not inferred.</div>:<div className="context-caption">No active topology provider is bound to this Lab.</div>}
     {canManageProvider?<form className="form-grid" onSubmit={saveProviderBinding}>
-     <Field label="Private GNS3 Controller URL" required><input value={bindingForm.endpoint_url} onChange={event=>setBindingForm({...bindingForm,endpoint_url:event.target.value})} placeholder="http://127.0.0.1:3080" required/></Field>
-     <Field label="GNS3 provider project" required>
-      {providerCatalog?.projects?.length?<select value={bindingForm.gns3_project_id} onChange={event=>setBindingForm({...bindingForm,gns3_project_id:event.target.value})} required>
-       <option value="">Select observed controller project</option>
+     <Field label="Provider" required><select aria-label="Provider" value={bindingForm.provider_id||"gns3"} onChange={event=>setBindingForm({...bindingForm,provider_id:event.target.value,provider_workspace_id:"",gns3_project_id:""})}>
+      <option value="gns3">GNS3</option><option value="cml">Cisco Modeling Labs</option>
+     </select></Field>
+     <Field label="Private controller URL" required><input value={bindingForm.endpoint_url} onChange={event=>setBindingForm({...bindingForm,endpoint_url:event.target.value})} placeholder="https://192.168.1.10:8443" required/></Field>
+     <Field label="Provider workspace" required>
+      {providerCatalog?.projects?.length?<select aria-label="Provider workspace ID" value={bindingForm.provider_workspace_id||""} onChange={event=>setBindingForm({...bindingForm,provider_workspace_id:event.target.value,gns3_project_id:event.target.value})} required>
+       <option value="">Select observed provider workspace</option>
        {providerCatalog.projects.map(item=><option key={item.project_id} value={item.project_id}>{item.name||item.project_id} · {item.status||"UNKNOWN"} · {item.project_id}</option>)}
-      </select>:<input aria-label="GNS3 provider project ID" value={bindingForm.gns3_project_id} onChange={event=>setBindingForm({...bindingForm,gns3_project_id:event.target.value})} maxLength={128} required/>}
-      <span className="field-hint">Enter the initial project ID, then inspect the controller catalogue to select from observed projects on later binding changes.</span>
+      </select>:<input aria-label="Provider workspace ID" value={bindingForm.provider_workspace_id||""} onChange={event=>setBindingForm({...bindingForm,provider_workspace_id:event.target.value,gns3_project_id:event.target.value})} maxLength={512} required/>}
+      <span className="field-hint">Enter the initial workspace identifier, then inspect the controller catalogue to select an observed workspace when changing the binding.</span>
      </Field>
      <Field label="Registered controller device" required>
-      <select value={bindingForm.controller_device_id} onChange={event=>setBindingForm({...bindingForm,controller_device_id:event.target.value,credential_id:""})} required>
+      <select aria-label="Registered controller device" value={bindingForm.controller_device_id} onChange={event=>setBindingForm({...bindingForm,controller_device_id:event.target.value,credential_id:""})} required>
        <option value="">Select device</option>
        {deviceRows.map(item=><option key={item.device_id} value={item.device_id}>{item.name} · {item.host}</option>)}
       </select>
      </Field>
      <Field label="OS-vault API credential" required>
-      <select value={bindingForm.credential_id} onChange={event=>setBindingForm({...bindingForm,credential_id:event.target.value})} required>
+      <select aria-label="OS-vault API credential" value={bindingForm.credential_id} onChange={event=>setBindingForm({...bindingForm,credential_id:event.target.value})} required>
        <option value="">Select active API credential</option>
        {credentialRows.map(item=><option key={item.credential_id} value={item.credential_id}>{item.label} · {item.credential_id}</option>)}
       </select>
      </Field>
-     <div className="form-actions"><Button type="submit" loading={providerBusy} disabled={!activeLabId||!bindingForm.endpoint_url.trim()||!bindingForm.provider_workspace_id.trim()||!bindingForm.controller_device_id||!bindingForm.credential_id}>Verify and bind controller</Button></div>
+     <div className="form-actions"><Button type="submit" loading={providerBusy} disabled={!activeLabId||!bindingForm.provider_id||!bindingForm.endpoint_url.trim()||!(bindingForm.provider_workspace_id||"").trim()||!bindingForm.controller_device_id||!bindingForm.credential_id}>Verify and bind provider</Button></div>
     </form>:null}
     {!deviceRows.length&&activeLabId?<InlineNotice tone="info">Register the provider controller as an active device in this Lab, then attach an API credential through the Credentials workspace.</InlineNotice>:null}
     {providerCredentials.error?<InlineNotice tone="danger">{providerCredentials.error.message}</InlineNotice>:null}

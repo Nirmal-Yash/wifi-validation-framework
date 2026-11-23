@@ -159,7 +159,10 @@ class ProviderRegistry:
             ProviderDescriptor(
                 provider_id="cml", name="Cisco Modeling Labs",
                 description="Cisco Modeling Labs REST adapter with server-reported node definitions, image definitions, licensing and compute observations.",
-                capability_ids=tuple(item.capability_id for item in DEFAULT_CAPABILITIES),
+                capability_ids=tuple(
+                    item.capability_id for item in DEFAULT_CAPABILITIES
+                    if item.capability_id != "packet_capture.supported"
+                ),
             ),
             cml_factory,
         )
