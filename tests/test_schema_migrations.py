@@ -159,7 +159,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "27"
+        ).fetchone()[0] == "28"
 
 
 def test_schema_drift_is_reported_without_silent_repair(tmp_path):
@@ -320,7 +320,6 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.execute("DROP TRIGGER trg_network_intent_profiles_scope_insert")
         connection.execute("DROP TRIGGER trg_network_intent_profiles_no_delete")
         connection.execute("DROP TRIGGER trg_network_intent_profiles_identity_immutable")
-        connection.execute("DROP TRIGGER trg_network_intent_profiles_identity_immutable")
         connection.execute("DROP TRIGGER trg_network_intent_revisions_scope_insert")
         connection.execute("DROP TRIGGER trg_network_intent_revisions_immutable")
         connection.execute("DROP TRIGGER trg_network_intent_revisions_published_immutable")
@@ -437,7 +436,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "27"
+        ).fetchone()[0] == "28"
 
 
 def test_database_operator_cli_commands(tmp_path):

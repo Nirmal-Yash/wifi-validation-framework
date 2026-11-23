@@ -85,6 +85,8 @@ def valid_intent(device_id: str | None = None) -> dict:
         "interfaces": [
             {"logical_node_id": "router-a", "name": "eth0", "admin_state": "UP",
              "mode": "ROUTED", "addresses": ["192.0.2.1/24", "2001:db8:1::1/64"]},
+            {"logical_node_id": "router-a", "name": "eth1", "admin_state": "UP", "mode": "ROUTED"},
+            {"logical_node_id": "router-a", "name": "eth2", "admin_state": "UP", "mode": "ROUTED"},
         ],
         "static_routes": [
             {"logical_node_id": "router-a", "destination": "198.51.100.0/24",

@@ -189,6 +189,7 @@ class NetworkIntentService:
 
     @classmethod
     def normalize_definition(cls, definition: object) -> dict[str, Any]:
+        cls._validate_secret_free(definition)
         allowed_root = {"schema_version", *_ROOT_ARRAYS}
         root = cls._object(definition, "$", allowed_root, {"schema_version"})
         if root["schema_version"] != cls.SCHEMA_VERSION:
