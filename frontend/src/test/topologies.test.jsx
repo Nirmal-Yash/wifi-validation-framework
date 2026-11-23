@@ -193,6 +193,8 @@ describe("visual topology studio editing workflow",()=>{
   api.credentials.mockResolvedValue({items:[{credential_id:"vault-cml",credential_type:"API_TOKEN",status:"ACTIVE",label:"CML API"}]});
   renderPage();
   await screen.findByRole("button",{name:"Select node Router A"});
+  fireEvent.change(screen.getByLabelText("Profile"),{target:{value:"profile-a"}});
+  await waitFor(()=>expect(api.topologyProviderBinding).toHaveBeenCalledWith("lab-1"));
   fireEvent.click(screen.getByRole("tab",{name:"Provider operations"}));
   const provider=await screen.findByLabelText("Provider");
   expect(provider.querySelector('option[value="gns3"]')).toBeTruthy();
