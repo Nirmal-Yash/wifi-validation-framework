@@ -852,7 +852,7 @@ export default function TopologyStudioPage({user}){
     {providerBinding.loading&&!providerBinding.data?<div className="context-caption">Loading saved provider binding metadata…</div>:binding?<div className="context-caption">Active binding · {binding.provider_id||"gns3"} · {binding.endpoint_url} · workspace {binding.provider_workspace_id||binding.gns3_project_id} · controller {binding.controller_device_id}</div>:providerBinding.error?<div className="context-caption">Saved provider binding is unavailable; its state is not inferred.</div>:<div className="context-caption">No active topology provider is bound to this Lab.</div>}
     {canManageProvider?<form className="form-grid" onSubmit={saveProviderBinding}>
      <Field label="Provider" required><select aria-label="Provider" value={bindingForm.provider_id||"gns3"} onChange={event=>setBindingForm({...bindingForm,provider_id:event.target.value,provider_workspace_id:"",gns3_project_id:""})}>
-      <option value="gns3">GNS3</option><option value="cml">Cisco Modeling Labs</option>
+      <option value="gns3">GNS3</option><option value="cml">Cisco Modeling Labs</option><option value="eve-ng">EVE-NG</option>
      </select></Field>
      <Field label="Private controller URL" required><input value={bindingForm.endpoint_url} onChange={event=>setBindingForm({...bindingForm,endpoint_url:event.target.value})} placeholder="https://192.168.1.10:8443" required/></Field>
      <Field label="Provider workspace" required>
