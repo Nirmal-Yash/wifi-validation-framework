@@ -14,6 +14,7 @@ import {WorkspacePage,AdministrationPage,AccountAccessPage} from "@/pages/admin"
 import {CredentialsPage,ConfigurationPage} from "@/pages/configuration";
 import DevicesPage from "@/pages/devices";
 import TopologyStudioPage from "@/pages/topologies";
+import NetworkIntentPage from "@/pages/network-intent";
 import PipelinesPage from "@/pages/pipelines";
 import {Button,LoadingState,Section} from "@/components/ui";
 import {useSession} from "@/auth/session-provider";
@@ -95,6 +96,7 @@ export default function App(){
   case"configuration":page=<ConfigurationPage user={user}/>;break;
   case"devices":page=<DevicesPage user={user}/>;break;
   case"topologies":page=<TopologyStudioPage user={user}/>;break;
+  case"network-intent":page=<NetworkIntentPage user={user}/>;break;
   case"pipelines":page=<PipelinesPage user={user}/>;break;
   case"administration":page=<AdministrationPage user={user}/>;break;
   default:page=<NotFound/>;break;

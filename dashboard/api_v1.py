@@ -23,6 +23,9 @@ from lib.services.packet_tracer_interop import (
     PacketTracerInteropConflict, PacketTracerInteropError,
     PacketTracerInteropNotFound, PacketTracerInteropService,
 )
+from lib.services.network_intent import (
+    NetworkIntentConflict, NetworkIntentError, NetworkIntentNotFound, NetworkIntentService,
+)
 from lib.services.topology_apply import (
     TopologyApplyConflict, TopologyApplyError, TopologyApplyNotFound, TopologyApplyService,
 )
@@ -84,6 +87,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     device_inventory=DeviceInventoryService(query.database)
     topology_studio=TopologyStudioService(query.database)
     packet_tracer_interop=PacketTracerInteropService(query.database)
+    network_intent=NetworkIntentService(query.database,topology_studio)
     topology_apply=TopologyApplyService(query.database,credential_vault,topology_studio)
     wifi_lab_provisioner=WiFiLabProvisioningService(
         query.database,credential_vault,resource_lock_manager=topology_apply.resource_lock_manager,
@@ -1726,6 +1730,16 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             return denied
         return ok(item)
 
+    @api.get("/devices/<device_id>/capability-reports")
+    def list_device_capability_reports(device_id):
+        device = device_inventory.get(device_id)
+        if device is None:
+            return error("NOT_FOUND", "Device not found", 404)
+        denied = require_permission("devices.read", project_id=device["project_id"])
+        if denied is not None:
+            return denied
+        return ok({"items": network_intent.list_capability_reports(device["project_id"], device_id=device_id)})
+
     @api.patch("/devices/<device_id>")
     def update_managed_device(device_id):
         item=device_inventory.get(device_id)
@@ -2492,6 +2506,205 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         response.headers["X-NetRegress-Export-Report"] = base64.urlsafe_b64encode(report).decode("ascii").rstrip("=")
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    @api.get("/network-intent/profiles")
+    def list_network_intent_profiles():
+        project_id = str(request.args.get("project_id", "")).strip()
+        if not project_id:
+            return error("INVALID_REQUEST", "project_id query parameter is required", 400)
+        denied = require_permission("network_intent.read", project_id=project_id)
+        if denied is not None:
+            return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND", "Project not found", 404)
+        return ok({"items": network_intent.list_profiles(project_id)})
+
+    @api.post("/network-intent/profiles")
+    def create_network_intent_profile():
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            return error("INVALID_REQUEST", "network intent profile must be a JSON object", 400)
+        project_id = str(payload.get("project_id", "")).strip()
+        denied = require_permission("network_intent.manage", project_id=project_id)
+        if denied is not None:
+            return denied
+        scope = "/api/v1/network-intent/profiles"
+        idem_payload = {
+            "project_id": project_id,
+            "topology_profile_id": payload.get("topology_profile_id"),
+            "name": payload.get("name"),
+            "description": payload.get("description", ""),
+        }
+        key, request_hash, cached, security_error = idempotency_preflight(scope, idem_payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            item = network_intent.create_profile(
+                project_id=project_id,
+                topology_profile_id=payload.get("topology_profile_id"),
+                name=payload.get("name"),
+                description=payload.get("description", ""),
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except NetworkIntentNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except NetworkIntentConflict as exc:
+            return error("NETWORK_INTENT_CONFLICT", str(exc), 409)
+        except NetworkIntentError as exc:
+            return error("INVALID_NETWORK_INTENT_PROFILE", str(exc), 400)
+        idempotency_store_response(scope, key, request_hash, item, 201)
+        return ok(item), 201
+
+    @api.get("/network-intent/profiles/<profile_id>")
+    def get_network_intent_profile(profile_id):
+        item = network_intent.get_profile(profile_id)
+        if item is None:
+            return error("NOT_FOUND", "Network intent profile not found", 404)
+        denied = require_permission("network_intent.read", project_id=item["project_id"])
+        if denied is not None:
+            return denied
+        return ok(item)
+
+    @api.get("/network-intent/profiles/<profile_id>/revisions")
+    def list_network_intent_revisions(profile_id):
+        profile = network_intent.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Network intent profile not found", 404)
+        denied = require_permission("network_intent.read", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        return ok({"items": network_intent.list_revisions(profile_id)})
+
+    @api.post("/network-intent/profiles/<profile_id>/revisions")
+    def create_network_intent_revision(profile_id):
+        profile = network_intent.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Network intent profile not found", 404)
+        denied = require_permission("network_intent.manage", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict) or not isinstance(payload.get("definition"), dict):
+            return error("INVALID_REQUEST", "definition must be a network intent JSON object", 400)
+        scope = "/api/v1/network-intent/profiles/" + profile_id + "/revisions"
+        idem_payload = {
+            "profile_id": profile_id,
+            "topology_revision_id": payload.get("topology_revision_id"),
+            "definition": payload.get("definition"),
+            "provenance": payload.get("provenance"),
+            "parent_revision_id": payload.get("parent_revision_id"),
+        }
+        key, request_hash, cached, security_error = idempotency_preflight(scope, idem_payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            revision = network_intent.create_revision(
+                profile_id,
+                topology_revision_id=payload.get("topology_revision_id"),
+                definition=payload["definition"],
+                provenance=payload.get("provenance"),
+                parent_revision_id=payload.get("parent_revision_id"),
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except NetworkIntentNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except NetworkIntentConflict as exc:
+            return error("NETWORK_INTENT_CONFLICT", str(exc), 409)
+        except NetworkIntentError as exc:
+            return error("INVALID_NETWORK_INTENT", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, revision, 201)
+        return ok(revision), 201
+
+    @api.post("/network-intent/profiles/<profile_id>/publish")
+    def publish_network_intent_revision(profile_id):
+        profile = network_intent.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Network intent profile not found", 404)
+        denied = require_permission("network_intent.publish", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        revision_id = str(payload.get("revision_id", "")).strip()
+        if not revision_id:
+            return error("INVALID_REQUEST", "revision_id is required", 400)
+        scope = "/api/v1/network-intent/profiles/" + profile_id + "/publish"
+        key, request_hash, cached, security_error = idempotency_preflight(scope, {"revision_id": revision_id})
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            revision = network_intent.publish(
+                profile_id, revision_id,
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except NetworkIntentNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except NetworkIntentConflict as exc:
+            return error("NETWORK_INTENT_CONFLICT", str(exc), 409)
+        except NetworkIntentError as exc:
+            return error("INVALID_NETWORK_INTENT", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, revision, 200)
+        return ok(revision)
+
+    @api.post("/network-intent/validate")
+    def validate_network_intent():
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            return error("INVALID_REQUEST", "network intent validation request must be an object", 400)
+        project_id = str(payload.get("project_id", "")).strip()
+        denied = require_permission("network_intent.manage", project_id=project_id)
+        if denied is not None:
+            return denied
+        if not isinstance(payload.get("definition"), dict):
+            return error("INVALID_REQUEST", "definition must be a network intent JSON object", 400)
+        evaluate = payload.get("evaluate_capabilities", False)
+        if not isinstance(evaluate, bool):
+            return error("INVALID_REQUEST", "evaluate_capabilities must be a boolean", 400)
+        result = network_intent.validate(
+            project_id,
+            payload.get("topology_revision_id"),
+            payload["definition"],
+            profile_id=payload.get("profile_id"),
+            evaluate_capabilities=evaluate,
+        )
+        return ok(result)
+
+    @api.post("/network-intent/profiles/<profile_id>/rollback")
+    def rollback_network_intent_revision(profile_id):
+        profile = network_intent.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Network intent profile not found", 404)
+        denied = require_permission("network_intent.manage", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        source_revision_id = str(payload.get("source_revision_id", "")).strip()
+        if not source_revision_id:
+            return error("INVALID_REQUEST", "source_revision_id is required", 400)
+        scope = "/api/v1/network-intent/profiles/" + profile_id + "/rollback"
+        key, request_hash, cached, security_error = idempotency_preflight(scope, {"source_revision_id": source_revision_id})
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            revision = network_intent.rollback(
+                profile_id, source_revision_id,
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except NetworkIntentNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except NetworkIntentConflict as exc:
+            return error("NETWORK_INTENT_CONFLICT", str(exc), 409)
+        except NetworkIntentError as exc:
+            return error("INVALID_NETWORK_INTENT", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, revision, 201)
+        return ok(revision), 201
 
     @api.post("/topologies/validate")
     def validate_topology_definition():

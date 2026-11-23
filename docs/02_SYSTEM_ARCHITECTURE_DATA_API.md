@@ -1082,3 +1082,48 @@ This is a **read-only validation endpoint**. It does not create a DRAFT revision
 **Visual workbench:** the React studio exposes categorized palette entries, drag/drop and click-to-add logical nodes, deterministic auto-layout, viewport pan/zoom/fit, keyboard selection/history/clipboard, interface-port-to-interface-port linking, and right-side node/link inspectors. Inspectors show provider mapping IDs and runtime status as observed-only values from provider catalogue/reconciliation; an unobserved value is `UNKNOWN`, not a fabricated state. A six-tab bottom console separates validation, provider operations, browser-session logs, persisted apply history, reconciliation and local warnings.
 
 **Provider safety:** the existing `TopologyApplyService` remains authoritative for provider mappings, dry-run conflicts, apply history and reconciliation. Reconciliation returns logical-to-provider node/link resource IDs from the existing mapping table and actual provider read-back; it does not mutate those mappings. GNS3 plan/apply/start/stop remain governed by their existing Project permissions, Lab-scoped profile requirement, resource locks, immutable revision hash, idempotency and explicit apply confirmation. Canvas editing, auto-layout, validation, save and publish never issue provider calls.
+
+
+## Canonical vendor-neutral Network Intent API — EXP-P08
+
+EXP-P08 introduces a separate, versioned Network Intent domain. It does not merge vendor-neutral desired state into the existing Wi-Fi configuration schema, nor does it replace the canonical topology store. An Intent profile is bound to one active Project/Lab-scoped topology profile. Each immutable Intent revision pins both the topology revision ID and its SHA-256 content hash.
+
+### Intent schema v1.0
+
+The canonical definition is JSON with a strict `schema_version: "1.0"` envelope. Unknown root/object fields fail closed. Secret-like property names and inline credentials are rejected. The initial model contains:
+
+- `targets`: logical topology node ID → Project-owned managed Device ID mappings; logical IDs remain authoritative.
+- `segments`: L2/L3 segments with optional unique VLAN ID, IPv4 CIDR and IPv6 CIDR.
+- `interfaces`: interface administration state, ROUTED/ACCESS/TRUNK mode, IPv4/IPv6 interface addresses, segment association and access/native/allowed VLAN settings.
+- `static_routes`: IPv4/IPv6 destination, same-family next hop, metric and optional interface.
+- `ospf`, `bgp`: bounded OSPF process/area and BGP ASN/router-ID/neighbor intent.
+- `aggregations`: LACP ACTIVE/PASSIVE bundles with two or more declared member interfaces.
+- `firewall_zones`, `firewall_rules`: interface-bound zones and basic ALLOW/DENY rules with protocol, CIDR and destination-port constraints.
+- `service_references`: opaque references to published Project-owned DHCP/DNS configuration profile/revision records; no inline service secrets.
+- `linux_bridges`, `linux_vlan_interfaces`: bridge member and parent/VLAN declarations.
+
+The backend canonicalizes ordering before computing `intent_sha256`. It validates IP families, CIDR notation, ranges, duplicate identities, cross-references, logical topology node ownership, managed Device Project/Lab ownership and published DHCP/DNS reference scope. It does not interpret or store vendor CLI syntax.
+
+### Capability observation model
+
+`device_capability_reports` is an append-only record of adapter/discovery observations. Each report retains Project and Device identity, provider ID when applicable, platform, software version, adapter name/version, observation source, normalized capability feature statuses, SHA-256, observed time and recording provenance. Updates/deletes are blocked at the database boundary.
+
+Capability states are explicit: SUPPORTED or UNSUPPORTED in an observed report. A feature with no report, no feature entry, an observation older than seven days, or an observation more than five minutes in the future is UNKNOWN for readiness. UNKNOWN and UNSUPPORTED are blocking diagnostics when capability evaluation is requested. The application deliberately exposes no user-facing endpoint to manufacture a capability report. The internal `NetworkIntentService.record_capability_report` seam is intended for the subsequent P09 provider/device adapters to call after a real observation.
+
+### Lifecycle and endpoints
+
+- `GET /api/v1/network-intent/profiles?project_id=...` — list Project profiles; `network_intent.read`.
+- `POST /api/v1/network-intent/profiles` — create profile bound to a topology profile; `network_intent.manage`, CSRF and idempotency.
+- `GET /api/v1/network-intent/profiles/{profile_id}` — read profile; `network_intent.read`.
+- `GET /api/v1/network-intent/profiles/{profile_id}/revisions` — immutable history; `network_intent.read`.
+- `POST /api/v1/network-intent/profiles/{profile_id}/revisions` — validate and save a DRAFT bound to a topology revision/hash; `network_intent.manage`, CSRF and idempotency.
+- `POST /api/v1/network-intent/validate` — read-only structural and optional capability validation; no persistence, compilation or device mutation.
+- `POST /api/v1/network-intent/profiles/{profile_id}/publish` — publish only when the pinned topology is PUBLISHED and required target capabilities are fresh and SUPPORTED; `network_intent.publish`.
+- `POST /api/v1/network-intent/profiles/{profile_id}/rollback` — create a new DRAFT from a PUBLISHED source; it never rewrites history.
+- `GET /api/v1/devices/{device_id}/capability-reports` — read-only observation history; `devices.read`.
+
+All mutation routes use the existing session/CSRF/idempotency/audit conventions. Project permissions are checked by the backend; frontend hiding is not an authorization boundary.
+
+### Explicit P08 boundary
+
+P08 does not render CLI, configure devices, connect to network devices, deploy policies, orchestrate Ansible or provision infrastructure. P09 adapters own platform/version-specific identification, capability collection, compilation, configuration validation, diff and observed-state read-back. P10 owns Ansible execution. A structurally valid draft without a fully observed target is editable but is not publishable or ready for compilation.

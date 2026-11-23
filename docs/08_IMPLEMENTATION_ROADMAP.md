@@ -174,3 +174,16 @@ The initial export subset preserves original bytes exactly when unchanged. For r
 Migration `20261123_17` adds immutable provenance persistence and schema contracts. REST endpoints and Topology Studio use existing Project permissions, session/CSRF and POST idempotency behavior. `pktlib==0.2.2` is MIT-licensed and hash-pinned; its upstream documents testing against Packet Tracer 8.2.0 and labels the package alpha.
 
 The focused Packet Tracer suite is wired into the existing NetRegress quality workflow. Native Packet Tracer desktop reopen, representative files from each claimed version, complete visual-object fidelity and broader serializer qualification remain external acceptance gates. See `docs/EXP-P07B_PACKET_TRACER_IMPLEMENTATION_AUDIT.md` and RQ-018.
+
+
+## EXP-P08 implementation checkpoint — canonical Network Intent v1.0
+
+P08 adds a distinct vendor-neutral Network Intent service and relational persistence. Intent profiles bind to an existing canonical topology profile and inherit its Project/Lab scope. Each immutable intent revision is pinned to a specific immutable topology revision ID and content SHA-256; it has its own canonical SHA-256, schema version, provenance, parent reference and DRAFT/PUBLISHED lifecycle. Rollback creates a new DRAFT rather than rewriting history.
+
+Schema v1.0 models IPv4/IPv6 addressing, VLANs, interface admin/modes, static routes, OSPF, BGP, LACP, firewall zones/basic ACLs, published DHCP/DNS configuration references, Linux bridges and VLAN interfaces. Validation rejects unknown schema fields, inline secrets, invalid values, duplicate IDs, dangling topology/interface/zone/segment references and cross-Project/Lab target bindings.
+
+Device capability reports are immutable adapter/device-discovery observations with platform/software version, adapter identity/version, source type, feature status/constraints, SHA-256, observed time and recording provenance. No user-facing API can mark a capability SUPPORTED. Missing or stale (older than seven days) observations, observations more than five minutes in the future and explicit UNSUPPORTED reports are blocking for capability-aware publication. The internal recording service is the P09 adapter seam; P08 does not claim live GNS3/CML/EVE-NG/physical-device observations have been collected.
+
+The REST API adds Project-scoped read/manage/publish operations for intent profiles and revisions, read-only structural/capability validation, rollback-as-new-draft, and a read-only capability-report history endpoint. The `/network-intent` React page exposes the schema editor, topology binding, target Device mapping, diagnostics, revision lifecycle and capability provenance.
+
+Migration `20261123_18` advances the Alembic/schema contract to version 28. See `docs/EXP_P08_NETWORK_INTENT_IMPLEMENTATION_AUDIT.md` and RQ-021. P09 compilers and P10 Ansible remain separate downstream stages.

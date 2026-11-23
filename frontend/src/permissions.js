@@ -9,7 +9,7 @@ export const ROUTE_PERMISSIONS=Object.freeze({
  artifacts:["workspace.read"],readiness:["workspace.read"],regressions:["workspace.read"],
  performance:["workspace.read"],telemetry:["workspace.read"],"lab-health":["workspace.read"],
  baselines:["baselines.manage"],operations:["runs.execute","firmware.manage"],
- workspace:["workspace.read"],devices:["devices.read"],topologies:["topology.read"],
+ workspace:["workspace.read"],devices:["devices.read"],topologies:["topology.read"],"network-intent":["network_intent.read"],
  credentials:["credentials.read"],configuration:["configurations.read"],pipelines:["pipelines.read"],
  administration:["users.read","roles.read","permissions.read","audit.read"],
 });
@@ -27,6 +27,7 @@ const LEGACY_PERMISSION_ALIAS=Object.freeze({
  "devices.read":"view","devices.manage":"admin","devices.operate":"admin",
  "topology.read":"view","topology.manage":"admin","topology.publish":"admin",
  "topology.provider.manage":"admin","topology.provider.operate":"admin","topology.apply":"admin",
+ "network_intent.read":"view","network_intent.manage":"admin","network_intent.publish":"admin",
  "pipelines.read":"view","pipelines.manage":"admin","pipelines.execute":"execute",
 });
 export function canPerform(subject,permission){

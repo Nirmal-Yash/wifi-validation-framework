@@ -97,6 +97,9 @@ EXPECTED_TABLE_COLUMNS = {
     "topology_profiles": ("profile_id", "project_id", "name", "description", "scope_type", "scope_id", "lab_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "topology_revisions": ("revision_id", "profile_id", "revision_number", "definition_json", "content_sha256", "status", "created_at", "created_by", "published_at", "published_by"),
     "topology_native_sources": ("source_id", "project_id", "profile_id", "revision_id", "format", "format_version", "filename", "sha256", "size_bytes", "source_bytes", "codec_name", "codec_version", "mapping_json", "compatibility_report_json", "imported_at", "imported_by"),
+    "network_intent_profiles": ("profile_id", "project_id", "topology_profile_id", "name", "description", "scope_type", "scope_id", "lab_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
+    "network_intent_revisions": ("revision_id", "profile_id", "topology_revision_id", "topology_content_sha256", "schema_version", "revision_number", "definition_json", "intent_sha256", "provenance_json", "parent_revision_id", "status", "created_at", "created_by", "published_at", "published_by"),
+    "device_capability_reports": ("report_id", "project_id", "device_id", "provider_id", "platform", "software_version", "adapter_name", "adapter_version", "source_type", "capabilities_json", "capability_sha256", "observed_at", "recorded_at", "recorded_by"),
     "gns3_lab_bindings": ("binding_id", "project_id", "lab_id", "endpoint_url", "gns3_project_id", "controller_device_id", "credential_id", "status", "created_at", "updated_at", "created_by", "updated_by", "provider_id", "provider_workspace_id"),
     "topology_provider_mappings": ("mapping_id", "project_id", "lab_id", "profile_id", "resource_type", "logical_id", "provider_resource_id", "template_id", "created_at", "updated_at"),
     "topology_apply_records": ("apply_id", "project_id", "lab_id", "profile_id", "revision_id", "content_sha256", "status", "plan_json", "observed_before_json", "observed_after_json", "result_json", "created_at", "started_at", "completed_at", "created_by"),
@@ -134,6 +137,16 @@ EXPECTED_TRIGGERS = (
     "trg_topology_native_sources_scope_insert",
     "trg_topology_native_sources_immutable",
     "trg_topology_native_sources_no_delete",
+    "trg_network_intent_profiles_scope_insert",
+    "trg_network_intent_profiles_no_delete",
+    "trg_network_intent_profiles_identity_immutable",
+    "trg_network_intent_revisions_scope_insert",
+    "trg_network_intent_revisions_immutable",
+    "trg_network_intent_revisions_published_immutable",
+    "trg_network_intent_revisions_no_delete",
+    "trg_device_capability_reports_scope_insert",
+    "trg_device_capability_reports_immutable",
+    "trg_device_capability_reports_no_delete",
     "trg_gns3_bindings_credential_scope_insert",
     "trg_gns3_bindings_credential_scope_update",
     "trg_gns3_bindings_no_delete",
@@ -200,6 +213,12 @@ EXPECTED_INDEXES = (
     "idx_topology_revisions_profile_number",
     "idx_topology_native_sources_profile_imported",
     "idx_topology_native_sources_revision",
+    "idx_network_intent_profiles_project_scope",
+    "idx_network_intent_profiles_topology",
+    "idx_network_intent_revisions_profile_number",
+    "idx_network_intent_revisions_topology",
+    "idx_device_capability_reports_device_observed",
+    "idx_device_capability_reports_project_observed",
     "idx_gns3_bindings_project_lab",
     "idx_topology_provider_mappings_lab",
     "idx_topology_apply_lab_created",
@@ -253,6 +272,15 @@ EXPECTED_FOREIGN_KEYS = {
     ("topology_native_sources", "project_id", "projects", "project_id"),
     ("topology_native_sources", "profile_id", "topology_profiles", "profile_id"),
     ("topology_native_sources", "revision_id", "topology_revisions", "revision_id"),
+    ("network_intent_profiles", "project_id", "projects", "project_id"),
+    ("network_intent_profiles", "topology_profile_id", "topology_profiles", "profile_id"),
+    ("network_intent_profiles", "project_id", "labs", "project_id"),
+    ("network_intent_profiles", "lab_id", "labs", "lab_id"),
+    ("network_intent_revisions", "profile_id", "network_intent_profiles", "profile_id"),
+    ("network_intent_revisions", "topology_revision_id", "topology_revisions", "revision_id"),
+    ("network_intent_revisions", "parent_revision_id", "network_intent_revisions", "revision_id"),
+    ("device_capability_reports", "project_id", "projects", "project_id"),
+    ("device_capability_reports", "device_id", "devices", "device_id"),
     ("gns3_lab_bindings", "project_id", "projects", "project_id"),
     ("gns3_lab_bindings", "project_id", "labs", "project_id"),
     ("gns3_lab_bindings", "lab_id", "labs", "lab_id"),
@@ -420,9 +448,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "27":
+        if metadata.get("version") != "28":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '27'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '28'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

@@ -70,6 +70,14 @@ describe("NetRegress RBAC presentation matrix",()=>{
   expect(canPerform({role:"OWNER",permissions:["pipelines.read"]},"pipelines.execute")).toBe(false);
   expect(canAccessRoute("VIEWER","pipelines")).toBe(true);
  });
+ it("maps Network Intent permissions to the built-in read/manage/publish matrix",()=>{
+  expect(canPerform("VIEWER","network_intent.read")).toBe(true);
+  expect(canPerform("OPERATOR","network_intent.read")).toBe(true);
+  expect(canPerform("ADMIN","network_intent.manage")).toBe(true);
+  expect(canPerform("OWNER","network_intent.publish")).toBe(true);
+  expect(canPerform("OPERATOR","network_intent.manage")).toBe(false);
+  expect(canAccessRoute("VIEWER","network-intent")).toBe(true);
+ });
  it("fails closed for unknown roles, permissions and routes",()=>{
   expect(canPerform("UNKNOWN","view")).toBe(false);
   expect(canPerform("OWNER","unknown")).toBe(false);

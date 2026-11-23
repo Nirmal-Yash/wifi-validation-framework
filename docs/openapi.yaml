@@ -7,6 +7,152 @@ servers:
 security:
   - sessionAuth: []
 paths:
+  /devices/{device_id}/capability-reports:
+    get:
+      operationId: listDeviceCapabilityReports
+      description: Read-only history of immutable capability observations recorded by a provider or device-discovery adapter. No API endpoint permits manual capability assertions.
+      parameters:
+        - {name: device_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Device capability observation history; requires devices.read in the owning Project}
+        "403": {description: Project devices.read permission required}
+        "404": {description: Device not found}
+  /network-intent/profiles:
+    get:
+      operationId: listNetworkIntentProfiles
+      parameters:
+        - {name: project_id, in: query, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Project-scoped Network Intent profiles}
+        "403": {description: Project network_intent.read permission required}
+        "404": {description: Project not found}
+    post:
+      operationId: createNetworkIntentProfile
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project_id, topology_profile_id, name]
+              properties:
+                project_id: {type: string, minLength: 1}
+                topology_profile_id: {type: string, minLength: 1}
+                name: {type: string, minLength: 1, maxLength: 120}
+                description: {type: string, maxLength: 500}
+      responses:
+        "201": {description: Network Intent profile bound to a topology profile with inherited Project/Lab scope}
+        "400": {description: Invalid profile definition}
+        "403": {description: Project network_intent.manage permission required}
+        "404": {description: Topology profile not found in this Project}
+        "409": {description: Duplicate or conflicting profile name}
+  /network-intent/profiles/{profile_id}:
+    get:
+      operationId: getNetworkIntentProfile
+      parameters:
+        - {name: profile_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Network Intent profile metadata}
+        "403": {description: Project network_intent.read permission required}
+        "404": {description: Network Intent profile not found}
+  /network-intent/profiles/{profile_id}/revisions:
+    get:
+      operationId: listNetworkIntentRevisions
+      parameters:
+        - {name: profile_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Immutable Network Intent revisions and topology revision pins}
+        "403": {description: Project network_intent.read permission required}
+        "404": {description: Network Intent profile not found}
+    post:
+      operationId: createNetworkIntentRevision
+      parameters:
+        - {name: profile_id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topology_revision_id, definition]
+              properties:
+                topology_revision_id: {type: string}
+                definition: {$ref: '#/components/schemas/NetworkIntentDefinition'}
+                provenance: {type: object}
+                parent_revision_id: {type: string}
+      responses:
+        "201": {description: Immutable DRAFT revision pinned to the topology revision ID and content hash}
+        "403": {description: Project network_intent.manage permission required}
+        "404": {description: Profile or topology revision not found in this Project}
+        "409": {description: Profile archived or revision scope conflict}
+        "422": {description: Invalid Network Intent definition}
+  /network-intent/profiles/{profile_id}/publish:
+    post:
+      operationId: publishNetworkIntentRevision
+      parameters:
+        - {name: profile_id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revision_id]
+              properties:
+                revision_id: {type: string}
+      responses:
+        "200": {description: Publish immutable intent; requires published topology and supported target capability observations}
+        "403": {description: Project network_intent.publish permission required}
+        "404": {description: Profile or revision not found}
+        "409": {description: Topology not published, capability unknown or unsupported, or revision not DRAFT}
+  /network-intent/profiles/{profile_id}/rollback:
+    post:
+      operationId: rollbackNetworkIntentRevision
+      parameters:
+        - {name: profile_id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_revision_id]
+              properties:
+                source_revision_id: {type: string}
+      responses:
+        "201": {description: Create a new DRAFT from a PUBLISHED revision; history is never rewritten}
+        "403": {description: Project network_intent.manage permission required}
+        "404": {description: Profile or source revision not found}
+        "409": {description: Source revision is not PUBLISHED}
+  /network-intent/validate:
+    post:
+      operationId: validateNetworkIntent
+      description: >-
+        Read-only validation of schema v1.0 Network Intent against an immutable canonical topology revision.
+        Capability evaluation is opt-in. Missing target bindings or unreported required features are UNKNOWN
+        and block publication; explicitly unsupported features are INCOMPATIBLE. This endpoint neither
+        compiles nor applies vendor configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [project_id, topology_revision_id, definition]
+              properties:
+                project_id: {type: string}
+                profile_id: {type: string}
+                topology_revision_id: {type: string}
+                evaluate_capabilities: {type: boolean, default: false}
+                definition: {$ref: '#/components/schemas/NetworkIntentDefinition'}
+      responses:
+        "200": {description: Validation result, canonical hash, required capabilities and diagnostics}
+        "400": {description: Invalid validation request}
+        "403": {description: Project network_intent.manage permission required}
   /topologies/import/packet-tracer:
     post:
       operationId: importPacketTracerProject
@@ -702,6 +848,59 @@ components:
   securitySchemes:
     sessionAuth: {type: apiKey, in: cookie, name: netregress_session}
   schemas:
+    NetworkIntentDefinition:
+      type: object
+      additionalProperties: false
+      required: [schema_version]
+      description: >-
+        Vendor-neutral Network Intent schema v1.0. No CLI commands, controller IDs,
+        rendered configuration or secret values are accepted.
+      properties:
+        schema_version: {type: string, enum: ["1.0"]}
+        targets:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [logical_node_id, device_id]
+            properties:
+              logical_node_id: {type: string, maxLength: 64}
+              device_id: {type: string, maxLength: 64}
+        segments:
+          type: array
+          items:
+            type: object
+            required: [segment_id, name]
+            properties:
+              segment_id: {type: string, maxLength: 64}
+              name: {type: string, maxLength: 120}
+              vlan_id: {type: integer, minimum: 1, maximum: 4094}
+              ipv4_cidr: {type: string}
+              ipv6_cidr: {type: string}
+        interfaces:
+          type: array
+          items:
+            type: object
+            required: [logical_node_id, name, admin_state, mode]
+            properties:
+              logical_node_id: {type: string}
+              name: {type: string, maxLength: 64}
+              admin_state: {type: string, enum: [UP, DOWN]}
+              mode: {type: string, enum: [ROUTED, ACCESS, TRUNK]}
+              addresses: {type: array, items: {type: string}}
+              segment_id: {type: string}
+              access_vlan_id: {type: integer, minimum: 1, maximum: 4094}
+              native_vlan_id: {type: integer, minimum: 1, maximum: 4094}
+              allowed_vlans: {type: array, items: {type: integer, minimum: 1, maximum: 4094}}
+        static_routes: {type: array, items: {type: object}}
+        ospf: {type: array, items: {type: object}}
+        bgp: {type: array, items: {type: object}}
+        aggregations: {type: array, items: {type: object}}
+        firewall_zones: {type: array, items: {type: object}}
+        firewall_rules: {type: array, items: {type: object}}
+        service_references: {type: array, items: {type: object, description: Published Project-owned DHCP/DNS configuration profile/revision references only}}
+        linux_bridges: {type: array, items: {type: object}}
+        linux_vlan_interfaces: {type: array, items: {type: object}}
     LoginRequest:
       type: object
       required: [username, password]

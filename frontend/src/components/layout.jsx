@@ -30,6 +30,7 @@ const navGroups=[
   ["configuration","/configuration","Configuration profiles",Settings2],
   ["devices","/devices","Device inventory",Router],
   ["topologies","/topologies","Topology studio",Workflow],
+  ["network-intent","/network-intent","Network intent",Workflow],
   ["pipelines","/pipelines","Pipelines",Workflow],
  ]},
  {title:"Quality",items:[
@@ -62,6 +63,7 @@ const pageMeta={
  configuration:{section:"Configuration",title:"Configuration profiles",description:"Manage typed schemas, versioned profiles, published revisions, assignments and effective configuration previews."},
  devices:{section:"Configuration",title:"Device inventory",description:"Manage Project/Lab-scoped network devices and link each device to an OS-vault credential reference."},
  topologies:{section:"Configuration",title:"Topology studio",description:"Design versioned network topologies with logical nodes, adapters, ports and links before any explicit provider apply."},
+ "network-intent":{section:"Configuration",title:"Network intent",description:"Author versioned vendor-neutral network intent, validate target capabilities and publish intent bound to an immutable topology revision."},
  pipelines:{section:"Operations",title:"Pipelines",description:"Create versioned Project/Lab workflows, queue approved operations, monitor execution and review recovery."},
  baselines:{section:"Governance",title:"Baselines",description:"Promote trusted Run evidence into reusable validation baselines."},
  operations:{section:"Governance",title:"Operations",description:"Perform explicitly authorized firmware and release-governance actions."},

@@ -252,3 +252,6 @@ python scripts/netregress_sync.py --url "$NETREGRESS_SYNC_URL"
 ~~~
 
 The historical root entry points remain available as compatibility wrappers: run_all.sh uses the canonical installer, test suite and authenticated dashboard launcher; verify_system.py delegates to the canonical release gate.
+
+
+The platform also includes canonical vendor-neutral Network Intent v1.0 with topology-hash-pinned immutable revisions and adapter-observed capability validation. Vendor-specific compilation and Ansible execution remain separate downstream stages.

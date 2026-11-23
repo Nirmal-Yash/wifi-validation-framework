@@ -24,7 +24,7 @@ def test_fresh_database_is_created_only_through_single_alembic_head(tmp_path):
     status = DatabaseMigrationManager(path).check()
 
     assert status.current_revision == status.head_revision
-    assert status.current_revision == "20261123_17"
+    assert status.current_revision == "20261123_18"
     assert status.is_up_to_date
     assert status.schema.is_clean
 
@@ -35,7 +35,7 @@ def test_fresh_database_is_created_only_through_single_alembic_head(tmp_path):
         authority = connection.execute(
             "SELECT value FROM schema_meta WHERE key='migration_authority'"
         ).fetchone()[0]
-        assert version == "27"
+        assert version == "28"
         assert authority == "alembic"
 
 
@@ -135,7 +135,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
 
     result = manager.upgrade()
 
-    assert result.current_revision == result.head_revision == "20261123_17"
+    assert result.current_revision == result.head_revision == "20261123_18"
     assert result.is_up_to_date
     assert result.last_backup is not None
     assert result.last_backup.is_file()
@@ -315,6 +315,28 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.execute("DROP INDEX idx_device_config_deployments_revision")
         connection.execute("DROP INDEX idx_device_config_deployments_target")
         connection.execute("DROP TABLE device_configuration_deployments")
+        # Remove EXP-P08 intent and capability provenance before dropping the
+        # topology/device tables they reference.
+        connection.execute("DROP TRIGGER trg_network_intent_profiles_scope_insert")
+        connection.execute("DROP TRIGGER trg_network_intent_profiles_no_delete")
+        connection.execute("DROP TRIGGER trg_network_intent_profiles_identity_immutable")
+        connection.execute("DROP TRIGGER trg_network_intent_profiles_identity_immutable")
+        connection.execute("DROP TRIGGER trg_network_intent_revisions_scope_insert")
+        connection.execute("DROP TRIGGER trg_network_intent_revisions_immutable")
+        connection.execute("DROP TRIGGER trg_network_intent_revisions_published_immutable")
+        connection.execute("DROP TRIGGER trg_network_intent_revisions_no_delete")
+        connection.execute("DROP TRIGGER trg_device_capability_reports_scope_insert")
+        connection.execute("DROP TRIGGER trg_device_capability_reports_immutable")
+        connection.execute("DROP TRIGGER trg_device_capability_reports_no_delete")
+        connection.execute("DROP INDEX idx_network_intent_profiles_project_scope")
+        connection.execute("DROP INDEX idx_network_intent_profiles_topology")
+        connection.execute("DROP INDEX idx_network_intent_revisions_profile_number")
+        connection.execute("DROP INDEX idx_network_intent_revisions_topology")
+        connection.execute("DROP INDEX idx_device_capability_reports_device_observed")
+        connection.execute("DROP INDEX idx_device_capability_reports_project_observed")
+        connection.execute("DROP TABLE device_capability_reports")
+        connection.execute("DROP TABLE network_intent_revisions")
+        connection.execute("DROP TABLE network_intent_profiles")
         # Remove P07-B native source provenance before dropping the topology
         # tables it references; this fixture then recreates the historical baseline.
         connection.execute("DROP TRIGGER trg_topology_native_sources_scope_insert")
@@ -407,7 +429,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.commit()
 
     status = DatabaseMigrationManager(path).upgrade()
-    assert status.current_revision == status.head_revision == "20261123_17"
+    assert status.current_revision == status.head_revision == "20261123_18"
     assert status.is_up_to_date
     with sqlite3.connect(path) as connection:
         assert connection.execute(

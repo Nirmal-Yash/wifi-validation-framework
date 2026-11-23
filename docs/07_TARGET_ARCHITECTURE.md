@@ -97,3 +97,14 @@ The topology canvas and visual pipeline builder share interaction conventions (s
 The current standalone Linux Tauri package is the host. OpenTofu, Ansible and emulator runtimes should initially use system-installed or explicitly provisioned runtimes with version/capability checks. Do not bundle or redistribute external executables or vendor images without supply-chain, licence and redistribution review.
 
 Cloud/SaaS, centralized tenant control, PostgreSQL, Kubernetes and AI integrations remain outside this implementation programme.
+
+
+## EXP-P08 implementation checkpoint — Network Intent ownership
+
+The canonical vendor-neutral Network Intent service is `lib/services/network_intent.py`. It is separate from `TopologyStudioService` and the existing Wi-Fi `ConfigurationProfileService`. Intent profiles inherit the Project/Lab scope of one topology profile; each Intent revision is content-hashed and pinned to an immutable topology revision ID and topology content hash.
+
+The first strict schema (v1.0) covers IP addressing, VLANs, interface state/modes, static routes, OSPF, BGP, LACP, firewall zones/basic ACLs, published DHCP/DNS profile references and Linux bridges/VLAN interfaces. Logical topology IDs remain canonical. Managed Device IDs are explicit target bindings, not replacements for those logical identities.
+
+Platform/version capability is stored as append-only provider/device observations with adapter provenance, observation time and SHA-256. Missing, stale or explicitly unsupported features block capability-aware publication. Device inventory's existing boolean hints are not promoted into discovered network-feature support. The public API is read-only for capability reports; P09 adapters must write reports only after a real platform observation.
+
+P08 supplies no vendor compiler, CLI renderer or device mutation. Those boundaries remain P09. Ansible remains P10.
