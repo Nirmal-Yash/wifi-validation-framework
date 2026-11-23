@@ -317,3 +317,22 @@ def test_gns3_reference_adapter_exposes_complete_contract_without_live_network(m
     provider.disconnect()
     assert provider._connected is False
     assert all("transient-secret" not in repr(item) for item in requests)
+
+
+
+def test_provider_connection_record_supports_cml_workspace_projection():
+    record = ProviderConnectionRecord.from_binding({
+        "binding_id": "binding-cml", "provider_id": "cml",
+        "project_id": "project-1", "lab_id": "lab-1",
+        "endpoint_url": "https://192.168.1.20:443",
+        "provider_workspace_id": "cml-lab-7", "gns3_project_id": "cml-lab-7",
+        "controller_device_id": "device-cml", "credential_id": "vault-cml",
+        "status": "ACTIVE", "created_at": "2026-11-23T00:00:00+00:00",
+        "updated_at": "2026-11-23T00:00:00+00:00",
+        "created_by": "owner", "updated_by": "owner",
+        "password": "must-never-appear",
+    })
+    payload = record.as_dict()
+    assert payload["provider_id"] == "cml"
+    assert payload["provider_workspace_id"] == "cml-lab-7"
+    assert "must-never-appear" not in repr(record)

@@ -95,26 +95,37 @@ class ProviderConnectionRecord:
     updated_by: str
 
     @classmethod
-    def from_gns3_binding(cls, binding: Mapping[str, Any]) -> "ProviderConnectionRecord":
+    def from_binding(cls, binding: Mapping[str, Any]) -> "ProviderConnectionRecord":
         if not isinstance(binding, Mapping):
             raise ValueError("provider binding must be a mapping")
+        workspace_id = binding.get("provider_workspace_id") or binding.get("gns3_project_id")
+        provider_id = binding.get("provider_id") or "gns3"
         required = (
-            "binding_id", "project_id", "lab_id", "endpoint_url", "gns3_project_id",
+            "binding_id", "project_id", "lab_id", "endpoint_url",
             "controller_device_id", "credential_id", "status", "created_at",
             "updated_at", "created_by", "updated_by",
         )
         missing = [key for key in required if not isinstance(binding.get(key), str) or not binding[key]]
+        if not isinstance(workspace_id, str) or not workspace_id:
+            missing.append("provider_workspace_id")
+        if not isinstance(provider_id, str) or not provider_id:
+            missing.append("provider_id")
         if missing:
             raise ValueError("provider binding is missing required fields: " + ", ".join(missing))
         return cls(
-            connection_id=binding["binding_id"], provider_id="gns3",
+            connection_id=binding["binding_id"], provider_id=provider_id,
             project_id=binding["project_id"], lab_id=binding["lab_id"],
-            endpoint_url=binding["endpoint_url"], provider_workspace_id=binding["gns3_project_id"],
+            endpoint_url=binding["endpoint_url"], provider_workspace_id=workspace_id,
             controller_device_id=binding["controller_device_id"],
             credential_reference_id=binding["credential_id"], status=binding["status"],
             created_at=binding["created_at"], updated_at=binding["updated_at"],
             created_by=binding["created_by"], updated_by=binding["updated_by"],
         )
+
+    @classmethod
+    def from_gns3_binding(cls, binding: Mapping[str, Any]) -> "ProviderConnectionRecord":
+        """Compatibility alias for historical GNS3 binding callers."""
+        return cls.from_binding(binding)
 
     def as_dict(self) -> dict[str, str]:
         return {

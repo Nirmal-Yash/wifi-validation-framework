@@ -169,6 +169,76 @@ paths:
         "400": {description: Missing project_id (INVALID_REQUEST)}
         "401": {description: Missing or expired authenticated session}
         "403": {description: Caller lacks topology.read in the selected Project}
+  /labs/{lab_id}/provider-binding:
+    get:
+      operationId: getLabProviderBinding
+      summary: Read the Project/Lab provider binding
+      description: >-
+        Returns safe Project/Lab-scoped provider binding metadata. Provider credential
+        values are never included. Requires topology.read.
+      parameters:
+        - name: lab_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        "200": {description: Provider binding metadata or null}
+        "401": {description: Missing or expired authenticated session}
+        "403": {description: Caller lacks topology.read in the Lab's Project}
+    put:
+      operationId: bindLabTopologyProvider
+      summary: Verify and persist a private topology-provider binding
+      description: >-
+        Binds a GNS3, Cisco Modeling Labs or EVE-NG controller Device and Credential Vault
+        API credential to a Lab. Provider workspace reachability is verified before binding
+        persistence. provider_workspace_id is canonical; gns3_project_id is retained as a
+        backwards-compatible GNS3 alias. Credentials are never included in responses.
+        Requires topology.provider.manage and Idempotency-Key.
+      parameters:
+        - name: lab_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_id, endpoint_url, provider_workspace_id, controller_device_id, credential_id]
+              properties:
+                provider_id: {type: string, enum: [gns3, cml, eve-ng]}
+                endpoint_url: {type: string, maxLength: 512}
+                provider_workspace_id: {type: string, minLength: 1, maxLength: 512}
+                gns3_project_id: {type: string, deprecated: true}
+                controller_device_id: {type: string, minLength: 1}
+                credential_id: {type: string, minLength: 1}
+      responses:
+        "200": {description: Verified provider binding metadata}
+        "400": {description: Invalid provider, workspace or binding request}
+        "401": {description: Missing or expired authenticated session}
+        "403": {description: Caller lacks topology.provider.manage in the Lab's Project}
+        "404": {description: Lab or selected provider workspace not found}
+        "409": {description: Device, credential or provider scope conflict}
+    delete:
+      operationId: archiveLabTopologyProviderBinding
+      summary: Archive a provider binding without deleting provider resources
+      description: >-
+        Archives the active Project/Lab provider binding and preserves its audit history.
+        It does not delete the provider lab, nodes, links or other controller resources.
+        Requires topology.provider.manage and Idempotency-Key.
+      parameters:
+        - name: lab_id
+          in: path
+          required: true
+          schema: {type: string, minLength: 1}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        "200": {description: Archived provider binding metadata}
+        "401": {description: Missing or expired authenticated session}
+        "403": {description: Caller lacks topology.provider.manage in the Lab's Project}
+        "404": {description: Active provider binding not found}
   /labs/{lab_id}/provider-catalog:
     get:
       operationId: inspectLabProviderCatalog

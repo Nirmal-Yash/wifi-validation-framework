@@ -98,3 +98,11 @@ This register is intentionally conservative. A source file or mocked contract te
 | RQ-047 | Actual GNS3 compute availability and mapped-template image compatibility | `GNS3Provider.get_resource_availability`, `get_template_image_availability`, topology dry-run/apply snapshots and compatibility report | READY_FOR_CI | Confirm safe bounded compute projection, AVAILABLE/MISSING/UNKNOWN image outcomes, fail-closed creation when the assigned compute is disconnected or required image is missing, and no false block for already observed mappings |
 | RQ-048 | Actual provider interface discovery and project selection | `GET /labs/{lab_id}/provider-nodes/{provider_node_id}/interfaces`, provider catalogue UI, `docs/openapi.yaml` | READY_FOR_CI | Verify Lab Project RBAC, observed-node membership, adapter/port projection and selection from the discovered Project catalogue |
 | RQ-049 | Preserve GNS3 apply, adoption, idempotency, reconciliation, partial recovery and Wi-Fi provisioning | `TopologyApplyService`, `WiFiLabProvisioningService`, `tests/test_topology_apply.py` | READY_FOR_CI | Exact hosted main workflow after the consolidated EXP-P05 commit; live GNS3/mac80211_hwsim acceptance remains RQ-042 |
+
+
+## Cisco Modeling Labs adapter — EXP-P06
+
+| ID | Requirement | Verification source | Status | Next verification |
+|---|---|---|---|---|
+| RQ-050 | Independent authenticated CML adapter implements the shared provider lifecycle contract | `lib/providers/cml.py`, `lib/providers/http.py`, `lib/providers/registry.py`, `tests/test_stage_b_cml.py` | READY_FOR_CI | Execute adapter contract, auth/session, catalogue, resource/license/image observation, lifecycle, interface/link and transport hardening tests in hosted CI |
+| RQ-051 | Existing Project/Lab topology binding and apply pipeline support CML workspaces without a second topology authority | `20261122_16_multivendor_provider_bindings.py`, `TopologyApplyService`, provider binding API, `tests/test_topology_apply.py`, OpenAPI | READY_FOR_CI | Verify migration/backfill, generic workspace binding, non-GNS3 dry-run/apply/read-back/reconcile, RBAC, Vault-only secret access and existing GNS3 regressions |

@@ -2582,14 +2582,17 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
             return error("INVALID_REQUEST", "provider binding must be a JSON object", 400)
+        provider_id = str(payload.get("provider_id") or "gns3").strip().lower()
+        workspace_id = str(payload.get("provider_workspace_id") or payload.get("gns3_project_id") or "").strip()
         fields = {
+            "provider_id": provider_id,
+            "provider_workspace_id": workspace_id,
             "endpoint_url": str(payload.get("endpoint_url", "")).strip(),
-            "gns3_project_id": str(payload.get("gns3_project_id", "")).strip(),
             "controller_device_id": str(payload.get("controller_device_id", "")).strip(),
             "credential_id": str(payload.get("credential_id", "")).strip(),
         }
         if not all(fields.values()):
-            return error("INVALID_REQUEST", "endpoint, GNS3 project, controller Device and API_TOKEN credential are required", 400)
+            return error("INVALID_REQUEST", "provider, endpoint, provider workspace, controller Device and API credential are required", 400)
         scope = "/api/v1/labs/" + lab_id + "/provider-binding"
         key, request_hash, cached, security_error = idempotency_preflight(scope, {"lab_id": lab_id, **fields})
         if security_error is not None:

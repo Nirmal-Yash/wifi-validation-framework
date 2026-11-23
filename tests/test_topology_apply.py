@@ -667,3 +667,40 @@ def test_reconciliation_does_not_mark_unmapped_observed_provider_links_in_sync(a
     assert "link-new" in observed["mismatched_links"]
     assert "link-new" not in observed["logical_to_provider_links"]
     assert observed["status"] == "DRIFTED"
+
+
+
+def test_cml_binding_and_topology_apply_use_provider_neutral_workspace(apply_stack):
+    from lib.providers import ProviderRegistry
+
+    database, _store, original, profile, revision, _binding, state = apply_stack
+    registry = ProviderRegistry.with_cml(
+        gns3_factory=FakeGNS3Provider,
+        cml_factory=FakeGNS3Provider,
+    )
+    service = TopologyApplyService(
+        database, original.credential_vault, original.topology_studio,
+        resource_lock_manager=original.resource_lock_manager,
+        provider_registry=registry,
+    )
+    binding = service.bind(
+        "lab-1", provider_id="cml", provider_workspace_id="gns3-project",
+        endpoint_url="https://192.168.1.10:3080",
+        controller_device_id=original.get_binding("lab-1")["controller_device_id"],
+        credential_id=original.get_binding("lab-1")["credential_id"],
+        actor="owner",
+    )
+    assert binding["provider_id"] == "cml"
+    assert binding["provider_workspace_id"] == "gns3-project"
+    assert binding["gns3_project_id"] == "gns3-project"
+
+    planned = service.plan(profile["profile_id"], revision["revision_id"], actor="owner")
+    assert planned["plan"]["provider_id"] == "cml"
+    assert planned["plan"]["provider_workspace_id"] == "gns3-project"
+    result = service.apply(
+        profile["profile_id"], revision["revision_id"],
+        expected_sha256=revision["content_sha256"], confirmed=True, actor="owner",
+    )
+    assert result["status"] == "APPLIED"
+    assert len(state["nodes"]) == 2
+    assert len(state["links"]) == 1

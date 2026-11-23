@@ -12,6 +12,9 @@ vi.mock("@/api",()=>({api:{
  validateTopology:vi.fn(),
  createTopologyRevision:vi.fn(),
  publishTopologyRevision:vi.fn(),
+ topologyProviderBinding:vi.fn(),
+ devices:vi.fn(),
+ credentials:vi.fn(),
 }}));
 vi.mock("@/components/workspace-context",()=>({
  useWorkspace:()=>({activeOrganizationId:"org-1",activeProjectId:"project-1",selectProject:()=>{}}),
@@ -37,6 +40,9 @@ describe("visual topology studio editing workflow",()=>{
   api.validateTopology.mockResolvedValue({valid:true,node_count:2,link_count:1,content_sha256:"b".repeat(64)});
   api.createTopologyRevision.mockResolvedValue({...revision,revision_id:"revision-b",revision_number:2});
   api.publishTopologyRevision.mockResolvedValue({...revision,status:"PUBLISHED"});
+  api.topologyProviderBinding.mockResolvedValue({binding:null});
+  api.devices.mockResolvedValue({items:[]});
+  api.credentials.mockResolvedValue({items:[]});
   client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
  });
  afterEach(()=>{cleanup();client?.clear();});
@@ -177,6 +183,23 @@ describe("visual topology studio editing workflow",()=>{
   expect(screen.getByText(/Session activity for this editor only/)).toBeTruthy();
   fireEvent.click(screen.getByRole("tab",{name:"Warnings"}));
   expect(screen.getByText(/No local topology warnings/)).toBeTruthy();
+ });
+
+
+ it("offers the CML adapter on Lab-scoped provider bindings",async()=>{
+  const labProfile={...profile,scope_type:"LAB",scope_id:"lab-1",lab_id:"lab-1"};
+  api.topologies.mockResolvedValue({items:[labProfile]});
+  api.devices.mockResolvedValue({items:[{device_id:"cml-controller",name:"CML controller",host:"192.168.1.20"}]});
+  api.credentials.mockResolvedValue({items:[{credential_id:"vault-cml",credential_type:"API_TOKEN",status:"ACTIVE",label:"CML API"}]});
+  renderPage();
+  await screen.findByRole("button",{name:"Select node Router A"});
+  fireEvent.click(screen.getByRole("tab",{name:"Provider operations"}));
+  const provider=await screen.findByLabelText("Provider");
+  expect(provider.querySelector('option[value="gns3"]')).toBeTruthy();
+  expect(provider.querySelector('option[value="cml"]')).toBeTruthy();
+  fireEvent.change(provider,{target:{value:"cml"}});
+  expect(provider.value).toBe("cml");
+  expect(screen.getByLabelText("Provider workspace ID")).toBeTruthy();
  });
 
  it("supports palette drag-and-drop onto the canvas",async()=>{

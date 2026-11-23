@@ -141,3 +141,26 @@ class ProviderRegistry:
             factory,
         )
         return registry
+
+    @classmethod
+    def with_cml(
+        cls, *, gns3_factory: Callable[..., Any] | None = None,
+        cml_factory: Callable[..., Any] | None = None,
+    ) -> "ProviderRegistry":
+        """Register the GNS3 reference adapter and Cisco Modeling Labs."""
+        if gns3_factory is None:
+            from lib.services.gns3_provider import GNS3Provider
+            gns3_factory = GNS3Provider
+        if cml_factory is None:
+            from .cml import CMLProvider
+            cml_factory = CMLProvider
+        registry = cls.with_gns3(gns3_factory)
+        registry.register(
+            ProviderDescriptor(
+                provider_id="cml", name="Cisco Modeling Labs",
+                description="Cisco Modeling Labs REST adapter with server-reported node definitions, image definitions, licensing and compute observations.",
+                capability_ids=tuple(item.capability_id for item in DEFAULT_CAPABILITIES),
+            ),
+            cml_factory,
+        )
+        return registry
