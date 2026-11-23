@@ -85,11 +85,11 @@ class EVENGFixture(EVENGProvider):
                 "2": {"id": 2, "name": "Router 2", "template": "vios", "status": 0,
                       "image": "vios-image.bin"},
             }}
-        if path == "/api/labs/User1/Lab%201.unl/nodes/1":
+        if method == "GET" and path == "/api/labs/User1/Lab%201.unl/nodes/1":
             return {"status": "success", "data": {
                 "id": 1, "name": "Router 1", "template": "vios", "status": self.node_status,
             }}
-        if path == "/api/labs/User1/Lab%201.unl/nodes/1/interfaces":
+        if method == "GET" and path == "/api/labs/User1/Lab%201.unl/nodes/1/interfaces":
             return {"status": "success", "data": {
                 "ethernet": [
                     {"name": "Gi0/0", "network_id": 0},
@@ -97,13 +97,13 @@ class EVENGFixture(EVENGProvider):
                 ],
                 "serial": [{"name": "Se1/0", "network_id": 0}],
             }}
-        if path == "/api/labs/User1/Lab%201.unl/nodes/2/interfaces":
+        if method == "GET" and path == "/api/labs/User1/Lab%201.unl/nodes/2/interfaces":
             return {"status": "success", "data": {
                 "ethernet": [{"name": "Gi0/0", "network_id": 0},
                              {"name": "Gi0/1", "network_id": 0}],
                 "serial": [],
             }}
-        if path == "/api/labs/User1/Lab%201.unl/topology":
+        if method == "GET" and path == "/api/labs/User1/Lab%201.unl/topology":
             return {"status": "success", "data": [
                 {"source": "node1", "source_type": "node", "source_label": "Gi0/0",
                  "destination": "network1", "destination_type": "network", "destination_label": "",
@@ -251,7 +251,7 @@ def test_eve_ng_node_creation_uses_verified_image_and_percentage_coordinates():
     assert payload["left"] == "25%" and payload["top"] == "75%"
     provider.image_list = {"bad-image.missing": "bad-image.missing"}
     assert provider.get_template_image_availability("vios")["status"] == "MISSING"
-    with pytest.raises(EVENGProviderError, match="missing image"):
+    with pytest.raises(EVENGProviderError, match="no verified installed image"):
         provider.create_node("/User1/Lab 1.unl", "vios", name="Broken", x=0, y=0)
 
 

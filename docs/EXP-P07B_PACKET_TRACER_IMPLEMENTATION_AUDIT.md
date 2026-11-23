@@ -14,7 +14,7 @@ This implementation does not emulate Packet Tracer or provision Packet Tracer ob
 ## Implemented source behavior
 
 - Strictly parses native `.pkt` input through the pinned MIT-licensed `pktlib` codec in a private temporary directory; uploaded content is never executed.
-- Enforces a 3.5 MB source-file limit and a separate 24 MB expanded XML limit. The codec's authenticated container primitives are preflighted with bounded zlib decompression before the public parser is allowed to parse XML.
+- Enforces a 3.5 MB source-file limit and a separate 24 MB expanded XML limit. The codec's container is preflighted with bounded zlib decompression and DTD/entity declarations are rejected before the XML parser is called.
 - Validates safe `.pkt` filenames, supported-version strict decoding and bounded canonical node/link/interface counts.
 - Projects supported Packet Tracer devices, interfaces, supported IP/VLAN observations, coordinates and native link endpoint identities into the existing canonical `TopologyStudioService` model.
 - Assigns no provider template IDs. The imported topology remains provider-independent until operators map each device to an observed compatible provider template.

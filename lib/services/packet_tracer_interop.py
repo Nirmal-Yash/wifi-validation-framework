@@ -121,9 +121,11 @@ class PacketTracerInteropService:
             decoder = zlib.decompressobj()
             pending = packed[4:]
             expanded = 0
+            xml_payload = bytearray()
             while pending:
                 chunk = decoder.decompress(pending, cls.MAX_EXPANDED_XML_BYTES - expanded + 1)
                 expanded += len(chunk)
+                xml_payload.extend(chunk)
                 if expanded > cls.MAX_EXPANDED_XML_BYTES:
                     raise PacketTracerInteropError(
                         f"The native Packet Tracer XML document exceeds the {cls.MAX_EXPANDED_XML_BYTES}-byte safety limit"
@@ -134,12 +136,22 @@ class PacketTracerInteropService:
                 pending = remainder
             tail = decoder.flush(cls.MAX_EXPANDED_XML_BYTES - expanded + 1)
             expanded += len(tail)
+            xml_payload.extend(tail)
             if expanded > cls.MAX_EXPANDED_XML_BYTES:
                 raise PacketTracerInteropError(
                     f"The native Packet Tracer XML document exceeds the {cls.MAX_EXPANDED_XML_BYTES}-byte safety limit"
                 )
             if not decoder.eof or decoder.unused_data or expanded != declared_size:
                 raise PacketTracerInteropError("The .pkt compressed document length or trailer is invalid")
+            # pktlib's parser uses xml.etree.ElementTree. Reject DTDs/entity
+            # declarations before calling it; this prevents untrusted XML from
+            # triggering entity expansion during the later parse. Remove NULs
+            # only for token detection so UTF-16/UTF-32 markup is rejected too.
+            xml_tokens = bytes(xml_payload).replace(bytes((0,)), b"").upper()
+            if b"<!DOCTYPE" in xml_tokens or b"<!ENTITY" in xml_tokens:
+                raise PacketTracerInteropError(
+                    "DTD and entity declarations are not supported in Packet Tracer project XML"
+                )
         except PacketTracerInteropError:
             raise
         except Exception as exc:
@@ -800,7 +812,7 @@ class PacketTracerInteropService:
                 "node addition/removal or model replacement",
                 "link addition/removal/rewiring",
                 "interface, VLAN, IP or device configuration changes",
-                "native drawings and notes are preserved but not editable in the canonical canvas",
+                "native drawings and notes are retained in the original source but are not projected into editable canonical objects; exported fidelity is not yet verified",
             ],
             "format_version_note": (
                 "pktlib serializes to its latest known Packet Tracer edition; older supported source files may be upgraded during export."

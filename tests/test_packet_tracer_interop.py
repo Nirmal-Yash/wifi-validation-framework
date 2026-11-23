@@ -195,6 +195,15 @@ def test_import_rejects_unsafe_names_malformed_files_foreign_scope_and_oversized
     with pytest.raises(PacketTracerInteropError, match="safety limit"):
         service._load(compressed_bomb)
 
+    entity_document = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<!DOCTYPE network [<!ENTITY payload "expanded">]>'
+        b'<network>&payload;</network>'
+    )
+    entity_packet = encode_native_packet(entity_document)
+    with pytest.raises(PacketTracerInteropError, match="DTD and entity declarations"):
+        service._load(entity_packet)
+
 
 def test_export_checks_native_source_integrity_and_revision_scope(interop_database):
     result = _import(interop_database)
