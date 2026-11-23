@@ -98,8 +98,15 @@ export default function TopologyStudioPage({user}){
  const [notice,setNotice]=useState("");
  const [error,setError]=useState("");
  const [showProfileForm,setShowProfileForm]=useState(false);
+ const [packetTracerFile,setPacketTracerFile]=useState(null);
+ const [packetTracerName,setPacketTracerName]=useState("Packet Tracer import");
+ const [packetTracerScope,setPacketTracerScope]=useState("PROJECT");
+ const [packetTracerLabId,setPacketTracerLabId]=useState("");
+ const [packetTracerBusy,setPacketTracerBusy]=useState(false);
+ const [packetTracerResult,setPacketTracerResult]=useState(null);
  const profiles=useAsyncLoader(()=>projectId?api.topologies(projectId):Promise.resolve({items:[]}),[projectId],{enabled:Boolean(projectId),queryKey:"topology-studio-profiles"});
  const revisions=useAsyncLoader(()=>profileId?api.topologyRevisions(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"topology-studio-revisions"});
+ const nativeSources=useAsyncLoader(()=>profileId?api.topologyNativeSources(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"topology-native-sources"});
  const mutation=useMutation();
  const projectRows=projects.data?.items||[];
  const profileRows=profiles.data?.items||[];
@@ -177,6 +184,53 @@ export default function TopologyStudioPage({user}){
    setLinkForm(value=>({...value,target_node_id:nodes[1]?.id||nodes[0]?.id||""}));
  },[definition.nodes]);
 
+
+
+ async function importPacketTracer(event){
+  event.preventDefault();
+  if(!canManage||!projectId||!packetTracerFile||!packetTracerName.trim())return;
+  if(packetTracerScope==="LAB"&&!packetTracerLabId.trim()){
+   setError("Enter the Lab ID for a Lab-scoped Packet Tracer import.");return;
+  }
+  setPacketTracerBusy(true);setError("");setNotice("");setPacketTracerResult(null);
+  try{
+   const payload=new FormData();
+   payload.set("project_id",projectId);
+   payload.set("name",packetTracerName.trim());
+   payload.set("scope_type",packetTracerScope);
+   if(packetTracerScope==="LAB")payload.set("scope_id",packetTracerLabId.trim());
+   payload.set("file",packetTracerFile);
+   const result=await api.importPacketTracerTopology(payload);
+   setPacketTracerResult(result);
+   setProfileId(result.profile.profile_id);
+   setRevisionId(result.revision.revision_id);
+   resetEditorDefinition(result.revision.definition||emptyDefinition());
+   setNotice("Packet Tracer project imported as a new immutable native source and a DRAFT topology revision. Provider templates remain unmapped until explicitly selected.");
+   setPacketTracerFile(null);
+   await profiles.reload().catch(()=>null);
+  }catch(exc){
+   setError(exc.message||"Packet Tracer import failed.");
+  }finally{
+   setPacketTracerBusy(false);
+  }
+ }
+ async function exportPacketTracer(sourceId){
+  if(!canManage||!profileId||!revisionId)return;
+  setPacketTracerBusy(true);setError("");setNotice("");
+  try{
+   const result=await api.exportPacketTracerRevision(profileId,sourceId,revisionId);
+   const url=window.URL.createObjectURL(result.blob);
+   const anchor=document.createElement("a");
+   anchor.href=url;anchor.download=result.filename||"packet-tracer-export.pkt";
+   document.body.appendChild(anchor);anchor.click();anchor.remove();
+   window.URL.revokeObjectURL(url);
+   setNotice("Packet Tracer .pkt export generated and codec-read-back verified. Reopening in the Packet Tracer desktop application has not been verified by this environment.");
+  }catch(exc){
+   setError(exc.message||"Packet Tracer export failed.");
+  }finally{
+   setPacketTracerBusy(false);
+  }
+ }
 
  function appendSessionLog(level,message){
   const entry={id:localId("log"),at:new Date().toISOString(),level,message:String(message||"")};
@@ -625,9 +679,43 @@ export default function TopologyStudioPage({user}){
     <div className="form-actions"><Button type="submit" loading={mutation.loading} disabled={!projectId||!profileForm.name.trim()||(scope.scope_type==="LAB"&&!scope.scope_id.trim())}>Create profile</Button></div>
    </form>:null}
   </Section>
+  <Section title="Packet Tracer native import" subtitle="Import a .pkt project into the existing canonical topology and retain the original native bytes, hash and conversion report.">
+   {canManage?<form className="form-grid" onSubmit={importPacketTracer}>
+    <Field label="New topology profile name" required><input aria-label="Packet Tracer profile name" value={packetTracerName} onChange={event=>setPacketTracerName(event.target.value)} maxLength={120} required/></Field>
+    <Field label="Import scope">
+     <select aria-label="Packet Tracer import scope" value={packetTracerScope} onChange={event=>setPacketTracerScope(event.target.value)}>
+      <option value="PROJECT">Project</option><option value="LAB">Lab</option>
+     </select>
+    </Field>
+    {packetTracerScope==="LAB"?<Field label="Lab ID" required><input aria-label="Packet Tracer Lab ID" value={packetTracerLabId} onChange={event=>setPacketTracerLabId(event.target.value)} maxLength={128} required/></Field>:null}
+    <Field label="Native .pkt file" required><input aria-label="Packet Tracer .pkt file" type="file" accept=".pkt,application/octet-stream" onChange={event=>setPacketTracerFile(event.target.files?.[0]||null)} required/></Field>
+    <div className="form-actions"><Button type="submit" loading={packetTracerBusy} disabled={!projectId||!packetTracerFile||!packetTracerName.trim()||(packetTracerScope==="LAB"&&!packetTracerLabId.trim())}>Import Packet Tracer project</Button></div>
+    <p className="muted">Original source bytes are immutable and hash-checked. Import does not create emulator resources or assign provider templates. Files are limited to 3.5 MB.</p>
+   </form>:<p className="muted">Packet Tracer import requires topology.manage permission in the selected Project.</p>}
+   {packetTracerResult?.report?<div className="topology-observed-panel">
+    <strong>Import compatibility report</strong>
+    <p>{packetTracerResult.report.counts?.nodes||0} nodes · {packetTracerResult.report.counts?.links||0} links · {packetTracerResult.report.warnings?.length||0} warnings · {packetTracerResult.report.unsupported_objects?.length||0} unsupported object groups</p>
+    <p className="muted">Source SHA-256 · {packetTracerResult.source?.sha256}</p>
+    {(packetTracerResult.report.warnings||[]).map((item,index)=><p className="muted" key={"pkt-warning-"+index}>{item}</p>)}
+   </div>:null}
+  </Section>
   {notice?<InlineNotice tone="success">{notice}</InlineNotice>:null}
   {error?<InlineNotice tone="danger">{error}</InlineNotice>:null}
   {profileId?<>
+   <Section title="Native Packet Tracer sources" subtitle="Source provenance is immutable. Export checks the selected revision against the supported native-edit subset and reports any unsupported changes.">
+    {nativeSources.loading&&!nativeSources.data?<LoadingState label="Loading native source records…"/>:null}
+    {nativeSources.error?<ErrorState error={nativeSources.error} onRetry={nativeSources.reload}/>:null}
+    <DataTable caption="Imported Packet Tracer native sources" rows={nativeSources.data?.items||[]} rowKey={item=>item.source_id} columns={[
+     {key:"filename",label:"Source file",render:item=><strong>{item.filename}</strong>},
+     {key:"format_version",label:"Native version"},
+     {key:"sha256",label:"Source SHA-256",render:item=><code title={item.sha256}>{item.sha256.slice(0,12)}…</code>},
+     {key:"size_bytes",label:"Bytes",render:item=>Number(item.size_bytes).toLocaleString()},
+     {key:"imported_at",label:"Imported"},
+     {key:"compatibility",label:"Warnings",render:item=>(item.compatibility_report?.warnings||[]).length},
+     {key:"actions",label:"Action",render:item=><Button type="button" size="sm" variant="outline" onClick={()=>exportPacketTracer(item.source_id)} loading={packetTracerBusy} disabled={!canManage||!selectedRevision}>Export selected revision</Button>},
+    ]} emptyTitle="No native Packet Tracer sources" emptyMessage="Import a .pkt file above to retain its source bytes and provenance beside the canonical topology revision."/>
+    <p className="muted">The first serializer subset supports device-name and canvas-coordinate edits. Node/device changes, link rewiring and interface/configuration changes are rejected until explicit native mappings exist. Codec round-trip is not the same as reopening in Packet Tracer.</p>
+   </Section>
    <Section title="Revision history" subtitle="Published revisions are immutable. Continue editing by saving a new draft from the local canvas.">
     <div className="form-grid">
      <Field label="Revision">

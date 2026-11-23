@@ -7,6 +7,95 @@ servers:
 security:
   - sessionAuth: []
 paths:
+  /topologies/import/packet-tracer:
+    post:
+      operationId: importPacketTracerProject
+      description: >-
+        Import a native Cisco Packet Tracer .pkt file into the existing canonical topology domain.
+        Original bytes, SHA-256, codec/version, provenance and compatibility report are retained
+        immutably. Logical devices are not assigned provider templates and no emulator operation is
+        performed. The first native export subset supports name and canvas-coordinate edits only.
+        Codec read-back does not certify reopening in the Packet Tracer desktop application.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [project_id, name, file]
+              properties:
+                project_id: {type: string, minLength: 1}
+                name: {type: string, minLength: 1, maxLength: 120}
+                scope_type: {type: string, enum: [PROJECT, LAB], default: PROJECT}
+                scope_id: {type: string, maxLength: 128, description: Required when scope_type is LAB}
+                file: {type: string, format: binary, description: Native .pkt file, maximum 3.5 MB}
+      responses:
+        "201":
+          description: Imported canonical DRAFT revision and immutable native source metadata
+        "400":
+          description: Missing fields or invalid idempotency key
+        "403":
+          description: Project topology.manage permission required
+        "409":
+          description: Idempotency key reuse or profile name conflict
+        "413":
+          description: Upload exceeds configured request or native file size limit
+        "422":
+          description: Malformed, unsupported or invalid Packet Tracer file
+  /topologies/{profile_id}/native-sources:
+    get:
+      operationId: listTopologyNativeSources
+      parameters:
+        - name: profile_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Immutable native source provenance and conversion reports (source bytes excluded)
+        "403":
+          description: Project topology.read permission required
+        "404":
+          description: Topology profile not found
+  /topologies/{profile_id}/native-sources/{source_id}/export:
+    get:
+      operationId: exportPacketTracerRevision
+      description: >-
+        Export a selected revision against the retained Packet Tracer native source.
+        Unmapped semantic edits and link changes are rejected. The response includes an
+        X-NetRegress-Export-Report header. Packet Tracer desktop reopening remains an
+        external acceptance gate.
+      parameters:
+        - name: profile_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: source_id
+          in: path
+          required: true
+          schema: {type: string}
+        - name: revision_id
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Native Packet Tracer .pkt file
+          headers:
+            X-NetRegress-Export-Report:
+              schema: {type: string}
+              description: Base64url-encoded JSON compatibility and codec read-back report
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        "403":
+          description: Project topology.manage permission required
+        "404":
+          description: Native source, profile or revision not found
+        "409":
+          description: Export would lose unsupported topology changes
+        "422":
+          description: Native source integrity or serialization failure
   /topologies/validate:
     post:
       operationId: validateTopologyDraft

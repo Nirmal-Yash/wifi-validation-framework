@@ -38,7 +38,8 @@ The historical 11/11 result must not be interpreted as the expected collection c
 - SQLite persistence;
 - firmware-version comparison;
 - Flask dashboard and production React/Vite UI;
-- automated GNS3 laboratory provisioning.
+- automated GNS3 laboratory provisioning;
+- native Cisco Packet Tracer `.pkt` import with immutable source provenance and a constrained, codec-verified export subset.
 
 ## Canonical documentation
 

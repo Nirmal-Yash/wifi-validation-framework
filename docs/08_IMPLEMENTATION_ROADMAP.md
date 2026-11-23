@@ -161,3 +161,16 @@ Template discovery and per-template image choice use the EVE-NG template catalog
 The adapter is integrated into the existing provider binding and topology apply service. No second topology schema or connection table is introduced. The EVE-NG workspace is stored in the provider-neutral workspace field while the historical GNS3 alias remains compatibility data. The frontend selector exposes EVE-NG and clarifies that its workspace is an absolute .unl path.
 
 Deterministic fixtures cover folder-scoped listing, authentication and logout, lab create/read-back/delete, template/image catalogue, resource observations, interface and topology translation, bridge-link creation, partial-attach rollback, node lifecycle state read-back and unsafe path rejection. These tests prove the software contract only; live EVE-NG edition/licensing, installed image and actual lab/node execution remain controller-specific operator acceptance.
+
+
+## EXP-P07-B implementation checkpoint — Cisco Packet Tracer native project bridge
+
+The first P07-B software package is integrated through an independent native `.pkt` codec, not through the emulator ProviderRegistry. It uses existing Project/Lab topology profiles and immutable revisions. Imported source bytes, SHA-256, codec/version, original device/interface/link mapping and compatibility report are retained in `topology_native_sources`, linked to the canonical profile and initial DRAFT revision. Source records are immutable; metadata reads do not return source bytes.
+
+The parser uses strict decoding, a 3.5 MB source limit, and a bounded 24 MB expanded-XML preflight before the pinned codec parses the file. It maps supported device types, interfaces, IP/VLAN observations, layout coordinates and native link endpoints into canonical topology. Provider template IDs remain blank because Packet Tracer identities are not GNS3/CML/EVE-NG template IDs. Provider apply therefore remains blocked until an operator supplies a real compatible mapping.
+
+The initial export subset preserves original bytes exactly when unchanged. For revisions that change only logical-device names or canvas coordinates, the codec serializes the native document and reads it back to verify device identity/name and link endpoints. Device/model addition/removal, link mutation and interface/configuration edits fail with an explicit unsupported-change conflict. No full-fidelity or Packet Tracer desktop-reopen claim is made. Codec output may upgrade older files to its latest known edition; source and output versions are reported.
+
+Migration `20261123_17` adds immutable provenance persistence and schema contracts. REST endpoints and Topology Studio use existing Project permissions, session/CSRF and POST idempotency behavior. `pktlib==0.2.2` is MIT-licensed and hash-pinned; its upstream documents testing against Packet Tracer 8.2.0 and labels the package alpha.
+
+The focused Packet Tracer suite is wired into the existing NetRegress quality workflow. Native Packet Tracer desktop reopen, representative files from each claimed version, complete visual-object fidelity and broader serializer qualification remain external acceptance gates. See `docs/EXP-P07B_PACKET_TRACER_IMPLEMENTATION_AUDIT.md` and RQ-018.

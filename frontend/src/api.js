@@ -45,7 +45,7 @@ async function rawRequest(path,options={}){
    credentials,
    cache:"no-store",
    ...options,
-   headers:{Accept:"application/json",...(options.body?{"Content-Type":"application/json"}:{}),...(options.headers||{})},
+   headers:{Accept:"application/json",...(options.body&&!(typeof FormData!=="undefined"&&options.body instanceof FormData)?{"Content-Type":"application/json"}:{}),...(options.headers||{})},
   });
  }catch(error){
   if(error instanceof TypeError)throw new ApiError("Cannot reach the Runner API. Launch the NetRegress desktop app or start the developer launcher.",0,"API_UNREACHABLE");
@@ -105,6 +105,29 @@ const query=params=>{
  Object.entries(params||{}).forEach(([key,value])=>{if(value!==undefined&&value!==null&&value!=="")search.set(key,String(value));});
  const value=search.toString();return value?"?"+value:"";
 };
+
+async function rawDownload(path){
+ let response;
+ try{
+  const base=await resolveApiBase();
+  const credentials=base.startsWith("http://127.0.0.1:")?"include":"same-origin";
+  response=await fetch(base+path,{credentials,cache:"no-store",headers:{Accept:"application/octet-stream"}});
+ }catch(error){
+  if(error instanceof TypeError)throw new ApiError("Cannot reach the Runner API. Launch the NetRegress desktop app or start the developer launcher.",0,"API_UNREACHABLE");
+  throw error;
+ }
+ if(!response.ok){
+  const body=await response.json().catch(()=>null);
+  const detail=body?.error||{};
+  throw new ApiError(detail.message||`Runner API request failed (HTTP ${response.status})`,response.status,detail.code||"REQUEST_FAILED",detail.details||{});
+ }
+ const disposition=response.headers?.get?.("content-disposition")||"";
+ const encodedName=disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+ const plainName=disposition.match(/filename="?([^";]+)"?/i)?.[1];
+ let filename="packet-tracer-export.pkt";
+ try{filename=encodedName?decodeURIComponent(encodedName):plainName||filename;}catch{filename=plainName||filename;}
+ return {blob:await response.blob(),filename,report:response.headers?.get?.("X-NetRegress-Export-Report")||""};
+}
 export const api={
  health:()=>request("/health"),readiness:()=>request("/readiness"),
  setupStatus:()=>request("/setup/status"),
@@ -128,6 +151,9 @@ export const api={
 
  validateTopology:payload=>request("/topologies/validate",{method:"POST",body:JSON.stringify(payload)}),
  topologies:projectId=>request("/topologies"+query({project_id:projectId})),
+ importPacketTracerTopology:formData=>request("/topologies/import/packet-tracer",{method:"POST",body:formData}),
+ topologyNativeSources:profileId=>request("/topologies/"+encode(profileId)+"/native-sources"),
+ exportPacketTracerRevision:(profileId,sourceId,revisionId)=>rawDownload("/topologies/"+encode(profileId)+"/native-sources/"+encode(sourceId)+"/export"+query({revision_id:revisionId})),
  createTopology:payload=>request("/topologies",{method:"POST",body:JSON.stringify(payload)}),
  topologyRevisions:profileId=>request("/topologies/"+encode(profileId)+"/revisions"),
  createTopologyRevision:(profileId,payload)=>request("/topologies/"+encode(profileId)+"/revisions",{method:"POST",body:JSON.stringify(payload)}),

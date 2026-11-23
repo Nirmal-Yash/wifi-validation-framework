@@ -823,6 +823,10 @@ paramiko==5.1.0 \
     #   -r /home/runner/work/wifi-validation-framework/wifi-validation-framework/requirements.txt
     #   netmiko
     #   scp
+pktlib==0.2.2 \
+    --hash=sha256:815edf222cdf3d4884cab0632b21a398e3b86aebb8cfee07b954b01d16b904cf \
+    --hash=sha256:940f779bcf6b60f239d66604887e2b80df8ff97cfb66e1ccf33bf17c44fd5d69
+    # via -r /home/runner/work/wifi-validation-framework/wifi-validation-framework/requirements.txt
 pluggy==1.7.0 \
     --hash=sha256:7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec \
     --hash=sha256:d1eaa46ebb595891b860ab086b4d09c8588af65ebd4361b8e8f4bb8920b90ba8

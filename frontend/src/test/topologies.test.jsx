@@ -9,6 +9,9 @@ vi.mock("@/api",()=>({api:{
  workspaceProjects:vi.fn(),
  topologies:vi.fn(),
  topologyRevisions:vi.fn(),
+ topologyNativeSources:vi.fn(),
+ importPacketTracerTopology:vi.fn(),
+ exportPacketTracerRevision:vi.fn(),
  validateTopology:vi.fn(),
  createTopologyRevision:vi.fn(),
  publishTopologyRevision:vi.fn(),
@@ -37,6 +40,8 @@ describe("visual topology studio editing workflow",()=>{
   api.workspaceProjects.mockResolvedValue({items:[{project_id:"project-1",name:"Project One",slug:"project-one"}]});
   api.topologies.mockResolvedValue({items:[profile]});
   api.topologyRevisions.mockResolvedValue({items:[revision]});
+  api.topologyNativeSources.mockResolvedValue({items:[]});
+  api.importPacketTracerTopology.mockResolvedValue({profile:{...profile,profile_id:"profile-pkt",name:"Imported PT"},revision:{...revision,revision_id:"revision-pkt",profile_id:"profile-pkt"},source:{source_id:"source-pkt",filename:"lab.pkt",sha256:"c".repeat(64)},report:{counts:{nodes:2,links:1},warnings:["Provider mapping is required"],unsupported_objects:[]}});
   api.validateTopology.mockResolvedValue({valid:true,node_count:2,link_count:1,content_sha256:"b".repeat(64)});
   api.createTopologyRevision.mockResolvedValue({...revision,revision_id:"revision-b",revision_number:2});
   api.publishTopologyRevision.mockResolvedValue({...revision,status:"PUBLISHED"});
@@ -55,6 +60,23 @@ describe("visual topology studio editing workflow",()=>{
    <TopologyStudioPage user={user}/>
   </QueryClientProvider>);
  }
+
+ it("imports a Packet Tracer project through the multipart UI and opens its canonical draft",async()=>{
+  renderPage();
+  await screen.findByRole("button",{name:"Select node Router A"});
+  fireEvent.change(screen.getByLabelText("Packet Tracer profile name"),{target:{value:"Imported PT lab"}});
+  const file=new File(["native-pkt"],"lab.pkt",{type:"application/octet-stream"});
+  fireEvent.change(screen.getByLabelText("Packet Tracer .pkt file"),{target:{files:[file]}});
+  fireEvent.click(screen.getByRole("button",{name:"Import Packet Tracer project"}));
+  await waitFor(()=>expect(api.importPacketTracerTopology).toHaveBeenCalledTimes(1));
+  const form=api.importPacketTracerTopology.mock.calls[0][0];
+  expect(form.get("project_id")).toBe("project-1");
+  expect(form.get("name")).toBe("Imported PT lab");
+  expect(form.get("scope_type")).toBe("PROJECT");
+  expect(form.get("file").name).toBe("lab.pkt");
+  expect(await screen.findByText(/new immutable native source and a DRAFT topology revision/)).toBeTruthy();
+  expect(screen.getByText(/Provider mapping is required/)).toBeTruthy();
+ });
 
  it("exposes accessible canvas editing controls and keyboard guidance",async()=>{
   renderPage();

@@ -1,5 +1,7 @@
 from __future__ import annotations
+import base64
 import hashlib
+import io
 import hmac
 import json
 import os
@@ -10,12 +12,17 @@ from werkzeug.security import check_password_hash
 from typing import Any,Callable
 from functools import wraps
 from flask import Blueprint,jsonify,request,session,send_file,current_app
+from werkzeug.exceptions import RequestEntityTooLarge
 from lib.platform import platform_adapter_for
 from lib.services.configuration_schema_registry import (
     ConfigurationSchemaError, ConfigurationSchemaNotFound, ConfigurationSchemaRegistry,
 )
 from lib.services.device_inventory import DeviceInventoryService, DeviceInventoryError, DeviceInventoryNotFound
 from lib.services.topology_studio import TopologyStudioService, TopologyStudioError, TopologyStudioNotFound
+from lib.services.packet_tracer_interop import (
+    PacketTracerInteropConflict, PacketTracerInteropError,
+    PacketTracerInteropNotFound, PacketTracerInteropService,
+)
 from lib.services.topology_apply import (
     TopologyApplyConflict, TopologyApplyError, TopologyApplyNotFound, TopologyApplyService,
 )
@@ -76,6 +83,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     performance_policies=PerformancePolicyService(query.database)
     device_inventory=DeviceInventoryService(query.database)
     topology_studio=TopologyStudioService(query.database)
+    packet_tracer_interop=PacketTracerInteropService(query.database)
     topology_apply=TopologyApplyService(query.database,credential_vault,topology_studio)
     wifi_lab_provisioner=WiFiLabProvisioningService(
         query.database,credential_vault,resource_lock_manager=topology_apply.resource_lock_manager,
@@ -2378,6 +2386,112 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
                 if schema is None or schema["project_id"] != project_id or schema["status"] != "ACTIVE":
                     return error("INVALID_TOPOLOGY_REFERENCE", "Configuration profile must reference an active Project schema", 422)
         return None
+
+    @api.post("/topologies/import/packet-tracer")
+    def import_packet_tracer_topology():
+        try:
+            form = request.form
+            project_id = str(form.get("project_id", "")).strip()
+            if not project_id:
+                return error("INVALID_REQUEST", "project_id is required", 400)
+            uploaded = request.files.get("file")
+            if uploaded is None:
+                return error("INVALID_REQUEST", "A Packet Tracer .pkt file is required", 400)
+            filename = uploaded.filename or ""
+            content = uploaded.stream.read(PacketTracerInteropService.MAX_SOURCE_BYTES + 1)
+            if len(content) > PacketTracerInteropService.MAX_SOURCE_BYTES:
+                return error(
+                    "PACKET_TRACER_FILE_TOO_LARGE",
+                    f"The .pkt file exceeds {PacketTracerInteropService.MAX_SOURCE_BYTES} bytes",
+                    413,
+                )
+            scope_type = str(form.get("scope_type", "PROJECT")).strip().upper()
+            scope_id = str(form.get("scope_id", "")).strip() or None
+            name = str(form.get("name", "")).strip()
+        except RequestEntityTooLarge:
+            return error("PACKET_TRACER_REQUEST_TOO_LARGE", "The multipart upload exceeds the configured request limit", 413)
+
+        denied = require_permission("topology.manage", project_id=project_id)
+        if denied is not None:
+            return denied
+        source_sha256 = hashlib.sha256(content).hexdigest()
+        scope = "/api/v1/topologies/import/packet-tracer"
+        request_data = {
+            "project_id": project_id,
+            "name": name,
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+            "filename": filename,
+            "source_sha256": source_sha256,
+        }
+        key, request_hash, cached, security_error = idempotency_preflight(scope, request_data)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            result = packet_tracer_interop.import_file(
+                project_id=project_id,
+                name=name,
+                filename=filename,
+                content=content,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except PacketTracerInteropNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except PacketTracerInteropConflict as exc:
+            return error("TOPOLOGY_IMPORT_CONFLICT", str(exc), 409)
+        except (PacketTracerInteropError, TopologyStudioError, TypeError, ValueError) as exc:
+            return error("INVALID_PACKET_TRACER_FILE", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, result, 201)
+        return ok(result), 201
+
+    @api.get("/topologies/<profile_id>/native-sources")
+    def list_topology_native_sources(profile_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.read", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        return ok({"items": packet_tracer_interop.list_sources(profile_id)})
+
+    @api.get("/topologies/<profile_id>/native-sources/<source_id>/export")
+    def export_packet_tracer_revision(profile_id, source_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.manage", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        revision_id = str(request.args.get("revision_id", "")).strip()
+        if not revision_id:
+            return error("INVALID_REQUEST", "revision_id query parameter is required", 400)
+        try:
+            exported = packet_tracer_interop.export_revision(
+                profile_id=profile_id,
+                revision_id=revision_id,
+                source_id=source_id,
+            )
+        except PacketTracerInteropNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except PacketTracerInteropConflict as exc:
+            return error("NATIVE_EXPORT_UNSUPPORTED_CHANGE", str(exc), 409)
+        except PacketTracerInteropError as exc:
+            return error("NATIVE_EXPORT_FAILED", str(exc), 422)
+        response = send_file(
+            io.BytesIO(exported.content),
+            mimetype="application/octet-stream",
+            as_attachment=True,
+            download_name=exported.filename,
+            max_age=0,
+        )
+        report = json.dumps(exported.report, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        response.headers["X-NetRegress-Export-Report"] = base64.urlsafe_b64encode(report).decode("ascii").rstrip("=")
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @api.post("/topologies/validate")
     def validate_topology_definition():
