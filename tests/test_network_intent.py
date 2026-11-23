@@ -219,14 +219,10 @@ def test_profile_and_revision_pin_the_immutable_topology_hash(network_lab):
                 "DELETE FROM network_intent_revisions WHERE revision_id=?",
                 (revision["revision_id"],),
             )
-        with pytest.raises(sqlite3.IntegrityError, match="observations are immutable"):
-            connection.execute(
-                "UPDATE device_capability_reports SET platform='Other' WHERE report_id='missing'",
-            )
 
 
 def test_capability_validation_requires_real_adapter_observation_and_blocks_unsupported(network_lab):
-    _database, topology, service, topology_profile, topology_revision, device = network_lab
+    database, topology, service, topology_profile, topology_revision, device = network_lab
     profile = service.create_profile(
         project_id="project-1", topology_profile_id=topology_profile["profile_id"],
         name="Capability intent", actor="owner",
@@ -248,7 +244,18 @@ def test_capability_validation_requires_real_adapter_observation_and_blocks_unsu
     assert missing["capability_status"] == "UNKNOWN"
     assert any(item["code"] == "CAPABILITY_REPORT_MISSING" for item in missing["diagnostics"])
 
-    _create_capability_report(service, device)
+    report = _create_capability_report(service, device)
+    with database.connection() as connection:
+        with pytest.raises(sqlite3.IntegrityError, match="observations are immutable"):
+            connection.execute(
+                "UPDATE device_capability_reports SET platform='Other' WHERE report_id=?",
+                (report["report_id"],),
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="history cannot be deleted"):
+            connection.execute(
+                "DELETE FROM device_capability_reports WHERE report_id=?",
+                (report["report_id"],),
+            )
     compatible = service.validate(
         "project-1", topology_revision["revision_id"], value,
         profile_id=profile["profile_id"], evaluate_capabilities=True,
