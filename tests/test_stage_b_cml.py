@@ -132,13 +132,22 @@ def test_cml_topology_translation_node_link_and_state_readback():
     )
     assert link["link_id"] == "link-created"
     assert link["nodes"][0]["node_id"] == "node-1"
+    create_call = next(call for call in provider.calls if call[0] == "POST" and call[1] == "/api/v0/labs/lab-1/links")
+    assert create_call[2]["i1"] == "0"
+    assert create_call[2]["i2"] == "1"
     provider.start_node("lab-1", "node-1")
     provider.stop_node("lab-1", "node-1")
     provider.delete_link("lab-1", "link-1")
     provider.delete_node("lab-1", "node-1")
     provider.delete_lab("lab-1")
     assert provider.capture_support()["supported"] is True
-    assert provider.get_observed_topology("lab-1")["project_id"] == "lab-1"
+    observed = provider.get_observed_topology("lab-1")
+    assert observed["project_id"] == "lab-1"
+    observed_link = next(item for item in observed["links"] if item["link_id"] == "link-1")
+    assert observed_link["nodes"] == [
+        {"node_id": "node-1", "adapter_number": 0, "port_number": 0},
+        {"node_id": "node-2", "adapter_number": 0, "port_number": 1},
+    ]
 
 
 def test_cml_resource_and_image_observations_remain_unknown_when_access_is_restricted():

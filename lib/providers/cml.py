@@ -294,29 +294,64 @@ class CMLProvider:
 
     def list_nodes(self, project_id):
         lab = self._lab_path(project_id)
-        return [node for node in (self._node(item) for item in _items(self._data(
-            self._request("GET", f"/api/v0/labs/{lab}/nodes")
-        ))) if node]
+        result = []
+        raw_nodes = _items(self._data(self._request("GET", f"/api/v0/labs/{lab}/nodes")))
+        for raw in raw_nodes:
+            node = self._node(raw)
+            if node is None:
+                continue
+            # CML versions can omit interfaces from the node summary. Read the
+            # authoritative per-node interface endpoint so topology planning has
+            # real adapter/port data rather than assuming interface zero.
+            interfaces = self.get_interfaces(project_id, node["node_id"])
+            if interfaces:
+                node["ports"] = [
+                    {"adapter_number": item["adapter_number"], "port_number": item["port_number"],
+                     "name": item["name"]}
+                    for item in interfaces
+                ]
+            result.append(node)
+        return result
 
     def list_links(self, project_id):
         lab = self._lab_path(project_id)
-        return [link for link in (self._link(item) for item in _items(self._data(
-            self._request("GET", f"/api/v0/labs/{lab}/links")
-        ))) if link]
+        rows = _items(self._data(self._request("GET", f"/api/v0/labs/{lab}/links")))
+        result = []
+        for raw in rows:
+            link = self._link(project_id, raw)
+            if link is not None:
+                result.append(link)
+        return result
 
-    @staticmethod
-    def _link(item):
+    def _link(self, project_id, item):
         if not isinstance(item, dict):
             return None
         link_id = _id(item, "id", "link_id")
         if not link_id:
             return None
         endpoints = []
-        for side in ("n1", "n2"):
+        for side, interface_field in (("n1", "i1"), ("n2", "i2")):
             node_id = _id(item, side, side + "_node_id")
-            interface_id = _id(item, "i1" if side == "n1" else "i2", side + "_interface_id")
-            if node_id:
-                endpoints.append({"node_id": node_id, "adapter_number": 0, "port_number": int(interface_id) if interface_id and interface_id.isdigit() else 0})
+            raw_interface_id = item.get(interface_field, item.get(side + "_interface_id"))
+            if node_id is None:
+                continue
+            if raw_interface_id is None:
+                raise CMLProviderError("CML link observation is missing an endpoint interface identifier")
+            interfaces = self.get_interfaces(project_id, node_id)
+            selected = next((
+                interface for interface in interfaces
+                if str(interface.get("provider_interface_id")) == str(raw_interface_id)
+                or str(interface.get("name")) == str(raw_interface_id)
+                or str(interface.get("port_number")) == str(raw_interface_id)
+            ), None)
+            if selected is None:
+                raise CMLProviderError("CML link endpoint could not be matched to an observed interface")
+            endpoints.append({
+                "node_id": node_id, "adapter_number": selected["adapter_number"],
+                "port_number": selected["port_number"],
+            })
+        if len(endpoints) != 2:
+            raise CMLProviderError("CML link observation does not contain two complete endpoints")
         return {"link_id": link_id, "nodes": endpoints}
 
     def create_node(self, project_id, template_id, *, name, x, y):
@@ -365,7 +400,8 @@ class CMLProvider:
             rows = [item for item in value.values() if isinstance(item, dict)]
         result = []
         for index, item in enumerate(rows):
-            raw_port = item.get("id", item.get("port", index))
+            raw_interface_id = item.get("id", item.get("interface_id", item.get("port")))
+            raw_port = item.get("port_number", raw_interface_id if raw_interface_id is not None else index)
             try:
                 port = int(raw_port)
             except (TypeError, ValueError):
@@ -378,6 +414,7 @@ class CMLProvider:
                 continue
             name = str(item.get("label") or item.get("name") or f"eth{index}")[:64]
             result.append({"adapter_number": adapter, "port_number": port,
+                           "provider_interface_id": str(raw_interface_id) if raw_interface_id is not None else str(port),
                            "name": name, "short_name": name})
         return result
 
@@ -391,7 +428,10 @@ class CMLProvider:
         left, right = find(source, source_adapter, source_port), find(target, target_adapter, target_port)
         if left is None or right is None:
             raise CMLProviderError("CML link endpoint does not match an observed provider interface")
-        payload = {"n1": source_node_id, "i1": left["name"], "n2": target_node_id, "i2": right["name"]}
+        payload = {
+            "n1": source_node_id, "i1": left.get("provider_interface_id", left["name"]),
+            "n2": target_node_id, "i2": right.get("provider_interface_id", right["name"]),
+        }
         result = self._data(self._request("POST", f"/api/v0/labs/{lab}/links", payload=payload))
         link_id = _id(result, "id", "link_id") if isinstance(result, dict) else None
         if not link_id:
