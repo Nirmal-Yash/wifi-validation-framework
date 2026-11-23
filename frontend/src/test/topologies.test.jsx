@@ -64,6 +64,7 @@ describe("visual topology studio editing workflow",()=>{
  it("imports a Packet Tracer project through the multipart UI and opens its canonical draft",async()=>{
   renderPage();
   await screen.findByRole("button",{name:"Select node Router A"});
+  fireEvent.change(screen.getByLabelText("Project"),{target:{value:"project-1"}});
   fireEvent.change(screen.getByLabelText("Packet Tracer profile name"),{target:{value:"Imported PT lab"}});
   const file=new File(["native-pkt"],"lab.pkt",{type:"application/octet-stream"});
   fireEvent.change(screen.getByLabelText("Packet Tracer .pkt file"),{target:{files:[file]}});
