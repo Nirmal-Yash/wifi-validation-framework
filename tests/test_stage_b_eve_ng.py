@@ -78,7 +78,7 @@ class EVENGFixture(EVENGProvider):
                     "ethernet": {"value": 4},
                 },
             }}
-        if path == "/api/labs/User1/Lab%201.unl/nodes":
+        if method == "GET" and path == "/api/labs/User1/Lab%201.unl/nodes":
             return {"status": "success", "data": {
                 "1": {"id": 1, "name": "Router 1", "template": "vios", "status": self.node_status,
                       "image": "vios-image.bin"},
@@ -115,7 +115,7 @@ class EVENGFixture(EVENGProvider):
                  "destination": "node2", "destination_type": "node", "destination_label": "Se1/0",
                  "type": "serial"},
             ]}
-        if path == "/api/labs/User1/Lab%201.unl/networks":
+        if method == "GET" and path == "/api/labs/User1/Lab%201.unl/networks":
             return {"status": "success", "data": {
                 "1": {"id": 1, "name": "Bridge1", "type": "bridge"},
             }}

@@ -760,8 +760,10 @@ class PacketTracerInteropService:
         except Exception as exc:
             raise PacketTracerInteropError("The native Packet Tracer serializer could not produce a valid .pkt file") from exc
 
-        expected_refs = {str(item.get("ref")): node["name"] for _node_id, _device, node in edit_targets
-                         for item in [native_devices.get(_node_id, {})]}
+        expected_refs = {
+            str(native_devices.get(node_id, {}).get("ref")): node["name"]
+            for node_id, _device, node, _baseline in edit_targets
+        }
         reopened_by_ref = {str(device.ref): device for device in reopened.devices}
         if set(reopened_by_ref) != set(by_ref):
             raise PacketTracerInteropError("The serialized Packet Tracer project changed its device identity set")

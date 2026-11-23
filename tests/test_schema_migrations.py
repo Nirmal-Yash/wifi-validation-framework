@@ -315,6 +315,14 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.execute("DROP INDEX idx_device_config_deployments_revision")
         connection.execute("DROP INDEX idx_device_config_deployments_target")
         connection.execute("DROP TABLE device_configuration_deployments")
+        # Remove P07-B native source provenance before dropping the topology
+        # tables it references; this fixture then recreates the historical baseline.
+        connection.execute("DROP TRIGGER trg_topology_native_sources_scope_insert")
+        connection.execute("DROP TRIGGER trg_topology_native_sources_immutable")
+        connection.execute("DROP TRIGGER trg_topology_native_sources_no_delete")
+        connection.execute("DROP INDEX idx_topology_native_sources_profile_imported")
+        connection.execute("DROP INDEX idx_topology_native_sources_revision")
+        connection.execute("DROP TABLE topology_native_sources")
         # Remove the Stage D topology layer too, so this fixture truly represents
         # the historical 20260924_02 baseline before the forward migration chain.
         connection.execute("DROP TRIGGER trg_topology_profiles_no_delete")

@@ -54,7 +54,14 @@ class CMLProvider:
     @staticmethod
     def _segment(value, name):
         item = str(value or "").strip()
-        if not item or len(item) > 256 or any(ord(ch) < 33 for ch in item):
+        if (
+            not item
+            or len(item) > 256
+            or item in {".", ".."}
+            or "/" in item
+            or "\\" in item
+            or any(ord(ch) < 33 for ch in item)
+        ):
             raise CMLProviderError(f"{name} is invalid")
         return quote(item, safe="")
 

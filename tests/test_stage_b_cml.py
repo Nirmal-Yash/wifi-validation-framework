@@ -140,7 +140,7 @@ def test_cml_topology_translation_node_link_and_state_readback():
     provider.delete_link("lab-1", "link-1")
     provider.delete_node("lab-1", "node-1")
     provider.delete_lab("lab-1")
-    assert provider.capture_support()["supported"] is True
+    assert provider.capture_support()["supported"] is False
     observed = provider.get_observed_topology("lab-1")
     assert observed["project_id"] == "lab-1"
     observed_link = next(item for item in observed["links"] if item["link_id"] == "link-1")

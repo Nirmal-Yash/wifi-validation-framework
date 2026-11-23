@@ -64,11 +64,17 @@ describe("visual topology studio editing workflow",()=>{
  it("imports a Packet Tracer project through the multipart UI and opens its canonical draft",async()=>{
   renderPage();
   await screen.findByRole("button",{name:"Select node Router A"});
-  fireEvent.change(screen.getByLabelText("Project"),{target:{value:"project-1"}});
+  await waitFor(()=>expect(screen.getByLabelText("Project").disabled).toBe(false));
+  expect(screen.getByLabelText("Project").value).toBe("project-1");
   fireEvent.change(screen.getByLabelText("Packet Tracer profile name"),{target:{value:"Imported PT lab"}});
   const file=new File(["native-pkt"],"lab.pkt",{type:"application/octet-stream"});
-  fireEvent.change(screen.getByLabelText("Packet Tracer .pkt file"),{target:{files:[file]}});
-  fireEvent.click(screen.getByRole("button",{name:"Import Packet Tracer project"}));
+  const fileInput=screen.getByLabelText("Packet Tracer .pkt file");
+  Object.defineProperty(fileInput,"files",{value:[file],configurable:true});
+  fireEvent.change(fileInput);
+  expect(fileInput.files[0].name).toBe("lab.pkt");
+  const importButton=screen.getByRole("button",{name:"Import Packet Tracer project"});
+  await waitFor(()=>expect(importButton.disabled).toBe(false));
+  fireEvent.submit(fileInput.closest("form"));
   await waitFor(()=>expect(api.importPacketTracerTopology).toHaveBeenCalledTimes(1));
   const form=api.importPacketTracerTopology.mock.calls[0][0];
   expect(form.get("project_id")).toBe("project-1");
