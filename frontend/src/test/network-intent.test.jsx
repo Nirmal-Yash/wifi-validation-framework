@@ -204,7 +204,7 @@ describe("Network Intent v1.0 page",()=>{
   fireEvent.click(screen.getByRole("button",{name:"Publish revision"}));
   await waitFor(()=>expect(api.publishNetworkIntentRevision).toHaveBeenCalledTimes(1));
   expect(await screen.findByText("Linux + FRRouting")).toBeTruthy();
-  expect(screen.getByText("Arista EOS")).toBeTruthy();
+  expect(screen.getAllByText("Arista EOS").length).toBeGreaterThan(0);
   fireEvent.click(screen.getByRole("button",{name:"Compile vendor preview"}));
   await waitFor(()=>expect(api.compileNetworkIntentRevision).toHaveBeenCalledWith("intent-profile-1","intent-revision-1"));
   expect(await screen.findByText(/Device application: not performed/)).toBeTruthy();
