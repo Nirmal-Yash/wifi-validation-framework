@@ -453,6 +453,10 @@ def _published_cisco_compiler_revision(network_lab, *, include_linux=False):
         aggregation["members"] = [names[item] for item in aggregation["members"]]
     for zone in definition["firewall_zones"]:
         zone["interfaces"] = [names[item] for item in zone["interfaces"]]
+    for bridge in definition["linux_bridges"]:
+        bridge["members"] = [names[item] for item in bridge["members"]]
+    for vlan in definition["linux_vlan_interfaces"]:
+        vlan["parent_interface"] = names[vlan["parent_interface"]]
     revision = service.create_revision(
         profile["profile_id"], topology_revision_id=topology_revision["revision_id"],
         definition=definition, actor="owner",
