@@ -88,6 +88,48 @@ paths:
         "404": {description: Profile or topology revision not found in this Project}
         "409": {description: Profile archived or revision scope conflict}
         "422": {description: Invalid Network Intent definition}
+  /network-intent/compiler/adapters:
+    get:
+      operationId: listNetworkIntentCompilerAdapters
+      description: >-
+        List registered vendor configuration compilers. This catalogue is distinct from emulator/provider
+        adapters and does not imply device reachability or observed capabilities.
+      parameters:
+        - {name: project_id, in: query, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Registered adapter descriptors and tested software ranges}
+        "400": {description: project_id is required}
+        "403": {description: Project network_intent.read permission required}
+        "404": {description: Project not found}
+  /network-intent/profiles/{profile_id}/revisions/{revision_id}/compile:
+    post:
+      operationId: compileNetworkIntentRevision
+      description: >-
+        Compile one immutable PUBLISHED Network Intent revision into deterministic vendor configuration
+        previews. Compilation revalidates the pinned topology and current adapter-observed capability reports,
+        and returns either all target artifacts or zero artifacts. No device connection, CLI execution,
+        configuration write, commit, deployment or read-back is performed.
+      parameters:
+        - {name: profile_id, in: path, required: true, schema: {type: string}}
+        - {name: revision_id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                baseline_artifacts:
+                  type: object
+                  description: Transient relative-path to text mapping used only for deterministic diff preview; never persisted.
+                  maxProperties: 128
+                  additionalProperties: {type: string, maxLength: 500000}
+      responses:
+        "200": {description: COMPILED preview or BLOCKED diagnostics; application_performed is always false}
+        "403": {description: Project network_intent.manage permission required}
+        "404": {description: Profile or revision not found in the selected scope}
+        "422": {description: Unsafe or oversized baseline artifact request}
   /network-intent/profiles/{profile_id}/publish:
     post:
       operationId: publishNetworkIntentRevision

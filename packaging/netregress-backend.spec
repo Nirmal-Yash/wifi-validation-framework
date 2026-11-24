@@ -40,6 +40,7 @@ for package in (
     "jinja2",
     "netmiko",
     "paramiko",
+    "pktlib",
     "pytest",
     "scapy",
     "sqlalchemy",

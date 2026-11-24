@@ -26,6 +26,9 @@ from lib.services.packet_tracer_interop import (
 from lib.services.network_intent import (
     NetworkIntentConflict, NetworkIntentError, NetworkIntentNotFound, NetworkIntentService,
 )
+from lib.services.network_intent_compiler import (
+    NetworkIntentCompilationError, NetworkIntentCompilerService,
+)
 from lib.services.topology_apply import (
     TopologyApplyConflict, TopologyApplyError, TopologyApplyNotFound, TopologyApplyService,
 )
@@ -88,6 +91,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     topology_studio=TopologyStudioService(query.database)
     packet_tracer_interop=PacketTracerInteropService(query.database)
     network_intent=NetworkIntentService(query.database,topology_studio)
+    network_intent_compiler=NetworkIntentCompilerService(query.database,network_intent,device_inventory)
     topology_apply=TopologyApplyService(query.database,credential_vault,topology_studio)
     wifi_lab_provisioner=WiFiLabProvisioningService(
         query.database,credential_vault,resource_lock_manager=topology_apply.resource_lock_manager,
@@ -2672,6 +2676,40 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             profile_id=payload.get("profile_id"),
             evaluate_capabilities=evaluate,
         )
+        return ok(result)
+
+    @api.get("/network-intent/compiler/adapters")
+    def list_network_intent_compiler_adapters():
+        project_id = str(request.args.get("project_id", "")).strip()
+        if not project_id:
+            return error("INVALID_REQUEST", "project_id query parameter is required", 400)
+        denied = require_permission("network_intent.read", project_id=project_id)
+        if denied is not None:
+            return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND", "Project not found", 404)
+        return ok({"items": network_intent_compiler.list_adapters()})
+
+    @api.post("/network-intent/profiles/<profile_id>/revisions/<revision_id>/compile")
+    def compile_network_intent_revision(profile_id, revision_id):
+        profile = network_intent.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Network intent profile not found", 404)
+        denied = require_permission("network_intent.manage", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict) or set(payload) - {"baseline_artifacts"}:
+            return error("INVALID_REQUEST", "compile request may contain only baseline_artifacts", 400)
+        baseline = payload.get("baseline_artifacts")
+        if baseline is not None and not isinstance(baseline, dict):
+            return error("INVALID_REQUEST", "baseline_artifacts must be an object mapping relative paths to text", 400)
+        try:
+            result = network_intent_compiler.compile_revision(
+                profile_id, revision_id, baseline_artifacts=baseline,
+            )
+        except NetworkIntentCompilationError as exc:
+            return error("INVALID_COMPILATION_REQUEST", str(exc), 422)
         return ok(result)
 
     @api.post("/network-intent/profiles/<profile_id>/rollback")

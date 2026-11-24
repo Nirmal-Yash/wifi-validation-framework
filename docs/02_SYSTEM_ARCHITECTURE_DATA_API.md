@@ -1126,4 +1126,17 @@ All mutation routes use the existing session/CSRF/idempotency/audit conventions.
 
 ### Explicit P08 boundary
 
-P08 does not render CLI, configure devices, connect to network devices, deploy policies, orchestrate Ansible or provision infrastructure. P09 adapters own platform/version-specific identification, capability collection, compilation, configuration validation, diff and observed-state read-back. P10 owns Ansible execution. A structurally valid draft without a fully observed target is editable but is not publishable or ready for compilation.
+P08 does not render CLI, configure devices, connect to network devices, deploy policies, orchestrate Ansible or provision infrastructure. P09 adds a separate, compile-only vendor adapter registry and compiler over current adapter-observed capability reports. P09 v1.0 does not perform live device discovery, configuration syntax validation on a device, candidate commit-check, configuration apply or observed-state read-back. P10 owns the distinct Ansible execution/approval boundary. A structurally valid draft without a fully observed target is editable but is not publishable or ready for compilation.
+
+
+## EXP-P09 — multi-vendor configuration compilation
+
+P09 adds `lib/network_config/` as a distinct domain from emulator topology providers. `NetworkConfigAdapterRegistry` resolves a compiler only from an adapter-observed platform and software version, corroborated against managed Device vendor/model. The tested major-version gates are Linux/FRR 7–10, Cisco IOS 15 / IOS-XE 16–17, Arista EOS 4, Junos 18–24 and PAN-OS 10–12. Junos security features are further restricted to SRX models.
+
+`NetworkIntentCompilerService` accepts a PUBLISHED P08 revision only. Before rendering it revalidates the immutable revision, pinned topology hash, Project scope, current capability evidence and required feature support. Every target must resolve to an ACTIVE Device in the same Project and have a recent capability report. A single target failure blocks the whole result and returns no partial artifacts.
+
+The API exposes `GET /api/v1/network-intent/compiler/adapters?project_id=...` and `POST /api/v1/network-intent/profiles/{profile_id}/revisions/{revision_id}/compile`. The optional `baseline_artifacts` object is transient input for diff preview; it is never persisted. Artifacts carry deterministic relative paths and SHA-256 values; compilation identity is deterministic for the same revision, compiler version, adapter versions and output.
+
+The page shows the compiler catalogue and lets authorized users preview an immutable PUBLISHED revision. `compile_only=true`, `application_performed=false` and `ready_for_application=false` are fixed response properties. The compiler does not call the device command runner or credential vault and has no execution pathway.
+
+See `docs/EXP_P09_MULTIVENDOR_COMPILER_IMPLEMENTATION_AUDIT.md` and RQ-022. P09 capability discovery/collection by real network sessions, platform-native configuration syntax validation, Junos candidate checks, device read-back and device application remain external follow-up gates, not features claimed by this implementation.

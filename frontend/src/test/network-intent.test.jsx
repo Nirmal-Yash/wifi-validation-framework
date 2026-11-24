@@ -18,6 +18,8 @@ vi.mock("@/api",()=>({api:{
  validateNetworkIntent:vi.fn(),
  devices:vi.fn(),
  deviceCapabilityReports:vi.fn(),
+ networkConfigAdapters:vi.fn(),
+ compileNetworkIntentRevision:vi.fn(),
 }}));
 
 vi.mock("@/components/workspace-context",()=>({
@@ -46,6 +48,7 @@ let createdProfile=false;
 let savedRevision=null;
 let publishedRevision=null;
 let rolledBackRevision=null;
+let compilationResult=null;
 const validationResult={
  valid:false,capability_status:"UNKNOWN",ready_for_compilation:false,
  topology_revision_id:"topology-revision-1",intent_sha256:"b".repeat(64),
@@ -64,6 +67,7 @@ describe("Network Intent v1.0 page",()=>{
   savedRevision=null;
   publishedRevision=null;
   rolledBackRevision=null;
+  compilationResult=null;
   queryClient=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
   api.topologies.mockResolvedValue({items:[topologyProfile]});
   api.topologyRevisions.mockResolvedValue({items:[topologyRevision]});
@@ -103,6 +107,21 @@ describe("Network Intent v1.0 page",()=>{
    capability_sha256:"d".repeat(64),
    capabilities:{"addressing.ipv4":{status:"SUPPORTED"},"routing.ospf":{status:"UNSUPPORTED"}},
   }]});
+  api.networkConfigAdapters.mockResolvedValue({items:[
+   {adapter_id:"linux_frr",name:"Linux + FRRouting",version:"1.0.0",platform_family:"Linux/FRR",supported_versions:"FRR 7–10",output_format:"systemd-networkd + FRR + nftables"},
+   {adapter_id:"cisco_iosxe",name:"Cisco IOS / IOS-XE",version:"1.0.0",platform_family:"Cisco IOS/IOS-XE",supported_versions:"IOS 15.x; IOS-XE 16.x–17.x",output_format:"IOS/IOS-XE CLI"},
+   {adapter_id:"arista_eos",name:"Arista EOS",version:"1.0.0",platform_family:"Arista EOS",supported_versions:"EOS 4.x",output_format:"EOS CLI"},
+   {adapter_id:"juniper_junos",name:"Juniper Junos",version:"1.0.0",platform_family:"Juniper Junos",supported_versions:"Junos 18.x–24.x",output_format:"Junos hierarchical set commands"},
+   {adapter_id:"paloalto_panos",name:"Palo Alto PAN-OS",version:"1.0.0",platform_family:"Palo Alto PAN-OS",supported_versions:"PAN-OS 10.x–12.x",output_format:"PAN-OS set CLI"},
+  ]});
+  api.compileNetworkIntentRevision.mockImplementation(async()=>compilationResult||{
+   status:"COMPILED",compilation_id:"ncc-preview-001",compile_only:true,
+   application_performed:false,ready_for_application:false,
+   adapters:[{adapter_id:"cisco_iosxe",name:"Cisco IOS / IOS-XE",version:"1.0.0",output_format:"IOS/IOS-XE CLI"}],
+   change_summary:{new:1,changed:0,unchanged:0},diagnostics:[],
+   artifacts:[{path:"targets/router-a-device-1/running-config.txt",change_type:"NEW",sha256:"f".repeat(64),content:"hostname Router East\\n",diff:"+hostname Router East\\n"}],
+   orphaned_baseline_files:[],
+  });
  });
  afterEach(()=>{cleanup();queryClient?.clear();});
 
@@ -166,6 +185,30 @@ describe("Network Intent v1.0 page",()=>{
   await waitFor(()=>expect(api.rollbackNetworkIntentRevision).toHaveBeenCalledTimes(1));
   expect(await screen.findByText(/Rollback created a new DRAFT revision/)).toBeTruthy();
   await waitFor(()=>expect(screen.getByLabelText("Network intent revision").value).toBe("intent-revision-2"));
+ });
+
+
+ it("lists registered vendors and compiles a published revision as a non-applying preview",async()=>{
+  await createProfile();
+  const editor=screen.getByLabelText("Canonical network intent JSON");
+  const draft={
+   schema_version:"1.0",
+   targets:[{logical_node_id:"router-a",device_id:"device-1"}],
+   segments:[],interfaces:[{logical_node_id:"router-a",name:"eth0",admin_state:"UP",mode:"ROUTED",addresses:["192.0.2.1/24"]}],
+   static_routes:[],ospf:[],bgp:[],aggregations:[],firewall_zones:[],firewall_rules:[],
+   service_references:[],linux_bridges:[],linux_vlan_interfaces:[],
+  };
+  fireEvent.change(editor,{target:{value:JSON.stringify(draft,null,2)}});
+  fireEvent.click(screen.getByRole("button",{name:"Save DRAFT revision"}));
+  await waitFor(()=>expect(api.createNetworkIntentRevision).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button",{name:"Publish revision"}));
+  await waitFor(()=>expect(api.publishNetworkIntentRevision).toHaveBeenCalledTimes(1));
+  expect(await screen.findByText("Linux + FRRouting")).toBeTruthy();
+  expect(screen.getByText("Arista EOS")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"Compile vendor preview"}));
+  await waitFor(()=>expect(api.compileNetworkIntentRevision).toHaveBeenCalledWith("intent-profile-1","intent-revision-1"));
+  expect(await screen.findByText(/Device application: not performed/)).toBeTruthy();
+  expect(screen.getByText(/targets\/router-a-device-1\/running-config.txt/)).toBeTruthy();
  });
 
  it("lists the selected Device's adapter-observed capability provenance",async()=>{

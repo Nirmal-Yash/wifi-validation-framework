@@ -18,6 +18,18 @@ from lib.services.network_intent import (
     NetworkIntentNotFound,
     NetworkIntentService,
 )
+from lib.network_config.adapters import (
+    AristaEosAdapter,
+    CiscoIosXeAdapter,
+    JuniperJunosAdapter,
+    LinuxFrrAdapter,
+    PaloAltoPanOsAdapter,
+)
+from lib.network_config.registry import AdapterResolutionError, NetworkConfigAdapterRegistry
+from lib.services.network_intent_compiler import (
+    NetworkIntentCompilationError,
+    NetworkIntentCompilerService,
+)
 from lib.services.topology_studio import TopologyStudioService
 
 
@@ -413,3 +425,312 @@ def test_api_profiles_revisions_validation_and_device_capability_read(network_la
     reports = client.get(f"/api/v1/devices/{device['device_id']}/capability-reports")
     assert reports.status_code == 200
     assert reports.get_json()["data"]["items"][0]["device_id"] == device["device_id"]
+
+
+def _published_cisco_compiler_revision(network_lab, *, include_linux=False):
+    database, topology, service, topology_profile, topology_revision, device = network_lab
+    topology.publish(topology_profile["profile_id"], topology_revision["revision_id"], actor="owner")
+    _create_capability_report(service, device)
+    profile = service.create_profile(
+        project_id="project-1", topology_profile_id=topology_profile["profile_id"],
+        name="Compiler intent", actor="owner",
+    )
+    definition = valid_intent(device["device_id"])
+    if not include_linux:
+        definition["linux_bridges"] = []
+        definition["linux_vlan_interfaces"] = []
+    names = {
+        "eth0": "GigabitEthernet0/0",
+        "eth1": "GigabitEthernet0/1",
+        "eth2": "GigabitEthernet0/2",
+    }
+    for interface in definition["interfaces"]:
+        interface["name"] = names[interface["name"]]
+    for route in definition["static_routes"]:
+        route["interface_name"] = names[route["interface_name"]]
+    for aggregation in definition["aggregations"]:
+        aggregation["name"] = "Port-channel1"
+        aggregation["members"] = [names[item] for item in aggregation["members"]]
+    for zone in definition["firewall_zones"]:
+        zone["interfaces"] = [names[item] for item in zone["interfaces"]]
+    revision = service.create_revision(
+        profile["profile_id"], topology_revision_id=topology_revision["revision_id"],
+        definition=definition, actor="owner",
+    )
+    published = service.publish(profile["profile_id"], revision["revision_id"], actor="owner")
+    return database, service, profile, published, device
+
+
+def test_network_config_registry_recognizes_only_supported_observed_platforms():
+    registry = NetworkConfigAdapterRegistry()
+    cases = (
+        ({"vendor": "Ubuntu", "model": "Server"}, {"platform": "Linux/FRR", "software_version": "9.1"}, "linux_frr"),
+        ({"vendor": "Cisco", "model": "IOS-XE"}, {"platform": "Cisco IOS XE", "software_version": "17.12"}, "cisco_iosxe"),
+        ({"vendor": "Arista", "model": "7050X"}, {"platform": "Arista EOS", "software_version": "4.32.1F"}, "arista_eos"),
+        ({"vendor": "Juniper Networks", "model": "SRX345"}, {"platform": "Juniper Junos", "software_version": "22.4R3.8"}, "juniper_junos"),
+        ({"vendor": "Palo Alto Networks", "model": "PA-VM"}, {"platform": "Palo Alto Networks PAN-OS", "software_version": "11.2.3"}, "paloalto_panos"),
+    )
+    for device, report, expected in cases:
+        assert registry.resolve(device, report).descriptor.adapter_id == expected
+    with pytest.raises(AdapterResolutionError) as mismatch:
+        registry.resolve(
+            {"vendor": "Arista", "model": "7050X"},
+            {"platform": "Cisco IOS XE", "software_version": "17.12"},
+        )
+    assert mismatch.value.code == "DEVICE_VENDOR_PLATFORM_MISMATCH"
+    with pytest.raises(AdapterResolutionError) as unsupported:
+        registry.resolve(
+            {"vendor": "Cisco", "model": "IOS-XE"},
+            {"platform": "Cisco IOS XE", "software_version": "18.1"},
+        )
+    assert unsupported.value.code == "SOFTWARE_VERSION_UNSUPPORTED"
+
+
+def test_network_config_adapter_feature_boundaries_are_explicit():
+    juniper = JuniperJunosAdapter()
+    assert "firewall.zones" in juniper.supported_features({"model": "SRX345"})
+    assert "firewall.zones" not in juniper.supported_features({"model": "MX204"})
+    arista = AristaEosAdapter()
+    assert "routing.bgp" in arista.supported_features({"model": "7050X"})
+    assert "firewall.zones" not in arista.supported_features({"model": "7050X"})
+    pan = PaloAltoPanOsAdapter()
+    assert "firewall.basic_acl" in pan.supported_features({"model": "PA-VM"})
+    assert "vlans.access" not in pan.supported_features({"model": "PA-VM"})
+    linux = LinuxFrrAdapter()
+    assert "linux.bridge" in linux.supported_features({"model": "Ubuntu"})
+    assert "services.dhcp" not in linux.supported_features({"model": "Ubuntu"})
+
+
+def test_iosxe_compiler_is_deterministic_revision_bound_and_supports_baseline_diff(network_lab):
+    database, service, profile, revision, device = _published_cisco_compiler_revision(network_lab)
+    compiler = NetworkIntentCompilerService(database, service)
+    first = compiler.compile_revision(profile["profile_id"], revision["revision_id"])
+    assert first["status"] == "COMPILED"
+    assert first["compile_only"] is True
+    assert first["application_performed"] is False
+    assert first["ready_for_application"] is False
+    assert first["intent_sha256"] == revision["intent_sha256"]
+    assert first["topology_content_sha256"] == revision["topology_content_sha256"]
+    assert first["adapters"][0]["adapter_id"] == "cisco_iosxe"
+    assert len(first["artifacts"]) == 1
+    content = first["artifacts"][0]["content"]
+    assert "router bgp 65001" in content
+    assert "channel-group 1 mode active" in content
+    assert "zone-pair security" in content
+    assert "neighbor 192.0.2.2 remote-as 65002" in content
+    assert "ip address 192.0.2.1 255.255.255.0" in content
+    assert "ip route 198.51.100.0 255.255.255.0 192.0.2.254 10" in content
+    assert first["artifacts"][0]["sha256"] == hashlib.sha256(content.encode()).hexdigest()
+
+    repeated = compiler.compile_revision(profile["profile_id"], revision["revision_id"])
+    assert repeated["compilation_id"] == first["compilation_id"]
+    assert [item["sha256"] for item in repeated["artifacts"]] == [item["sha256"] for item in first["artifacts"]]
+
+    baseline = {item["path"]: item["content"] for item in first["artifacts"]}
+    compared = compiler.compile_revision(
+        profile["profile_id"], revision["revision_id"], baseline_artifacts=baseline,
+    )
+    assert compared["compilation_id"] == first["compilation_id"]
+    assert compared["change_summary"] == {"new": 0, "changed": 0, "unchanged": 1}
+    assert compared["artifacts"][0]["change_type"] == "UNCHANGED"
+    assert compared["artifacts"][0]["diff"] == ""
+
+
+def test_compiler_rejects_draft_revisions_and_never_returns_partial_vendor_output(network_lab):
+    database, _topology, service, topology_profile, topology_revision, device = network_lab
+    _create_capability_report(service, device)
+    profile = service.create_profile(
+        project_id="project-1", topology_profile_id=topology_profile["profile_id"],
+        name="Draft compiler intent", actor="owner",
+    )
+    draft = service.create_revision(
+        profile["profile_id"], topology_revision_id=topology_revision["revision_id"],
+        definition=valid_intent(device["device_id"]), actor="owner",
+    )
+    compiler = NetworkIntentCompilerService(database, service)
+    result = compiler.compile_revision(profile["profile_id"], draft["revision_id"])
+    assert result["status"] == "BLOCKED"
+    assert result["artifacts"] == []
+    assert result["diagnostics"][0]["code"] == "NETWORK_INTENT_REVISION_NOT_PUBLISHED"
+
+
+def test_cisco_compiler_blocks_linux_only_features_without_emitting_partial_artifacts(network_lab):
+    database, service, profile, revision, _device = _published_cisco_compiler_revision(
+        network_lab, include_linux=True,
+    )
+    result = NetworkIntentCompilerService(database, service).compile_revision(
+        profile["profile_id"], revision["revision_id"],
+    )
+    assert result["status"] == "BLOCKED"
+    assert result["artifacts"] == []
+    unsupported = {item.get("feature_id") for item in result["diagnostics"] if item["code"] == "ADAPTER_FEATURE_UNSUPPORTED"}
+    assert {"linux.bridge", "linux.vlan_interface"} <= unsupported
+
+
+def test_iosxe_adapter_rejects_cli_injection_in_interface_names_and_bgp_descriptions():
+    adapter = CiscoIosXeAdapter()
+    base = {
+        "logical_node_id": "router-a", "schema_version": "1.0", "segments": [],
+        "interfaces": [], "static_routes": [], "ospf": [], "aggregations": [],
+        "firewall_zones": [], "firewall_rules": [], "service_references": [],
+        "linux_bridges": [], "linux_vlan_interfaces": [],
+        "bgp": [{
+            "logical_node_id": "router-a", "local_asn": 65001, "router_id": "1.1.1.1",
+            "neighbors": [{"address": "192.0.2.2", "remote_asn": 65002, "description": "Transit\nend"}],
+        }],
+    }
+    with pytest.raises(Exception, match="description"):
+        adapter.compile_target({"name": "Router A"}, base)
+    injected = dict(base)
+    injected["bgp"] = []
+    injected["interfaces"] = [{
+        "name": "GigabitEthernet0/0\nend", "mode": "ROUTED",
+        "addresses": [], "admin_state": "UP",
+    }]
+    with pytest.raises(Exception, match="Interface name"):
+        adapter.compile_target({"name": "Router A"}, injected)
+
+
+def test_compiler_baseline_rejects_traversal_and_secret_bearing_text():
+    with pytest.raises(NetworkIntentCompilationError, match="confined relative path"):
+        NetworkIntentCompilerService._normalize_baseline({"../../etc/passwd": "root:x"})
+    with pytest.raises(NetworkIntentCompilationError, match="credential or secret"):
+        NetworkIntentCompilerService._normalize_baseline({"baseline.cfg": "username admin password hunter2"})
+
+
+def test_linux_frr_adapter_renders_ipv6_routes_and_systemd_network_artifacts():
+    adapter = LinuxFrrAdapter()
+    intent = {
+        "logical_node_id": "linux-router", "schema_version": "1.0", "segments": [],
+        "interfaces": [{
+            "name": "eth0", "admin_state": "UP", "mode": "ROUTED",
+            "addresses": ["2001:db8:1::1/64"],
+        }],
+        "static_routes": [{
+            "destination": "2001:db8:2::/64", "next_hop": "2001:db8:1::2",
+            "interface_name": "eth0", "metric": 10,
+        }],
+        "ospf": [], "bgp": [], "aggregations": [], "firewall_zones": [],
+        "firewall_rules": [], "service_references": [], "linux_bridges": [],
+        "linux_vlan_interfaces": [],
+    }
+    files = adapter.compile_target({"name": "Linux Router"}, intent)
+    assert "systemd/network/10-linux-router-eth0.network" in files
+    assert "operator/link-state.sh" in files
+    assert "ipv6 route 2001:db8:2::/64 2001:db8:1::2 eth0 10" in files["frr/frr.conf"]
+    assert "Address=2001:db8:1::1/64" in files["systemd/network/10-linux-router-eth0.network"]
+
+
+def test_arista_junos_and_panos_adapters_emit_native_output_and_block_unsupported_semantics():
+    eos = AristaEosAdapter().compile_target(
+        {"name": "Arista Switch"},
+        {
+            "logical_node_id": "switch-a", "schema_version": "1.0", "segments": [],
+            "interfaces": [{"name": "Ethernet1/1", "admin_state": "UP", "mode": "ROUTED", "addresses": ["192.0.2.2/24"]}],
+            "static_routes": [], "ospf": [], "bgp": [], "aggregations": [],
+            "firewall_zones": [], "firewall_rules": [], "service_references": [],
+            "linux_bridges": [], "linux_vlan_interfaces": [],
+        },
+    )["startup-config.txt"]
+    assert "interface Ethernet1/1" in eos
+    assert "ip address 192.0.2.2/24" in eos
+
+    junos = JuniperJunosAdapter().compile_target(
+        {"name": "Juniper Edge", "model": "MX204"},
+        {
+            "logical_node_id": "edge-a", "schema_version": "1.0", "segments": [],
+            "interfaces": [{"name": "ge-0/0/0", "admin_state": "UP", "mode": "ROUTED", "addresses": ["2001:db8:1::1/64"]}],
+            "static_routes": [{"destination": "2001:db8:2::/64", "next_hop": "2001:db8:1::2", "metric": 1}],
+            "ospf": [], "bgp": [], "aggregations": [], "firewall_zones": [],
+            "firewall_rules": [], "service_references": [], "linux_bridges": [],
+            "linux_vlan_interfaces": [],
+        },
+    )["candidate.set"]
+    assert "set routing-options rib inet6.0 static route 2001:db8:2::/64 next-hop 2001:db8:1::2" in junos
+
+    panos = PaloAltoPanOsAdapter().compile_target(
+        {"name": "Palo Alto Edge", "model": "PA-VM"},
+        {
+            "logical_node_id": "pa-a", "schema_version": "1.0", "segments": [],
+            "interfaces": [{"name": "ethernet1/1", "admin_state": "UP", "mode": "ROUTED", "addresses": ["2001:db8:1::1/64"]}],
+            "static_routes": [{"destination": "2001:db8:2::/64", "next_hop": "2001:db8:1::2", "metric": 10}],
+            "ospf": [], "bgp": [], "aggregations": [], "firewall_zones": [],
+            "firewall_rules": [], "service_references": [], "linux_bridges": [],
+            "linux_vlan_interfaces": [],
+        },
+    )["panos-set-commands.txt"]
+    assert "routing-table ipv6 static-route" in panos
+    assert "nexthop ipv6-address 2001:db8:1::2" in panos
+
+    with pytest.raises(ValueError, match="OSPFv3"):
+        AristaEosAdapter().compile_target(
+            {"name": "Arista Switch"},
+            {
+                "logical_node_id": "switch-a", "schema_version": "1.0", "segments": [],
+                "interfaces": [{"name": "Ethernet1/1", "admin_state": "UP", "mode": "ROUTED", "addresses": ["2001:db8:1::1/64"]}],
+                "static_routes": [], "ospf": [{"process_id": 1, "router_id": "1.1.1.1", "areas": [{"area_id": "0", "networks": ["2001:db8:1::/64"]}]}],
+                "bgp": [], "aggregations": [], "firewall_zones": [], "firewall_rules": [],
+                "service_references": [], "linux_bridges": [], "linux_vlan_interfaces": [],
+            },
+        )
+
+
+def test_compile_api_returns_registered_adapters_and_preview_only_artifacts(network_lab):
+    database, service, profile, revision, _device = _published_cisco_compiler_revision(network_lab)
+    app = create_app(database.path, auth_manager=AuthManager((), required=False))
+    client = app.test_client()
+    catalog = client.get("/api/v1/network-intent/compiler/adapters?project_id=project-1")
+    assert catalog.status_code == 200
+    adapter_ids = {item["adapter_id"] for item in catalog.get_json()["data"]["items"]}
+    assert adapter_ids == {"linux_frr", "cisco_iosxe", "arista_eos", "juniper_junos", "paloalto_panos"}
+
+    result = client.post(
+        f"/api/v1/network-intent/profiles/{profile['profile_id']}/revisions/{revision['revision_id']}/compile",
+        json={},
+    )
+    assert result.status_code == 200
+    data = result.get_json()["data"]
+    assert data["status"] == "COMPILED"
+    assert data["compile_only"] is True
+    assert data["application_performed"] is False
+    assert data["ready_for_application"] is False
+
+
+def test_frr_and_vendor_adapter_lacp_modes_and_family_mismatch_are_not_silently_translated():
+    eos_intent = {
+        "logical_node_id": "switch-a", "schema_version": "1.0", "segments": [],
+        "interfaces": [
+            {"name": "Ethernet1/1", "admin_state": "UP", "mode": "ROUTED", "addresses": []},
+            {"name": "Ethernet1/2", "admin_state": "UP", "mode": "ROUTED", "addresses": []},
+        ],
+        "static_routes": [], "ospf": [], "bgp": [],
+        "aggregations": [{
+            "name": "Port-Channel7", "protocol": "LACP", "mode": "PASSIVE",
+            "members": ["Ethernet1/1", "Ethernet1/2"],
+        }],
+        "firewall_zones": [], "firewall_rules": [], "service_references": [],
+        "linux_bridges": [], "linux_vlan_interfaces": [],
+    }
+    eos = AristaEosAdapter().compile_target({"name": "EOS"}, eos_intent)["startup-config.txt"]
+    assert "channel-group 7 mode passive" in eos
+
+    linux_intent = {
+        "logical_node_id": "host-a", "schema_version": "1.0", "segments": [],
+        "interfaces": [
+            {"name": "eth0", "admin_state": "UP", "mode": "ROUTED", "addresses": ["192.0.2.1/24"]},
+            {"name": "eth1", "admin_state": "UP", "mode": "ROUTED", "addresses": []},
+        ],
+        "static_routes": [], "ospf": [], "bgp": [], "aggregations": [],
+        "firewall_zones": [
+            {"zone_id": "inside", "name": "Inside", "interfaces": ["eth0"]},
+            {"zone_id": "outside", "name": "Outside", "interfaces": ["eth1"]},
+        ],
+        "firewall_rules": [{
+            "rule_id": "mixed-family", "source_zone_id": "inside", "destination_zone_id": "outside",
+            "action": "ALLOW", "protocol": "TCP", "source_cidrs": ["192.0.2.0/24"],
+            "destination_cidrs": ["2001:db8::/64"], "destination_ports": [{"start": 443, "end": 443}],
+        }],
+        "service_references": [], "linux_bridges": [], "linux_vlan_interfaces": [],
+    }
+    with pytest.raises(ValueError, match="different address families"):
+        LinuxFrrAdapter().compile_target({"name": "Linux"}, linux_intent)

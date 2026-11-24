@@ -29,11 +29,11 @@ This is an additive programme layered over the existing Runner implementation. I
 | Expansion phase | Scope | Dependencies | Exit evidence |
 |---|---|---|---|
 | EXP-P08 | Canonical network intent and device capability model | EXP-P04; existing device/topology domains | Versioned vendor-neutral intent; unsupported features fail validation |
-| EXP-P09-A | Linux and FRR configuration adapter | EXP-P08 | Intent validation, config diff, apply fixture and observed-state tests |
-| EXP-P09-B | Cisco IOS/IOS-XE adapter | EXP-P08 | Platform/version-gated interfaces, VLAN, routes, OSPF/BGP and ACLs |
-| EXP-P09-C | Arista EOS adapter | EXP-P08 | Platform/version-gated configuration and read-back tests |
-| EXP-P09-D | Juniper Junos adapter | EXP-P08 | Hierarchical config and candidate/commit-check workflow where supported |
-| EXP-P09-E | Palo Alto PAN-OS adapter | EXP-P08 | Zones, virtual routers, objects, security/NAT policy and verification |
+| EXP-P09-A | Linux and FRR configuration compiler | EXP-P08 | Deterministic systemd-networkd, FRR and nftables preview fixtures; explicit unsupported diagnostics; no configuration apply |
+| EXP-P09-B | Cisco IOS/IOS-XE configuration compiler | EXP-P08 | Platform/version-gated routed/switchport interfaces, VLANs, routes, OSPF/OSPFv3, BGP, LACP and zone-firewall previews |
+| EXP-P09-C | Arista EOS configuration compiler | EXP-P08 | EOS-native interface, VLAN, route, OSPFv4, BGP and LACP previews; unsupported zone firewall/OSPFv3 blocked |
+| EXP-P09-D | Juniper Junos configuration compiler | EXP-P08 | Hierarchical set previews, IPv4/IPv6 RIB, OSPF/OSPFv3, BGP/LACP and SRX-scoped security; live candidate/commit-check deferred |
+| EXP-P09-E | Palo Alto PAN-OS configuration compiler | EXP-P08 | Routed interfaces, IPv4/IPv6 static routes, OSPFv4/BGP/LACP, zones and security policy previews; unsupported L2/NAT semantics blocked or deferred |
 | EXP-P10 | Ansible configuration automation | EXP-P08/09 | Scoped inventory, playbook validation, preview, approval, execution and read-back |
 
 ## Stage D — Infrastructure automation
@@ -187,3 +187,23 @@ Device capability reports are immutable adapter/device-discovery observations wi
 The REST API adds Project-scoped read/manage/publish operations for intent profiles and revisions, read-only structural/capability validation, rollback-as-new-draft, and a read-only capability-report history endpoint. The `/network-intent` React page exposes the schema editor, topology binding, target Device mapping, diagnostics, revision lifecycle and capability provenance.
 
 Migration `20261123_18` advances the Alembic/schema contract to version 28. See `docs/EXP_P08_NETWORK_INTENT_IMPLEMENTATION_AUDIT.md` and RQ-021. P09 compilers and P10 Ansible remain separate downstream stages.
+
+
+## EXP-P09 implementation checkpoint — multi-vendor configuration compiler v1.0
+
+P09 introduces a configuration-compiler domain independent of the GNS3/CML/EVE-NG topology-provider registry. The compiler consumes only an immutable PUBLISHED P08 Network Intent revision, revalidates pinned topology and intent SHA-256 values, requires fresh adapter-observed capability reports for every target, corroborates observed platform/software version with managed Device vendor/model, then renders deterministic text artifacts.
+
+Registered compiler families are Linux + FRRouting, Cisco IOS/IOS-XE, Arista EOS, Juniper Junos and Palo Alto PAN-OS. Adapter descriptors expose platform family, tested software-version range, output format and adapter version. Device model can further narrow a feature boundary (for example Junos firewall policy is exposed only for SRX models).
+
+Compilation is read-only and all-or-nothing: a blocked target, unreported/unsupported capability, unknown platform/version, unsupported semantic or unsafe output produces diagnostics and no partial artifact collection. Artifacts include relative paths, SHA-256 hashes, content and optional unified baseline diffs. Baseline inputs are bounded, path-confined, secret-screened and never persisted. No CLI is executed, no SSH/HTTP device session is opened, no device configuration is written, and no successful-apply or observed-state claim is made.
+
+The v1.0 feature boundaries are intentionally explicit:
+- Linux/FRR: systemd-networkd interfaces, bridge/bond/VLAN netdevs, static routes, OSPF/OSPFv3, BGP and nftables zone rules. DHCP/DNS profile references are unresolved and block output.
+- Cisco IOS/IOS-XE: routed/access/trunk interfaces, VLANs, IPv4/IPv6 routes, OSPF/OSPFv3, BGP, LACP and basic zone-based ACL policy. IPv6 ACL translation is not yet supported and blocks.
+- Arista EOS: interface/VLAN, IPv4/IPv6 static routing, OSPFv4, BGP and LACP. OSPFv3 and P08 zone-based stateful firewall semantics are explicitly blocked rather than flattened into stateless ACLs.
+- Juniper Junos: hierarchical set syntax, inet/inet6 static routes, OSPF/OSPFv3, BGP, LACP and SRX zone/policy statements. Firewall compilation is limited to SRX models; non-default canonical static-route metrics are blocked because Junos preference semantics differ.
+- Palo Alto PAN-OS: routed Ethernet, IPv4/IPv6 static routes, OSPFv4, BGP, aggregate Ethernet, zones and security rules. Generic ACCESS/TRUNK switchport semantics, OSPFv3 and DHCP/DNS profile translation are not represented.
+
+No platform-specific configuration parser, device read-back, candidate commit-check, deployment workflow, secret injection into generated configuration, NAT model or Ansible execution is claimed by P09 v1.0. Those require separate contracts and validation against real OS versions. P10 remains the separate Ansible execution/approval boundary.
+
+Automated evidence is deterministic fixture/unit coverage for adapter discovery, version/platform mismatch, output rendering, protocol-family edge cases, injection/path safety, all-or-nothing output, revision/hash binding and API/frontend preview. It does not replace physical/device-in-the-loop acceptance tests.

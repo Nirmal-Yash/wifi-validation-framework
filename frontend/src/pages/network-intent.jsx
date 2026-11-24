@@ -1,5 +1,5 @@
 import React,{useEffect,useMemo,useState} from "react";
-import {Network,RefreshCw,ShieldCheck,UploadCloud} from "lucide-react";
+import {FileCode2,Network,RefreshCw,ShieldCheck,UploadCloud} from "lucide-react";
 import {api} from "@/api";
 import {useWorkspace} from "@/components/workspace-context";
 import {useAsyncLoader} from "@/hooks";
@@ -50,6 +50,11 @@ export default function NetworkIntentPage({user}) {
   ()=>projectId?api.networkIntentProfiles(projectId):Promise.resolve({items:[]}),
   [projectId],
   {enabled:Boolean(projectId),queryKey:"network-intent-profiles"},
+ );
+ const compilerAdapters=useAsyncLoader(
+  ()=>projectId?api.networkConfigAdapters(projectId):Promise.resolve({items:[]}),
+  [projectId],
+  {enabled:Boolean(projectId),queryKey:"network-intent-compiler-adapters"},
  );
  const [createTopologyProfileId,setCreateTopologyProfileId]=useState("");
  const [profileName,setProfileName]=useState("Network intent");
@@ -252,6 +257,21 @@ export default function NetworkIntentPage({user}) {
   if(item){setRevisionId(item.revision_id);setDefinitionText(formatJson(item.definition));}
  }
 
+ async function compileRevision() {
+  if(!profileId||!selectedRevision||selectedRevision.status!=="PUBLISHED")return;
+  setBusyAction("compile");
+  setError("");
+  setNotice("");
+  try{
+   const result=await api.compileNetworkIntentRevision(profileId,revisionId);
+   setCompilation(result);
+   setNotice(result.status==="COMPILED"
+    ?"Vendor configuration preview compiled. No device connection or configuration change was performed."
+    :"Compilation is blocked. No partial configuration was returned.");
+  }catch(exc){setError(exc.message||"Vendor configuration compilation failed.");}
+  finally{setBusyAction("");}
+ }
+
  function addTargetBinding() {
   if(!logicalNodeId||!targetDeviceId){setError("Choose a logical node and managed Device before adding a target binding.");return;}
   try{
@@ -264,6 +284,7 @@ export default function NetworkIntentPage({user}) {
    parsed.targets.sort((a,b)=>a.logical_node_id.localeCompare(b.logical_node_id));
    setDefinitionText(formatJson(parsed));
    setValidation(null);
+   setCompilation(null);
    setError("");
    setNotice("Target binding added to the editable intent document. Save a new DRAFT revision to persist it.");
   }catch(exc){setError(exc.message||"Could not add target binding.");}
@@ -289,7 +310,7 @@ export default function NetworkIntentPage({user}) {
    <div className="module-intro-icon"><Network size={19}/></div>
    <div>
     <strong>Canonical intent is separate from topology and vendor configuration</strong>
-    <p>Network Intent v1.0 describes the desired network in vendor-neutral terms. It is pinned to an immutable topology revision. Vendor CLI generation and device changes are not part of this stage.</p>
+    <p>Network Intent v1.0 describes the desired network in vendor-neutral terms. It is pinned to an immutable topology revision. Published intent can be compiled into vendor-specific configuration previews. Compilation never connects to or changes a device.</p>
    </div>
   </div>
 
@@ -379,7 +400,7 @@ export default function NetworkIntentPage({user}) {
     <div className="form-actions">
      <Button type="button" variant="outline" loading={busyAction==="validate"} disabled={!projectId||!topologyRevisionId} onClick={validateIntent}><ShieldCheck size={14}/>Validate intent</Button>
      {canManage?<Button type="button" loading={busyAction==="save-revision"} disabled={!profileId||!topologyRevisionId} onClick={saveDraft}><UploadCloud size={14}/>Save DRAFT revision</Button>:null}
-     {canPublish&&selectedRevision?.status==="DRAFT"?<Button type="button" loading={busyAction==="publish"} onClick={publishRevision}>Publish revision</Button>:null}
+     {canPublish&&selectedRevision?.status==="DRAFT"?<Button type="button" loading={busyAction==="publish"} onClick={publishRevision}>Publish revision</Button>:null}\n     {canManage&&selectedRevision?.status==="PUBLISHED"?<Button type="button" variant="outline" loading={busyAction==="compile"} onClick={compileRevision}><FileCode2 size={14}/>Compile vendor preview</Button>:null}
      {canManage&&selectedRevision?.status==="PUBLISHED"?<Button type="button" variant="outline" loading={busyAction==="rollback"} onClick={rollbackRevision}>Create rollback draft</Button>:null}
     </div>
    </div>
@@ -404,6 +425,39 @@ export default function NetworkIntentPage({user}) {
     {key:"created_at",label:"Created",render:item=>new Date(item.created_at).toLocaleString()},
     {key:"actions",label:"Action",render:item=><Button size="sm" variant="outline" onClick={()=>setRevisionId(item.revision_id)}>Select</Button>},
    ]} emptyTitle="No intent revisions" emptyMessage="Save a DRAFT revision from the editor to begin the version history."/>}
+  </Section>
+
+  <Section title="Vendor configuration compilation preview" subtitle="Deterministic, read-only compilation of the selected PUBLISHED revision. Artifacts are previews only; this stage never applies configuration to devices.">
+   {!selectedRevision||selectedRevision.status!=="PUBLISHED"?<EmptyState title="Publish a revision to compile" message="Select a published immutable Network Intent revision. Drafts and unsaved editor changes cannot be compiled."/>:null}
+   {compilation?<div className="network-intent-validation" aria-live="polite">
+    <div className="network-intent-validation-heading">
+     <strong>Compilation result</strong>
+     <StatusBadge value={compilation.status}/>
+    </div>
+    <p>{compilation.status==="COMPILED"?"All target devices compiled successfully.":"Compilation was blocked; no partial artifact set was returned."} Device application: not performed.</p>
+    {compilation.compilation_id?<p className="table-secondary">Compilation ID · <code>{compilation.compilation_id}</code></p>:null}
+    {compilation.adapters?.map(item=><p className="table-secondary" key={item.adapter_id}>{item.name} · {item.version} · {item.output_format}</p>)}
+    {compilation.change_summary?<p className="table-secondary">Artifacts · {compilation.change_summary.new} new · {compilation.change_summary.changed} changed · {compilation.change_summary.unchanged} unchanged</p>:null}
+    {(compilation.diagnostics||[]).length?<ul className="network-intent-diagnostics">{compilation.diagnostics.map((item,index)=><li key={item.code+"-"+index}><strong>{item.code}</strong> · {item.message}</li>)}</ul>:null}
+    {compilation.artifacts?.map(item=><details className="network-intent-artifact" key={item.path}>
+     <summary><strong>{item.change_type}</strong> · <code>{item.path}</code> · <span className="table-secondary">SHA-256 {item.sha256.slice(0,12)}…</span></summary>
+     <pre>{item.content}</pre>
+     {item.diff?<details><summary>Configuration diff</summary><pre>{item.diff}</pre></details>:null}
+    </details>)}
+    {compilation.orphaned_baseline_files?.length?<p className="table-secondary">Baseline-only files were not deleted: {compilation.orphaned_baseline_files.join(", ")}</p>:null}
+   </div>:<p className="muted">No compilation preview has been generated for this selected revision.</p>}
+  </Section>
+
+  <Section title="Registered vendor compilers" subtitle="Compiler availability is advertised independently of topology emulator providers. Software versions are gated by the registered tested range; device changes are not performed here.">
+   {compilerAdapters.loading&&!compilerAdapters.data?<LoadingState label="Loading registered compilers…"/>:null}
+   {compilerAdapters.error?<ErrorState error={compilerAdapters.error} onRetry={compilerAdapters.reload}/>:null}
+   <DataTable caption="Registered network configuration adapters" rows={compilerAdapters.data?.items||[]} rowKey={item=>item.adapter_id} columns={[
+    {key:"name",label:"Adapter",render:item=><strong>{item.name}</strong>},
+    {key:"platform_family",label:"Observed platform"},
+    {key:"supported_versions",label:"Version gate"},
+    {key:"output_format",label:"Output format"},
+    {key:"version",label:"Adapter version",render:item=><code>{item.version}</code>},
+   ]} emptyTitle="No registered compilers" emptyMessage="No vendor configuration adapters are registered."/>
   </Section>
 
   <Section title="Observed Device capability reports" subtitle="Append-only adapter observations. Missing features remain UNKNOWN; UNSUPPORTED features block capability-aware validation.">
