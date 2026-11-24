@@ -1,6 +1,6 @@
 # EXP-P10 — Ansible Automation Implementation Audit
 
-**Status:** Implementation complete; exact-main CI verification pending  
+**Status:** CI_VERIFIED for the quality workflow on `d845ea1f8d4d768c431cf45751a36865b499effa`; Linux desktop package qualification run `45368016475` remains pending  
 **Scope:** P08 immutable Network Intent → P09 deterministic configuration artifacts → P10 approved Ansible execution  
 **Migration:** `20261124_19` (schema version 29)  
 **Service:** `lib/services/ansible_automation.py`  
