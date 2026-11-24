@@ -421,6 +421,159 @@ paths:
           description: Export would lose unsupported topology changes
         "422":
           description: Native source integrity or serialization failure
+  /topologies/{profile_id}/revisions/{topology_revision_id}/presentation-revisions:
+    parameters:
+      - name: profile_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: topology_revision_id
+        in: path
+        required: true
+        schema: {type: string}
+    get:
+      operationId: listTopologyPresentationRevisions
+      description: >-
+        Return immutable presentation snapshots associated with one canonical topology revision.
+        Older topology revisions with no presentation record return an empty list; no vendor layout
+        is invented or silently assigned.
+      responses:
+        "200": {description: Presentation revision history; source bytes are excluded}
+        "403": {description: Project topology.read permission required}
+        "404": {description: Profile or canonical topology revision not found in that profile}
+    post:
+      operationId: createTopologyPresentationRevision
+      description: >-
+        Create an immutable DRAFT presentation snapshot pinned to the exact canonical topology revision
+        and SHA-256. Schema version 1.0 stores native coordinate space, canvas and viewport, grid,
+        node dimensions/rotation/labels/port anchors, link route geometry, drawings, layers and bounded
+        namespaced extensions. NATIVE layout requires a matching immutable source-artifact provenance
+        record. This endpoint does not parse, serialize or claim compatibility with a vendor file format.
+        Mutations require the standard Idempotency-Key header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [presentation]
+              properties:
+                presentation:
+                  type: object
+                  additionalProperties: false
+                  required: [schema_version, layout_origin]
+                  properties:
+                    schema_version: {type: string, enum: ["1.0"]}
+                    layout_origin: {type: string, enum: [NATIVE, MANUAL, NETREGRESS]}
+                    format_id: {type: string, maxLength: 64}
+                    format_version: {type: string, maxLength: 32}
+                    source_artifact_id: {type: string, maxLength: 64}
+                    coordinate_space:
+                      type: object
+                      required: [unit, origin]
+                      properties:
+                        unit: {type: string, enum: [px, pt, mm, grid, native]}
+                        origin: {type: string, enum: [top_left, bottom_left, center]}
+                        x_axis: {type: string, enum: [left, right], default: right}
+                        y_axis: {type: string, enum: [up, down], default: down}
+                        scale: {type: number, minimum: 0.0001, maximum: 10000}
+                        offset_x: {type: number}
+                        offset_y: {type: number}
+                    canvas:
+                      type: object
+                      required: [width, height]
+                      properties:
+                        width: {type: integer, minimum: 1, maximum: 100000}
+                        height: {type: integer, minimum: 1, maximum: 100000}
+                        background: {type: string, maxLength: 64}
+                    viewport:
+                      type: object
+                      required: [x, y, width, height]
+                      properties:
+                        x: {type: number}
+                        y: {type: number}
+                        width: {type: number, minimum: 1}
+                        height: {type: number, minimum: 1}
+                        zoom: {type: number, minimum: 0.01, maximum: 100}
+                    grid:
+                      type: object
+                      properties:
+                        enabled: {type: boolean}
+                        snap: {type: boolean}
+                        size: {type: number, minimum: 1, maximum: 1000}
+                    nodes:
+                      type: array
+                      maxItems: 128
+                      items:
+                        type: object
+                        required: [node_id, x, y]
+                        properties:
+                          node_id: {type: string, maxLength: 64}
+                          native_id: {type: string, maxLength: 128}
+                          x: {type: number}
+                          y: {type: number}
+                          width: {type: number, minimum: 1, maximum: 10000}
+                          height: {type: number, minimum: 1, maximum: 10000}
+                          rotation: {type: number, minimum: -360, maximum: 360}
+                          icon_ref: {type: string, maxLength: 256}
+                          icon_asset_path: {type: string, maxLength: 512}
+                          template_ref: {type: string, maxLength: 256}
+                          z_index: {type: integer}
+                          label: {type: string, maxLength: 256}
+                          layer_id: {type: string, maxLength: 64}
+                          ports: {type: array, maxItems: 64, items: {type: object}}
+                          extensions: {type: object, maxProperties: 16}
+                    links:
+                      type: array
+                      maxItems: 512
+                      items:
+                        type: object
+                        required: [link_id]
+                        properties:
+                          link_id: {type: string, maxLength: 64}
+                          native_id: {type: string, maxLength: 128}
+                          route_style: {type: string, enum: [direct, polyline, orthogonal, curved, native]}
+                          points: {type: array, maxItems: 64, items: {type: object, required: [x, y]}}
+                          label: {type: string, maxLength: 256}
+                          z_index: {type: integer}
+                          extensions: {type: object, maxProperties: 16}
+                    drawings: {type: array, maxItems: 1000, items: {type: object}}
+                    layers: {type: array, maxItems: 64, items: {type: object}}
+                    extensions: {type: object, maxProperties: 16}
+      responses:
+        "201": {description: Immutable DRAFT presentation revision created and bound to canonical topology hash}
+        "400": {description: Invalid idempotency key or malformed JSON request}
+        "403": {description: Project topology.manage permission required}
+        "404": {description: Profile or canonical topology revision not found in that profile}
+        "409": {description: Idempotency conflict or invalid lifecycle transition}
+        "422": {description: Unsupported schema, invalid geometry, unsafe paths or unbounded extensions}
+  /topologies/{profile_id}/presentation-revisions/{presentation_id}/publish:
+    parameters:
+      - name: profile_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: presentation_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      operationId: publishTopologyPresentationRevision
+      description: >-
+        Publish a DRAFT presentation revision only after its exact pinned canonical topology revision
+        is PUBLISHED. Published presentation metadata, hashes, source mappings and presentation JSON
+        are immutable. Mutations require the standard Idempotency-Key header.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {type: object, maxProperties: 0}
+      responses:
+        "200": {description: Published immutable presentation revision}
+        "403": {description: Project topology.publish permission required}
+        "404": {description: Presentation revision not found in that profile}
+        "409": {description: Canonical topology is not published or presentation transition is invalid}
   /topologies/validate:
     post:
       operationId: validateTopologyDraft

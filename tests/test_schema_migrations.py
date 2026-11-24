@@ -24,7 +24,7 @@ def test_fresh_database_is_created_only_through_single_alembic_head(tmp_path):
     status = DatabaseMigrationManager(path).check()
 
     assert status.current_revision == status.head_revision
-    assert status.current_revision == "20261124_19"
+    assert status.current_revision == "20261124_20"
     assert status.is_up_to_date
     assert status.schema.is_clean
 
@@ -35,7 +35,7 @@ def test_fresh_database_is_created_only_through_single_alembic_head(tmp_path):
         authority = connection.execute(
             "SELECT value FROM schema_meta WHERE key='migration_authority'"
         ).fetchone()[0]
-        assert version == "29"
+        assert version == "30"
         assert authority == "alembic"
 
 
@@ -135,7 +135,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
 
     result = manager.upgrade()
 
-    assert result.current_revision == result.head_revision == "20261124_19"
+    assert result.current_revision == result.head_revision == "20261124_20"
     assert result.is_up_to_date
     assert result.last_backup is not None
     assert result.last_backup.is_file()
@@ -159,7 +159,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "29"
+        ).fetchone()[0] == "30"
 
 
 def test_schema_drift_is_reported_without_silent_repair(tmp_path):
@@ -339,6 +339,29 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.execute("DROP TABLE ansible_automation_executions")
         connection.execute("DROP TABLE ansible_automation_approvals")
         connection.execute("DROP TABLE ansible_automation_plans")
+        # Remove G02 native presentation and generic source objects before
+        # reconstructing the pre-G02 topology schema for the legacy migration test.
+        connection.execute("DROP TRIGGER trg_topology_presentation_scope_insert")
+        connection.execute("DROP TRIGGER trg_topology_presentation_identity_immutable")
+        connection.execute("DROP TRIGGER trg_topology_presentation_state_transition")
+        connection.execute("DROP TRIGGER trg_topology_presentation_publish_scope")
+        connection.execute("DROP TRIGGER trg_topology_presentation_publish_metadata")
+        connection.execute("DROP TRIGGER trg_topology_presentation_published_immutable")
+        connection.execute("DROP TRIGGER trg_topology_presentation_no_delete")
+        connection.execute("DROP TRIGGER trg_topology_source_assets_immutable")
+        connection.execute("DROP TRIGGER trg_topology_source_assets_no_delete")
+        connection.execute("DROP TRIGGER trg_topology_source_artifacts_scope_insert")
+        connection.execute("DROP TRIGGER trg_topology_source_artifacts_immutable")
+        connection.execute("DROP TRIGGER trg_topology_source_artifacts_no_delete")
+        connection.execute("DROP INDEX idx_topology_presentation_profile_revision")
+        connection.execute("DROP INDEX idx_topology_presentation_topology_revision")
+        connection.execute("DROP INDEX idx_topology_presentation_source")
+        connection.execute("DROP INDEX idx_topology_source_assets_source")
+        connection.execute("DROP INDEX idx_topology_source_artifacts_profile_imported")
+        connection.execute("DROP INDEX idx_topology_source_artifacts_revision")
+        connection.execute("DROP TABLE topology_presentation_revisions")
+        connection.execute("DROP TABLE topology_source_assets")
+        connection.execute("DROP TABLE topology_source_artifacts")
         connection.execute("DROP TABLE network_intent_revisions")
         connection.execute("DROP TABLE network_intent_profiles")
         # Remove P07-B native source provenance before dropping the topology
@@ -433,7 +456,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.commit()
 
     status = DatabaseMigrationManager(path).upgrade()
-    assert status.current_revision == status.head_revision == "20261124_19"
+    assert status.current_revision == status.head_revision == "20261124_20"
     assert status.is_up_to_date
     with sqlite3.connect(path) as connection:
         assert connection.execute(
@@ -441,7 +464,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "29"
+        ).fetchone()[0] == "30"
 
 
 def test_database_operator_cli_commands(tmp_path):

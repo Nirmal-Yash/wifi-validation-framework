@@ -97,6 +97,9 @@ EXPECTED_TABLE_COLUMNS = {
     "topology_profiles": ("profile_id", "project_id", "name", "description", "scope_type", "scope_id", "lab_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "topology_revisions": ("revision_id", "profile_id", "revision_number", "definition_json", "content_sha256", "status", "created_at", "created_by", "published_at", "published_by"),
     "topology_native_sources": ("source_id", "project_id", "profile_id", "revision_id", "format", "format_version", "filename", "sha256", "size_bytes", "source_bytes", "codec_name", "codec_version", "mapping_json", "compatibility_report_json", "imported_at", "imported_by"),
+    "topology_source_artifacts": ("source_id", "project_id", "profile_id", "topology_revision_id", "topology_content_sha256", "format_id", "format_version", "filename", "sha256", "size_bytes", "source_bytes", "codec_name", "codec_version", "metadata_json", "imported_at", "imported_by"),
+    "topology_source_assets": ("asset_id", "source_id", "relative_path", "media_type", "sha256", "size_bytes", "content_bytes", "created_at"),
+    "topology_presentation_revisions": ("presentation_id", "project_id", "profile_id", "topology_revision_id", "revision_number", "schema_version", "topology_content_sha256", "presentation_json", "presentation_sha256", "source_artifact_id", "status", "created_at", "created_by", "published_at", "published_by"),
     "network_intent_profiles": ("profile_id", "project_id", "topology_profile_id", "name", "description", "scope_type", "scope_id", "lab_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "network_intent_revisions": ("revision_id", "profile_id", "topology_revision_id", "topology_content_sha256", "schema_version", "revision_number", "definition_json", "intent_sha256", "provenance_json", "parent_revision_id", "status", "created_at", "created_by", "published_at", "published_by"),
     "device_capability_reports": ("report_id", "project_id", "device_id", "provider_id", "platform", "software_version", "adapter_name", "adapter_version", "source_type", "capabilities_json", "capability_sha256", "observed_at", "recorded_at", "recorded_by"),
@@ -190,6 +193,18 @@ EXPECTED_TRIGGERS = (
     "trg_pipeline_steps_no_delete",
     "trg_pipeline_step_attempts_final_immutable",
     "trg_pipeline_step_attempts_no_delete",
+    "trg_topology_source_artifacts_scope_insert",
+    "trg_topology_source_artifacts_immutable",
+    "trg_topology_source_artifacts_no_delete",
+    "trg_topology_source_assets_immutable",
+    "trg_topology_source_assets_no_delete",
+    "trg_topology_presentation_scope_insert",
+    "trg_topology_presentation_identity_immutable",
+    "trg_topology_presentation_state_transition",
+    "trg_topology_presentation_publish_scope",
+    "trg_topology_presentation_publish_metadata",
+    "trg_topology_presentation_published_immutable",
+    "trg_topology_presentation_no_delete",
 )
 
 EXPECTED_INDEXES = (
@@ -253,6 +268,12 @@ EXPECTED_INDEXES = (
     "idx_pipeline_executions_linked_run",
     "idx_pipeline_steps_ready",
     "idx_pipeline_step_attempts_step",
+    "idx_topology_source_artifacts_profile_imported",
+    "idx_topology_source_artifacts_revision",
+    "idx_topology_source_assets_source",
+    "idx_topology_presentation_profile_revision",
+    "idx_topology_presentation_topology_revision",
+    "idx_topology_presentation_source",
 )
 
 EXPECTED_FOREIGN_KEYS = {
@@ -292,6 +313,14 @@ EXPECTED_FOREIGN_KEYS = {
     ("topology_native_sources", "project_id", "projects", "project_id"),
     ("topology_native_sources", "profile_id", "topology_profiles", "profile_id"),
     ("topology_native_sources", "revision_id", "topology_revisions", "revision_id"),
+    ("topology_source_artifacts", "project_id", "projects", "project_id"),
+    ("topology_source_artifacts", "profile_id", "topology_profiles", "profile_id"),
+    ("topology_source_artifacts", "topology_revision_id", "topology_revisions", "revision_id"),
+    ("topology_source_assets", "source_id", "topology_source_artifacts", "source_id"),
+    ("topology_presentation_revisions", "project_id", "projects", "project_id"),
+    ("topology_presentation_revisions", "profile_id", "topology_profiles", "profile_id"),
+    ("topology_presentation_revisions", "topology_revision_id", "topology_revisions", "revision_id"),
+    ("topology_presentation_revisions", "source_artifact_id", "topology_source_artifacts", "source_id"),
     ("network_intent_profiles", "project_id", "projects", "project_id"),
     ("network_intent_profiles", "topology_profile_id", "topology_profiles", "profile_id"),
     ("network_intent_profiles", "project_id", "labs", "project_id"),
@@ -477,9 +506,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "29":
+        if metadata.get("version") != "30":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '29'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '30'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

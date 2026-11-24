@@ -534,6 +534,48 @@ export default function TopologyStudioPage({user}){
   const result=await runMutation(()=>api.createTopologyRevision(profileId,{definition:definitionRef.current}),"Immutable topology draft revision created.");
   if(result?.revision_id){setRevisionId(result.revision_id);resetEditorDefinition(result.definition||definitionRef.current);}
  }
+ async function savePresentationSnapshot(){
+  if(!canManage||!profileId||!selectedRevision)return;
+  if(JSON.stringify(definitionRef.current)!==JSON.stringify(selectedRevision.definition)){
+   setError("Save local topology changes as a new canonical revision before capturing presentation metadata.");
+   return;
+  }
+  const canonical=selectedRevision.definition||emptyDefinition();
+  const payload={
+   schema_version:"1.0",
+   layout_origin:"NETREGRESS",
+   coordinate_space:{unit:"px",origin:"top_left",x_axis:"right",y_axis:"down",scale:1,offset_x:0,offset_y:0},
+   canvas:{width:1000,height:620},
+   viewport:{x:viewport.x,y:viewport.y,width:viewport.width,height:viewport.height,zoom:1000/viewport.width},
+   grid:{enabled:true,snap:false,size:25},
+   layers:[],
+   nodes:(canonical.nodes||[]).map(node=>({
+    node_id:node.id,x:node.x,y:node.y,width:136,height:72,label:node.name||node.id,z_index:0,
+   })),
+   links:(canonical.links||[]).map(link=>({link_id:link.id,route_style:"direct",z_index:0})),
+   drawings:[],
+  };
+  const result=await runMutation(
+   ()=>api.createTopologyPresentationRevision(profileId,selectedRevision.revision_id,{presentation:payload}),
+   "Immutable canvas presentation snapshot created."
+  );
+  if(result?.presentation_id)await presentationRevisions.reload().catch(()=>null);
+ }
+ async function publishPresentationSnapshot(presentationId){
+  if(!canPublish||!profileId||!presentationId)return;
+  const result=await runMutation(
+   ()=>api.publishTopologyPresentationRevision(profileId,presentationId),
+   "Canvas presentation snapshot published."
+  );
+  if(result?.presentation_id)await presentationRevisions.reload().catch(()=>null);
+ }
+ function restorePresentationViewport(item){
+  const saved=item?.presentation?.viewport;
+  if(!saved)return;
+  setViewport({x:saved.x,y:saved.y,width:saved.width,height:saved.height});
+  setNotice("Restored the saved viewport from presentation revision "+item.revision_number+".");
+  setError("");
+ }
  async function publishRevision(){
   if(!canPublish)return;
   if(!profileId||!revisionId||selectedRevision?.status!=="DRAFT"){
@@ -733,6 +775,23 @@ export default function TopologyStudioPage({user}){
      {key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>},
      {key:"created_at",label:"Created"},{key:"published_at",label:"Published"}
     ]} emptyTitle="No topology revisions" emptyMessage="Add nodes and links, then save the first immutable draft revision."/>
+   </Section>
+   <Section title="Versioned canvas presentation" subtitle="Store the current canvas viewport, canonical node placement and basic link presentation in an immutable snapshot pinned to this topology hash. The versioned backend schema also accepts native port anchors, route points, drawings, layers and vendor extensions for codec integrations; these advanced fields are not yet editable in this canvas UI.">
+    {presentationRevisions.loading&&!presentationRevisions.data?<LoadingState label="Loading presentation revisions…"/>:null}
+    {presentationRevisions.error?<ErrorState error={presentationRevisions.error} onRetry={presentationRevisions.reload}/>:null}
+    <div className="form-actions">
+     <Button type="button" variant="outline" onClick={savePresentationSnapshot} loading={mutation.loading} disabled={!canManage||!selectedRevision||JSON.stringify(definitionRef.current)!==JSON.stringify(selectedRevision.definition)}>Capture presentation snapshot</Button>
+     {presentationRevisionRows[0]?.presentation?.viewport?<Button type="button" variant="ghost" onClick={()=>restorePresentationViewport(presentationRevisionRows[0])}>Restore latest saved viewport</Button>:null}
+    </div>
+    <p className="muted">A snapshot is tied to one immutable canonical revision. Save topology edits into a new canonical revision before capturing changed node placement. Viewport restore affects the canvas view only. Native parsing, asset import, route editing, drawings and vendor application fidelity are separate codec/rendering capabilities and are not implied by this snapshot.</p>
+    <DataTable caption="Topology presentation revision history" rows={presentationRevisionRows} rowKey={item=>item.presentation_id} columns={[
+     {key:"revision_number",label:"Presentation revision"},
+     {key:"presentation",label:"Layout",render:item=>item.presentation?.layout_origin||"Not recorded"},
+     {key:"presentation_sha256",label:"SHA-256",render:item=><code title={item.presentation_sha256}>{item.presentation_sha256.slice(0,14)}…</code>},
+     {key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>},
+     {key:"created_at",label:"Created"},
+     {key:"actions",label:"Action",render:item=>item.status==="DRAFT"&&selectedRevision?.status==="PUBLISHED"&&canPublish?<Button type="button" size="sm" variant="outline" onClick={()=>publishPresentationSnapshot(item.presentation_id)} loading={mutation.loading}>Publish</Button>:item.presentation?.viewport?<Button type="button" size="sm" variant="ghost" onClick={()=>restorePresentationViewport(item)}>Restore view</Button>:null}
+    ]} emptyTitle="No presentation snapshots" emptyMessage="Capture a snapshot to persist canvas placement and viewport separately from the canonical network topology."/>
    </Section>
    <Section title="Node palette" subtitle="Drag or select a logical device type. Provider templates and images are mapped separately after selecting a provider.">
     <div className="topology-palette-groups">

@@ -19,6 +19,10 @@ from lib.services.configuration_schema_registry import (
 )
 from lib.services.device_inventory import DeviceInventoryService, DeviceInventoryError, DeviceInventoryNotFound
 from lib.services.topology_studio import TopologyStudioService, TopologyStudioError, TopologyStudioNotFound
+from lib.services.topology_presentation import (
+    TopologyPresentationConflict, TopologyPresentationError,
+    TopologyPresentationNotFound, TopologyPresentationService,
+)
 from lib.services.packet_tracer_interop import (
     PacketTracerInteropConflict, PacketTracerInteropError,
     PacketTracerInteropNotFound, PacketTracerInteropService,
@@ -93,6 +97,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     performance_policies=PerformancePolicyService(query.database)
     device_inventory=DeviceInventoryService(query.database)
     topology_studio=TopologyStudioService(query.database)
+    topology_presentation=TopologyPresentationService(query.database)
     packet_tracer_interop=PacketTracerInteropService(query.database)
     network_intent=NetworkIntentService(query.database,topology_studio)
     network_intent_compiler=NetworkIntentCompilerService(query.database,network_intent,device_inventory)
@@ -3042,6 +3047,90 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         idempotency_store_response(scope,key,request_hash,revision,200)
         return ok(revision)
 
+
+
+    @api.get("/topologies/<profile_id>/revisions/<topology_revision_id>/presentation-revisions")
+    def list_topology_presentation_revisions(profile_id, topology_revision_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.read", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        revision = topology_studio.get_revision(topology_revision_id)
+        if revision is None or revision["profile_id"] != profile_id:
+            return error("NOT_FOUND", "Topology revision not found in this profile", 404)
+        return ok({"items": topology_presentation.list_revisions(topology_revision_id)})
+
+    @api.post("/topologies/<profile_id>/revisions/<topology_revision_id>/presentation-revisions")
+    def create_topology_presentation_revision(profile_id, topology_revision_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.manage", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        revision = topology_studio.get_revision(topology_revision_id)
+        if revision is None or revision["profile_id"] != profile_id:
+            return error("NOT_FOUND", "Topology revision not found in this profile", 404)
+        presentation = payload.get("presentation") if isinstance(payload, dict) else None
+        scope = "/api/v1/topologies/" + profile_id + "/revisions/" + topology_revision_id + "/presentation-revisions"
+        key, request_hash, cached, security_error = idempotency_preflight(
+            scope, {"profile_id": profile_id, "topology_revision_id": topology_revision_id, "presentation": presentation}
+        )
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            result = topology_presentation.create_revision(
+                topology_revision_id, presentation=presentation, actor=_topology_actor()
+            )
+            if result["profile_id"] != profile_id:
+                return error("NOT_FOUND", "Topology revision not found in this profile", 404)
+        except TopologyPresentationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except TopologyPresentationConflict as exc:
+            return error("INVALID_TRANSITION", str(exc), 409)
+        except TopologyPresentationError as exc:
+            return error("INVALID_PRESENTATION", str(exc), 422)
+        except (TypeError, ValueError) as exc:
+            return error("INVALID_PRESENTATION", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, result, 201)
+        return ok(result), 201
+
+    @api.post("/topologies/<profile_id>/presentation-revisions/<presentation_id>/publish")
+    def publish_topology_presentation_revision(profile_id, presentation_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.publish", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        current = topology_presentation.get_revision(presentation_id)
+        if current is None or current["profile_id"] != profile_id:
+            return error("NOT_FOUND", "Presentation revision not found in this profile", 404)
+        scope = "/api/v1/topologies/" + profile_id + "/presentation-revisions/" + presentation_id + "/publish"
+        key, request_hash, cached, security_error = idempotency_preflight(
+            scope, {"profile_id": profile_id, "presentation_id": presentation_id}
+        )
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            result = topology_presentation.publish(
+                presentation_id, actor=_topology_actor(), expected_profile_id=profile_id
+            )
+        except TopologyPresentationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except TopologyPresentationConflict as exc:
+            return error("INVALID_TRANSITION", str(exc), 409)
+        except TopologyPresentationError as exc:
+            return error("INVALID_PRESENTATION", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, result, 200)
+        return ok(result)
 
     def _topology_actor() -> str:
         return str((session.get("netregress_user") or {}).get("username", "local"))
