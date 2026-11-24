@@ -65,6 +65,7 @@ export default function NetworkIntentPage({user}) {
  const [definitionText,setDefinitionText]=useState(formatJson(EMPTY_INTENT));
  const [evaluateCapabilities,setEvaluateCapabilities]=useState(true);
  const [validation,setValidation]=useState(null);
+ const [compilation,setCompilation]=useState(null);
  const [notice,setNotice]=useState("");
  const [error,setError]=useState("");
  const [logicalNodeId,setLogicalNodeId]=useState("");
