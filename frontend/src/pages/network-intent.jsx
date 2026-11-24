@@ -75,6 +75,10 @@ export default function NetworkIntentPage({user}) {
  const [evaluateCapabilities,setEvaluateCapabilities]=useState(true);
  const [validation,setValidation]=useState(null);
  const [compilation,setCompilation]=useState(null);
+ const [ansibleCredentialBindingsText,setAnsibleCredentialBindingsText]=useState("{}");
+ const [ansiblePlanId,setAnsiblePlanId]=useState("");
+ const [ansiblePlanResult,setAnsiblePlanResult]=useState(null);
+ const [ansibleExecutionResult,setAnsibleExecutionResult]=useState(null);
  const [notice,setNotice]=useState("");
  const [error,setError]=useState("");
  const [logicalNodeId,setLogicalNodeId]=useState("");
