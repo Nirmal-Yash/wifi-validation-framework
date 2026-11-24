@@ -36,6 +36,44 @@ This is an additive programme layered over the existing Runner implementation. I
 | EXP-P09-E | Palo Alto PAN-OS configuration compiler | EXP-P08 | Routed interfaces, IPv4/IPv6 static routes, OSPFv4/BGP/LACP, zones and security policy previews; unsupported L2/NAT semantics blocked or deferred |
 | EXP-P10 | Ansible configuration automation | EXP-P08/09 | Published revision → deterministic compiler artifacts → Project/Lab/Device-scoped static inventory → syntax/collection validation → independent plan-hash approval → bounded execution → per-Device read-back and immutable audit evidence; stale plans and partial failures block automatic retry. Initial live transport: Linux/FRR SSH, IOS/IOS-XE and EOS network_cli; Junos/PAN-OS remain compile-only. |
 
+## Stage G — Universal native vendor interoperability
+
+**Programme extension:** G01–G12 is a major, additive interoperability stage. It extends EXP-P00–EXP-P17; it does not renumber, replace or silently redefine the existing Stage A–F phases. Stage G owns native project-file interoperability, vendor-native topology presentation and cross-format conversion. Existing provider adapters continue to own live controller operations.
+
+| Package | Scope | Dependencies | Exit evidence |
+|---|---|---|---|
+| G01 | Comprehensive P06–P10 implementation audit and gap register | Current main; source, migrations, APIs, frontend, tests and current exact-commit CI | Source-backed gap register; verified P06–P10 status; protected boundaries and external acceptance gates; next task selected. **Audit: SPECIFICATION_COMPLETE** in docs/STAGE_G_NATIVE_INTEROPERABILITY_AUDIT.md. |
+| G02 | Extended native topology data model | G01; existing TopologyStudioService and immutable revisions | Versioned presentation snapshots pinned to canonical topology revision/hash; canvas/view metadata, native IDs, geometry, drawings/layers/labels and bounded namespaced unknown-field preservation; additive migration and legacy compatibility. |
+| G03 | Native format interoperability framework | G02 | Independent codec contracts/registry for detect, version, parse, validate, semantic/presentation extraction, asset resolution, canonical mapping, serialization, compatibility reports and codec round-trip verification; safe bounded parsing and typed diagnostics. |
+| G04 | GNS3 native project interoperability | G02/G03; representative .gns3 files and associated assets | Native import, reconstruction, editing, export, provenance, asset manifest, reopen in declared GNS3 version and semantic/presentation round-trip report. Existing GNS3 provider and Wi-Fi paths remain unchanged. |
+| G05 | Cisco Modeling Labs native interoperability | G02/G03; documented CML YAML versions and representative CML environment | YAML and supported legacy VIRL detection/import/export; node definitions, images, interfaces, links, annotations/layout mapping; exact-version validation and CML reopen report. |
+| G06 | EVE-NG native interoperability | G02/G03; representative .unl projects and required assets | Safe file-level .unl parse/serialize, native identifiers, templates/images, nodes/interfaces/bridges/links/layout; Community/Professional differences and EVE reopen evidence. |
+| G07 | Packet Tracer native interoperability expansion | Existing P07-B codec and provenance; G02/G03 | Extend beyond name/coordinate edits only where pktlib/native structure permits; broaden devices/ports/configuration/drawings/notes; retain exact unsupported-change diagnostics; version matrix and Packet Tracer desktop reopen tests. |
+| G08 | Universal topology rendering and placement engine | G02; codec presentation mappings | Format-aware coordinate transforms, canvas/view state, node and port geometry, link routes, labels, icons/assets, annotations, drawings, layers and visibility; native placement preserved; auto-layout remains explicit. |
+| G09 | Cross-vendor topology translation | G03–G08; provider capability/template catalogues | Bidirectional supported conversions and per-object mappings; actual missing-image/interface checks; unsupported/manual-map warnings; semantic, configuration, asset and presentation loss report; no false equivalence claims. |
+| G10 | Advanced native vendor configuration | P08/P09; exact platform/version capability observations | Separate versioned vendor-native configuration path for advanced interface/routing/policy/VRF/security/NAT/API/CLI features; common intent remains portable and no unsupported semantics are silently dropped. |
+| G11 | Extensible full-capability execution engine | P10; G10 transports; existing Vault, RBAC, audit, lock and recovery services | Configurable execution profiles; supported user playbooks, roles, collections, custom modules/runtimes and native operations; SSH/NETCONF/RESTCONF/HTTPS transports where qualified; validation, execution, verification and persistent evidence; policy-driven approvals without security bypass. |
+| G12 | Unified reconciliation, recovery and evidence | G02–G11 and existing Run/artifact/audit/recovery services | Source provenance, import/export/conversion history, immutable config snapshots, actual provider observations, drift, asset integrity, partial-failure recovery, evidence hashes and restart-safe reconciliation. |
+
+### Stage G sequencing and dependency rules
+
+- G01 is the mandatory audit baseline and must precede implementation.
+- G02 establishes the shared presentation/provenance model. G03 consumes it; native codecs must not create format-specific parallel topology databases.
+- G04–G07 are independent codec implementations only after G03 contracts and representative fixture strategy are stable. A codec may expose a partial support matrix; it must not claim universal fidelity.
+- G08 consumes the native presentation model and codec mappings. It must not auto-layout an imported topology on import.
+- G09 depends on codecs, canonical mapping and rendering metadata. Each conversion reports semantic, configuration, asset and presentation losses.
+- G10 extends P08/P09 without forcing every advanced vendor feature into the portable schema.
+- G11 extends P10; it must retain authentication, scoped authorization, Vault-only secrets, audit, process supervision, host identity checks and resource locking.
+- G12 integrates the existing persistence/evidence owners. It must not duplicate Run, Artifact, Pipeline or provider state ownership.
+- Stage D–F EXP-P11–EXP-P17 remain in the roadmap. G10/G11 may proceed in parallel only where their dependencies and execution ownership are explicit; release qualification must cover the full integrated workflow.
+- AI/LLM/agent/model integration remains excluded from this implementation programme.
+
+### Stage G implementation package contract
+
+Each G package uses the four existing delivery packages: **A — Specification**, **B — Backend**, **C — Frontend**, **D — Integration and acceptance**. Every package records the exact source baseline, files/services to reuse, persistence/API contracts, Project/Lab authorization, failure/recovery behavior, representative native fixtures, test results, limitations and documentation/traceability updates.
+
+A native format is not accepted merely because detection or parsing succeeds. Acceptance requires representative native sources, explicit version support, the full set of claimed semantic objects, presentation extraction, bounded asset handling, serialization, round-trip comparison, reopening in the originating application and documented losses. When external application or licensed environment access is unavailable, finish independent software work and retain the external gate as pending.
+
 ## Stage D — Infrastructure automation
 
 | Expansion phase | Scope | Dependencies | Exit evidence |
