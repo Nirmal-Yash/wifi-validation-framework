@@ -37,6 +37,10 @@ from lib.services.ansible_automation import (
     AnsibleAutomationConflict, AnsibleAutomationError,
     AnsibleAutomationNotFound, AnsibleAutomationService,
 )
+from lib.services.infrastructure_automation import (
+    InfrastructureAutomationConflict, InfrastructureAutomationError,
+    InfrastructureAutomationNotFound, InfrastructureAutomationService,
+)
 from lib.services.topology_apply import (
     TopologyApplyConflict, TopologyApplyError, TopologyApplyNotFound, TopologyApplyService,
 )
@@ -105,6 +109,9 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     ansible_automation=AnsibleAutomationService(
         query.database,network_intent,network_intent_compiler,device_inventory,credential_vault,
         resource_lock_manager=topology_apply.resource_lock_manager,
+    )
+    infrastructure_automation=InfrastructureAutomationService(
+        query.database, resource_lock_manager=topology_apply.resource_lock_manager,
     )
     wifi_lab_provisioner=WiFiLabProvisioningService(
         query.database,credential_vault,resource_lock_manager=topology_apply.resource_lock_manager,
@@ -3653,6 +3660,239 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             return error("PIPELINE_CONFLICT",str(exc),409)
         idempotency_store_response(scope,key,request_hash,result,200)
         return ok(result)
+
+
+    @api.get("/infrastructure/modules")
+    def list_infrastructure_modules():
+        project_id = str(request.args.get("project_id", "")).strip()
+        if not project_id:
+            return error("INVALID_REQUEST", "project_id query parameter is required", 400)
+        denied = require_permission("infrastructure.read", project_id=project_id)
+        if denied is not None:
+            return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND", "Project not found", 404)
+        return ok({"items": infrastructure_automation.list_modules()})
+
+    @api.get("/infrastructure/workspaces")
+    def list_infrastructure_workspaces():
+        project_id = str(request.args.get("project_id", "")).strip()
+        lab_id = str(request.args.get("lab_id", "")).strip() or None
+        if not project_id:
+            return error("INVALID_REQUEST", "project_id query parameter is required", 400)
+        denied = require_permission("infrastructure.read", project_id=project_id)
+        if denied is not None:
+            return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND", "Project not found", 404)
+        try:
+            return ok({"items": infrastructure_automation.list_workspaces(project_id, lab_id=lab_id)})
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_REQUEST", str(exc), 422)
+
+    @api.post("/infrastructure/workspaces")
+    def create_infrastructure_workspace():
+        payload = request.get_json(silent=True) or {}
+        required = {"project_id", "lab_id", "name", "module_key"}
+        if not isinstance(payload, dict) or not required.issubset(payload) or set(payload) - (required | {"variables"}):
+            return error("INVALID_REQUEST", "request must contain project_id, lab_id, name, module_key and optional variables", 400)
+        project_id = str(payload.get("project_id", "")).strip()
+        denied = require_permission("infrastructure.manage", project_id=project_id)
+        if denied is not None:
+            return denied
+        scope = "/api/v1/infrastructure/workspaces"
+        key, request_hash, cached, security_error = idempotency_preflight(scope, payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            item = infrastructure_automation.create_workspace(
+                project_id=project_id, lab_id=payload.get("lab_id"),
+                name=payload.get("name"), module_key=payload.get("module_key"),
+                variables=payload.get("variables", {}),
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except InfrastructureAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except InfrastructureAutomationConflict as exc:
+            return error("INFRASTRUCTURE_CONFLICT", str(exc), 409)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_REQUEST", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, item, 201)
+        return ok(item), 201
+
+    @api.get("/infrastructure/workspaces/<workspace_id>")
+    def get_infrastructure_workspace(workspace_id):
+        try:
+            item = infrastructure_automation.get_workspace(workspace_id)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_WORKSPACE", str(exc), 422)
+        if item is None:
+            return error("NOT_FOUND", "OpenTofu workspace not found", 404)
+        denied = require_permission("infrastructure.read", project_id=item["project_id"])
+        if denied is not None:
+            return denied
+        return ok(item)
+
+    @api.post("/infrastructure/workspaces/<workspace_id>/plans")
+    def create_infrastructure_plan(workspace_id):
+        try:
+            workspace_item = infrastructure_automation.get_workspace(workspace_id)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_WORKSPACE", str(exc), 422)
+        if workspace_item is None:
+            return error("NOT_FOUND", "OpenTofu workspace not found", 404)
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict) or set(payload) - {"kind"}:
+            return error("INVALID_REQUEST", "request may contain only kind (APPLY or DESTROY)", 400)
+        kind = str(payload.get("kind", "APPLY")).upper()
+        permission = "infrastructure.destroy" if kind == "DESTROY" else "infrastructure.manage"
+        denied = require_permission(permission, project_id=workspace_item["project_id"])
+        if denied is not None:
+            return denied
+        scope = f"/api/v1/infrastructure/workspaces/{workspace_id}/plans"
+        body = {"workspace_id": workspace_id, "kind": kind}
+        key, request_hash, cached, security_error = idempotency_preflight(scope, body)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            item = infrastructure_automation.create_plan(
+                workspace_id, kind=kind,
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except InfrastructureAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except InfrastructureAutomationConflict as exc:
+            return error("INFRASTRUCTURE_CONFLICT", str(exc), 409)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_REQUEST", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, item, 201)
+        return ok(item), 201
+
+    @api.get("/infrastructure/plans")
+    def list_infrastructure_plans():
+        project_id = str(request.args.get("project_id", "")).strip()
+        workspace_id = str(request.args.get("workspace_id", "")).strip() or None
+        if not project_id:
+            return error("INVALID_REQUEST", "project_id query parameter is required", 400)
+        denied = require_permission("infrastructure.read", project_id=project_id)
+        if denied is not None:
+            return denied
+        try:
+            return ok({"items": infrastructure_automation.list_plans(project_id, workspace_id=workspace_id)})
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_PLAN", str(exc), 422)
+
+    @api.get("/infrastructure/plans/<plan_id>")
+    def get_infrastructure_plan(plan_id):
+        try:
+            item = infrastructure_automation.get_plan(plan_id)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_PLAN", str(exc), 422)
+        if item is None:
+            return error("NOT_FOUND", "OpenTofu plan not found", 404)
+        denied = require_permission("infrastructure.read", project_id=item["project_id"])
+        if denied is not None:
+            return denied
+        return ok(item)
+
+    @api.post("/infrastructure/plans/<plan_id>/approve")
+    def approve_infrastructure_plan(plan_id):
+        try:
+            plan = infrastructure_automation.get_plan(plan_id)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_PLAN", str(exc), 422)
+        if plan is None:
+            return error("NOT_FOUND", "OpenTofu plan not found", 404)
+        denied = require_permission("infrastructure.approve", project_id=plan["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict) or set(payload) != {"plan_sha256", "confirmed"}:
+            return error("INVALID_REQUEST", "request must contain plan_sha256 and confirmed", 400)
+        scope = f"/api/v1/infrastructure/plans/{plan_id}/approve"
+        key, request_hash, cached, security_error = idempotency_preflight(scope, payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            item = infrastructure_automation.approve(
+                plan_id, expected_plan_sha256=payload.get("plan_sha256"),
+                confirmed=payload.get("confirmed"),
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except InfrastructureAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except InfrastructureAutomationConflict as exc:
+            return error("INFRASTRUCTURE_CONFLICT", str(exc), 409)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_REQUEST", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, item, 200)
+        return ok(item)
+
+    @api.post("/infrastructure/plans/<plan_id>/apply")
+    def apply_infrastructure_plan(plan_id):
+        try:
+            plan = infrastructure_automation.get_plan(plan_id)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_PLAN", str(exc), 422)
+        if plan is None:
+            return error("NOT_FOUND", "OpenTofu plan not found", 404)
+        denied = require_permission("infrastructure.execute", project_id=plan["project_id"])
+        if denied is not None:
+            return denied
+        if plan["kind"] == "DESTROY" or plan["summary"].get("requires_destroy_permission"):
+            denied = require_permission("infrastructure.destroy", project_id=plan["project_id"])
+            if denied is not None:
+                return denied
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict) or set(payload) != {"plan_sha256", "confirmed"}:
+            return error("INVALID_REQUEST", "request must contain plan_sha256 and confirmed", 400)
+        scope = f"/api/v1/infrastructure/plans/{plan_id}/apply"
+        key, request_hash, cached, security_error = idempotency_preflight(scope, payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            item = infrastructure_automation.apply(
+                plan_id, expected_plan_sha256=payload.get("plan_sha256"),
+                confirmed=payload.get("confirmed"),
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+                destroy_authorized=True,
+            )
+        except InfrastructureAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except InfrastructureAutomationConflict as exc:
+            return error("INFRASTRUCTURE_CONFLICT", str(exc), 409)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_REQUEST", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, item, 200)
+        return ok(item)
+
+    @api.get("/infrastructure/workspaces/<workspace_id>/state")
+    def inspect_infrastructure_workspace(workspace_id):
+        try:
+            workspace_item = infrastructure_automation.get_workspace(workspace_id)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_WORKSPACE", str(exc), 422)
+        if workspace_item is None:
+            return error("NOT_FOUND", "OpenTofu workspace not found", 404)
+        denied = require_permission("infrastructure.read", project_id=workspace_item["project_id"])
+        if denied is not None:
+            return denied
+        try:
+            return ok(infrastructure_automation.inspect(workspace_id))
+        except InfrastructureAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except InfrastructureAutomationConflict as exc:
+            return error("INFRASTRUCTURE_CONFLICT", str(exc), 409)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_REQUEST", str(exc), 422)
 
     return api
 

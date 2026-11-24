@@ -19,6 +19,7 @@ export function routeFor(pathname=window.location.pathname){
   if(path==="/topologies")return{name:"topologies"};
   if(path==="/network-intent")return{name:"network-intent"};
   if(path==="/pipelines")return{name:"pipelines"};
+  if(path==="/infrastructure")return{name:"infrastructure"};
   if(path==="/administration")return{name:"administration"};
   if(path==="/activate")return{name:"account-access",mode:"activate"};
   if(path==="/reset-password")return{name:"account-access",mode:"reset"};

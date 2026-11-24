@@ -24,7 +24,7 @@ def test_fresh_database_is_created_only_through_single_alembic_head(tmp_path):
     status = DatabaseMigrationManager(path).check()
 
     assert status.current_revision == status.head_revision
-    assert status.current_revision == "20261124_20"
+    assert status.current_revision == "20261124_21"
     assert status.is_up_to_date
     assert status.schema.is_clean
 
@@ -35,7 +35,7 @@ def test_fresh_database_is_created_only_through_single_alembic_head(tmp_path):
         authority = connection.execute(
             "SELECT value FROM schema_meta WHERE key='migration_authority'"
         ).fetchone()[0]
-        assert version == "30"
+        assert version == "31"
         assert authority == "alembic"
 
 
@@ -135,7 +135,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
 
     result = manager.upgrade()
 
-    assert result.current_revision == result.head_revision == "20261124_20"
+    assert result.current_revision == result.head_revision == "20261124_21"
     assert result.is_up_to_date
     assert result.last_backup is not None
     assert result.last_backup.is_file()
@@ -159,7 +159,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "30"
+        ).fetchone()[0] == "31"
 
 
 def test_schema_drift_is_reported_without_silent_repair(tmp_path):
@@ -362,6 +362,27 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.execute("DROP TABLE topology_presentation_revisions")
         connection.execute("DROP TABLE topology_source_assets")
         connection.execute("DROP TABLE topology_source_artifacts")
+        # Remove EXP-P11 OpenTofu objects before rewinding the Alembic revision.
+        for trigger in (
+            "trg_opentofu_workspace_scope_insert", "trg_opentofu_workspace_identity_immutable",
+            "trg_opentofu_workspace_state_transition", "trg_opentofu_workspace_no_delete",
+            "trg_opentofu_plan_scope_insert", "trg_opentofu_plan_identity_immutable",
+            "trg_opentofu_plan_state_transition", "trg_opentofu_plan_approval_immutable",
+            "trg_opentofu_plan_no_delete", "trg_opentofu_approval_scope_insert",
+            "trg_opentofu_approvals_immutable", "trg_opentofu_approvals_no_delete",
+            "trg_opentofu_execution_scope_insert", "trg_opentofu_execution_identity_immutable",
+            "trg_opentofu_execution_state_transition", "trg_opentofu_execution_final_immutable",
+            "trg_opentofu_executions_no_delete",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        for index in (
+            "idx_opentofu_workspaces_project_created", "idx_opentofu_workspaces_lab",
+            "idx_opentofu_plans_project_created", "idx_opentofu_plans_workspace",
+            "idx_opentofu_approvals_plan", "idx_opentofu_executions_plan",
+        ):
+            connection.execute(f"DROP INDEX {index}")
+        for table in ("opentofu_executions", "opentofu_approvals", "opentofu_plans", "opentofu_workspaces"):
+            connection.execute(f"DROP TABLE {table}")
         connection.execute("DROP TABLE network_intent_revisions")
         connection.execute("DROP TABLE network_intent_profiles")
         # Remove P07-B native source provenance before dropping the topology
@@ -456,7 +477,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.commit()
 
     status = DatabaseMigrationManager(path).upgrade()
-    assert status.current_revision == status.head_revision == "20261124_20"
+    assert status.current_revision == status.head_revision == "20261124_21"
     assert status.is_up_to_date
     with sqlite3.connect(path) as connection:
         assert connection.execute(
@@ -464,7 +485,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "30"
+        ).fetchone()[0] == "31"
 
 
 def test_database_operator_cli_commands(tmp_path):

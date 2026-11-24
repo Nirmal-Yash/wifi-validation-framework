@@ -78,7 +78,7 @@ A native format is not accepted merely because detection or parsing succeeds. Ac
 
 | Expansion phase | Scope | Dependencies | Exit evidence |
 |---|---|---|---|
-| EXP-P11 | OpenTofu workspaces and infrastructure automation | EXP-P04 | Isolated workspace, validate/plan/review/approve/apply/inspect/destroy tests |
+| EXP-P11 | OpenTofu workspaces and infrastructure automation | EXP-P04 | Isolated workspace, validate/plan/review/approve/apply/inspect/destroy tests; source checkpoint documented in docs/EXP_P11_OPENTOFU_IMPLEMENTATION_AUDIT.md; exact CI deferred until P12 |
 | EXP-P12 | Infrastructure-resource lifecycle integration | EXP-P11 and existing Lab/topology domains | Resource mapping, drift, orphan detection and partial recovery |
 
 ## Stage E — Workflow and observability
@@ -260,3 +260,14 @@ Only Linux/FRR over SSH, Cisco IOS/IOS-XE and Arista EOS over network_cli have a
 Plan lifecycle is `PREVIEWED → APPROVED → EXECUTING → SUCCEEDED/FAILED`, with `STALE` as an explicit rejection when the source revision, topology pin, current capabilities or compiler output changes after approval. The plan creator cannot approve their own change; an independent authorized administrator must approve the exact plan SHA-256. Execution repeats compiler/capability validation immediately before opening a Device connection, takes all relevant Lab and Device locks, and stores immutable execution/read-back evidence. If some hosts change before a later host fails, the result is FAILED, partial changes are possible, and reconciliation is required. No automatic retry, implicit rollback or all-target atomicity is claimed.
 
 See `docs/EXP_P10_ANSIBLE_AUTOMATION_IMPLEMENTATION_AUDIT.md` and RQ-023. Hosted fixtures use an injected fake Ansible runner and in-memory secret store; they do not certify live SSH connectivity, target OS state, command semantics, network convergence or rollback safety.
+
+
+## EXP-P11 implementation checkpoint — OpenTofu infrastructure automation
+
+P11 establishes OpenTofu as the infrastructure provisioning owner, separate from P10 Ansible device configuration and the existing emulator-provider lifecycle. OpenTofu modules are installed and maintained by the local operator under NETREGRESS_OPENTOFU_MODULE_ROOT. The API selects an approved module key and bounded non-secret JSON variables; it never accepts caller-authored HCL, arbitrary CLI arguments, backend settings or provider executable paths. Module files are copied into an immutable per-workspace snapshot and pinned by SHA-256.
+
+Each active Lab receives an isolated local workspace under NETREGRESS_OPENTOFU_STATE_ROOT (default ~/.local/state/netregress/opentofu). Workspace directories and sensitive variable/plan files use owner-only permissions. The local backend is selected explicitly by using tofu init -backend=false; remote backends and cloud/remote execution are not enabled in P11. Provider authentication is sourced only from an operator-configured process environment allow-list or platform identity; API variables cannot carry secret values. No state file, plan binary or credential value is returned by REST APIs or stored in the repository.
+
+The lifecycle is format/init/validate/plan, review, independent hash-pinned approval, and explicit apply. Destroy plans require the separate infrastructure.destroy permission. Every plan is persisted by its binary SHA-256 and only a bounded resource-action summary is exposed. Apply verifies that same binary immediately before execution while holding the shared Lab lock and a workspace lock. A timeout or non-zero apply outcome is never retried automatically: the workspace enters RECOVERY_REQUIRED and must be reconciled in P12. Immutable workspace, plan, approval and execution records are protected by SQLite constraints/triggers and privileged actions produce audit events.
+
+P11 does not claim live cloud-account qualification, remote backend support, cloud rollback, module registry downloads or provider-side resource recovery. The CLI is operator-installed and must satisfy the declared OpenTofu version gate. P12 adds topology resource mapping, observed state, drift/orphan analysis and reviewed recovery planning.

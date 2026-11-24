@@ -11,7 +11,11 @@ def test_openapi_path_keys_are_unique_and_cover_runtime_routes():
     assert len(paths) == len(set(paths)), "duplicate OpenAPI path key"
     assert {"/auth/activity", "/readiness", "/runs/{run_id}/release-gate", "/waivers", "/sync/queue", "/firmware/{device_id}/rollback", "/topologies/validate", "/topologies/{profile_id}/plan", "/dashboard/operations-overview",
         "/providers/registry", "/labs/{lab_id}/provider-catalog",
-        "/labs/{lab_id}/provider-nodes/{provider_node_id}/interfaces"} <= set(paths)
+        "/labs/{lab_id}/provider-nodes/{provider_node_id}/interfaces",
+        "/infrastructure/modules", "/infrastructure/workspaces", "/infrastructure/workspaces/{workspace_id}",
+        "/infrastructure/workspaces/{workspace_id}/plans", "/infrastructure/plans",
+        "/infrastructure/plans/{plan_id}", "/infrastructure/plans/{plan_id}/approve",
+        "/infrastructure/plans/{plan_id}/apply", "/infrastructure/workspaces/{workspace_id}/state"} <= set(paths)
 
 
 def test_openapi_auth_cookie_and_runtime_protection_match_flask():

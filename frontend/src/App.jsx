@@ -16,6 +16,7 @@ import DevicesPage from "@/pages/devices";
 import TopologyStudioPage from "@/pages/topologies";
 import NetworkIntentPage from "@/pages/network-intent";
 import PipelinesPage from "@/pages/pipelines";
+import InfrastructurePage from "@/pages/infrastructure";
 import {Button,LoadingState,Section} from "@/components/ui";
 import {useSession} from "@/auth/session-provider";
 import {api} from "@/api";
@@ -98,6 +99,7 @@ export default function App(){
   case"topologies":page=<TopologyStudioPage user={user}/>;break;
   case"network-intent":page=<NetworkIntentPage user={user}/>;break;
   case"pipelines":page=<PipelinesPage user={user}/>;break;
+  case"infrastructure":page=<InfrastructurePage user={user}/>;break;
   case"administration":page=<AdministrationPage user={user}/>;break;
   default:page=<NotFound/>;break;
  }
