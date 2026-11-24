@@ -100,6 +100,9 @@ EXPECTED_TABLE_COLUMNS = {
     "network_intent_profiles": ("profile_id", "project_id", "topology_profile_id", "name", "description", "scope_type", "scope_id", "lab_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "network_intent_revisions": ("revision_id", "profile_id", "topology_revision_id", "topology_content_sha256", "schema_version", "revision_number", "definition_json", "intent_sha256", "provenance_json", "parent_revision_id", "status", "created_at", "created_by", "published_at", "published_by"),
     "device_capability_reports": ("report_id", "project_id", "device_id", "provider_id", "platform", "software_version", "adapter_name", "adapter_version", "source_type", "capabilities_json", "capability_sha256", "observed_at", "recorded_at", "recorded_by"),
+    "ansible_automation_plans": ("plan_id", "project_id", "lab_id", "profile_id", "revision_id", "plan_sha256", "plan_json", "validation_json", "status", "created_at", "updated_at", "created_by", "approved_at", "approved_by"),
+    "ansible_automation_approvals": ("approval_id", "plan_id", "plan_sha256", "approved_by", "confirmed_at"),
+    "ansible_automation_executions": ("execution_id", "plan_id", "approval_id", "plan_sha256", "status", "result_json", "started_at", "completed_at", "executed_by"),
     "gns3_lab_bindings": ("binding_id", "project_id", "lab_id", "endpoint_url", "gns3_project_id", "controller_device_id", "credential_id", "status", "created_at", "updated_at", "created_by", "updated_by", "provider_id", "provider_workspace_id"),
     "topology_provider_mappings": ("mapping_id", "project_id", "lab_id", "profile_id", "resource_type", "logical_id", "provider_resource_id", "template_id", "created_at", "updated_at"),
     "topology_apply_records": ("apply_id", "project_id", "lab_id", "profile_id", "revision_id", "content_sha256", "status", "plan_json", "observed_before_json", "observed_after_json", "result_json", "created_at", "started_at", "completed_at", "created_by"),
@@ -147,6 +150,19 @@ EXPECTED_TRIGGERS = (
     "trg_device_capability_reports_scope_insert",
     "trg_device_capability_reports_immutable",
     "trg_device_capability_reports_no_delete",
+    "trg_ansible_automation_plans_scope_insert",
+    "trg_ansible_automation_plans_identity_immutable",
+    "trg_ansible_automation_plans_state_transition",
+    "trg_ansible_automation_plans_no_delete",
+    "trg_ansible_automation_plans_approval_immutable",
+    "trg_ansible_automation_approvals_scope_insert",
+    "trg_ansible_automation_approvals_immutable",
+    "trg_ansible_automation_approvals_no_delete",
+    "trg_ansible_automation_executions_scope_insert",
+    "trg_ansible_automation_executions_identity_immutable",
+    "trg_ansible_automation_executions_state_transition",
+    "trg_ansible_automation_executions_no_delete",
+    "trg_ansible_automation_executions_final_immutable",
     "trg_gns3_bindings_credential_scope_insert",
     "trg_gns3_bindings_credential_scope_update",
     "trg_gns3_bindings_no_delete",
@@ -219,6 +235,10 @@ EXPECTED_INDEXES = (
     "idx_network_intent_revisions_topology",
     "idx_device_capability_reports_device_observed",
     "idx_device_capability_reports_project_observed",
+    "idx_ansible_automation_plans_project_created",
+    "idx_ansible_automation_plans_revision",
+    "idx_ansible_automation_approvals_plan",
+    "idx_ansible_automation_executions_plan",
     "idx_gns3_bindings_project_lab",
     "idx_topology_provider_mappings_lab",
     "idx_topology_apply_lab_created",
@@ -281,6 +301,15 @@ EXPECTED_FOREIGN_KEYS = {
     ("network_intent_revisions", "parent_revision_id", "network_intent_revisions", "revision_id"),
     ("device_capability_reports", "project_id", "projects", "project_id"),
     ("device_capability_reports", "device_id", "devices", "device_id"),
+    ("ansible_automation_plans", "project_id", "projects", "project_id"),
+    ("ansible_automation_plans", "project_id", "labs", "project_id"),
+    ("ansible_automation_plans", "lab_id", "labs", "lab_id"),
+    ("ansible_automation_plans", "lab_id", "labs", "lab_id"),
+    ("ansible_automation_plans", "profile_id", "network_intent_profiles", "profile_id"),
+    ("ansible_automation_plans", "revision_id", "network_intent_revisions", "revision_id"),
+    ("ansible_automation_approvals", "plan_id", "ansible_automation_plans", "plan_id"),
+    ("ansible_automation_executions", "plan_id", "ansible_automation_plans", "plan_id"),
+    ("ansible_automation_executions", "approval_id", "ansible_automation_approvals", "approval_id"),
     ("gns3_lab_bindings", "project_id", "projects", "project_id"),
     ("gns3_lab_bindings", "project_id", "labs", "project_id"),
     ("gns3_lab_bindings", "lab_id", "labs", "lab_id"),
@@ -448,9 +477,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "28":
+        if metadata.get("version") != "29":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '28'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '29'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

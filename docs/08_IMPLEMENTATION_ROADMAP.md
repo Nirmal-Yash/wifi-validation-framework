@@ -34,7 +34,7 @@ This is an additive programme layered over the existing Runner implementation. I
 | EXP-P09-C | Arista EOS configuration compiler | EXP-P08 | EOS-native interface, VLAN, route, OSPFv4, BGP and LACP previews; unsupported zone firewall/OSPFv3 blocked |
 | EXP-P09-D | Juniper Junos configuration compiler | EXP-P08 | Hierarchical set previews, IPv4/IPv6 RIB, OSPF/OSPFv3, BGP/LACP and SRX-scoped security; live candidate/commit-check deferred |
 | EXP-P09-E | Palo Alto PAN-OS configuration compiler | EXP-P08 | Routed interfaces, IPv4/IPv6 static routes, OSPFv4/BGP/LACP, zones and security policy previews; unsupported L2/NAT semantics blocked or deferred |
-| EXP-P10 | Ansible configuration automation | EXP-P08/09 | Scoped inventory, playbook validation, preview, approval, execution and read-back |
+| EXP-P10 | Ansible configuration automation | EXP-P08/09 | Published revision → deterministic compiler artifacts → Project/Lab/Device-scoped static inventory → syntax/collection validation → independent plan-hash approval → bounded execution → per-Device read-back and immutable audit evidence; stale plans and partial failures block automatic retry. Initial live transport: Linux/FRR SSH, IOS/IOS-XE and EOS network_cli; Junos/PAN-OS remain compile-only. |
 
 ## Stage D — Infrastructure automation
 
@@ -207,3 +207,18 @@ The v1.0 feature boundaries are intentionally explicit:
 No platform-specific configuration parser, device read-back, candidate commit-check, deployment workflow, secret injection into generated configuration, NAT model or Ansible execution is claimed by P09 v1.0. Those require separate contracts and validation against real OS versions. P10 remains the separate Ansible execution/approval boundary.
 
 Automated evidence is deterministic fixture/unit coverage for adapter discovery, version/platform mismatch, output rendering, protocol-family edge cases, injection/path safety, all-or-nothing output, revision/hash binding and API/frontend preview. It does not replace physical/device-in-the-loop acceptance tests.
+
+
+## EXP-P10 implementation checkpoint — approval-gated Ansible automation
+
+P10 adds a separate Ansible domain over published P08 Network Intent and P09 compiler outputs. Ansible never accepts user-supplied arbitrary playbooks, dynamic inventory sources, modules or shell commands. NetRegress generates a constrained playbook and static inventory from the exact P09 SHA-256 artifacts. Every target Device is Project-scoped, and a Lab-scoped intent additionally requires that each target belongs to that Lab. Project-wide intent acquires the locks for every target Lab and Device during execution.
+
+Plan creation uses active same-Device OS Credential Vault references of type SSH_PASSWORD or SSH_PRIVATE_KEY; it never accepts a password/private-key value. Secret material is resolved only via `CredentialVaultService.use_secret` during execution, placed into private temporary inventory/key files and removed with the temporary workspace. Inventory previews, persisted plans, approval records and result summaries do not contain credential material. SSH host-key verification is enabled; an operator must trust each target host key first. Linux execution uses non-interactive sudo for non-root accounts.
+
+An optional local Ansible runtime is pinned separately from NetRegress' default install: Ansible Core 2.21.6, `ansible.netcommon` 8.7.1, `cisco.ios` 11.6.0 and `arista.eos` 12.3.0. Run `scripts/netregress_ansible_setup.sh` from the same activated Python environment used by NetRegress. Plan validation fails closed when the exact runtime/collections are absent or unpinned. P10 does not silently install Ansible when the application starts.
+
+Only Linux/FRR over SSH, Cisco IOS/IOS-XE and Arista EOS over network_cli have a generated execution path in this checkpoint. Junos compiles through P09 but remains blocked from P10 until a qualified NETCONF workflow exists. PAN-OS compiles through P09 but remains blocked until a qualified API transport exists. A compiled preview is not evidence that a live target is reachable or configured.
+
+Plan lifecycle is `PREVIEWED → APPROVED → EXECUTING → SUCCEEDED/FAILED`, with `STALE` as an explicit rejection when the source revision, topology pin, current capabilities or compiler output changes after approval. The plan creator cannot approve their own change; an independent authorized administrator must approve the exact plan SHA-256. Execution repeats compiler/capability validation immediately before opening a Device connection, takes all relevant Lab and Device locks, and stores immutable execution/read-back evidence. If some hosts change before a later host fails, the result is FAILED, partial changes are possible, and reconciliation is required. No automatic retry, implicit rollback or all-target atomicity is claimed.
+
+See `docs/EXP_P10_ANSIBLE_AUTOMATION_IMPLEMENTATION_AUDIT.md` and RQ-023. Hosted fixtures use an injected fake Ansible runner and in-memory secret store; they do not certify live SSH connectivity, target OS state, command semantics, network convergence or rollback safety.

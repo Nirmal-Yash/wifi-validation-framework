@@ -28,6 +28,8 @@ const LEGACY_PERMISSION_ALIAS=Object.freeze({
  "topology.read":"view","topology.manage":"admin","topology.publish":"admin",
  "topology.provider.manage":"admin","topology.provider.operate":"admin","topology.apply":"admin",
  "network_intent.read":"view","network_intent.manage":"admin","network_intent.publish":"admin",
+ "network_automation.read":"view","network_automation.manage":"admin",
+ "network_automation.approve":"admin","network_automation.execute":"admin",
  "pipelines.read":"view","pipelines.manage":"admin","pipelines.execute":"execute",
 });
 export function canPerform(subject,permission){

@@ -1,0 +1,8 @@
+---
+collections:
+  - name: ansible.netcommon
+    version: "8.7.1"
+  - name: cisco.ios
+    version: "11.6.0"
+  - name: arista.eos
+    version: "12.3.0"

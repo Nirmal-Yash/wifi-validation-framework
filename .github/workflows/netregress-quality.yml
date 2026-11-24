@@ -187,6 +187,7 @@ jobs:
           tests/test_stage_b_eve_ng.py
           tests/test_packet_tracer_interop.py
           tests/test_network_intent.py
+          tests/test_ansible_automation.py
           tests/test_provider_contract.py
           tests/test_topology_apply.py
           tests/test_configuration_deployer.py

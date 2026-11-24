@@ -1140,3 +1140,24 @@ The API exposes `GET /api/v1/network-intent/compiler/adapters?project_id=...` an
 The page shows the compiler catalogue and lets authorized users preview an immutable PUBLISHED revision. `compile_only=true`, `application_performed=false` and `ready_for_application=false` are fixed response properties. The compiler does not call the device command runner or credential vault and has no execution pathway.
 
 See `docs/EXP_P09_MULTIVENDOR_COMPILER_IMPLEMENTATION_AUDIT.md` and RQ-022. P09 capability discovery/collection by real network sessions, platform-native configuration syntax validation, Junos candidate checks, device read-back and device application remain external follow-up gates, not features claimed by this implementation.
+
+
+## EXP-P10 — approval-gated Ansible configuration automation
+
+P10 is an explicit downstream execution layer. It does not replace P09 compilers or P08 revision/capability checks. `AnsibleAutomationService` accepts only an immutable PUBLISHED Network Intent revision. It asks `NetworkIntentCompilerService` for the exact P09 artifacts, builds an internally generated playbook and static inventory, and validates syntax plus the exact optional controller runtime and pinned collections. Caller-authored playbooks, inventory plugins, dynamic inventory, free-form shell tasks, modules and connection variables are not accepted.
+
+Plan and execution API:
+
+- `GET /api/v1/network-intent/automation/ansible/plans?project_id=...` — Project-scoped plan, approval and execution history; `network_automation.read`.
+- `GET /api/v1/network-intent/automation/ansible/plans/{plan_id}` — hash-verified immutable plan and audit evidence; `network_automation.read`.
+- `POST /api/v1/network-intent/profiles/{profile_id}/revisions/{revision_id}/ansible-plan` — create a preview from a published revision and explicit Device-ID-to-vault-credential-ID mapping; `network_automation.manage`.
+- `POST /api/v1/network-intent/automation/ansible/plans/{plan_id}/approve` — independent approval of the exact plan SHA-256; `network_automation.approve`.
+- `POST /api/v1/network-intent/automation/ansible/plans/{plan_id}/execute` — explicit execution of the approved exact plan; `network_automation.execute`.
+
+The plan persists credential references only. `CredentialVaultService.use_secret` is the only secret-material boundary; values exist only inside the execution callback and private temporary workspace. Ansible SSH host-key checking is enabled, and initial host trust is an operator prerequisite. Lab/Device locks, a bounded subprocess and a post-execution read-back result protect the execution path. Approval is four-eyes: the creator cannot approve their own plan. Any change in source revision, topology hash, current capabilities or deterministic compiler output after approval marks the plan `STALE` and blocks execution.
+
+The initial supported execution adapters are Linux/FRR over SSH, Cisco IOS/IOS-XE and Arista EOS over network_cli. Junos remains compile-only pending a separate NETCONF implementation; PAN-OS remains compile-only pending its API implementation. Multi-device execution is not atomic. A failed run may have changed earlier targets; the system records possible partial change and requires reconciliation instead of automatic retry.
+
+The optional runtime is pinned in `requirements-ansible.txt` and `ansible/requirements.yml`; run `scripts/netregress_ansible_setup.sh` from the same activated Python environment as NetRegress. Missing executables, unexpected Ansible Core versions and missing/unpinned collections block plan validation. The Runner does not install or start Ansible automatically.
+
+See `docs/EXP_P10_ANSIBLE_AUTOMATION_IMPLEMENTATION_AUDIT.md`. Passing fake-runner tests does not certify a live network connection, target platform syntax, network convergence or rollback.

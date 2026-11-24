@@ -29,6 +29,10 @@ from lib.services.network_intent import (
 from lib.services.network_intent_compiler import (
     NetworkIntentCompilationError, NetworkIntentCompilerService,
 )
+from lib.services.ansible_automation import (
+    AnsibleAutomationConflict, AnsibleAutomationError,
+    AnsibleAutomationNotFound, AnsibleAutomationService,
+)
 from lib.services.topology_apply import (
     TopologyApplyConflict, TopologyApplyError, TopologyApplyNotFound, TopologyApplyService,
 )
@@ -93,6 +97,10 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     network_intent=NetworkIntentService(query.database,topology_studio)
     network_intent_compiler=NetworkIntentCompilerService(query.database,network_intent,device_inventory)
     topology_apply=TopologyApplyService(query.database,credential_vault,topology_studio)
+    ansible_automation=AnsibleAutomationService(
+        query.database,network_intent,network_intent_compiler,device_inventory,credential_vault,
+        resource_lock_manager=topology_apply.resource_lock_manager,
+    )
     wifi_lab_provisioner=WiFiLabProvisioningService(
         query.database,credential_vault,resource_lock_manager=topology_apply.resource_lock_manager,
         provider_registry=topology_apply.provider_registry,
@@ -2711,6 +2719,143 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         except NetworkIntentCompilationError as exc:
             return error("INVALID_COMPILATION_REQUEST", str(exc), 422)
         return ok(result)
+
+    @api.get("/network-intent/automation/ansible/plans")
+    def list_ansible_automation_plans():
+        project_id = str(request.args.get("project_id", "")).strip()
+        if not project_id:
+            return error("INVALID_REQUEST", "project_id query parameter is required", 400)
+        denied = require_permission("network_automation.read", project_id=project_id)
+        if denied is not None:
+            return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND", "Project not found", 404)
+        try:
+            items = ansible_automation.list_plans(project_id)
+        except AnsibleAutomationError as exc:
+            return error("INVALID_ANSIBLE_PLAN", str(exc), 422)
+        return ok({"items": items})
+
+    @api.get("/network-intent/automation/ansible/plans/<plan_id>")
+    def get_ansible_automation_plan(plan_id):
+        try:
+            item = ansible_automation.get_plan(plan_id)
+        except AnsibleAutomationError as exc:
+            return error("INVALID_ANSIBLE_PLAN", str(exc), 422)
+        if item is None:
+            return error("NOT_FOUND", "Ansible automation plan not found", 404)
+        denied = require_permission("network_automation.read", project_id=item["project_id"])
+        if denied is not None:
+            return denied
+        return ok(item)
+
+    @api.post("/network-intent/profiles/<profile_id>/revisions/<revision_id>/ansible-plan")
+    def create_ansible_automation_plan(profile_id, revision_id):
+        profile = network_intent.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Network intent profile not found", 404)
+        denied = require_permission("network_automation.manage", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict) or set(payload) != {"credential_bindings"}:
+            return error("INVALID_REQUEST", "request must contain only credential_bindings", 400)
+        bindings = payload.get("credential_bindings")
+        if not isinstance(bindings, dict):
+            return error("INVALID_REQUEST", "credential_bindings must map Device IDs to managed SSH credential IDs", 400)
+        scope = f"/api/v1/network-intent/profiles/{profile_id}/revisions/{revision_id}/ansible-plan"
+        key, request_hash, cached, security_error = idempotency_preflight(scope, {
+            "profile_id": profile_id, "revision_id": revision_id,
+            "credential_bindings": bindings,
+        })
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            item = ansible_automation.create_plan(
+                profile_id, revision_id, credential_bindings=bindings,
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except AnsibleAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except AnsibleAutomationConflict as exc:
+            return error("ANSIBLE_AUTOMATION_CONFLICT", str(exc), 409)
+        except AnsibleAutomationError as exc:
+            return error("INVALID_ANSIBLE_PLAN", str(exc), 422)
+        status_code = 201 if item.get("plan_id") else 200
+        idempotency_store_response(scope, key, request_hash, item, status_code)
+        return ok(item), status_code
+
+    @api.post("/network-intent/automation/ansible/plans/<plan_id>/approve")
+    def approve_ansible_automation_plan(plan_id):
+        try:
+            plan = ansible_automation.get_plan(plan_id)
+        except AnsibleAutomationError as exc:
+            return error("INVALID_ANSIBLE_PLAN", str(exc), 422)
+        if plan is None:
+            return error("NOT_FOUND", "Ansible automation plan not found", 404)
+        denied = require_permission("network_automation.approve", project_id=plan["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict) or set(payload) != {"plan_sha256", "confirmed"}:
+            return error("INVALID_REQUEST", "request must contain plan_sha256 and confirmed", 400)
+        scope = f"/api/v1/network-intent/automation/ansible/plans/{plan_id}/approve"
+        key, request_hash, cached, security_error = idempotency_preflight(scope, payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            item = ansible_automation.approve(
+                plan_id, expected_plan_sha256=payload.get("plan_sha256"),
+                confirmed=payload.get("confirmed"),
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except AnsibleAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except AnsibleAutomationConflict as exc:
+            return error("ANSIBLE_AUTOMATION_CONFLICT", str(exc), 409)
+        except AnsibleAutomationError as exc:
+            return error("INVALID_ANSIBLE_PLAN", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, item, 200)
+        return ok(item)
+
+    @api.post("/network-intent/automation/ansible/plans/<plan_id>/execute")
+    def execute_ansible_automation_plan(plan_id):
+        try:
+            plan = ansible_automation.get_plan(plan_id)
+        except AnsibleAutomationError as exc:
+            return error("INVALID_ANSIBLE_PLAN", str(exc), 422)
+        if plan is None:
+            return error("NOT_FOUND", "Ansible automation plan not found", 404)
+        denied = require_permission("network_automation.execute", project_id=plan["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict) or set(payload) != {"plan_sha256", "confirmed"}:
+            return error("INVALID_REQUEST", "request must contain plan_sha256 and confirmed", 400)
+        scope = f"/api/v1/network-intent/automation/ansible/plans/{plan_id}/execute"
+        key, request_hash, cached, security_error = idempotency_preflight(scope, payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            item = ansible_automation.execute(
+                plan_id, expected_plan_sha256=payload.get("plan_sha256"),
+                confirmed=payload.get("confirmed"),
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except AnsibleAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except AnsibleAutomationConflict as exc:
+            return error("ANSIBLE_AUTOMATION_CONFLICT", str(exc), 409)
+        except AnsibleAutomationError as exc:
+            return error("ANSIBLE_AUTOMATION_FAILED", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, item, 200)
+        return ok(item)
 
     @api.post("/network-intent/profiles/<profile_id>/rollback")
     def rollback_network_intent_revision(profile_id):

@@ -56,6 +56,11 @@ export default function NetworkIntentPage({user}) {
   [projectId],
   {enabled:Boolean(projectId),queryKey:"network-intent-compiler-adapters"},
  );
+ const ansiblePlans=useAsyncLoader(
+  ()=>projectId&&canAutomationRead?api.networkAnsiblePlans(projectId):Promise.resolve({items:[]}),
+  [projectId,canAutomationRead],
+  {enabled:Boolean(projectId&&canAutomationRead),queryKey:"network-intent-ansible-plans"},
+ );
  const [createTopologyProfileId,setCreateTopologyProfileId]=useState("");
  const [profileName,setProfileName]=useState("Network intent");
  const [profileDescription,setProfileDescription]=useState("");
@@ -101,6 +106,8 @@ export default function NetworkIntentPage({user}) {
  const topologyRevisionRows=topologyRevisions.data?.items||[];
  const selectedRevision=revisionRows.find(item=>item.revision_id===revisionId)||null;
  const selectedTopologyRevision=topologyRevisionRows.find(item=>item.revision_id===topologyRevisionId)||null;
+ const ansiblePlanRows=ansiblePlans.data?.items||[];
+ const selectedAnsiblePlan=ansiblePlanRows.find(item=>item.plan_id===ansiblePlanId)||ansiblePlanResult;
  const logicalNodes=selectedTopologyRevision?.definition?.nodes||[];
 
  useEffect(()=>{
@@ -111,6 +118,10 @@ export default function NetworkIntentPage({user}) {
   setTargetDeviceId("");
   setLogicalNodeId("");
   setValidation(null);
+  setCompilation(null);
+  setAnsiblePlanId("");
+  setAnsiblePlanResult(null);
+  setAnsibleExecutionResult(null);
   setError("");
   setNotice("");
   setDefinitionText(formatJson(EMPTY_INTENT));
@@ -270,6 +281,69 @@ export default function NetworkIntentPage({user}) {
     ?"Vendor configuration preview compiled. No device connection or configuration change was performed."
     :"Compilation is blocked. No partial configuration was returned.");
   }catch(exc){setError(exc.message||"Vendor configuration compilation failed.");}
+  finally{setBusyAction("");}
+ }
+
+ function parseAnsibleCredentialBindings() {
+  let value;
+  try{value=JSON.parse(ansibleCredentialBindingsText);}
+  catch(exc){throw new Error("Ansible credential binding JSON is invalid: "+exc.message);}
+  if(!value||typeof value!=="object"||Array.isArray(value))throw new Error("Credential bindings must be a JSON object keyed by managed Device ID.");
+  if(Object.keys(value).length===0||Object.values(value).some(item=>typeof item!=="string"||!item.trim()))throw new Error("Provide one non-empty Credential Vault reference for every target Device.");
+  return value;
+ }
+
+ async function createAnsiblePlan() {
+  if(!profileId||!selectedRevision||selectedRevision.status!=="PUBLISHED")return;
+  setBusyAction("ansible-plan");
+  setError("");
+  setNotice("");
+  try{
+   const item=await api.createNetworkAnsiblePlan(profileId,revisionId,{
+    credential_bindings:parseAnsibleCredentialBindings(),
+   });
+   setAnsiblePlanResult(item);
+   setAnsiblePlanId(item.plan_id||"");
+   setAnsibleExecutionResult(null);
+   await ansiblePlans.reload().catch(()=>null);
+   setNotice(item.status==="BLOCKED"
+    ?"Ansible plan is blocked by compilation or environment validation. No Device connection was opened."
+    :"Ansible plan preview validated. No Device connection or configuration change was performed.");
+  }catch(exc){setError(exc.message||"Ansible plan creation failed.");}
+  finally{setBusyAction("");}
+ }
+
+ async function approveAnsiblePlan() {
+  if(!selectedAnsiblePlan?.plan_id||selectedAnsiblePlan.status!=="PREVIEWED")return;
+  setBusyAction("ansible-approve");
+  setError("");
+  setNotice("");
+  try{
+   const item=await api.approveNetworkAnsiblePlan(selectedAnsiblePlan.plan_id,{
+    plan_sha256:selectedAnsiblePlan.plan_sha256,confirmed:true,
+   });
+   setAnsiblePlanResult(item);
+   await ansiblePlans.reload().catch(()=>null);
+   setNotice("Hash-pinned Ansible plan approved. Approval does not execute the plan.");
+  }catch(exc){setError(exc.message||"Ansible plan approval failed.");}
+  finally{setBusyAction("");}
+ }
+
+ async function executeAnsiblePlan() {
+  if(!selectedAnsiblePlan?.plan_id||selectedAnsiblePlan.status!=="APPROVED")return;
+  setBusyAction("ansible-execute");
+  setError("");
+  setNotice("");
+  try{
+   const result=await api.executeNetworkAnsiblePlan(selectedAnsiblePlan.plan_id,{
+    plan_sha256:selectedAnsiblePlan.plan_sha256,confirmed:true,
+   });
+   setAnsibleExecutionResult(result);
+   await ansiblePlans.reload().catch(()=>null);
+   setNotice(result.status==="SUCCEEDED"
+    ?"Ansible execution completed and every target passed the configured read-back check."
+    :"Ansible execution failed or had incomplete read-back. Reconciliation is required before retrying.");
+  }catch(exc){setError(exc.message||"Ansible execution failed.");await ansiblePlans.reload().catch(()=>null);}
   finally{setBusyAction("");}
  }
 
@@ -447,6 +521,65 @@ export default function NetworkIntentPage({user}) {
     </details>)}
     {compilation.orphaned_baseline_files?.length?<p className="table-secondary">Baseline-only files were not deleted: {compilation.orphaned_baseline_files.join(", ")}</p>:null}
    </div>:<p className="muted">No compilation preview has been generated for this selected revision.</p>}
+  </Section>
+
+  <Section title="Ansible automation" subtitle="Generate a target-scoped playbook from the published P09 compiler artifacts. Preview and approval are separate; execution may change live configuration and must be explicitly approved.">
+   {!canAutomationRead?<InlineNotice tone="warning">Ansible plan history requires network_automation.read permission.</InlineNotice>:null}
+   {canAutomationRead?<div className="form-grid">
+    <Field label="Credential Vault references by Device ID">
+     <textarea
+      aria-label="Ansible credential bindings JSON"
+      className="network-intent-editor"
+      rows={5}
+      spellCheck="false"
+      value={ansibleCredentialBindingsText}
+      onChange={event=>setAnsibleCredentialBindingsText(event.target.value)}
+      disabled={!canAutomationManage}
+     />
+    </Field>
+    <p className="muted">Enter a JSON object mapping each target Device ID to its active same-Device SSH_PASSWORD or SSH_PRIVATE_KEY credential ID. Secret values are never accepted here or persisted in the plan.</p>
+    <div className="form-actions">
+     {canAutomationManage?<Button type="button" loading={busyAction==="ansible-plan"} disabled={!profileId||selectedRevision?.status!=="PUBLISHED"} onClick={createAnsiblePlan}>Create Ansible plan preview</Button>:null}
+    </div>
+   </div>:null}
+   {ansiblePlanResult&&!ansiblePlanResult.plan_id?<div className="network-intent-validation" aria-live="polite">
+    <div className="network-intent-validation-heading"><strong>Plan creation result</strong><StatusBadge value={ansiblePlanResult.status||"BLOCKED"}/></div>
+    {(ansiblePlanResult.diagnostics||[]).map((item,index)=><p key={item.code+"-"+index}><strong>{item.code}</strong> · {item.message}</p>)}
+   </div>:null}
+   {canAutomationRead&&ansiblePlans.loading&&!ansiblePlans.data?<LoadingState label="Loading Ansible automation plans…"/>:null}
+   {canAutomationRead&&ansiblePlans.error?<ErrorState error={ansiblePlans.error} onRetry={ansiblePlans.reload}/>:null}
+   {canAutomationRead?<DataTable caption="Ansible automation plans" rows={ansiblePlanRows} rowKey={item=>item.plan_id} columns={[
+    {key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>},
+    {key:"revision_id",label:"Intent revision",render:item=><code>{item.revision_id}</code>},
+    {key:"plan_sha256",label:"Plan SHA-256",render:item=><code title={item.plan_sha256}>{item.plan_sha256.slice(0,12)}…</code>},
+    {key:"created_at",label:"Created",render:item=>new Date(item.created_at).toLocaleString()},
+    {key:"actions",label:"Action",render:item=><Button size="sm" variant="outline" onClick={()=>{setAnsiblePlanId(item.plan_id);setAnsiblePlanResult(null);setAnsibleExecutionResult(null);}}>Select</Button>},
+   ]} emptyTitle="No Ansible plans" emptyMessage="Create a plan from a published Network Intent revision and scoped Credential Vault references."/>:null}
+   {selectedAnsiblePlan?.plan_id?<div className="network-intent-validation" aria-live="polite">
+    <div className="network-intent-validation-heading"><strong>Selected Ansible plan</strong><StatusBadge value={selectedAnsiblePlan.status}/></div>
+    <p>Plan ID · <code>{selectedAnsiblePlan.plan_id}</code></p>
+    <p>Plan SHA-256 · <code>{selectedAnsiblePlan.plan_sha256}</code></p>
+    <p>{selectedAnsiblePlan.validation?.message||"Plan syntax and inventory validation result."} {selectedAnsiblePlan.validation?.ansible_core?("Ansible Core "+selectedAnsiblePlan.validation.ansible_core):""}</p>
+    {selectedAnsiblePlan.plan?.playbook_yaml?<details className="network-intent-artifact"><summary>Review generated Ansible playbook</summary><pre>{selectedAnsiblePlan.plan.playbook_yaml}</pre></details>:null}
+    {selectedAnsiblePlan.plan?.inventory?<details className="network-intent-artifact"><summary>Review scoped inventory (vault secrets excluded)</summary><pre>{JSON.stringify(selectedAnsiblePlan.plan.inventory,null,2)}</pre></details>:null}
+    {selectedAnsiblePlan.plan?.targets?.map(target=><p className="table-secondary" key={target.device_id}>{target.name} · {target.adapter_id} · {target.host}:{target.port} · {target.credential_type} vault reference · Read-back: {target.readback_method}</p>)}
+    {(selectedAnsiblePlan.validation?.detail||selectedAnsiblePlan.validation?.message)&&selectedAnsiblePlan.status==="BLOCKED"?<p className="table-secondary">{selectedAnsiblePlan.validation.detail||selectedAnsiblePlan.validation.message}</p>:null}
+    <div className="form-actions">
+     {canAutomationApprove&&selectedAnsiblePlan.status==="PREVIEWED"&&selectedAnsiblePlan.created_by!==user?.username?<Button type="button" loading={busyAction==="ansible-approve"} onClick={approveAnsiblePlan}>Approve hash-pinned plan</Button>:null}
+     {canAutomationExecute&&selectedAnsiblePlan.status==="APPROVED"?<Button type="button" loading={busyAction==="ansible-execute"} onClick={executeAnsiblePlan}>Execute approved plan</Button>:null}
+    </div>
+    {selectedAnsiblePlan.status==="PREVIEWED"&&selectedAnsiblePlan.created_by===user?.username?<p className="muted">The plan creator cannot approve their own change; a different ADMIN or OWNER must review the exact plan hash.</p>:null}
+    {selectedAnsiblePlan.status==="STALE"?<p className="muted">This approved plan is stale because its source capabilities or compiled output changed. Create a fresh plan and obtain a new independent approval.</p>:null}
+    {selectedAnsiblePlan.status==="APPROVED"?<p className="muted">Approval is bound to the exact plan SHA-256. Execution revalidates the source revision and current capabilities before opening any Device connection.</p>:null}
+    {selectedAnsiblePlan.executions?.map(execution=><div className="table-secondary" key={execution.execution_id}>
+     <p>Execution · <code>{execution.execution_id}</code> · <StatusBadge value={execution.status}/></p>
+     <p>{execution.result?.verified_device_count||0}/{execution.result?.target_count||0} Devices verified · {execution.result?.readback_status||"NOT_RUN"}</p>
+     {execution.result?.reconciliation_required?<p><strong>Reconciliation required.</strong> Partial configuration changes may have occurred; automatic retry is disabled.</p>:null}
+     {execution.result?.diagnostic?<p>{execution.result.diagnostic}</p>:null}
+    </div>)}
+    {ansibleExecutionResult?<p className="table-secondary">Latest execution request · {ansibleExecutionResult.status}</p>:null}
+   </div>:null}
+   <p className="muted">Initial live execution support: Linux/FRR over SSH, Cisco IOS/IOS-XE and Arista EOS over network_cli. Juniper Junos and Palo Alto PAN-OS remain compile-only until their separate NETCONF/API transports are qualified. Linux execution requires non-interactive sudo privileges. The first run must trust the Device's SSH host key in the operator's known_hosts file.</p>
   </Section>
 
   <Section title="Registered vendor compilers" subtitle="Compiler availability is advertised independently of topology emulator providers. Software versions are gated by the registered tested range; device changes are not performed here.">

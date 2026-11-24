@@ -20,6 +20,12 @@ vi.mock("@/api",()=>({api:{
  deviceCapabilityReports:vi.fn(),
  networkConfigAdapters:vi.fn(),
  compileNetworkIntentRevision:vi.fn(),
+
+ networkAnsiblePlans:vi.fn(),
+ networkAnsiblePlan:vi.fn(),
+ createNetworkAnsiblePlan:vi.fn(),
+ approveNetworkAnsiblePlan:vi.fn(),
+ executeNetworkAnsiblePlan:vi.fn(),
 }}));
 
 vi.mock("@/components/workspace-context",()=>({
@@ -114,6 +120,23 @@ describe("Network Intent v1.0 page",()=>{
    {adapter_id:"juniper_junos",name:"Juniper Junos",version:"1.0.0",platform_family:"Juniper Junos",supported_versions:"Junos 18.x–24.x",output_format:"Junos hierarchical set commands"},
    {adapter_id:"paloalto_panos",name:"Palo Alto PAN-OS",version:"1.0.0",platform_family:"Palo Alto PAN-OS",supported_versions:"PAN-OS 10.x–12.x",output_format:"PAN-OS set CLI"},
   ]});
+
+  api.networkAnsiblePlans.mockResolvedValue({items:[]});
+  api.networkAnsiblePlan.mockResolvedValue(null);
+  api.createNetworkAnsiblePlan.mockImplementation(async(_profileId,_revisionId,payload)=>({
+   plan_id:"ansible-plan-1",project_id:"project-1",lab_id:"lab-1",profile_id:"intent-profile-1",
+   revision_id:"intent-revision-1",plan_sha256:"f".repeat(64),status:"PREVIEWED",
+   plan:{targets:[{device_id:"device-1",name:"Router East",host:"192.0.2.10",port:22,adapter_id:"cisco_iosxe",credential_type:"SSH_PASSWORD",readback_method:"live show running-config"}]},
+   validation:{valid:true,message:"Playbook syntax and static inventory checks passed",ansible_core:"2.21.6"},
+   approvals:[],executions:[],
+  }));
+  api.approveNetworkAnsiblePlan.mockImplementation(async()=>({
+   plan_id:"ansible-plan-1",plan_sha256:"f".repeat(64),status:"APPROVED",approvals:[{plan_sha256:"f".repeat(64)}],executions:[],
+  }));
+  api.executeNetworkAnsiblePlan.mockImplementation(async()=>({
+   execution_id:"ansible-execution-1",status:"SUCCEEDED",
+   result:{application_performed:true,readback_status:"VERIFIED",verified_device_count:1,target_count:1,reconciliation_required:false},
+  }));
   api.compileNetworkIntentRevision.mockImplementation(async()=>compilationResult||{
    status:"COMPILED",compilation_id:"ncc-preview-001",compile_only:true,
    application_performed:false,ready_for_application:false,
@@ -127,6 +150,7 @@ describe("Network Intent v1.0 page",()=>{
 
  function renderPage(user={username:"owner",role:"OWNER",permissions:[
   "network_intent.read","network_intent.manage","network_intent.publish","devices.read","topology.read",
+  "network_automation.read","network_automation.manage","network_automation.approve","network_automation.execute",
  ]}){
   return render(<QueryClientProvider client={queryClient}>
    <NetworkIntentPage user={user}/>
@@ -217,6 +241,41 @@ describe("Network Intent v1.0 page",()=>{
   expect(await screen.findByText("Cisco IOS XE")).toBeTruthy();
   expect(screen.getByText(/gns3-capability-probe/)).toBeTruthy();
   expect(screen.getByText(/dddddddddddd/)).toBeTruthy();
+ });
+
+ it("validates, approves and executes a hash-pinned Ansible plan with read-back evidence",async()=>{
+  await createProfile();
+  const editor=screen.getByLabelText("Canonical network intent JSON");
+  const draft={
+   schema_version:"1.0",
+   targets:[{logical_node_id:"router-a",device_id:"device-1"}],
+   segments:[],interfaces:[{logical_node_id:"router-a",name:"GigabitEthernet0/1",admin_state:"UP",mode:"ROUTED",addresses:["192.0.2.1/24"]}],
+   static_routes:[],ospf:[],bgp:[],aggregations:[],firewall_zones:[],firewall_rules:[],
+   service_references:[],linux_bridges:[],linux_vlan_interfaces:[],
+  };
+  fireEvent.change(editor,{target:{value:JSON.stringify(draft,null,2)}});
+  fireEvent.click(screen.getByRole("button",{name:"Save DRAFT revision"}));
+  await waitFor(()=>expect(api.createNetworkIntentRevision).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button",{name:"Publish revision"}));
+  await waitFor(()=>expect(api.publishNetworkIntentRevision).toHaveBeenCalledTimes(1));
+  fireEvent.change(screen.getByLabelText("Ansible credential bindings JSON"),{
+   target:{value:JSON.stringify({"device-1":"credential-1"})},
+  });
+  fireEvent.click(screen.getByRole("button",{name:"Create Ansible plan preview"}));
+  await waitFor(()=>expect(api.createNetworkAnsiblePlan).toHaveBeenCalledTimes(1));
+  expect(api.createNetworkAnsiblePlan.mock.calls[0][2]).toEqual({
+   credential_bindings:{"device-1":"credential-1"},
+  });
+  expect(await screen.findByText("ansible-plan-1")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"Approve hash-pinned plan"}));
+  await waitFor(()=>expect(api.approveNetworkAnsiblePlan).toHaveBeenCalledWith("ansible-plan-1",{
+   plan_sha256:"f".repeat(64),confirmed:true,
+  }));
+  fireEvent.click(screen.getByRole("button",{name:"Execute approved plan"}));
+  await waitFor(()=>expect(api.executeNetworkAnsiblePlan).toHaveBeenCalledWith("ansible-plan-1",{
+   plan_sha256:"f".repeat(64),confirmed:true,
+  }));
+  expect(await screen.findByText(/Execution completed and every target passed/i)).toBeTruthy();
  });
 
  it("keeps the editor and mutations unavailable to a read-only user",async()=>{

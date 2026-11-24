@@ -439,6 +439,7 @@ def _run_packaged_backend_checks(
         "tests.test_credential_vault",
         "tests.test_device_inventory",
         "tests.test_configuration_profile_service",
+        "tests.test_ansible_automation",
         "tests.test_performance_policy_engine",
         "tests.test_topology_apply",
         "tests.test_configuration_deployer",

@@ -254,4 +254,20 @@ python scripts/netregress_sync.py --url "$NETREGRESS_SYNC_URL"
 The historical root entry points remain available as compatibility wrappers: run_all.sh uses the canonical installer, test suite and authenticated dashboard launcher; verify_system.py delegates to the canonical release gate.
 
 
-The platform also includes canonical vendor-neutral Network Intent v1.0 with topology-hash-pinned immutable revisions and adapter-observed capability validation. EXP-P09 adds deterministic, read-only vendor configuration previews for Linux/FRR, Cisco IOS/IOS-XE, Arista EOS, Juniper Junos and Palo Alto PAN-OS. EXP-P10 Ansible execution remains a separate downstream stage.
+The platform includes canonical vendor-neutral Network Intent v1.0, all five P09 compiler adapters (Linux/FRR, Cisco IOS/IOS-XE, Arista EOS, Juniper Junos, Palo Alto PAN-OS), and an approval-controlled P10 Ansible workflow. P10 initial live execution supports Linux/FRR, IOS/IOS-XE and EOS; Junos/PAN-OS remain compile-only pending their distinct transports.
+
+
+## Optional Ansible runtime (EXP-P10)
+
+Ansible is optional and is not installed or launched by default. Use the same activated Python environment as the NetRegress Runner, on Python 3.12–3.14:
+
+~~~bash
+source .venv/bin/activate
+./scripts/netregress_ansible_setup.sh
+ansible-playbook --version
+ansible-galaxy collection list
+~~~
+
+P10 pins Ansible Core 2.21.6, `ansible.netcommon` 8.7.1, `cisco.ios` 11.6.0 and `arista.eos` 12.3.0. On Ubuntu, install `sshpass` if using password-based SSH (for example, `sudo apt install sshpass`); key-based SSH does not need that helper. Before a target's first run, verify its SSH host-key fingerprint through the organization's trusted procedure and place the key in the active user's `known_hosts`. Linux/FRR non-root accounts need non-interactive sudo privileges. NetRegress never disables host-key checking.
+
+Create a P10 plan from an immutable PUBLISHED Network Intent revision, review the generated playbook/static inventory and SHA-256, then ask a different authorized ADMIN/OWNER to approve that exact hash. Execution may modify live devices. A failure can leave partial configuration changes; inspect immutable execution evidence and reconcile targets before creating a new plan. Do not treat a passing mock-runner CI test as live device certification.
