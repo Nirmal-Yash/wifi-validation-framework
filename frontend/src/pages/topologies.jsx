@@ -106,11 +106,13 @@ export default function TopologyStudioPage({user}){
  const [packetTracerResult,setPacketTracerResult]=useState(null);
  const profiles=useAsyncLoader(()=>projectId?api.topologies(projectId):Promise.resolve({items:[]}),[projectId],{enabled:Boolean(projectId),queryKey:"topology-studio-profiles"});
  const revisions=useAsyncLoader(()=>profileId?api.topologyRevisions(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"topology-studio-revisions"});
+ const presentationRevisions=useAsyncLoader(()=>profileId&&revisionId?api.topologyPresentationRevisions(profileId,revisionId):Promise.resolve({items:[]}),[profileId,revisionId],{enabled:Boolean(profileId&&revisionId),queryKey:"topology-presentation-revisions"});
  const nativeSources=useAsyncLoader(()=>profileId?api.topologyNativeSources(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"topology-native-sources"});
  const mutation=useMutation();
  const projectRows=projects.data?.items||[];
  const profileRows=profiles.data?.items||[];
  const revisionRows=revisions.data?.items||[];
+ const presentationRevisionRows=presentationRevisions.data?.items||[];
  const nodes=definition.nodes||[];
  const links=definition.links||[];
  const selectedRevision=revisionRows.find(item=>item.revision_id===revisionId)||null;
