@@ -41,6 +41,10 @@ export default function NetworkIntentPage({user}) {
  const projectId=workspace.activeProjectId||"";
  const canManage=canPerform(user,"network_intent.manage");
  const canPublish=canPerform(user,"network_intent.publish");
+ const canAutomationRead=canPerform(user,"network_automation.read");
+ const canAutomationManage=canPerform(user,"network_automation.manage");
+ const canAutomationApprove=canPerform(user,"network_automation.approve");
+ const canAutomationExecute=canPerform(user,"network_automation.execute");
  const topologyProfiles=useAsyncLoader(
   ()=>projectId?api.topologies(projectId):Promise.resolve({items:[]}),
   [projectId],
