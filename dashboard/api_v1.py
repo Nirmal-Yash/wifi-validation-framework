@@ -3874,6 +3874,166 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         idempotency_store_response(scope, key, request_hash, item, 200)
         return ok(item)
 
+
+    @api.get("/infrastructure/workspaces/<workspace_id>/resources")
+    def list_infrastructure_resource_bindings(workspace_id):
+        try:
+            workspace_item = infrastructure_automation.get_workspace(workspace_id)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_WORKSPACE", str(exc), 422)
+        if workspace_item is None:
+            return error("NOT_FOUND", "OpenTofu workspace not found", 404)
+        denied = require_permission("infrastructure.read", project_id=workspace_item["project_id"])
+        if denied is not None:
+            return denied
+        try:
+            return ok(infrastructure_automation.list_resource_bindings(workspace_id))
+        except InfrastructureAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_REQUEST", str(exc), 422)
+
+    @api.post("/infrastructure/workspaces/<workspace_id>/resources")
+    def create_infrastructure_resource_binding(workspace_id):
+        try:
+            workspace_item = infrastructure_automation.get_workspace(workspace_id)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_WORKSPACE", str(exc), 422)
+        if workspace_item is None:
+            return error("NOT_FOUND", "OpenTofu workspace not found", 404)
+        denied = require_permission("infrastructure.manage", project_id=workspace_item["project_id"])
+        if denied is not None:
+            return denied
+        denied = require_permission("topology.read", project_id=workspace_item["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        required = {
+            "resource_address", "topology_profile_id",
+            "topology_revision_id", "topology_node_id",
+        }
+        allowed = required | {"expected_current_binding_id"}
+        if not isinstance(payload, dict) or not required.issubset(payload) or set(payload) - allowed:
+            return error("INVALID_REQUEST", "request must contain resource_address, topology_profile_id, topology_revision_id and topology_node_id", 400)
+        scope = f"/api/v1/infrastructure/workspaces/{workspace_id}/resources"
+        body = {"workspace_id": workspace_id, **payload}
+        key, request_hash, cached, security_error = idempotency_preflight(scope, body)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            item = infrastructure_automation.create_resource_binding(
+                workspace_id,
+                resource_address=payload.get("resource_address"),
+                topology_profile_id=payload.get("topology_profile_id"),
+                topology_revision_id=payload.get("topology_revision_id"),
+                topology_node_id=payload.get("topology_node_id"),
+                expected_current_binding_id=payload.get("expected_current_binding_id"),
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except InfrastructureAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except InfrastructureAutomationConflict as exc:
+            return error("INFRASTRUCTURE_CONFLICT", str(exc), 409)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_REQUEST", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, item, 201)
+        return ok(item), 201
+
+    @api.get("/infrastructure/workspaces/<workspace_id>/reconciliations")
+    def list_infrastructure_reconciliations(workspace_id):
+        try:
+            workspace_item = infrastructure_automation.get_workspace(workspace_id)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_WORKSPACE", str(exc), 422)
+        if workspace_item is None:
+            return error("NOT_FOUND", "OpenTofu workspace not found", 404)
+        denied = require_permission("infrastructure.read", project_id=workspace_item["project_id"])
+        if denied is not None:
+            return denied
+        try:
+            return ok({"items": infrastructure_automation.list_reconciliations(workspace_id)})
+        except InfrastructureAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_REQUEST", str(exc), 422)
+
+    @api.post("/infrastructure/workspaces/<workspace_id>/reconcile")
+    def reconcile_infrastructure_workspace(workspace_id):
+        try:
+            workspace_item = infrastructure_automation.get_workspace(workspace_id)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_WORKSPACE", str(exc), 422)
+        if workspace_item is None:
+            return error("NOT_FOUND", "OpenTofu workspace not found", 404)
+        denied = require_permission("infrastructure.reconcile", project_id=workspace_item["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        if payload != {}:
+            return error("INVALID_REQUEST", "reconciliation takes no caller-supplied state or provider data", 400)
+        scope = f"/api/v1/infrastructure/workspaces/{workspace_id}/reconcile"
+        body = {"workspace_id": workspace_id}
+        key, request_hash, cached, security_error = idempotency_preflight(scope, body)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            item = infrastructure_automation.reconcile(
+                workspace_id,
+                actor=str((session.get("netregress_user") or {}).get("username", "local")),
+            )
+        except InfrastructureAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except InfrastructureAutomationConflict as exc:
+            return error("INFRASTRUCTURE_CONFLICT", str(exc), 409)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_REQUEST", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, item, 200)
+        return ok(item)
+
+    @api.post("/infrastructure/workspaces/<workspace_id>/recover")
+    def recover_infrastructure_workspace(workspace_id):
+        try:
+            workspace_item = infrastructure_automation.get_workspace(workspace_id)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_WORKSPACE", str(exc), 422)
+        if workspace_item is None:
+            return error("NOT_FOUND", "OpenTofu workspace not found", 404)
+        denied = require_permission("infrastructure.execute", project_id=workspace_item["project_id"])
+        if denied is not None:
+            return denied
+        denied = require_permission("infrastructure.reconcile", project_id=workspace_item["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict) or set(payload) != {"confirmed"} or payload.get("confirmed") is not True:
+            return error("EXPLICIT_CONFIRMATION_REQUIRED", "Set confirmed=true after reviewing the partial apply and authorizing a refresh/recovery plan", 409)
+        scope = f"/api/v1/infrastructure/workspaces/{workspace_id}/recover"
+        body = {"workspace_id": workspace_id, "confirmed": True}
+        key, request_hash, cached, security_error = idempotency_preflight(scope, body)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        actor = str((session.get("netregress_user") or {}).get("username", "local"))
+        try:
+            reconciliation = infrastructure_automation.reconcile(workspace_id, actor=actor)
+            plan = infrastructure_automation.create_recovery_plan(
+                workspace_id, reconciliation_id=reconciliation["reconciliation_id"], actor=actor,
+            )
+            item = {"reconciliation": reconciliation, "plan": plan}
+        except InfrastructureAutomationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except InfrastructureAutomationConflict as exc:
+            return error("INFRASTRUCTURE_CONFLICT", str(exc), 409)
+        except InfrastructureAutomationError as exc:
+            return error("INVALID_INFRASTRUCTURE_REQUEST", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, item, 201)
+        return ok(item), 201
+
     @api.get("/infrastructure/workspaces/<workspace_id>/state")
     def inspect_infrastructure_workspace(workspace_id):
         try:

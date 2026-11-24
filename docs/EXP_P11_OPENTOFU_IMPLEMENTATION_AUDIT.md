@@ -14,7 +14,7 @@ P11 establishes OpenTofu as the infrastructure provisioning owner, separate from
 - Every workspace is bound to an active Project and Lab and receives a private state directory. Local state is stored outside the repository.
 - Caller variables are bounded JSON; secret-like keys are rejected. Provider authentication may come only from the operator's selected process identity/allow-listed environment.
 - The API never exposes raw state, variable files, plan binaries or credential values.
-- The service reuses the existing shared Lab resource lock and adds a workspace lock. Approval is independent and tied to the binary plan SHA-256.
+- The service reuses the existing shared Lab resource lock and adds a workspace lock. Before plan, apply, state inspection, resource mapping and reconciliation, it verifies the private module manifest, every snapshotted module-file SHA-256, rejects unmanifested workspace configuration, and compares the canonical variables file with the immutable database record. Approval is independent and tied to the binary plan SHA-256.
 - Destroy and plans containing resource deletion require a separate destroy permission. Apply requires explicit confirmation and the exact approved hash.
 - Partial or timed-out apply is not retried; it marks the workspace RECOVERY_REQUIRED.
 

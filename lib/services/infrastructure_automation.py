@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import secrets
 import shutil
@@ -555,6 +555,150 @@ class InfrastructureAutomationService:
             raise InfrastructureAutomationNotFound("OpenTofu workspace not found")
         return row
 
+    def _verify_workspace_snapshot(self, row, workspace: Path) -> None:
+        """Verify the private module and variable snapshot before every OpenTofu operation."""
+        workspace = Path(workspace)
+        workspace_id = row["workspace_id"]
+        try:
+            root = self.workspaces_root.resolve(strict=True)
+            if self.workspaces_root.is_symlink() or workspace.is_symlink() or workspace.name != workspace_id:
+                raise InfrastructureAutomationConflict("OpenTofu workspace path is unsafe")
+            if workspace.parent.resolve(strict=True) != root:
+                raise InfrastructureAutomationConflict("OpenTofu workspace escaped its private state root")
+            resolved = workspace.resolve(strict=True)
+            if resolved.parent != root or not resolved.is_dir():
+                raise InfrastructureAutomationConflict("OpenTofu workspace path is unsafe")
+
+            metadata_root = resolved / ".netregress"
+            manifest_path = metadata_root / "module-manifest.json"
+            if metadata_root.is_symlink() or not metadata_root.is_dir():
+                raise InfrastructureAutomationConflict("module snapshot manifest directory is missing or unsafe")
+            if manifest_path.is_symlink() or not manifest_path.is_file():
+                raise InfrastructureAutomationConflict("module snapshot manifest is missing or unsafe")
+            manifest_bytes = manifest_path.read_bytes()
+            if not manifest_bytes or len(manifest_bytes) > 1_000_000:
+                raise InfrastructureAutomationConflict("module snapshot manifest exceeds its integrity limit")
+            manifest = json.loads(manifest_bytes.decode("utf-8"))
+        except InfrastructureAutomationError:
+            raise
+        except (OSError, RuntimeError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+            raise InfrastructureAutomationConflict("OpenTofu workspace snapshot is missing or unsafe") from exc
+
+        if (
+            not isinstance(manifest, dict)
+            or set(manifest) != {"schema_version", "module_sha256", "files"}
+            or type(manifest.get("schema_version")) is not int
+            or manifest.get("schema_version") != 1
+            or manifest.get("module_sha256") != row["module_sha256"]
+            or not isinstance(manifest.get("files"), list)
+            or not 1 <= len(manifest["files"]) <= self.MAX_MODULE_FILES
+        ):
+            raise InfrastructureAutomationConflict("module snapshot manifest does not match the immutable workspace record")
+
+        seen: set[str] = set()
+        manifest_paths: list[str] = []
+        total_bytes = 0
+        module_digest = hashlib.sha256()
+        for item in manifest["files"]:
+            if not isinstance(item, dict) or set(item) != {"path", "sha256"}:
+                raise InfrastructureAutomationConflict("module snapshot manifest contains an invalid file entry")
+            relative_text = item["path"]
+            expected_digest = item["sha256"]
+            if (
+                not isinstance(relative_text, str)
+                or not relative_text
+                or len(relative_text) > 512
+                or "\\" in relative_text
+                or not isinstance(expected_digest, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", expected_digest)
+            ):
+                raise InfrastructureAutomationConflict("module snapshot manifest contains an invalid path or SHA-256 digest")
+            relative = PurePosixPath(relative_text)
+            if (
+                relative.is_absolute()
+                or relative.as_posix() != relative_text
+                or any(part in {"", ".", ".."} for part in relative.parts)
+                or relative.parts[0] == ".netregress"
+                or relative_text == "terraform.tfvars.json"
+                or not (
+                    relative.suffix in {".tf", ".json", ".hcl"}
+                    or relative.name == ".terraform.lock.hcl"
+                )
+            ):
+                raise InfrastructureAutomationConflict("module snapshot manifest contains an unsafe or unsupported file path")
+            if relative_text in seen:
+                raise InfrastructureAutomationConflict("module snapshot manifest contains a duplicate file path")
+            seen.add(relative_text)
+            manifest_paths.append(relative_text)
+
+            candidate = resolved
+            for part in relative.parts:
+                candidate = candidate / part
+                if candidate.is_symlink():
+                    raise InfrastructureAutomationConflict("module snapshot file is a symlink")
+            if not candidate.is_file():
+                raise InfrastructureAutomationConflict("module snapshot file is missing")
+            try:
+                content = candidate.read_bytes()
+            except OSError as exc:
+                raise InfrastructureAutomationConflict("module snapshot file is unreadable") from exc
+            total_bytes += len(content)
+            if total_bytes > self.MAX_MODULE_BYTES:
+                raise InfrastructureAutomationConflict("module snapshot exceeds its aggregate size limit")
+            actual_digest = self._digest(content)
+            if actual_digest != expected_digest:
+                raise InfrastructureAutomationConflict("module snapshot file failed SHA-256 integrity verification")
+            module_digest.update(relative_text.encode("utf-8"))
+            module_digest.update(b"\0")
+            module_digest.update(content)
+
+        if manifest_paths != sorted(manifest_paths, key=lambda value: PurePosixPath(value).parts):
+            raise InfrastructureAutomationConflict("module snapshot manifest file ordering is not canonical")
+
+        # OpenTofu loads configuration files from the workspace directory. Reject
+        # unmanifested files so a new .tf/.tf.json file cannot bypass the snapshot.
+        actual_paths: list[str] = []
+        try:
+            for candidate in resolved.rglob("*"):
+                relative = candidate.relative_to(resolved)
+                if candidate.is_symlink():
+                    raise InfrastructureAutomationConflict("module snapshot contains a symlink")
+                if relative.parts and relative.parts[0] == ".netregress":
+                    continue
+                if candidate.is_dir():
+                    continue
+                if not candidate.is_file():
+                    raise InfrastructureAutomationConflict("module snapshot contains a non-regular file")
+                relative_text = relative.as_posix()
+                if relative_text == "terraform.tfvars.json":
+                    continue
+                actual_paths.append(relative_text)
+        except OSError as exc:
+            raise InfrastructureAutomationConflict("module snapshot directory could not be inspected") from exc
+        if len(actual_paths) != len(seen) or set(actual_paths) != seen:
+            raise InfrastructureAutomationConflict("module snapshot contains unmanifested or missing files")
+        if module_digest.hexdigest() != row["module_sha256"]:
+            raise InfrastructureAutomationConflict("module snapshot failed its aggregate SHA-256 integrity check")
+
+        variables_path = resolved / "terraform.tfvars.json"
+        if variables_path.is_symlink() or not variables_path.is_file():
+            raise InfrastructureAutomationConflict("variable snapshot failed integrity verification")
+        try:
+            variables_bytes = variables_path.read_bytes()
+            if not variables_bytes or len(variables_bytes) > self.MAX_VARIABLE_BYTES:
+                raise ValueError("variable file size is invalid")
+            variables_text = variables_bytes.decode("utf-8")
+            variables = self._validate_variables(json.loads(variables_text))
+            canonical = self._canonical(variables)
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError, InfrastructureAutomationError) as exc:
+            raise InfrastructureAutomationConflict("variable snapshot failed integrity verification") from exc
+        if (
+            variables_text != canonical
+            or canonical != row["variables_json"]
+            or self._digest(variables_bytes) != self._digest(canonical.encode("utf-8"))
+        ):
+            raise InfrastructureAutomationConflict("variable snapshot failed integrity verification")
+
     @staticmethod
     def _plan_summary(plan_json: dict, *, kind: str) -> dict:
         resource_changes = plan_json.get("resource_changes", [])
@@ -595,7 +739,10 @@ class InfrastructureAutomationService:
             "requires_destroy_permission": requires_destroy,
         }
 
-    def create_plan(self, workspace_id: str, *, kind: str = "APPLY", actor: str) -> dict:
+    def create_plan(
+        self, workspace_id: str, *, kind: str = "APPLY", actor: str,
+        reconciliation_id: str | None = None,
+    ) -> dict:
         actor = self._actor(actor)
         kind = str(kind or "APPLY").upper()
         if kind not in {"APPLY", "DESTROY", "RECOVERY"}:
@@ -607,6 +754,24 @@ class InfrastructureAutomationService:
             raise InfrastructureAutomationConflict("workspace requires explicit recovery planning")
         if row["status"] == "ACTIVE" and kind == "RECOVERY":
             raise InfrastructureAutomationConflict("recovery plans are only valid for RECOVERY_REQUIRED workspaces")
+        if kind == "RECOVERY":
+            if not reconciliation_id:
+                raise InfrastructureAutomationConflict("recovery planning requires a completed reconciliation snapshot")
+            with self.database.connection() as connection:
+                recovery_record = connection.execute(
+                    """SELECT reconciliation_id FROM infrastructure_reconciliations
+                       WHERE reconciliation_id=? AND workspace_id=? AND project_id=? AND lab_id=?""",
+                    (reconciliation_id, workspace_id, row["project_id"], row["lab_id"]),
+                ).fetchone()
+                latest_record = connection.execute(
+                    """SELECT reconciliation_id FROM infrastructure_reconciliations
+                       WHERE workspace_id=? ORDER BY created_at DESC,reconciliation_id DESC LIMIT 1""",
+                    (workspace_id,),
+                ).fetchone()
+            if recovery_record is None or latest_record is None or latest_record["reconciliation_id"] != reconciliation_id:
+                raise InfrastructureAutomationConflict("recovery plan requires the latest reconciliation for this exact workspace")
+        elif reconciliation_id is not None:
+            raise InfrastructureAutomationError("only RECOVERY plans may reference a reconciliation snapshot")
         plan_id = secrets.token_hex(16)
         plan_relative = f".netregress/plans/{plan_id}.tfplan"
         workspace = self._workspace_path(workspace_id)
@@ -624,6 +789,15 @@ class InfrastructureAutomationService:
             prepared = self.runner.prepare(workspace=workspace)
             if not prepared.get("valid"):
                 raise InfrastructureAutomationConflict(str(prepared.get("message") or "OpenTofu validation failed"))
+            if kind == "RECOVERY":
+                with self.database.connection() as connection:
+                    current_reconciliation = connection.execute(
+                        """SELECT reconciliation_id FROM infrastructure_reconciliations
+                           WHERE workspace_id=? ORDER BY created_at DESC,reconciliation_id DESC LIMIT 1""",
+                        (workspace_id,),
+                    ).fetchone()
+                if current_reconciliation is None or current_reconciliation["reconciliation_id"] != reconciliation_id:
+                    raise InfrastructureAutomationConflict("a newer reconciliation replaced the selected recovery snapshot")
             planned = self.runner.plan(
                 workspace=workspace, plan_file=plan_relative, destroy=kind == "DESTROY",
             )
@@ -643,11 +817,11 @@ class InfrastructureAutomationService:
                 connection.execute(
                     """INSERT INTO opentofu_plans(
                         plan_id,workspace_id,project_id,lab_id,kind,plan_sha256,plan_file,
-                        summary_json,status,created_at,created_by
-                    ) VALUES(?,?,?,?,?,?,?,?,'PREVIEWED',?,?)""",
+                        summary_json,status,created_at,created_by,reconciliation_id
+                    ) VALUES(?,?,?,?,?,?,?,?,'PREVIEWED',?,?,?)""",
                     (
                         plan_id, workspace_id, row["project_id"], row["lab_id"], kind,
-                        plan_sha256, plan_relative, self._canonical(summary), now, actor,
+                        plan_sha256, plan_relative, self._canonical(summary), now, actor,reconciliation_id,
                     ),
                 )
                 self._audit(connection, actor, "OPENTOFU_PLAN_CREATED", plan_id, {
@@ -686,6 +860,7 @@ class InfrastructureAutomationService:
             "project_id": row["project_id"],
             "lab_id": row["lab_id"],
             "kind": row["kind"],
+            "reconciliation_id": row["reconciliation_id"],
             "plan_sha256": row["plan_sha256"],
             "summary": json.loads(row["summary_json"]),
             "status": row["status"],
@@ -813,6 +988,14 @@ class InfrastructureAutomationService:
                     raise InfrastructureAutomationConflict("only an explicitly reviewed recovery plan may follow a partial apply")
                 if row["status"] == "ACTIVE" and plan["kind"] == "RECOVERY":
                     raise InfrastructureAutomationConflict("recovery plan is no longer applicable")
+                if plan["kind"] == "RECOVERY":
+                    latest_reconciliation = connection.execute(
+                        """SELECT reconciliation_id FROM infrastructure_reconciliations
+                           WHERE workspace_id=? ORDER BY created_at DESC,reconciliation_id DESC LIMIT 1""",
+                        (row["workspace_id"],),
+                    ).fetchone()
+                    if latest_reconciliation is None or latest_reconciliation["reconciliation_id"] != plan["reconciliation_id"]:
+                        raise InfrastructureAutomationConflict("a newer reconciliation made this recovery plan stale")
                 plan_row = connection.execute(
                     "SELECT plan_file FROM opentofu_plans WHERE plan_id=?", (plan_id,)
                 ).fetchone()
@@ -883,6 +1066,504 @@ class InfrastructureAutomationService:
             raise InfrastructureAutomationConflict("OpenTofu workspace directory is missing or unsafe")
         return path
 
+    @staticmethod
+    def _state_resources(state: dict) -> list[dict]:
+        values = state.get("values") if isinstance(state, dict) else None
+        root = values.get("root_module") if isinstance(values, dict) else None
+        found: dict[str, dict] = {}
+
+        def visit(module: object) -> None:
+            if not isinstance(module, dict):
+                return
+            resources = module.get("resources", [])
+            if isinstance(resources, list):
+                for resource in resources:
+                    if not isinstance(resource, dict):
+                        continue
+                    address = resource.get("address")
+                    resource_type = resource.get("type")
+                    if isinstance(address, str) and address and isinstance(resource_type, str) and resource_type:
+                        found[address] = {"resource_address": address[:512], "resource_type": resource_type[:160]}
+            children = module.get("child_modules", [])
+            if isinstance(children, list):
+                for child in children:
+                    visit(child)
+
+        visit(root)
+        return [found[key] for key in sorted(found)]
+
+    @staticmethod
+    def _drift_resources(plan_json: dict) -> dict[str, dict]:
+        raw = plan_json.get("resource_drift", [])
+        if not isinstance(raw, list):
+            raise InfrastructureAutomationError("OpenTofu refresh plan contains an invalid resource-drift collection")
+        result: dict[str, dict] = {}
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            address = item.get("address")
+            resource_type = item.get("type")
+            change = item.get("change")
+            actions = change.get("actions", []) if isinstance(change, dict) else []
+            if not isinstance(address, str) or not address or not isinstance(actions, list):
+                continue
+            safe_actions = [
+                action for action in actions
+                if action in {"no-op", "create", "read", "update", "delete", "forget"}
+            ]
+            result[address] = {
+                "resource_type": resource_type[:160] if isinstance(resource_type, str) else "",
+                "actions": safe_actions,
+            }
+        return result
+
+    def _workspace_lock(self, row, workspace_id: str, actor: str, purpose: str, seconds: int = 600):
+        try:
+            return self.resource_lock_manager.acquire_many(
+                [f"lab:{row['lab_id']}", f"opentofu-workspace:{workspace_id}"],
+                f"{actor}:opentofu-{purpose}:{secrets.token_hex(8)}",
+                timeout=0, lease_seconds=seconds,
+            )
+        except ResourceLockError as exc:
+            raise InfrastructureAutomationConflict(
+                f"Lab or OpenTofu workspace is locked; {purpose} was not started"
+            ) from exc
+
+    def create_resource_binding(
+        self, workspace_id: str, *, resource_address: str, topology_profile_id: str,
+        topology_revision_id: str, topology_node_id: str, actor: str,
+        expected_current_binding_id: str | None = None,
+    ) -> dict:
+        actor = self._actor(actor)
+        if expected_current_binding_id is not None and (
+            not isinstance(expected_current_binding_id, str)
+            or not re.fullmatch(r"[a-f0-9]{32}", expected_current_binding_id)
+        ):
+            raise InfrastructureAutomationError("expected_current_binding_id must be a valid binding identifier")
+        values = {
+            "resource_address": resource_address,
+            "topology_profile_id": topology_profile_id,
+            "topology_revision_id": topology_revision_id,
+            "topology_node_id": topology_node_id,
+        }
+        limits = {
+            "resource_address": 512, "topology_profile_id": 128,
+            "topology_revision_id": 128, "topology_node_id": 64,
+        }
+        for key, value in values.items():
+            if not isinstance(value, str) or not value.strip() or len(value.strip()) > limits[key]:
+                raise InfrastructureAutomationError(f"{key} must contain 1 to {limits[key]} characters")
+            values[key] = value.strip()
+            if any(ord(char) < 32 for char in values[key]):
+                raise InfrastructureAutomationError(f"{key} cannot contain control characters")
+        row = self._workspace_row(workspace_id)
+        if row["status"] == "DESTROYED":
+            raise InfrastructureAutomationConflict("destroyed workspaces cannot receive resource mappings")
+        workspace = self._workspace_path_for_plan_row(row)
+        lease = self._workspace_lock(row, workspace_id, actor, "resource-mapping", 300)
+        try:
+            self._verify_workspace_snapshot(row, workspace)
+            prepared = self.runner.prepare(workspace=workspace)
+            if not prepared.get("valid"):
+                raise InfrastructureAutomationConflict(
+                    str(prepared.get("message") or "OpenTofu workspace could not be prepared for resource mapping")
+                )
+            state = self.runner.state_show(workspace=workspace)
+            resources = self._state_resources(state)
+            resource = next(
+                (item for item in resources if item["resource_address"] == values["resource_address"]),
+                None,
+            )
+            if resource is None:
+                raise InfrastructureAutomationConflict(
+                    "resource address is not present in this workspace's observed OpenTofu state"
+                )
+            with self.database.connection() as connection:
+                profile = connection.execute(
+                    "SELECT * FROM topology_profiles WHERE profile_id=?",
+                    (values["topology_profile_id"],),
+                ).fetchone()
+                revision = connection.execute(
+                    "SELECT * FROM topology_revisions WHERE revision_id=? AND profile_id=?",
+                    (values["topology_revision_id"], values["topology_profile_id"]),
+                ).fetchone()
+            if profile is None or revision is None or profile["project_id"] != row["project_id"]:
+                raise InfrastructureAutomationNotFound(
+                    "topology profile or revision was not found in the workspace Project"
+                )
+            if profile["status"] != "ACTIVE" or revision["status"] != "PUBLISHED":
+                raise InfrastructureAutomationConflict(
+                    "resource mappings require an active topology profile and a published immutable revision"
+                )
+            if profile["scope_type"] == "LAB" and profile["lab_id"] != row["lab_id"]:
+                raise InfrastructureAutomationConflict(
+                    "Lab-scoped topology profile belongs to a different Lab"
+                )
+            if profile["scope_type"] not in {"LAB", "PROJECT"}:
+                raise InfrastructureAutomationConflict("topology profile has an unsupported ownership scope")
+            try:
+                definition = json.loads(revision["definition_json"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                raise InfrastructureAutomationConflict("published topology revision content is invalid") from exc
+            _, encoded, digest = self._topology_payload(definition)
+            if digest != revision["content_sha256"] or encoded != revision["definition_json"]:
+                raise InfrastructureAutomationConflict("published topology revision failed content integrity verification")
+            nodes = definition.get("nodes", []) if isinstance(definition, dict) else []
+            node = next(
+                (item for item in nodes if isinstance(item, dict) and item.get("id") == values["topology_node_id"]),
+                None,
+            )
+            if node is None:
+                raise InfrastructureAutomationNotFound(
+                    "logical topology node was not found in the selected published revision"
+                )
+            binding_id = secrets.token_hex(16)
+            now = self._now()
+            with self.database.transaction(immediate=True) as connection:
+                current = connection.execute(
+                    """SELECT * FROM infrastructure_resource_bindings
+                       WHERE workspace_id=? AND resource_address=? AND status='ACTIVE'""",
+                    (workspace_id, values["resource_address"]),
+                ).fetchone()
+                same_mapping = current is not None and (
+                    current["topology_profile_id"] == values["topology_profile_id"]
+                    and current["topology_revision_id"] == values["topology_revision_id"]
+                    and current["topology_node_id"] == values["topology_node_id"]
+                )
+                if same_mapping:
+                    if expected_current_binding_id not in (None, current["binding_id"]):
+                        raise InfrastructureAutomationConflict("expected current binding does not match the active mapping")
+                    binding_id = current["binding_id"]
+                else:
+                    if current is not None and expected_current_binding_id != current["binding_id"]:
+                        raise InfrastructureAutomationConflict(
+                            "resource already has a different active topology mapping; provide its expected binding ID to replace it"
+                        )
+                    if current is None and expected_current_binding_id is not None:
+                        raise InfrastructureAutomationConflict("expected current binding is stale; no active mapping exists")
+                    is_replacement = current is not None
+                    connection.execute(
+                        """INSERT INTO infrastructure_resource_bindings(
+                            binding_id,workspace_id,project_id,lab_id,resource_address,resource_type,
+                            topology_profile_id,topology_revision_id,topology_node_id,status,superseded_by,
+                            created_at,created_by
+                        ) VALUES(?,?,?,?,?,?,?,?,?,'PENDING',NULL,?,?)""",
+                        (
+                            binding_id, workspace_id, row["project_id"], row["lab_id"],
+                            values["resource_address"], resource["resource_type"],
+                            values["topology_profile_id"], values["topology_revision_id"],
+                            values["topology_node_id"], now, actor,
+                        ),
+                    )
+                    if current is not None:
+                        cursor = connection.execute(
+                            """UPDATE infrastructure_resource_bindings
+                               SET status='SUPERSEDED',superseded_by=?
+                               WHERE binding_id=? AND status='ACTIVE'""",
+                            (binding_id, current["binding_id"]),
+                        )
+                        if cursor.rowcount != 1:
+                            raise InfrastructureAutomationConflict("active resource mapping changed during replacement")
+                    cursor = connection.execute(
+                        """UPDATE infrastructure_resource_bindings SET status='ACTIVE'
+                           WHERE binding_id=? AND status='PENDING'""",
+                        (binding_id,),
+                    )
+                    if cursor.rowcount != 1:
+                        raise InfrastructureAutomationConflict("new resource mapping could not be activated")
+                    self._audit(connection, actor, "INFRASTRUCTURE_RESOURCE_REBOUND" if is_replacement else "INFRASTRUCTURE_RESOURCE_BOUND", binding_id, {
+                        "workspace_id": workspace_id, "resource_address": values["resource_address"],
+                        "resource_type": resource["resource_type"],
+                        "topology_profile_id": values["topology_profile_id"],
+                        "topology_revision_id": values["topology_revision_id"],
+                        "topology_node_id": values["topology_node_id"],
+                        "supersedes_binding_id": current["binding_id"] if current is not None else None,
+                    })
+        except InfrastructureAutomationError:
+            raise
+        except Exception as exc:
+            if "UNIQUE constraint failed" in str(exc):
+                raise InfrastructureAutomationConflict(
+                    "an OpenTofu resource address is already mapped in this workspace"
+                ) from exc
+            if "FOREIGN KEY constraint failed" in str(exc):
+                raise InfrastructureAutomationNotFound(
+                    "workspace or topology revision no longer exists"
+                ) from exc
+            if "infrastructure resource binding must target" in str(exc).lower():
+                raise InfrastructureAutomationConflict(str(exc)) from exc
+            raise
+        finally:
+            lease.release()
+        return self.get_resource_binding(workspace_id, binding_id)
+
+    @staticmethod
+    def _topology_payload(definition: object) -> tuple[dict, str, str]:
+        if not isinstance(definition, dict) or not isinstance(definition.get("nodes"), list) or not isinstance(definition.get("links"), list):
+            raise InfrastructureAutomationConflict("published topology revision has an invalid definition shape")
+        encoded = json.dumps(
+            definition, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+        )
+        digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        return definition, encoded, digest
+
+    def get_resource_binding(self, workspace_id: str, binding_id: str) -> dict | None:
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """SELECT * FROM infrastructure_resource_bindings
+                   WHERE workspace_id=? AND binding_id=?""",
+                (workspace_id, binding_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return {key: row[key] for key in (
+            "binding_id", "workspace_id", "project_id", "lab_id", "resource_address",
+            "resource_type", "topology_profile_id", "topology_revision_id",
+            "topology_node_id", "status", "superseded_by", "created_at", "created_by",
+        )}
+
+    def list_resource_bindings(self, workspace_id: str) -> dict:
+        row = self._workspace_row(workspace_id)
+        with self.database.connection() as connection:
+            bindings = connection.execute(
+                """SELECT * FROM infrastructure_resource_bindings
+                   WHERE workspace_id=? ORDER BY resource_address,binding_id""",
+                (workspace_id,),
+            ).fetchall()
+            latest = connection.execute(
+                """SELECT * FROM infrastructure_reconciliations
+                   WHERE workspace_id=? ORDER BY created_at DESC,reconciliation_id DESC LIMIT 1""",
+                (workspace_id,),
+            ).fetchone()
+        observation_items = {}
+        if latest is not None:
+            observation_items = {
+                item["resource_address"]: item
+                for item in json.loads(latest["details_json"]).get("resources", [])
+                if isinstance(item, dict) and isinstance(item.get("resource_address"), str)
+            }
+        result = []
+        for item in bindings:
+            view = {
+                key: item[key] for key in (
+                    "binding_id", "workspace_id", "project_id", "lab_id", "resource_address",
+                    "resource_type", "topology_profile_id", "topology_revision_id",
+                    "topology_node_id", "status", "superseded_by", "created_at", "created_by",
+                )
+            }
+            observation = observation_items.get(item["resource_address"], {})
+            view["observed_status"] = (
+                observation.get("status", "UNKNOWN")
+                if item["status"] == "ACTIVE" else "HISTORICAL"
+            )
+            view["observed_at"] = latest["created_at"] if latest is not None else None
+            result.append(view)
+        return {
+            "workspace_id": workspace_id,
+            "project_id": row["project_id"],
+            "lab_id": row["lab_id"],
+            "items": result,
+            "latest_reconciliation": self._reconciliation_view(latest) if latest is not None else None,
+        }
+
+    @staticmethod
+    def _reconciliation_view(row) -> dict | None:
+        if row is None:
+            return None
+        details = json.loads(row["details_json"])
+        return {
+            "reconciliation_id": row["reconciliation_id"],
+            "workspace_id": row["workspace_id"],
+            "project_id": row["project_id"],
+            "lab_id": row["lab_id"],
+            "status": row["status"],
+            "state_sha256": row["state_sha256"],
+            "refresh_plan_sha256": row["refresh_plan_sha256"],
+            "resource_count": row["resource_count"],
+            "drift_count": row["drift_count"],
+            "orphan_count": row["orphan_count"],
+            "missing_count": row["missing_count"],
+            "details": details,
+            "created_at": row["created_at"],
+            "created_by": row["created_by"],
+        }
+
+    def reconcile(self, workspace_id: str, *, actor: str) -> dict:
+        actor = self._actor(actor)
+        row = self._workspace_row(workspace_id)
+        if row["status"] == "DESTROYED":
+            raise InfrastructureAutomationConflict("destroyed workspaces cannot be reconciled")
+        workspace = self._workspace_path_for_plan_row(row)
+        lease = self._workspace_lock(row, workspace_id, actor, "reconcile", 900)
+        try:
+            self._verify_workspace_snapshot(row, workspace)
+            prepared = self.runner.prepare(workspace=workspace)
+            if not prepared.get("valid"):
+                raise InfrastructureAutomationConflict(
+                    str(prepared.get("message") or "OpenTofu workspace could not be validated for reconciliation")
+                )
+            reconciliation_id = secrets.token_hex(16)
+            plan_relative = f".netregress/reconciliations/{reconciliation_id}.tfplan"
+            planned = self.runner.plan(
+                workspace=workspace, plan_file=plan_relative, refresh_only=True,
+            )
+            if not planned.get("valid") or not isinstance(planned.get("plan_json"), dict):
+                raise InfrastructureAutomationConflict(
+                    str(planned.get("message") or "OpenTofu refresh-only plan failed")
+                )
+            plan_path = workspace / plan_relative
+            if not plan_path.is_file() or plan_path.is_symlink():
+                raise InfrastructureAutomationConflict("OpenTofu refresh-only plan artifact is missing or unsafe")
+            plan_path.chmod(0o600)
+            plan_bytes = plan_path.read_bytes()
+            if not plan_bytes or len(plan_bytes) > 100 * 1024 * 1024:
+                raise InfrastructureAutomationConflict("OpenTofu refresh-only plan exceeds the 100 MiB limit")
+            state = self.runner.state_show(workspace=workspace)
+            if not isinstance(state, dict):
+                raise InfrastructureAutomationConflict("OpenTofu state snapshot is not a JSON object")
+            try:
+                state_encoded = self._canonical(state).encode("utf-8")
+            except (TypeError, ValueError) as exc:
+                raise InfrastructureAutomationConflict("OpenTofu state snapshot is not canonical JSON") from exc
+            state_sha256 = self._digest(state_encoded)
+            state_resources = self._state_resources(state)
+            if len(state_resources) > 100000:
+                raise InfrastructureAutomationConflict("OpenTofu state contains more than 100,000 resources; reconciliation is blocked")
+            drift = self._drift_resources(planned["plan_json"])
+            if len(drift) > 100000:
+                raise InfrastructureAutomationConflict("OpenTofu refresh plan reports more than 100,000 drift observations; reconciliation is blocked")
+            with self.database.connection() as connection:
+                binding_rows = connection.execute(
+                    "SELECT * FROM infrastructure_resource_bindings WHERE workspace_id=? AND status='ACTIVE' ORDER BY resource_address",
+                    (workspace_id,),
+                ).fetchall()
+            if len(binding_rows) > 100000:
+                raise InfrastructureAutomationConflict("workspace has more than 100,000 topology resource bindings; reconciliation is blocked")
+            bindings = {item["resource_address"]: item for item in binding_rows}
+            state_by_address = {item["resource_address"]: item for item in state_resources}
+            resources = []
+            drift_count = orphan_count = missing_count = 0
+            for address, resource in sorted(state_by_address.items()):
+                binding = bindings.get(address)
+                drift_item = drift.get(address)
+                if drift_item:
+                    drift_count += 1
+                if binding is None:
+                    orphan_count += 1
+                status = (
+                    "DRIFTED_ORPHANED" if drift_item and binding is None
+                    else "DRIFTED" if drift_item
+                    else "ORPHANED" if binding is None
+                    else "PRESENT"
+                )
+                resources.append({
+                    "resource_address": address,
+                    "resource_type": resource["resource_type"],
+                    "status": status,
+                    "is_drifted": bool(drift_item),
+                    "is_orphaned": binding is None,
+                    "drift_actions": drift_item.get("actions", []) if drift_item else [],
+                    "binding_id": binding["binding_id"] if binding is not None else None,
+                    "topology_profile_id": binding["topology_profile_id"] if binding is not None else None,
+                    "topology_revision_id": binding["topology_revision_id"] if binding is not None else None,
+                    "topology_node_id": binding["topology_node_id"] if binding is not None else None,
+                })
+            for address, binding in sorted(bindings.items()):
+                if address not in state_by_address:
+                    missing_count += 1
+                    resources.append({
+                        "resource_address": address,
+                        "resource_type": binding["resource_type"],
+                        "status": "MISSING",
+                        "drift_actions": [],
+                        "binding_id": binding["binding_id"],
+                        "topology_profile_id": binding["topology_profile_id"],
+                        "topology_revision_id": binding["topology_revision_id"],
+                        "topology_node_id": binding["topology_node_id"],
+                    })
+            resources.sort(key=lambda item: (item["resource_address"], item["status"]))
+            truncated = len(resources) > 2000
+            safe_resources = resources[:2000]
+            if drift_count and (orphan_count or missing_count):
+                status = "DRIFT_ORPHAN_OR_MISSING"
+            elif drift_count:
+                status = "DRIFT_DETECTED"
+            elif orphan_count and missing_count:
+                status = "ORPHANED_AND_MISSING"
+            elif orphan_count:
+                status = "ORPHANED_RESOURCES"
+            elif missing_count:
+                status = "MISSING_RESOURCES"
+            else:
+                status = "CLEAN"
+            details = {
+                "resources": safe_resources,
+                "resource_list_truncated": truncated,
+                "drift_list": [
+                    {"resource_address": address[:512], "resource_type": item["resource_type"], "actions": item["actions"]}
+                    for address, item in sorted(drift.items())[:2000]
+                ],
+            }
+            details_json = self._canonical(details)
+            if len(details_json.encode("utf-8")) > 4 * 1024 * 1024:
+                raise InfrastructureAutomationConflict("reconciliation snapshot exceeds the safe storage limit")
+            now = self._now()
+            refresh_hash = self._digest(plan_bytes)
+            with self.database.transaction(immediate=True) as connection:
+                connection.execute(
+                    """INSERT INTO infrastructure_reconciliations(
+                        reconciliation_id,workspace_id,project_id,lab_id,status,state_sha256,
+                        refresh_plan_sha256,resource_count,drift_count,orphan_count,missing_count,
+                        details_json,created_at,created_by
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        reconciliation_id, workspace_id, row["project_id"], row["lab_id"], status,
+                        state_sha256, refresh_hash, len(state_resources), drift_count, orphan_count,
+                        missing_count, details_json, now, actor,
+                    ),
+                )
+                self._audit(connection, actor, "INFRASTRUCTURE_RECONCILED", reconciliation_id, {
+                    "workspace_id": workspace_id, "status": status,
+                    "resource_count": len(state_resources), "drift_count": drift_count,
+                    "orphan_count": orphan_count, "missing_count": missing_count,
+                    "state_sha256": state_sha256, "refresh_plan_sha256": refresh_hash,
+                })
+            return self.get_reconciliation(workspace_id, reconciliation_id)
+        finally:
+            lease.release()
+
+    def get_reconciliation(self, workspace_id: str, reconciliation_id: str) -> dict | None:
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """SELECT * FROM infrastructure_reconciliations
+                   WHERE workspace_id=? AND reconciliation_id=?""",
+                (workspace_id, reconciliation_id),
+            ).fetchone()
+        return self._reconciliation_view(row) if row is not None else None
+
+    def list_reconciliations(self, workspace_id: str, *, limit: int = 20) -> list[dict]:
+        limit = max(1, min(int(limit), 100))
+        with self.database.connection() as connection:
+            rows = connection.execute(
+                """SELECT * FROM infrastructure_reconciliations
+                   WHERE workspace_id=? ORDER BY created_at DESC,reconciliation_id DESC LIMIT ?""",
+                (workspace_id, limit),
+            ).fetchall()
+        return [self._reconciliation_view(item) for item in rows]
+
+    def create_recovery_plan(
+        self, workspace_id: str, *, reconciliation_id: str, actor: str,
+    ) -> dict:
+        row = self._workspace_row(workspace_id)
+        if row["status"] != "RECOVERY_REQUIRED":
+            raise InfrastructureAutomationConflict("recovery planning is only valid for a RECOVERY_REQUIRED workspace")
+        reconciliation = self.get_reconciliation(workspace_id, reconciliation_id)
+        if reconciliation is None:
+            raise InfrastructureAutomationNotFound("reconciliation snapshot was not found for this workspace")
+        return self.create_plan(
+            workspace_id, kind="RECOVERY", reconciliation_id=reconciliation_id, actor=actor,
+        )
+
     def inspect(self, workspace_id: str) -> dict:
         row = self._workspace_row(workspace_id)
         workspace = self._workspace_path_for_plan_row(row)
@@ -894,6 +1575,7 @@ class InfrastructureAutomationService:
         except ResourceLockError as exc:
             raise InfrastructureAutomationConflict("Lab or OpenTofu workspace is locked; inspection was not started") from exc
         try:
+            self._verify_workspace_snapshot(row, workspace)
             addresses = self.runner.state_list(workspace=workspace)
         finally:
             lease.release()

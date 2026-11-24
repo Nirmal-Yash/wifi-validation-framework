@@ -218,3 +218,26 @@ def test_plan_summary_scans_all_changes_for_destroy_permission_even_when_display
     assert summary["resource_list_truncated"] is True
     assert len(summary["resources"]) == 2000
     assert summary["requires_destroy_permission"] is True
+
+
+def test_workspace_snapshot_rejects_unmanifested_configuration_and_manifest_tampering(infrastructure_lab):
+    service = infrastructure_lab["service"]
+    workspace = _workspace(infrastructure_lab)
+    path = service._workspace_path(workspace["workspace_id"])
+
+    # OpenTofu auto-loads extra .tf files, so configuration not present in the
+    # immutable module manifest must fail closed before the runner is invoked.
+    unmanifested = path / "injected.tf"
+    unmanifested.write_text('terraform { required_version = ">= 1.0.0" }\n', encoding="utf-8")
+    with pytest.raises(InfrastructureAutomationConflict, match="unmanifested or missing files"):
+        service.create_plan(workspace["workspace_id"], actor="creator")
+    unmanifested.unlink()
+
+    manifest_path = path / ".netregress" / "module-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["module_sha256"] = "0" * 64
+    manifest_path.write_text(json.dumps(manifest, sort_keys=True, separators=(",", ":")), encoding="utf-8")
+    with pytest.raises(InfrastructureAutomationConflict, match="manifest does not match"):
+        service.create_plan(workspace["workspace_id"], actor="creator")
+    with pytest.raises(InfrastructureAutomationConflict, match="manifest does not match"):
+        service.inspect(workspace["workspace_id"])

@@ -156,7 +156,7 @@ def test_native_presentation_is_hash_pinned_immutable_and_round_trippable(presen
     assert published["published_by"] == "publisher"
 
     with database.connection() as connection:
-        with pytest.raises(sqlite3.IntegrityError, match="revision content is immutable"):
+        with pytest.raises(sqlite3.IntegrityError, match="published topology presentation revisions are immutable"):
             connection.execute(
                 "UPDATE topology_presentation_revisions SET presentation_json='{}' WHERE presentation_id=?",
                 (created["presentation_id"],),
@@ -224,7 +224,7 @@ def test_source_artifacts_are_scope_bound_and_integrity_checked(presentation_env
             format_id="CML_YAML", format_version="0.1", filename="foreign.yaml",
             codec_name="cml-yaml", codec_version="1.0", actor="owner",
         )
-    with database.connection() as connection:
+    with database.transaction(immediate=True) as connection:
         connection.execute("DROP TRIGGER trg_topology_source_artifacts_immutable")
         connection.execute(
             "UPDATE topology_source_artifacts SET source_bytes=? WHERE source_id=?",
@@ -306,7 +306,7 @@ def test_presentation_reads_verify_the_immutable_content_hash(presentation_env):
     altered = dict(created["presentation"])
     altered["nodes"] = [dict(altered["nodes"][0], x=11)]
     changed_json = json.dumps(altered, sort_keys=True, separators=(",", ":"))
-    with database.connection() as connection:
+    with database.transaction(immediate=True) as connection:
         connection.execute("DROP TRIGGER trg_topology_presentation_identity_immutable")
         connection.execute(
             "UPDATE topology_presentation_revisions SET presentation_json=? WHERE presentation_id=?",

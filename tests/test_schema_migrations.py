@@ -24,7 +24,7 @@ def test_fresh_database_is_created_only_through_single_alembic_head(tmp_path):
     status = DatabaseMigrationManager(path).check()
 
     assert status.current_revision == status.head_revision
-    assert status.current_revision == "20261124_21"
+    assert status.current_revision == "20261124_22"
     assert status.is_up_to_date
     assert status.schema.is_clean
 
@@ -35,7 +35,7 @@ def test_fresh_database_is_created_only_through_single_alembic_head(tmp_path):
         authority = connection.execute(
             "SELECT value FROM schema_meta WHERE key='migration_authority'"
         ).fetchone()[0]
-        assert version == "31"
+        assert version == "32"
         assert authority == "alembic"
 
 
@@ -135,7 +135,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
 
     result = manager.upgrade()
 
-    assert result.current_revision == result.head_revision == "20261124_21"
+    assert result.current_revision == result.head_revision == "20261124_22"
     assert result.is_up_to_date
     assert result.last_backup is not None
     assert result.last_backup.is_file()
@@ -159,7 +159,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "31"
+        ).fetchone()[0] == "32"
 
 
 def test_schema_drift_is_reported_without_silent_repair(tmp_path):
@@ -282,6 +282,38 @@ def test_unknown_database_revision_fails_closed(tmp_path):
         DatabaseMigrationManager(path).check()
 
 
+def test_schema_v32_infrastructure_resource_history_is_versioned_and_auditable(tmp_path):
+    path = tmp_path / "infrastructure-schema.sqlite"
+    SQLiteDatabase(path).initialize()
+    with sqlite3.connect(path) as connection:
+        columns = {
+            row[1] for row in connection.execute(
+                "PRAGMA table_info(infrastructure_resource_bindings)"
+            ).fetchall()
+        }
+        assert {"binding_id", "resource_address", "status", "superseded_by"} <= columns
+        indexes = {
+            row[1] for row in connection.execute(
+                "PRAGMA index_list(infrastructure_resource_bindings)"
+            ).fetchall()
+        }
+        assert "uq_infra_resource_binding_active" in indexes
+        triggers = {
+            row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='trigger'"
+            ).fetchall()
+        }
+        assert {
+            "trg_infra_binding_identity_immutable",
+            "trg_infra_binding_state_transition",
+            "trg_infra_reconciliations_immutable",
+            "trg_opentofu_recovery_plan_scope_insert",
+        } <= triggers
+        assert "reconciliation_id" in {
+            row[1] for row in connection.execute("PRAGMA table_info(opentofu_plans)").fetchall()
+        }
+
+
 def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_path):
     path = tmp_path / "previous-alembic-head.sqlite"
     SQLiteDatabase(path).initialize()
@@ -362,6 +394,23 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.execute("DROP TABLE topology_presentation_revisions")
         connection.execute("DROP TABLE topology_source_assets")
         connection.execute("DROP TABLE topology_source_artifacts")
+        # Remove P12 resource bindings/reconciliation records and recovery
+        # references before replaying the older OpenTofu/topology schema.
+        for trigger in (
+            "trg_infra_binding_scope_insert", "trg_infra_binding_identity_immutable",
+            "trg_infra_binding_state_transition", "trg_infra_binding_no_delete", "trg_infra_reconciliation_scope_insert",
+            "trg_infra_reconciliations_immutable", "trg_infra_reconciliations_no_delete",
+            "trg_opentofu_recovery_plan_scope_insert", "trg_opentofu_recovery_plan_reference_immutable",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        for index in (
+            "uq_infra_resource_binding_active", "idx_infra_resource_bindings_workspace", "idx_infra_resource_bindings_topology",
+            "idx_infra_reconciliations_workspace_created", "idx_infra_reconciliations_project_created",
+            "idx_opentofu_plans_reconciliation",
+        ):
+            connection.execute(f"DROP INDEX {index}")
+        connection.execute("DROP TABLE infrastructure_resource_bindings")
+        connection.execute("DROP INDEX uq_topology_revision_profile_revision")
         # Remove EXP-P11 OpenTofu objects before rewinding the Alembic revision.
         for trigger in (
             "trg_opentofu_workspace_scope_insert", "trg_opentofu_workspace_identity_immutable",
@@ -381,8 +430,10 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
             "idx_opentofu_approvals_plan", "idx_opentofu_executions_plan",
         ):
             connection.execute(f"DROP INDEX {index}")
-        for table in ("opentofu_executions", "opentofu_approvals", "opentofu_plans", "opentofu_workspaces"):
+        for table in ("opentofu_executions", "opentofu_approvals", "opentofu_plans"):
             connection.execute(f"DROP TABLE {table}")
+        connection.execute("DROP TABLE infrastructure_reconciliations")
+        connection.execute("DROP TABLE opentofu_workspaces")
         connection.execute("DROP TABLE network_intent_revisions")
         connection.execute("DROP TABLE network_intent_profiles")
         # Remove P07-B native source provenance before dropping the topology
@@ -477,7 +528,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.commit()
 
     status = DatabaseMigrationManager(path).upgrade()
-    assert status.current_revision == status.head_revision == "20261124_21"
+    assert status.current_revision == status.head_revision == "20261124_22"
     assert status.is_up_to_date
     with sqlite3.connect(path) as connection:
         assert connection.execute(
@@ -485,7 +536,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "31"
+        ).fetchone()[0] == "32"
 
 
 def test_database_operator_cli_commands(tmp_path):

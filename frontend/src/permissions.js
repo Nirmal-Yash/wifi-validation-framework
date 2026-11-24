@@ -31,7 +31,7 @@ const LEGACY_PERMISSION_ALIAS=Object.freeze({
  "network_automation.read":"view","network_automation.manage":"admin",
  "network_automation.approve":"admin","network_automation.execute":"admin",
  "pipelines.read":"view","pipelines.manage":"admin","pipelines.execute":"execute",
- "infrastructure.read":"view","infrastructure.manage":"admin","infrastructure.approve":"admin","infrastructure.execute":"admin","infrastructure.destroy":"admin",
+ "infrastructure.read":"view","infrastructure.manage":"admin","infrastructure.approve":"admin","infrastructure.execute":"admin","infrastructure.destroy":"admin","infrastructure.reconcile":"admin",
 });
 export function canPerform(subject,permission){
  if(subject&&typeof subject==="object"&&Array.isArray(subject.permissions)){

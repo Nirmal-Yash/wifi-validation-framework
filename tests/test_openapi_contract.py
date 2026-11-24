@@ -1,6 +1,8 @@
 from pathlib import Path
 import re
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = ROOT / "docs" / "openapi.yaml"
 
@@ -15,7 +17,11 @@ def test_openapi_path_keys_are_unique_and_cover_runtime_routes():
         "/infrastructure/modules", "/infrastructure/workspaces", "/infrastructure/workspaces/{workspace_id}",
         "/infrastructure/workspaces/{workspace_id}/plans", "/infrastructure/plans",
         "/infrastructure/plans/{plan_id}", "/infrastructure/plans/{plan_id}/approve",
-        "/infrastructure/plans/{plan_id}/apply", "/infrastructure/workspaces/{workspace_id}/state"} <= set(paths)
+        "/infrastructure/plans/{plan_id}/apply", "/infrastructure/workspaces/{workspace_id}/state",
+        "/infrastructure/workspaces/{workspace_id}/resources",
+        "/infrastructure/workspaces/{workspace_id}/reconciliations",
+        "/infrastructure/workspaces/{workspace_id}/reconcile",
+        "/infrastructure/workspaces/{workspace_id}/recover"} <= set(paths)
 
 
 def test_openapi_auth_cookie_and_runtime_protection_match_flask():
@@ -101,3 +107,15 @@ def test_openapi_provider_registry_is_scoped_read_only_and_secret_safe():
     assert "Credential Vault secret material" in registry
     for status in ('"200":', '"400":', '"401":', '"403":'):
         assert status in registry
+
+
+def test_openapi_is_a_single_valid_yaml_document_with_complete_path_and_component_maps():
+    content = SPEC.read_text(encoding="utf-8")
+    document = yaml.safe_load(content)
+    assert isinstance(document, dict)
+    assert document.get("openapi", "").startswith("3.")
+    assert isinstance(document.get("paths"), dict) and len(document["paths"]) >= 80
+    assert isinstance(document.get("components"), dict)
+    assert {"parameters", "schemas", "securitySchemes"} <= set(document["components"])
+    assert "/infrastructure/workspaces/{workspace_id}/resources" in document["paths"]
+    assert "/infrastructure/workspaces/{workspace_id}/recover" in document["paths"]

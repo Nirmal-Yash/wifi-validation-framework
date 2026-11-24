@@ -408,7 +408,7 @@ export default function TopologyStudioPage({user}){
    if(key==="escape"){setSelectedNodes([]);setSelectedNode("");setSelectedLink("");setLinkEditForm(null);}
   };
   window.addEventListener("keydown",handler);return()=>window.removeEventListener("keydown",handler);
- },[selectedNodes,selectedLink,selectedNode,historyVersion]);
+ },[nodes,selectedNodes,selectedLink,selectedNode,historyVersion]);
 
  function chooseRevision(id){
   setRevisionId(id);

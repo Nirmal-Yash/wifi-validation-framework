@@ -189,6 +189,8 @@ jobs:
           tests/test_packet_tracer_interop.py
           tests/test_network_intent.py
           tests/test_ansible_automation.py
+          tests/test_infrastructure_automation.py
+          tests/test_infrastructure_reconciliation.py
           tests/test_provider_contract.py
           tests/test_topology_apply.py
           tests/test_configuration_deployer.py

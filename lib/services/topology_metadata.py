@@ -125,7 +125,7 @@ def safe_relative_path(value: Any, *, field_name: str = "relative_path", maximum
         raise MetadataValidationError(f"{field_name} must be a safe relative POSIX path")
     parts = value.split("/")
     if any(part in {"", ".", ".."} for part in parts):
-        raise MetadataValidationError(f"{field_name} must not contain empty, dot or parent segments")
+        raise MetadataValidationError(f"{field_name} must be a relative POSIX path and must not contain empty, dot or parent segments")
     path = PurePosixPath(value)
     if path.is_absolute() or str(path) != value:
         raise MetadataValidationError(f"{field_name} is not a canonical relative path")

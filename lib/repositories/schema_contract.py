@@ -118,6 +118,32 @@ EXPECTED_TABLE_COLUMNS = {
     "pipeline_executions": ("execution_id", "project_id", "lab_id", "pipeline_id", "revision_id", "definition_sha256", "status", "inputs_json", "result_json", "linked_run_id", "idempotency_key", "created_at", "started_at", "completed_at", "created_by", "worker_id", "lease_expires_at", "heartbeat_at", "attempt_count", "last_error"),
     "pipeline_steps": ("execution_id", "step_key", "ordinal", "step_type", "status", "definition_json", "result_json", "max_attempts", "attempt_count", "timeout_seconds", "next_attempt_at", "worker_id", "lease_expires_at", "created_at", "started_at", "completed_at", "last_error"),
     "pipeline_step_attempts": ("step_attempt_id", "execution_id", "step_key", "attempt_number", "status", "worker_id", "started_at", "completed_at", "result_json", "error_summary"),
+    "opentofu_workspaces": (
+        "workspace_id", "project_id", "lab_id", "name", "module_key", "module_sha256",
+        "variables_json", "status", "created_at", "updated_at", "created_by",
+    ),
+    "opentofu_plans": (
+        "plan_id", "workspace_id", "project_id", "lab_id", "kind", "plan_sha256",
+        "plan_file", "summary_json", "status", "created_at", "created_by",
+        "approved_at", "approved_by", "reconciliation_id",
+    ),
+    "opentofu_approvals": (
+        "approval_id", "plan_id", "plan_sha256", "approved_by", "confirmed_at",
+    ),
+    "opentofu_executions": (
+        "execution_id", "plan_id", "plan_sha256", "status", "result_json",
+        "started_at", "completed_at", "executed_by",
+    ),
+    "infrastructure_resource_bindings": (
+        "binding_id", "workspace_id", "project_id", "lab_id", "resource_address",
+        "resource_type", "topology_profile_id", "topology_revision_id", "topology_node_id",
+        "status", "superseded_by", "created_at", "created_by",
+    ),
+    "infrastructure_reconciliations": (
+        "reconciliation_id", "workspace_id", "project_id", "lab_id", "status",
+        "state_sha256", "refresh_plan_sha256", "resource_count", "drift_count",
+        "orphan_count", "missing_count", "details_json", "created_at", "created_by",
+    ),
 }
 
 EXPECTED_TRIGGERS = (
@@ -205,6 +231,32 @@ EXPECTED_TRIGGERS = (
     "trg_topology_presentation_publish_metadata",
     "trg_topology_presentation_published_immutable",
     "trg_topology_presentation_no_delete",
+    "trg_opentofu_workspace_scope_insert",
+    "trg_opentofu_workspace_identity_immutable",
+    "trg_opentofu_workspace_state_transition",
+    "trg_opentofu_workspace_no_delete",
+    "trg_opentofu_plan_scope_insert",
+    "trg_opentofu_plan_identity_immutable",
+    "trg_opentofu_plan_state_transition",
+    "trg_opentofu_plan_approval_immutable",
+    "trg_opentofu_plan_no_delete",
+    "trg_opentofu_approval_scope_insert",
+    "trg_opentofu_approvals_immutable",
+    "trg_opentofu_approvals_no_delete",
+    "trg_opentofu_execution_scope_insert",
+    "trg_opentofu_execution_identity_immutable",
+    "trg_opentofu_execution_state_transition",
+    "trg_opentofu_execution_final_immutable",
+    "trg_opentofu_executions_no_delete",
+    "trg_infra_binding_scope_insert",
+    "trg_infra_binding_identity_immutable",
+    "trg_infra_binding_state_transition",
+    "trg_infra_binding_no_delete",
+    "trg_infra_reconciliation_scope_insert",
+    "trg_infra_reconciliations_immutable",
+    "trg_infra_reconciliations_no_delete",
+    "trg_opentofu_recovery_plan_scope_insert",
+    "trg_opentofu_recovery_plan_reference_immutable",
 )
 
 EXPECTED_INDEXES = (
@@ -274,6 +326,19 @@ EXPECTED_INDEXES = (
     "idx_topology_presentation_profile_revision",
     "idx_topology_presentation_topology_revision",
     "idx_topology_presentation_source",
+    "idx_opentofu_workspaces_project_created",
+    "idx_opentofu_workspaces_lab",
+    "idx_opentofu_plans_project_created",
+    "idx_opentofu_plans_workspace",
+    "idx_opentofu_approvals_plan",
+    "idx_opentofu_executions_plan",
+    "uq_topology_revision_profile_revision",
+    "uq_infra_resource_binding_active",
+    "idx_infra_resource_bindings_workspace",
+    "idx_infra_resource_bindings_topology",
+    "idx_infra_reconciliations_workspace_created",
+    "idx_infra_reconciliations_project_created",
+    "idx_opentofu_plans_reconciliation",
 )
 
 EXPECTED_FOREIGN_KEYS = {
@@ -385,6 +450,23 @@ EXPECTED_FOREIGN_KEYS = {
     ("pipeline_steps", "execution_id", "pipeline_executions", "execution_id"),
     ("pipeline_step_attempts", "execution_id", "pipeline_steps", "execution_id"),
     ("pipeline_step_attempts", "step_key", "pipeline_steps", "step_key"),
+    ("opentofu_workspaces", "project_id", "projects", "project_id"),
+    ("opentofu_workspaces", "project_id", "labs", "project_id"),
+    ("opentofu_workspaces", "lab_id", "labs", "lab_id"),
+    ("opentofu_plans", "workspace_id", "opentofu_workspaces", "workspace_id"),
+    ("opentofu_plans", "project_id", "opentofu_workspaces", "project_id"),
+    ("opentofu_plans", "lab_id", "opentofu_workspaces", "lab_id"),
+    ("opentofu_approvals", "plan_id", "opentofu_plans", "plan_id"),
+    ("opentofu_executions", "plan_id", "opentofu_plans", "plan_id"),
+    ("infrastructure_resource_bindings", "workspace_id", "opentofu_workspaces", "workspace_id"),
+    ("infrastructure_resource_bindings", "project_id", "opentofu_workspaces", "project_id"),
+    ("infrastructure_resource_bindings", "lab_id", "opentofu_workspaces", "lab_id"),
+    ("infrastructure_resource_bindings", "topology_profile_id", "topology_revisions", "profile_id"),
+    ("infrastructure_resource_bindings", "topology_revision_id", "topology_revisions", "revision_id"),
+    ("infrastructure_resource_bindings", "superseded_by", "infrastructure_resource_bindings", "binding_id"),
+    ("infrastructure_reconciliations", "workspace_id", "opentofu_workspaces", "workspace_id"),
+    ("infrastructure_reconciliations", "project_id", "opentofu_workspaces", "project_id"),
+    ("infrastructure_reconciliations", "lab_id", "opentofu_workspaces", "lab_id"),
 }
 
 
@@ -506,9 +588,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "30":
+        if metadata.get("version") != "32":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '30'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '32'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

@@ -79,7 +79,7 @@ A native format is not accepted merely because detection or parsing succeeds. Ac
 | Expansion phase | Scope | Dependencies | Exit evidence |
 |---|---|---|---|
 | EXP-P11 | OpenTofu workspaces and infrastructure automation | EXP-P04 | Isolated workspace, validate/plan/review/approve/apply/inspect/destroy tests; source checkpoint documented in docs/EXP_P11_OPENTOFU_IMPLEMENTATION_AUDIT.md; exact CI deferred until P12 |
-| EXP-P12 | Infrastructure-resource lifecycle integration | EXP-P11 and existing Lab/topology domains | Resource mapping, drift, orphan detection and partial recovery |
+| EXP-P12 | Infrastructure-resource lifecycle integration | EXP-P11 and existing Lab/topology domains | Resource mapping, drift, orphan detection and partial recovery — source checkpoint documented in docs/EXP_P12_INFRASTRUCTURE_RESOURCE_LIFECYCLE_AUDIT.md; final CI deferred until integrated P12 commit |
 
 ## Stage E — Workflow and observability
 
@@ -271,3 +271,14 @@ Each active Lab receives an isolated local workspace under NETREGRESS_OPENTOFU_S
 The lifecycle is format/init/validate/plan, review, independent hash-pinned approval, and explicit apply. Destroy plans require the separate infrastructure.destroy permission. Every plan is persisted by its binary SHA-256 and only a bounded resource-action summary is exposed. Apply verifies that same binary immediately before execution while holding the shared Lab lock and a workspace lock. A timeout or non-zero apply outcome is never retried automatically: the workspace enters RECOVERY_REQUIRED and must be reconciled in P12. Immutable workspace, plan, approval and execution records are protected by SQLite constraints/triggers and privileged actions produce audit events.
 
 P11 does not claim live cloud-account qualification, remote backend support, cloud rollback, module registry downloads or provider-side resource recovery. The CLI is operator-installed and must satisfy the declared OpenTofu version gate. P12 adds topology resource mapping, observed state, drift/orphan analysis and reviewed recovery planning.
+
+
+## EXP-P12 implementation checkpoint — topology resource lifecycle, drift and recovery
+
+P12 connects OpenTofu resources to the existing canonical topology model. A binding is accepted only when the resource address exists in the selected Lab workspace state, the topology profile is active, the revision is immutable and published, and the logical node belongs to that exact revision. Mappings are versioned: a compare-and-swap replacement requires the current binding ID, moves the previous mapping to SUPERSEDED, and retains it as immutable history while maintaining one active mapping per workspace/resource address. Lab-scoped profiles must match the workspace Lab; Project-scoped profiles are permitted only inside the owning Project. Bindings are immutable and append-only.
+
+Reconciliation acquires the shared Lab/workspace lock, verifies the immutable module/variable snapshot, prepares the operator-managed module, creates a private refresh-only OpenTofu plan, and compares saved-state resource addresses/types with resource drift and topology bindings. It classifies present, drifted, orphaned, drifted-orphaned and missing resources. Reconciliation records contain only addresses, resource types, action names, binding/node references and aggregate counts; raw Terraform state values, provider attributes, outputs and credentials are not copied into the API response or stored in the reconciliation detail JSON. A SHA-256 of the canonical full state snapshot and refresh-plan binary is persisted as integrity evidence.
+
+Recovery from a failed or timed-out P11 apply is an explicit sequence: run refresh-only reconciliation, create a new normal RECOVERY plan pinned to the latest reconciliation ID, review the resource-action summary, obtain independent approval of that plan's binary SHA-256, and explicitly apply. A newer reconciliation invalidates the earlier recovery plan. No automatic retry, replay or rollback is claimed; unsuccessful recovery remains RECOVERY_REQUIRED.
+
+P12 does not claim that refresh-only planning applies provider drift, that topology bindings discover every cloud resource automatically, or that a successful OpenTofu apply proves application-level service health. Mapping remains operator-reviewed against a published topology revision. Provider-specific resource and cloud-account qualifications remain separate acceptance work.
