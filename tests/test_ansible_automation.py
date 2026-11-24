@@ -240,7 +240,7 @@ def test_ansible_execution_requires_matching_explicit_approval_and_verifies_read
             plan["plan_id"], expected_plan_sha256="0" * 64,
             confirmed=True, actor="owner",
         )
-  with pytest.raises(AnsibleAutomationConflict, match="cannot approve their own"):
+    with pytest.raises(AnsibleAutomationConflict, match="cannot approve their own"):
         service.approve(
             plan["plan_id"], expected_plan_sha256=plan["plan_sha256"],
             confirmed=True, actor="owner",
