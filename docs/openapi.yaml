@@ -547,6 +547,77 @@ paths:
         "200": {description: Validation result, canonical hash, required capabilities and diagnostics}
         "400": {description: Invalid validation request}
         "403": {description: Project network_intent.manage permission required}
+  /topologies/native-codecs:
+    get:
+      operationId: listNativeTopologyCodecs
+      description: Registered native project-file codecs; independent of runtime provider adapters.
+      responses:
+        "200": {description: GNS3, CML and EVE-NG native file codecs and their declared support scope}
+  /topologies/import/native:
+    post:
+      operationId: importNativeTopologyProject
+      description: >-
+        Import a GNS3 .gns3, CML lab .yaml/.yml or supported legacy .virl, or EVE-NG .unl
+        file into a new immutable canonical topology revision. Original source bytes and SHA-256
+        are retained as Project-scoped immutable provenance. Node configurations, credentials,
+        controller calls, emulator resources and image assets are not executed or provisioned.
+        The initial export subset edits only mapped layout/labels; unsupported semantic changes fail closed.
+        Reopening in the originating vendor application remains an external acceptance gate.
+      parameters:
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [project_id, name, file]
+              properties:
+                project_id: {type: string, minLength: 1}
+                name: {type: string, minLength: 1, maxLength: 120}
+                scope_type: {type: string, enum: [PROJECT, LAB], default: PROJECT}
+                scope_id: {type: string, maxLength: 128, description: Required for LAB scope}
+                file: {type: string, format: binary, description: GNS3 .gns3, CML .yaml/.yml/.virl, or EVE-NG .unl source; maximum 50 MiB}
+      responses:
+        "201": {description: Imported DRAFT canonical revision, native source provenance and initial DRAFT presentation}
+        "400": {description: Missing fields or invalid idempotency key}
+        "403": {description: Project topology.manage permission required}
+        "409": {description: Idempotency key reuse or topology profile name conflict}
+        "413": {description: Upload exceeds the 50 MiB native source limit}
+        "422": {description: Malformed, unsupported or unsafe native project file}
+  /topologies/{profile_id}/native-artifacts:
+    get:
+      operationId: listNativeTopologyArtifacts
+      parameters:
+        - {name: profile_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Immutable native source provenance and SHA-256 metadata; source bytes excluded}
+        "403": {description: Project topology.read permission required}
+        "404": {description: Topology profile not found}
+  /topologies/{profile_id}/native-artifacts/{source_id}/export:
+    get:
+      operationId: exportNativeTopologyRevision
+      description: >-
+        Export a selected PUBLISHED topology revision and PUBLISHED presentation revision against
+        its associated immutable native source artifact. Only explicitly mapped presentation edits
+        are serialized; all unsupported native objects and configuration data remain source-preserved.
+        This codec read-back does not certify reopening in the vendor application.
+      parameters:
+        - {name: profile_id, in: path, required: true, schema: {type: string}}
+        - {name: source_id, in: path, required: true, schema: {type: string}}
+        - {name: revision_id, in: query, required: true, schema: {type: string}}
+        - {name: presentation_id, in: query, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Serialized native GNS3, CML or EVE-NG project file
+          headers:
+            X-NetRegress-Native-Report: {schema: {type: string}, description: Base64url-encoded export provenance and supported edit subset}
+          content:
+            application/octet-stream: {schema: {type: string, format: binary}}
+        "403": {description: Project topology.manage permission required}
+        "404": {description: Source, topology revision or presentation not found}
+        "409": {description: Unpublished revision or unsupported topology edit}
+        "422": {description: Source integrity or serialization failure}
   /topologies/import/packet-tracer:
     post:
       operationId: importPacketTracerProject

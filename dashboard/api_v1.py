@@ -33,6 +33,10 @@ from lib.services.packet_tracer_interop import (
     PacketTracerInteropConflict, PacketTracerInteropError,
     PacketTracerInteropNotFound, PacketTracerInteropService,
 )
+from lib.services.native_topology_interop import (
+    NativeTopologyInteropConflict, NativeTopologyInteropError,
+    NativeTopologyInteropNotFound, NativeTopologyInteropService,
+)
 from lib.services.network_intent import (
     NetworkIntentConflict, NetworkIntentError, NetworkIntentNotFound, NetworkIntentService,
 )
@@ -109,6 +113,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     topology_studio=TopologyStudioService(query.database)
     topology_presentation=TopologyPresentationService(query.database)
     packet_tracer_interop=PacketTracerInteropService(query.database)
+    native_topology_interop=NativeTopologyInteropService(query.database,topology_studio=topology_studio,topology_presentation=topology_presentation)
     network_intent=NetworkIntentService(query.database,topology_studio)
     network_intent_compiler=NetworkIntentCompilerService(query.database,network_intent,device_inventory)
     topology_apply=TopologyApplyService(query.database,credential_vault,topology_studio)
@@ -2635,6 +2640,103 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         )
         report = json.dumps(exported.report, sort_keys=True, separators=(",", ":")).encode("utf-8")
         response.headers["X-NetRegress-Export-Report"] = base64.urlsafe_b64encode(report).decode("ascii").rstrip("=")
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @api.get("/topologies/native-codecs")
+    def list_native_topology_codecs():
+        return ok({"items": native_topology_interop.list_codecs()})
+
+    @api.post("/topologies/import/native")
+    def import_native_topology():
+        try:
+            form = request.form
+            project_id = str(form.get("project_id", "")).strip()
+            name = str(form.get("name", "")).strip()
+            if not project_id or not name:
+                return error("INVALID_REQUEST", "project_id and name are required", 400)
+            uploaded = request.files.get("file")
+            if uploaded is None:
+                return error("INVALID_REQUEST", "A GNS3 .gns3, CML .yaml/.yml/.virl or EVE-NG .unl file is required", 400)
+            filename = uploaded.filename or ""
+            content = uploaded.stream.read(NativeTopologyInteropService.MAX_SOURCE_BYTES + 1)
+            if len(content) > NativeTopologyInteropService.MAX_SOURCE_BYTES:
+                return error("NATIVE_TOPOLOGY_FILE_TOO_LARGE", "Native topology source exceeds the 50 MiB limit", 413)
+            scope_type = str(form.get("scope_type", "PROJECT")).strip().upper()
+            scope_id = str(form.get("scope_id", "")).strip() or None
+        except RequestEntityTooLarge:
+            return error("NATIVE_TOPOLOGY_REQUEST_TOO_LARGE", "The multipart upload exceeds the configured request limit", 413)
+
+        denied = require_permission("topology.manage", project_id=project_id)
+        if denied is not None:
+            return denied
+        source_sha256 = hashlib.sha256(content).hexdigest()
+        scope = "/api/v1/topologies/import/native"
+        request_data = {
+            "project_id": project_id, "name": name, "scope_type": scope_type,
+            "scope_id": scope_id, "filename": filename, "source_sha256": source_sha256,
+        }
+        key, request_hash, cached, security_error = idempotency_preflight(scope, request_data)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            result = native_topology_interop.import_file(
+                project_id=project_id, name=name, filename=filename, content=content,
+                scope_type=scope_type, scope_id=scope_id, actor=_topology_actor(),
+            )
+        except NativeTopologyInteropNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except NativeTopologyInteropConflict as exc:
+            return error("NATIVE_TOPOLOGY_IMPORT_CONFLICT", str(exc), 409)
+        except (NativeTopologyInteropError, TypeError, ValueError) as exc:
+            return error("INVALID_NATIVE_TOPOLOGY", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, result, 201)
+        return ok(result), 201
+
+    @api.get("/topologies/<profile_id>/native-artifacts")
+    def list_native_topology_artifacts(profile_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.read", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        try:
+            return ok({"items": native_topology_interop.list_sources(profile_id)})
+        except NativeTopologyInteropNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+
+    @api.get("/topologies/<profile_id>/native-artifacts/<source_id>/export")
+    def export_native_topology_artifact(profile_id, source_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.manage", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        revision_id = str(request.args.get("revision_id", "")).strip()
+        presentation_id = str(request.args.get("presentation_id", "")).strip()
+        if not revision_id or not presentation_id:
+            return error("INVALID_REQUEST", "revision_id and presentation_id query parameters are required", 400)
+        try:
+            exported = native_topology_interop.export_revision(
+                profile_id=profile_id, revision_id=revision_id,
+                presentation_id=presentation_id, source_id=source_id,
+            )
+        except NativeTopologyInteropNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except NativeTopologyInteropConflict as exc:
+            return error("NATIVE_TOPOLOGY_EXPORT_UNSUPPORTED_CHANGE", str(exc), 409)
+        except NativeTopologyInteropError as exc:
+            return error("NATIVE_TOPOLOGY_EXPORT_FAILED", str(exc), 422)
+        response = send_file(
+            io.BytesIO(exported.content), mimetype=exported.media_type,
+            as_attachment=True, download_name=exported.filename, max_age=0,
+        )
+        report = json.dumps(exported.report, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        response.headers["X-NetRegress-Native-Report"] = base64.urlsafe_b64encode(report).decode("ascii").rstrip("=")
         response.headers["Cache-Control"] = "no-store"
         return response
 
