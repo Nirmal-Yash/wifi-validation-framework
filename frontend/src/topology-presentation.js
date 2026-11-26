@@ -94,7 +94,12 @@ export function movePresentationNodes(presentation,nodeIds,deltaX,deltaY){
  result.nodes=(result.nodes||[]).map(item=>{
   if(!selected.has(item.node_id))return item;
   const current=presentationPointToCanvas(item.x,item.y,coordinateSpace,canvas);
-  const next=canvasPointToPresentation(current.x+deltaX,current.y+deltaY,coordinateSpace,canvas);
+  let nextCanvas={x:current.x+deltaX,y:current.y+deltaY};
+  if(result.grid?.enabled&&result.grid?.snap){
+   const size=Math.max(1,Number(result.grid.size)||25);
+   nextCanvas={x:Math.round(nextCanvas.x/size)*size,y:Math.round(nextCanvas.y/size)*size};
+  }
+  const next=canvasPointToPresentation(nextCanvas.x,nextCanvas.y,coordinateSpace,canvas);
   return {...item,x:next.x,y:next.y};
  });
  return result;
@@ -114,15 +119,23 @@ export function updatePresentationNodePosition(presentation,nodeId,axis,canvasVa
 export function presentationPortPoint(node,interfaceItem,otherNode){
  const layout=node?.layout||{},width=node?.width||136,height=node?.height||68,ports=layout.ports||[];
  const port=ports.find(item=>(interfaceItem?.name&&item.interface_name===interfaceItem.name)||(item.adapter===interfaceItem?.adapter&&item.port===interfaceItem?.port));
+ let local;
  if(port&&Number.isFinite(Number(port.anchor_x))&&Number.isFinite(Number(port.anchor_y))){
-  return {x:node.canvasX-width/2+Number(port.anchor_x)*width,y:node.canvasY-height/2+Number(port.anchor_y)*height};
+  local={x:-width/2+Number(port.anchor_x)*width,y:-height/2+Number(port.anchor_y)*height};
+ }else{
+  const direction=(otherNode?.canvasX??node.canvasX)>=node.canvasX?1:-1,side=String(port?.side||"").toUpperCase();
+  if(["W","WEST"].includes(side))local={x:-width/2,y:0};
+  else if(["E","EAST"].includes(side))local={x:width/2,y:0};
+  else if(["N","NORTH"].includes(side))local={x:0,y:-height/2};
+  else if(["S","SOUTH"].includes(side))local={x:0,y:height/2};
+  else local={x:direction*width/2,y:0};
  }
- const direction=(otherNode?.canvasX??node.canvasX)>=node.canvasX?1:-1,side=String(port?.side||"").toUpperCase();
- if(["W","WEST"].includes(side))return {x:node.canvasX-width/2,y:node.canvasY};
- if(["E","EAST"].includes(side))return {x:node.canvasX+width/2,y:node.canvasY};
- if(["N","NORTH"].includes(side))return {x:node.canvasX,y:node.canvasY-height/2};
- if(["S","SOUTH"].includes(side))return {x:node.canvasX,y:node.canvasY+height/2};
- return {x:node.canvasX+direction*width/2,y:node.canvasY};
+ const radians=(Number(node?.rotation)||0)*Math.PI/180;
+ const cosine=Math.cos(radians),sine=Math.sin(radians);
+ return {
+  x:node.canvasX+local.x*cosine-local.y*sine,
+  y:node.canvasY+local.x*sine+local.y*cosine,
+ };
 }
 
 export function presentationLinkPath(source,target,link,coordinateSpace,canvas){

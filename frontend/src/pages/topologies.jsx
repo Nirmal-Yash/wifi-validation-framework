@@ -367,6 +367,34 @@ export default function TopologyStudioPage({user}){
  }
  function autoLayoutDraft(){
   if(!canManage||!nodes.length)return;
+  if(isNativePresentation){
+   const initial=presentationDraft||activePresentation;
+   const resolved=resolveTopologyPresentation(definitionRef.current,initial);
+   const layoutInput={
+    ...definitionRef.current,
+    nodes:resolved.nodes.map(node=>({...node,x:node.canvasX,y:node.canvasY})),
+   };
+   const arranged=autoLayoutTopology(layoutInput);
+   const positions=new Map(arranged.nodes.map(node=>[node.id,{x:node.x,y:node.y}]));
+   const current=new Map((initial.nodes||[]).map(item=>[item.node_id,item]));
+   const coordinateSpace=initial.coordinate_space||{};
+   const canvas=initial.canvas||{width:1000,height:620};
+   const next={
+    ...initial,
+    nodes:(definitionRef.current.nodes||[]).map(node=>{
+     const saved=current.get(node.id)||{node_id:node.id,x:node.x,y:node.y,width:136,height:68,label:node.name||node.id,z_index:0};
+     const point=positions.get(node.id);
+     if(!point)return saved;
+     const native=canvasPointToPresentation(point.x,point.y,coordinateSpace,canvas);
+     return {...saved,x:native.x,y:native.y};
+    }),
+   };
+   setPresentationDraft(next);setPresentationDirty(true);
+   setViewport(fitPresentationViewport(resolveTopologyPresentation(definitionRef.current,next).nodes));
+   setNotice("Automatic layout applied to the presentation only; canonical topology intent and native identities are unchanged.");
+   appendSessionLog("INFO","Applied automatic presentation layout to "+nodes.length+" nodes");
+   return;
+  }
   const arranged=autoLayoutTopology(definitionRef.current);
   setEditorDefinition(arranged);
   setViewport(fitTopologyViewport(arranged.nodes));
@@ -589,6 +617,7 @@ export default function TopologyStudioPage({user}){
  }
  function zoomCanvas(factor,anchorX=0.5,anchorY=0.5){
   setViewport(value=>isNativePresentation?zoomPresentationViewport(value,factor,anchorX,anchorY):zoomTopologyViewport(value,factor,anchorX,anchorY));
+  if(isNativePresentation)setPresentationDirty(true);
  }
  function zoomCanvasAtPointer(event){
   event.preventDefault();
@@ -597,7 +626,10 @@ export default function TopologyStudioPage({user}){
   const anchorY=(event.clientY-rect.top)/rect.height;
   zoomCanvas(event.deltaY<0?0.9:1.1,anchorX,anchorY);
  }
- function fitCanvas(){setViewport(isNativePresentation?fitPresentationViewport(renderNodes):fitTopologyViewport(nodes));}
+ function fitCanvas(){
+  setViewport(isNativePresentation?fitPresentationViewport(renderNodes):fitTopologyViewport(nodes));
+  if(isNativePresentation)setPresentationDirty(true);
+ }
  function onCanvasPointerMove(event){
   if(panning){
    const rect=event.currentTarget.getBoundingClientRect();
@@ -608,6 +640,7 @@ export default function TopologyStudioPage({user}){
     x:isNativePresentation?panning.viewport.x-dx:Math.max(0,Math.min(10000-panning.viewport.width,panning.viewport.x-dx)),
     y:isNativePresentation?panning.viewport.y-dy:Math.max(0,Math.min(10000-panning.viewport.height,panning.viewport.y-dy))
    });
+   if(isNativePresentation)setPresentationDirty(true);
    return;
   }
   const session=dragSessionRef.current;if(!session)return;
@@ -952,7 +985,7 @@ export default function TopologyStudioPage({user}){
     <div className={"topology-canvas-dropzone"+(paletteDropActive?" is-drop-active":"")} onDragOver={allowPaletteDrop}
      onDragLeave={event=>{if(event.currentTarget===event.target)setPaletteDropActive(false);}} onDrop={dropPaletteNode}>
      <div className="topology-canvas-drop-hint" aria-live="polite">{paletteDropActive?"Release to add a logical node":"Drop a palette node here · drag empty canvas to pan"}</div>
-     <svg ref={canvasRef} viewBox={viewport.x+" "+viewport.y+" "+viewport.width+" "+viewport.height} role="application" aria-label="Vendor-aware native topology canvas; placement edits are stored separately from canonical network intent." style={{display:"block",width:"100%",minWidth:0,height:"auto",aspectRatio:"1000 / 620",touchAction:"none",cursor:panning?"grabbing":"grab"}}
+     <svg ref={canvasRef} viewBox={viewport.x+" "+viewport.y+" "+viewport.width+" "+viewport.height} role="application" aria-label="Interactive topology canvas; vendor-aware native layout and placement edits are stored separately from canonical network intent." style={{display:"block",width:"100%",minWidth:0,height:"auto",aspectRatio:"1000 / 620",touchAction:"none",cursor:panning?"grabbing":"grab"}}
       onPointerDown={startCanvasPan} onPointerMove={onCanvasPointerMove} onPointerUp={finishCanvasInteraction} onPointerCancel={finishCanvasInteraction} onWheel={zoomCanvasAtPointer}>
       <defs><pattern id="topology-grid" width={presentationModel.grid.size||25} height={presentationModel.grid.size||25} patternUnits="userSpaceOnUse"><path d={"M "+(presentationModel.grid.size||25)+" 0 L 0 0 0 "+(presentationModel.grid.size||25)} fill="none" stroke="currentColor" strokeOpacity=".08" strokeWidth="1"/></pattern></defs>
       <rect data-canvas-background="true" x={viewport.x} y={viewport.y} width={viewport.width} height={viewport.height} fill={presentationModel.canvas.background||"var(--background)"}/>

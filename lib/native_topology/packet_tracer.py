@@ -229,15 +229,19 @@ class PacketTracerTopologyCodec:
             target = devices_by_ref.get(str(native.get("ref")))
             if target is None:
                 raise NativeTopologyCodecError(f"Packet Tracer native device identity is missing for {node_id}")
-            view = layout_nodes.get(node_id, {})
-            x = float(view.get("x", node["x"]))
-            y = float(view.get("y", node["y"]))
-            if not math.isfinite(x) or not math.isfinite(y):
-                raise NativeTopologyCodecError("Packet Tracer presentation contains invalid coordinates")
-            native_x = x / scale - offset_x
-            native_y = y / scale - offset_y
+            view = layout_nodes.get(node_id)
+            if view is None:
+                # Backward compatibility for callers that still provide only
+                # the canonical, normalized topology coordinates.
+                native_x = float(node["x"]) / scale - offset_x
+                native_y = float(node["y"]) / scale - offset_y
+            else:
+                # G08 presentation snapshots store the raw native Packet Tracer
+                # coordinate values. They must not be normalized a second time.
+                native_x = float(view.get("x", target.xy[0]))
+                native_y = float(view.get("y", target.xy[1]))
             if not math.isfinite(native_x) or not math.isfinite(native_y):
-                raise NativeTopologyCodecError("Packet Tracer presentation cannot be mapped to native coordinates")
+                raise NativeTopologyCodecError("Packet Tracer presentation contains invalid native coordinates")
             label = str(node.get("name", ""))
             if view.get("label") and view["label"] != baseline_nodes[node_id]["name"]:
                 label = str(view["label"])

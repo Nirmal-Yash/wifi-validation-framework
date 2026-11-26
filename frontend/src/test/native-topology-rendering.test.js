@@ -1,7 +1,7 @@
 import {describe,expect,it} from "vitest";
 import {
  canvasPointToPresentation,createDefaultPresentation,fitPresentationViewport,movePresentationNodes,
- presentationLayerVisible,presentationLinkPath,presentationPointToCanvas,resolveTopologyPresentation,
+ presentationLayerVisible,presentationLinkPath,presentationPointToCanvas,presentationPortPoint,resolveTopologyPresentation,
  updatePresentationNodePosition,
 } from "@/topology-presentation";
 
@@ -46,6 +46,17 @@ describe("native topology presentation model",()=>{
   ],links:[{link_id:"l1",route_style:"orthogonal"}]});
   expect(presentationLinkPath(model.nodes[0],model.nodes[1],model.links[0],model.coordinateSpace,model.canvas)).toContain(" H ");
   expect(presentationLinkPath(model.nodes[0],model.nodes[1],{layout:{points:[{x:10,y:10},{x:20,y:40}]}},model.coordinateSpace,model.canvas)).toBe("M 10 10 L 20 40");
+ });
+ it("snaps native presentation movement to the configured grid without changing topology",()=>{
+  const source=createDefaultPresentation(definition);
+  source.grid={enabled:true,snap:true,size:25};
+  const moved=movePresentationNodes(source,["r1"],37,13);
+  expect(moved.nodes[0]).toMatchObject({x:25,y:25});
+  expect(definition.nodes[0]).toMatchObject({x:0,y:0});
+ });
+ it("rotates native port anchors with their node geometry",()=>{
+  const node={canvasX:100,canvasY:100,width:100,height:50,rotation:90,layout:{ports:[{interface_name:"Gi0/0",anchor_x:1,anchor_y:0.5}]}};
+  expect(presentationPortPoint(node,{name:"Gi0/0",adapter:0,port:0})).toMatchObject({x:100,y:150});
  });
  it("respects hidden and locked presentation layers",()=>{
   expect(presentationLayerVisible({layer_id:"hidden"},[{id:"hidden",visible:false,locked:true}])).toBe(false);

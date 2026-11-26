@@ -353,3 +353,22 @@ def test_packet_tracer_generic_codec_retains_negative_native_coordinates(interop
     assert decoded.presentation["coordinate_space"]["scale"] == pytest.approx(
         decoded.metadata["native_coordinate_transform"]["scale"]
     )
+
+
+
+def test_packet_tracer_generic_native_coordinate_snapshot_exports_without_double_transform(interop_database):
+    from lib.native_topology.packet_tracer import PacketTracerTopologyCodec
+
+    source = _native_packet()
+    codec = PacketTracerTopologyCodec()
+    decoded = codec.decode(source, "native-coordinates.pkt")
+    exported = codec.encode(
+        decoded.topology_definition,
+        decoded.presentation,
+        original_source=source,
+        filename="native-coordinates.pkt",
+    )
+    reopened = PacketTracerInteropService._load(exported.content)
+    native_by_ref = {str(item.ref): tuple(map(float, item.xy)) for item in reopened.devices}
+    for item in decoded.presentation["nodes"]:
+        assert native_by_ref[item["native_id"]] == pytest.approx((item["x"], item["y"]))
