@@ -14,6 +14,8 @@ import yaml
 
 MAX_SOURCE_BYTES = 50 * 1024 * 1024
 MAX_NATIVE_OBJECTS = 5000
+MAX_JSON_DEPTH = 64
+MAX_JSON_ITEMS = 250_000
 _ID_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 
 

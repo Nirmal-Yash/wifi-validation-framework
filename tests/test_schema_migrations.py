@@ -322,6 +322,26 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         # starts from the current schema so every later table, index and
         # trigger must be removed before rewinding the recorded Alembic head.
         # Remove the Stage D provider/apply layer before rewinding the Alembic head.
+        # Remove P14 immutable observation history before dropping the
+        # Lab/Device/provider-binding tables referenced by its scope triggers.
+        for trigger in (
+            "trg_provider_observations_scope_insert",
+            "trg_provider_observations_immutable",
+            "trg_provider_observations_no_delete",
+            "trg_device_observations_scope_insert",
+            "trg_device_observations_immutable",
+            "trg_device_observations_no_delete",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        for index in (
+            "idx_provider_observations_lab_observed",
+            "idx_provider_observations_project_observed",
+            "idx_device_observations_device_captured",
+            "idx_device_observations_project_lab_captured",
+        ):
+            connection.execute(f"DROP INDEX {index}")
+        connection.execute("DROP TABLE provider_observation_snapshots")
+        connection.execute("DROP TABLE device_observation_snapshots")
         connection.execute("DROP TRIGGER trg_topology_apply_scope_insert")
         connection.execute("DROP TRIGGER trg_topology_apply_identity_immutable")
         connection.execute("DROP TRIGGER trg_topology_apply_no_delete")
