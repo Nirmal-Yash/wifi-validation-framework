@@ -15,6 +15,7 @@ vi.mock("@/api",()=>({api:{
  nativeConfigurationSnapshots:vi.fn(),
  nativeTopologyOperations:vi.fn(),
  nativeTopologyReconciliations:vi.fn(),
+ reconcileNativeTopology:vi.fn(),
  importPacketTracerTopology:vi.fn(),
  exportPacketTracerRevision:vi.fn(),
  validateTopology:vi.fn(),
@@ -51,6 +52,7 @@ describe("visual topology studio editing workflow",()=>{
   api.nativeConfigurationSnapshots.mockResolvedValue({items:[]});
   api.nativeTopologyOperations.mockResolvedValue({items:[]});
   api.nativeTopologyReconciliations.mockResolvedValue({items:[]});
+  api.reconcileNativeTopology.mockResolvedValue({reconciliation_id:"ntr-test",status:"INCOMPLETE"});
   api.importPacketTracerTopology.mockResolvedValue({profile:{...profile,profile_id:"profile-pkt",name:"Imported PT"},revision:{...revision,revision_id:"revision-pkt",profile_id:"profile-pkt"},source:{source_id:"source-pkt",filename:"lab.pkt",sha256:"c".repeat(64)},report:{counts:{nodes:2,links:1},warnings:["Provider mapping is required"],unsupported_objects:[]}});
   api.validateTopology.mockResolvedValue({valid:true,node_count:2,link_count:1,content_sha256:"b".repeat(64)});
   api.createTopologyRevision.mockResolvedValue({...revision,revision_id:"revision-b",revision_number:2});
@@ -99,6 +101,35 @@ describe("visual topology studio editing workflow",()=>{
   expect(form.get("file").name).toBe("lab.pkt");
   expect(await screen.findByText(/new immutable native source and a DRAFT topology revision/)).toBeTruthy();
   expect(screen.getByText(/Provider mapping is required/)).toBeTruthy();
+ });
+
+
+ it("creates a read-only native reconciliation snapshot for the selected published revision",async()=>{
+  api.topologyRevisions.mockResolvedValue({items:[{...revision,status:"PUBLISHED"}]});
+  api.topologyNativeArtifacts.mockResolvedValue({items:[{
+   source_id:"source-g12",profile_id:"profile-a",project_id:"project-1",
+   topology_revision_id:"revision-a",format_id:"GNS3_PROJECT",
+   filename:"g12-project.gns3",sha256:"d".repeat(64),
+  }]});
+  api.topologyPresentationRevisions.mockResolvedValue({items:[{
+   presentation_id:"presentation-g12",profile_id:"profile-a",
+   topology_revision_id:"revision-a",source_artifact_id:"source-g12",
+   revision_number:1,status:"PUBLISHED",presentation_sha256:"e".repeat(64),
+   presentation:{nodes:[],viewport:{}},
+  }]});
+  renderPage();
+  await screen.findByText(/Topology revision.*r1.*PUBLISHED/,{},{timeout:5000});
+  await screen.findByText(/Matching presentation.*r1.*PUBLISHED/,{},{timeout:5000});
+  await screen.findByText(/Source integrity.*SHA-256/,{},{timeout:5000});
+  const reconcileButton=await screen.findByRole("button",{name:"Save reconciliation snapshot"});
+  await waitFor(()=>expect(reconcileButton).toBeEnabled(),{timeout:5000});
+  fireEvent.click(reconcileButton);
+  await waitFor(()=>expect(api.reconcileNativeTopology).toHaveBeenCalledWith("profile-a",{
+   topology_revision_id:"revision-a",
+   presentation_id:"presentation-g12",
+   source_id:"source-g12",
+  }));
+  expect(await screen.findByText(/Immutable native reconciliation snapshot saved/)).toBeTruthy();
  });
 
  it("exposes accessible canvas editing controls and keyboard guidance",async()=>{
