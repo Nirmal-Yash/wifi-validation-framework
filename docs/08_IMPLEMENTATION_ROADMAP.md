@@ -3003,3 +3003,16 @@ the protected Wi-Fi lab, or a Windows build.
 P13 and P14 are additive to the existing pipeline, Device Inventory, Credential Vault, Run telemetry, topology/provider and Project/Lab security contracts. P13 has no arbitrary command/script node and does not introduce parallel worker execution. P14 reuses existing provider adapters, packet-capture execution and ProtocolEvidenceService; it does not accept caller-authored metrics or invent health/rate/RF values. PCAP bytes are not embedded in the observability API, and protocol JSON is returned only after SHA-256 verification. Physical-lab and real-device acceptance remain explicit operator gates.
 
 Both batches are committed separately and integrated in one final fast-forward update to main; no workflow is manually dispatched during partial implementation. Only path-relevant quality checks are expected after the combined source checkpoint. AI/LLM/agent/model integration remains excluded.
+
+
+### Stage G implementation update — G02–G06 (2026-11-26)
+
+| Package | Scope | Source implementation | Current state |
+|---|---|---|---|
+| G02 | Versioned presentation model and generic native provenance | Migration 20261124_20, TopologyPresentationService, TopologySourceArtifactService, presentation API/UI; now consumed by codec import/export | Implemented; exact-head CI pending |
+| G03 | Independent native format codec architecture | lib/native_topology/contracts.py, helpers.py, registry.py; NativeTopologyInteropService | Implemented; exact-head CI pending |
+| G04 | GNS3 .gns3 format revision 7/8/9 | lib/native_topology/gns3.py | Implemented; bounded node/link projection and presentation-only export |
+| G05 | CML YAML 0.1.x and legacy VIRL 0.95 subset | lib/native_topology/cml.py | Implemented; bounded node/interface/link/annotation mapping |
+| G06 | EVE-NG .unl versions 1/2 | lib/native_topology/eve_ng.py | Implemented; explicit shared-network segment projection |
+
+All formats reuse canonical topology and G02 presentation/provenance owners. Native imports retain original source bytes and SHA-256. Export requires published topology and presentation revisions and the exact associated source artifact. Configurations are never executed. External disk images/asset directories are not imported. Vendor application reopening and live controller acceptance remain external. See docs/STAGE_G_G03_G06_NATIVE_CODECS_AUDIT.md.

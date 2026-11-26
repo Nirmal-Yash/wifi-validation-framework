@@ -73,3 +73,12 @@ These audit records document existing functionality retained, additive changes, 
 - [EXP-P14 Network Observability, Provider/Device Metrics and Evidence](EXP_P14_IMPLEMENTATION_AUDIT.md)
 
 P13 extends the durable Pipeline worker with backward-compatible graph dependencies and a visual editor. P14 unifies registered-provider observations, managed-device counters and integrity-verified Run metrics/telemetry/PCAP/protocol evidence without replacing existing adapters or capture engines.
+
+
+## Stage G native interoperability
+
+- [G01 Existing Implementation Audit and Gap Register](STAGE_G_NATIVE_INTEROPERABILITY_AUDIT.md)
+- [G02 Extended Presentation Model and Provenance](STAGE_G_G02_PRESENTATION_MODEL_AUDIT.md)
+- [G03–G06 Native GNS3, CML/VIRL and EVE-NG Codec Implementation](STAGE_G_G03_G06_NATIVE_CODECS_AUDIT.md)
+
+These audits distinguish native file codecs from live provider adapters and record supported format subsets, source preservation, parser limits and external vendor-application acceptance gates.

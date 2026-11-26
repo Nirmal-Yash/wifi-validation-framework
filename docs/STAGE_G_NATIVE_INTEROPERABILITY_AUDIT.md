@@ -204,3 +204,10 @@ Test schema versioning, canonical hashes, immutability, ownership, malformed/bou
 
 **G01 result:** SPECIFICATION_COMPLETE.  
 **Next:** begin G02 package A/B — extended native topology presentation/provenance model. No G02 source implementation is claimed by this audit.
+
+
+## 10. G02–G06 implementation checkpoint — 2026-11-26
+
+G02–G06 source implementation is integrated on top of the G02 presentation/provenance model. G03 adds the independent native codec contract/registry. G04 implements GNS3 .gns3 revision 7/8/9 mapping; G05 implements CML lab YAML 0.1.x plus constrained VIRL 0.95 XML; G06 implements EVE-NG .unl versions 1/2 with explicit shared-network segment projection. The common import/export lifecycle uses immutable Project/Lab-scoped topology, presentation and source artifacts; Topology Studio exposes the new import/source/export path. Details and supported field limits are in docs/STAGE_G_G03_G06_NATIVE_CODECS_AUDIT.md.
+
+These packages do not import external disk images or adjacent project directories, execute configurations, contact provider controllers or claim vendor application reopen. G07 Packet Tracer fidelity, G08 native rendering, G09 cross-vendor conversion, G10/G11 configuration and automation expansion, and G12 unified reconciliation remain separate work. Exact-main CI and external GNS3/CML/EVE application acceptance are still required.

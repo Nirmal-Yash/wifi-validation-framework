@@ -111,3 +111,8 @@ tests/test_schema_migrations.py now targets Alembic head 20261124_20 and schema 
 ## 8. Next resumption point
 
 **G02 implementation is integrated; exact-head CI is the remaining G02 software gate.** If the G02 quality run passes, record RQ-055 as CI_VERIFIED and proceed to G03 — Native Format Interoperability Framework. If it fails, fix the failing implementation/test without weakening assertions, create a focused corrective commit and re-check the exact new main SHA. G03 must consume the G02 v1.0 schema and keep codec registry separate from ProviderRegistry.
+
+
+## 10. G02 completion update — 2026-11-26
+
+G02 presentation schema and generic source provenance are now consumed by the G03–G06 import/export lifecycle. The codecs produce native G02 presentation snapshots, and source bytes remain immutable and SHA-256 verified. Topology Studio exposes native file import, source-artifact history and published-revision export for GNS3, CML and EVE-NG. Exact-head CI remains the verification gate. Vendor GUI/controller reopen and imported external asset qualification remain external.
