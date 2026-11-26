@@ -130,12 +130,23 @@ export default function TopologyStudioPage({user}){
  const nativeSources=useAsyncLoader(()=>profileId?api.topologyNativeSources(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"topology-native-sources"});
  const nativeArtifacts=useAsyncLoader(()=>profileId?api.topologyNativeArtifacts(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"topology-native-artifacts"});
  const nativeConfigurations=useAsyncLoader(()=>profileId?api.nativeConfigurationSnapshots(profileId,revisionId):Promise.resolve({items:[]}),[profileId,revisionId],{enabled:Boolean(profileId&&revisionId),queryKey:"topology-native-configurations"});
+ const nativeOperations=useAsyncLoader(()=>profileId?api.nativeTopologyOperations(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"topology-native-operations"});
+ const nativeReconciliations=useAsyncLoader(()=>profileId?api.nativeTopologyReconciliations(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"topology-native-reconciliations"});
+ const [nativeReconciliationSourceId,setNativeReconciliationSourceId]=useState("");
+ const [selectedNativeReconciliationId,setSelectedNativeReconciliationId]=useState("");
+ const [nativeReconciliationBusy,setNativeReconciliationBusy]=useState(false);
  const mutation=useMutation();
  const projectRows=projects.data?.items||[];
  const profileRows=profiles.data?.items||[];
  const revisionRows=revisions.data?.items||[];
  const presentationRevisionRows=presentationRevisions.data?.items||[];
  const nativeArtifactRows=(nativeArtifacts.data?.items||[]).filter(item=>["GNS3_PROJECT","CML_LAB","EVE_NG_UNL","CISCO_PACKET_TRACER_PKT"].includes(item.format_id));
+ const nativeReconciliationSourceRows=nativeArtifactRows.filter(item=>item.topology_revision_id===revisionId);
+ const nativeReconciliationSource=nativeReconciliationSourceRows.find(item=>item.source_id===nativeReconciliationSourceId)||nativeReconciliationSourceRows[0]||null;
+ const nativeReconciliationPresentation=presentationRevisionRows.filter(item=>item.status==="PUBLISHED"&&item.source_artifact_id===nativeReconciliationSource?.source_id&&item.topology_revision_id===revisionId).sort((a,b)=>(b.revision_number||0)-(a.revision_number||0))[0]||null;
+ const nativeReconciliationRows=nativeReconciliations.data?.items||[];
+ const selectedNativeReconciliation=nativeReconciliationRows.find(item=>item.reconciliation_id===selectedNativeReconciliationId)||nativeReconciliationRows[0]||null;
+ const nativeOperationRows=nativeOperations.data?.items||[];
  const nodes=definition.nodes||[];
  const links=definition.links||[];
  const selectedRevision=revisionRows.find(item=>item.revision_id===revisionId)||null;
@@ -317,6 +328,7 @@ export default function TopologyStudioPage({user}){
    window.URL.revokeObjectURL(url);
    setConversionSourceFile(null);setConversionTemplateFile(null);
    setConversionReport(result.report||null);
+   await nativeOperations.reload().catch(()=>null);
    setNotice("Structure-preserving cross-vendor project created from the destination template. Review the conversion report; configurations, models and assets are not translated.");
   }catch(exc){
    setError(exc.message||"Cross-vendor topology conversion failed.");
@@ -351,6 +363,27 @@ export default function TopologyStudioPage({user}){
    document.body.appendChild(anchor);anchor.click();anchor.remove();window.URL.revokeObjectURL(url);
   }catch(exc){setError(exc.message||"Native configuration download failed.");}
  }
+ async function createNativeReconciliation(){
+  if(!canManage||!profileId||!selectedRevision||selectedRevision.status!=="PUBLISHED"||!nativeReconciliationSource||!nativeReconciliationPresentation)return;
+  setNativeReconciliationBusy(true);setError("");setNotice("");
+  try{
+   const result=await api.reconcileNativeTopology(profileId,{
+    topology_revision_id:selectedRevision.revision_id,
+    presentation_id:nativeReconciliationPresentation.presentation_id,
+    source_id:nativeReconciliationSource.source_id,
+   });
+   setSelectedNativeReconciliationId(result.reconciliation_id);
+   await Promise.all([
+    nativeReconciliations.reload().catch(()=>null),
+    nativeOperations.reload().catch(()=>null),
+   ]);
+   setNotice("Immutable native reconciliation snapshot saved. Review findings and any recovery-required operations before planning further changes.");
+  }catch(exc){
+   setError(exc.message||"Native topology reconciliation failed.");
+  }finally{
+   setNativeReconciliationBusy(false);
+  }
+ }
  async function exportNativeProject(sourceId){
   if(!canManage||!profileId||!selectedRevision)return;
   const presentation=presentationRevisionRows.find(item=>item.status==="PUBLISHED"&&item.source_artifact_id===sourceId&&item.topology_revision_id===revisionId);
@@ -365,6 +398,7 @@ export default function TopologyStudioPage({user}){
    anchor.href=url;anchor.download=result.filename||"native-topology-export";
    document.body.appendChild(anchor);anchor.click();anchor.remove();
    window.URL.revokeObjectURL(url);
+   await nativeOperations.reload().catch(()=>null);
    setNotice("Native project serialized and source-integrity checked. The originating GNS3, CML or EVE-NG application reopen is still an external acceptance test.");
   }catch(exc){
    setError(exc.message||"Native topology export failed.");
@@ -1008,6 +1042,62 @@ export default function TopologyStudioPage({user}){
      ]} emptyTitle="No unified native source artifacts" emptyMessage="Import a supported native project to retain its original file and format/version provenance."/>
      <p className="muted">GNS3, CML and EVE-NG serializers support their documented placement/label subsets. Packet Tracer additionally supports only device-name and X/Y edits. Device/link/configuration changes outside each codec's capability report are rejected rather than discarded. Export read-back does not replace testing the generated file in the originating vendor application.</p>
     </Section>
+   <Section title="Native reconciliation and recovery evidence" subtitle="Capture an immutable, read-only comparison of native source provenance, codec round-trip, observed state and partial operations for one published revision.">
+    <div className="form-grid">
+     <Field label="Published native source for selected revision">
+      <select aria-label="Native source for reconciliation" value={nativeReconciliationSource?.source_id||""} onChange={event=>setNativeReconciliationSourceId(event.target.value)} disabled={!nativeReconciliationSourceRows.length}>
+       <option value="">Select native source</option>
+       {nativeReconciliationSourceRows.map(item=><option key={item.source_id} value={item.source_id}>{item.filename} · {item.format_id} · {item.sha256.slice(0,10)}</option>)}
+      </select>
+     </Field>
+     <div className="context-caption">
+      <div>Topology revision · {selectedRevision?"r"+selectedRevision.revision_number+" · "+selectedRevision.status:"Not selected"}</div>
+      <div>Matching presentation · {nativeReconciliationPresentation?"r"+nativeReconciliationPresentation.revision_number+" · "+nativeReconciliationPresentation.status:"No published source-bound presentation"}</div>
+      <div>Source integrity · {nativeReconciliationSource?"SHA-256 "+nativeReconciliationSource.sha256.slice(0,14)+"…":"No matching native source"}</div>
+     </div>
+     {canManage?<div className="form-actions">
+      <Button type="button" onClick={createNativeReconciliation} loading={nativeReconciliationBusy}
+       disabled={!selectedRevision||selectedRevision.status!=="PUBLISHED"||!nativeReconciliationSource||!nativeReconciliationPresentation}>
+       Save reconciliation snapshot
+      </Button>
+     </div>:<p className="muted">Creating reconciliation snapshots requires topology.manage permission in this Project.</p>}
+    </div>
+    <p className="muted">This operation only verifies retained files and recorded evidence. It does not contact controllers, execute configurations, retry, roll back or repair resources. A clean result requires a recent provider apply/read-back for this exact revision. Vendor application reopen and live device convergence remain separate acceptance tests.</p>
+    {nativeReconciliations.loading&&!nativeReconciliations.data?<LoadingState label="Loading immutable reconciliation history…"/>:null}
+    {nativeReconciliations.error?<ErrorState error={nativeReconciliations.error} onRetry={nativeReconciliations.reload}/>:null}
+    <DataTable caption="Immutable native topology reconciliation history" rows={nativeReconciliationRows} rowKey={item=>item.reconciliation_id} columns={[
+     {key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>},
+     {key:"created_at",label:"Captured",render:item=>new Date(item.created_at).toLocaleString()},
+     {key:"topology_revision_id",label:"Topology revision",render:item=><code>{item.topology_revision_id}</code>},
+     {key:"reconciliation_sha256",label:"Evidence SHA-256",render:item=><code title={item.reconciliation_sha256}>{item.reconciliation_sha256.slice(0,12)}…</code>},
+     {key:"actions",label:"Evidence",render:item=><Button type="button" size="sm" variant="outline" onClick={()=>setSelectedNativeReconciliationId(item.reconciliation_id)}>Inspect</Button>}
+    ]} emptyTitle="No reconciliation snapshots" emptyMessage="Select a published native topology revision and its matching published presentation, then save a read-only reconciliation snapshot."/>
+    {selectedNativeReconciliation?<div className="topology-observed-panel">
+     <div className="topology-inspector-heading"><strong>Reconciliation · {selectedNativeReconciliation.reconciliation_id}</strong><StatusBadge value={selectedNativeReconciliation.status}/></div>
+     <div className="operations-detail-row"><span>Canonical topology</span><code>{selectedNativeReconciliation.details?.topology?.content_sha256||"Unavailable"}</code></div>
+     <div className="operations-detail-row"><span>Native source integrity</span><StatusBadge value={selectedNativeReconciliation.details?.native_source?.integrity||"UNKNOWN"}/></div>
+     <div className="operations-detail-row"><span>Native export/read-back</span><StatusBadge value={selectedNativeReconciliation.details?.native_export?.status||"UNKNOWN"}/></div>
+     <div className="operations-detail-row"><span>Provider live read-back</span><StatusBadge value={selectedNativeReconciliation.details?.operations?.topology_readback?.verified?"VERIFIED":"NOT VERIFIED"}/></div>
+     <div className="operations-detail-row"><span>External vendor application reopen</span><StatusBadge value={selectedNativeReconciliation.details?.external_acceptance?.originating_vendor_application_reopen||"NOT VERIFIED"}/></div>
+     <div className="operations-detail-row"><span>Integrity errors / warnings</span><strong>{selectedNativeReconciliation.details?.summary?.error_count||0} / {selectedNativeReconciliation.details?.summary?.warning_count||0}</strong></div>
+     <h4>Findings</h4>
+     {selectedNativeReconciliation.details?.findings?.length?selectedNativeReconciliation.details.findings.map((item,index)=><div className="topology-warning-row" key={item.code+"-"+index}><StatusBadge value={item.severity}/><strong>{item.code}</strong> · {item.message}</div>):<p className="muted">No findings were recorded in this snapshot.</p>}
+     <h4>Operations requiring recovery review</h4>
+     {selectedNativeReconciliation.details?.operations?.uncertain?.length?selectedNativeReconciliation.details.operations.uncertain.map((item,index)=><div className="provider-plan" key={(item.system||"operation")+"-"+index}>
+      <div className="topology-inspector-heading"><strong>{item.system} · {item.apply_id||item.execution_id||item.workspace_id||"Operation"}</strong><StatusBadge value="RECONCILIATION_REQUIRED"/></div>
+      <p>{item.recovery_guidance||"Review immutable before/after evidence and read the actual live state before any new operation."}</p>
+     </div>):<p className="muted">No partial or explicitly uncertain operations were found in the bounded evidence history.</p>}
+     <p className="muted">The snapshot is immutable. Capture a new snapshot after new provider observations or reviewed recovery work; previous evidence is never overwritten.</p>
+    </div>:<EmptyState title="Select a reconciliation snapshot" message="The latest immutable snapshot appears here with its evidence findings and recovery guidance."/>}
+    {nativeOperations.loading&&!nativeOperations.data?<LoadingState label="Loading native operation history…"/>:null}
+    {nativeOperations.error?<ErrorState error={nativeOperations.error} onRetry={nativeOperations.reload}/>:null}
+    <DataTable caption="Native import, export and conversion audit history" rows={nativeOperationRows} rowKey={item=>item.resource_id} columns={[
+     {key:"action",label:"Operation",render:item=><strong>{item.details?.operation_type||item.action||item.resource_type}</strong>},
+     {key:"occurred_at",label:"Recorded",render:item=>new Date(item.occurred_at).toLocaleString()},
+     {key:"resource_id",label:"Operation ID",render:item=><code>{item.resource_id}</code>},
+     {key:"report",label:"Outcome",render:item=>item.details?.report?.status||item.details?.report?.format_id||item.details?.format_id||"Source imported"}
+    ]} emptyTitle="No native operation records" emptyMessage="Native imports, exports and cross-vendor conversions are recorded here without retaining duplicate file contents or credentials."/>
+   </Section>
    <Section title="Revision history" subtitle="Published revisions are immutable. Continue editing by saving a new draft from the local canvas.">
     <div className="form-grid">
      <Field label="Revision">

@@ -37,6 +37,10 @@ from lib.services.native_topology_interop import (
     NativeTopologyInteropConflict, NativeTopologyInteropError,
     NativeTopologyInteropNotFound, NativeTopologyInteropService,
 )
+from lib.services.native_topology_reconciliation import (
+    NativeTopologyReconciliationConflict, NativeTopologyReconciliationError,
+    NativeTopologyReconciliationNotFound, NativeTopologyReconciliationService,
+)
 from lib.services.native_topology_conversion import (
     NativeTopologyConversionError, NativeTopologyConversionService,
 )
@@ -126,6 +130,10 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     native_configuration_snapshots=NativeConfigurationSnapshotService(
         query.database, topology_studio=topology_studio,
         device_inventory=device_inventory, network_intent=network_intent,
+    )
+    native_topology_reconciliation=NativeTopologyReconciliationService(
+        query.database, topology_studio=topology_studio,
+        topology_presentation=topology_presentation, native_interop=native_topology_interop,
     )
     network_intent_compiler=NetworkIntentCompilerService(query.database,network_intent,device_inventory)
     topology_apply=TopologyApplyService(query.database,credential_vault,topology_studio)
@@ -2698,6 +2706,10 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
                 project_id=project_id, name=name, filename=filename, content=content,
                 scope_type=scope_type, scope_id=scope_id, actor=_topology_actor(),
             )
+        except NativeTopologyReconciliationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except NativeTopologyReconciliationError as exc:
+            return error("NATIVE_TOPOLOGY_OPERATION_AUDIT_FAILED", str(exc), 500)
         except NativeTopologyInteropNotFound as exc:
             return error("NOT_FOUND", str(exc), 404)
         except NativeTopologyInteropConflict as exc:
@@ -2737,6 +2749,10 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
                 profile_id=profile_id, revision_id=revision_id,
                 presentation_id=presentation_id, source_id=source_id,
             )
+            native_topology_reconciliation.record_operation(
+                profile["project_id"], "EXPORT", profile_id=profile_id,
+                details=exported.report, actor=_topology_actor(),
+            )
         except NativeTopologyInteropNotFound as exc:
             return error("NOT_FOUND", str(exc), 404)
         except NativeTopologyInteropConflict as exc:
@@ -2751,6 +2767,98 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         response.headers["X-NetRegress-Native-Report"] = base64.urlsafe_b64encode(report).decode("ascii").rstrip("=")
         response.headers["Cache-Control"] = "no-store"
         return response
+
+    @api.get("/topologies/<profile_id>/native-operations")
+    def list_native_topology_operations(profile_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.read", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        try:
+            limit = int(request.args.get("limit", "50"))
+            return ok({"items": native_topology_reconciliation.list_operations(profile_id, limit=limit)})
+        except NativeTopologyReconciliationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except (TypeError, ValueError, NativeTopologyReconciliationError) as exc:
+            return error("INVALID_RECONCILIATION_QUERY", str(exc), 400)
+
+    @api.get("/topologies/<profile_id>/reconciliations")
+    def list_native_topology_reconciliations(profile_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.read", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        try:
+            limit = int(request.args.get("limit", "25"))
+            return ok({"items": native_topology_reconciliation.list_reconciliations(profile_id, limit=limit)})
+        except (TypeError, ValueError, NativeTopologyReconciliationError) as exc:
+            return error("INVALID_RECONCILIATION_QUERY", str(exc), 400)
+
+    @api.get("/topologies/<profile_id>/reconciliations/<reconciliation_id>")
+    def get_native_topology_reconciliation(profile_id, reconciliation_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.read", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        try:
+            item = native_topology_reconciliation.get_reconciliation(profile_id, reconciliation_id)
+        except NativeTopologyReconciliationError as exc:
+            return error("NATIVE_TOPOLOGY_RECONCILIATION_INTEGRITY_FAILED", str(exc), 422)
+        if item is None:
+            return error("NOT_FOUND", "Native topology reconciliation not found", 404)
+        return ok(item)
+
+    @api.post("/topologies/<profile_id>/reconciliations")
+    def create_native_topology_reconciliation(profile_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.manage", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or set(payload) != {
+            "topology_revision_id", "presentation_id", "source_id"
+        }:
+            return error(
+                "INVALID_REQUEST",
+                "topology_revision_id, presentation_id and source_id are required",
+                400,
+            )
+        scope = f"/api/v1/topologies/{profile_id}/reconciliations"
+        request_data = {
+            "profile_id": profile_id,
+            "topology_revision_id": payload["topology_revision_id"],
+            "presentation_id": payload["presentation_id"],
+            "source_id": payload["source_id"],
+        }
+        key, request_hash, cached, security_error = idempotency_preflight(scope, request_data)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            item = native_topology_reconciliation.reconcile(
+                profile_id,
+                topology_revision_id=str(payload["topology_revision_id"]),
+                presentation_id=str(payload["presentation_id"]),
+                source_id=str(payload["source_id"]),
+                actor=_topology_actor(),
+            )
+        except NativeTopologyReconciliationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except NativeTopologyReconciliationConflict as exc:
+            return error("NATIVE_TOPOLOGY_RECONCILIATION_CONFLICT", str(exc), 409)
+        except NativeTopologyReconciliationError as exc:
+            return error("NATIVE_TOPOLOGY_RECONCILIATION_FAILED", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, item, 201)
+        return ok(item), 201
 
 
     @api.post("/topologies/convert/native")
@@ -2788,6 +2896,14 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
                 target_template_filename=target_filename,
                 mapping=mapping,
             )
+            native_topology_reconciliation.record_operation(
+                project_id, "CONVERSION", details=converted.report,
+                actor=_topology_actor(),
+            )
+        except NativeTopologyReconciliationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except NativeTopologyReconciliationError as exc:
+            return error("NATIVE_TOPOLOGY_OPERATION_AUDIT_FAILED", str(exc), 500)
         except NativeTopologyConversionError as exc:
             return error("NATIVE_TOPOLOGY_CONVERSION_REFUSED", str(exc), 422)
         response = send_file(
