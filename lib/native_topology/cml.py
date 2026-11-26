@@ -205,10 +205,24 @@ class CMLTopologyCodec:
                 else:
                     item["text"] = safe_label(annotation.get("text_content", annotation.get("text")), "")
                 style = {}
-                for key in ("color", "border_color", "border_style", "border_radius", "thickness",
-                            "text_font", "text_size", "text_unit", "text_bold", "text_italic", "rotation"):
-                    if key in annotation and isinstance(annotation[key], (str, int, float, bool)):
-                        style[key] = annotation[key]
+                stroke = annotation.get("border_color") or annotation.get("color")
+                fill = annotation.get("color") if kind in {"rectangle", "ellipse"} else None
+                if isinstance(stroke, str) and stroke:
+                    style["stroke"] = stroke[:64]
+                if isinstance(fill, str) and fill:
+                    style["fill"] = fill[:64]
+                thickness = annotation.get("thickness")
+                if isinstance(thickness, (int, float)) and not isinstance(thickness, bool):
+                    style["stroke_width"] = max(0, min(64, float(thickness)))
+                font = annotation.get("text_font")
+                if isinstance(font, str) and font:
+                    style["font_family"] = font[:80]
+                font_size = annotation.get("text_size")
+                if isinstance(font_size, (int, float)) and not isinstance(font_size, bool) and 4 <= font_size <= 256:
+                    style["font_size"] = float(font_size)
+                dash = annotation.get("border_style")
+                if isinstance(dash, str) and dash:
+                    style["dash"] = dash[:32]
                 if style:
                     item["style"] = style
                 drawings.append(item)

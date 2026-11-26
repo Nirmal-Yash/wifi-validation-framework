@@ -167,7 +167,7 @@ def safe_label(value: object, fallback: str) -> str:
 
 def map_node_type(vendor_type: object, template: object = "") -> str:
     value = (str(vendor_type or "") + " " + str(template or "")).lower()
-    if any(part in value for part in ("switch", "bridge", "hub", "unmanaged")):
+    if any(part in value for part in ("switch", "bridge", "hub", "unmanaged", "iosvl2")):
         return "SWITCH"
     if any(part in value for part in ("cloud", "nat", "external", "network-segment")):
         return "CLOUD"
