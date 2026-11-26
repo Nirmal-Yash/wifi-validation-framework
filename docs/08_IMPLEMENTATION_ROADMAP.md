@@ -3009,11 +3009,11 @@ Both batches are committed separately and integrated in one final fast-forward u
 
 | Package | Scope | Source implementation | Current state |
 |---|---|---|---|
-| G02 | Versioned presentation model and generic native provenance | Migration 20261124_20, TopologyPresentationService, TopologySourceArtifactService, presentation API/UI; now consumed by codec import/export | Implemented; exact-head CI pending |
+| G02 | Versioned presentation model and generic native provenance | Migration 20261124_20, TopologyPresentationService, TopologySourceArtifactService, presentation API/UI; now consumed by codec import/export | Implemented; exact-head NetRegress quality CI passed on `3fc4ab7` (run [45826909935](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45826909935)) |
 | G03 | Independent native format codec architecture | lib/native_topology/contracts.py, helpers.py, registry.py; NativeTopologyInteropService | Implemented; exact-head CI pending |
-| G04 | GNS3 .gns3 format revision 7/8/9 | lib/native_topology/gns3.py | Implemented; bounded node/link projection and presentation-only export |
-| G05 | CML YAML 0.1.x and legacy VIRL 0.95 subset | lib/native_topology/cml.py | Implemented; bounded node/interface/link/annotation mapping |
-| G06 | EVE-NG .unl versions 1/2 | lib/native_topology/eve_ng.py | Implemented; explicit shared-network segment projection |
+| G04 | GNS3 .gns3 format revision 7/8/9 | lib/native_topology/gns3.py | Implemented; bounded node/link projection and presentation-only export; exact-head quality CI passed on `3fc4ab7` |
+| G05 | CML YAML 0.1.x and legacy VIRL 0.95 subset | lib/native_topology/cml.py | Implemented; bounded node/interface/link/annotation mapping; exact-head quality CI passed on `3fc4ab7` |
+| G06 | EVE-NG .unl versions 1/2 | lib/native_topology/eve_ng.py | Implemented; explicit shared-network segment projection; exact-head quality CI passed on `3fc4ab7` |
 
 All formats reuse canonical topology and G02 presentation/provenance owners. Native imports retain original source bytes and SHA-256. Export requires published topology and presentation revisions and the exact associated source artifact. Configurations are never executed. External disk images/asset directories are not imported. Vendor application reopening and live controller acceptance remain external. See docs/STAGE_G_G03_G06_NATIVE_CODECS_AUDIT.md.
 
