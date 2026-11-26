@@ -105,6 +105,13 @@ EXPECTED_TABLE_COLUMNS = {
     "network_intent_profiles": ("profile_id", "project_id", "topology_profile_id", "name", "description", "scope_type", "scope_id", "lab_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "network_intent_revisions": ("revision_id", "profile_id", "topology_revision_id", "topology_content_sha256", "schema_version", "revision_number", "definition_json", "intent_sha256", "provenance_json", "parent_revision_id", "status", "created_at", "created_by", "published_at", "published_by"),
     "device_capability_reports": ("report_id", "project_id", "device_id", "provider_id", "platform", "software_version", "adapter_name", "adapter_version", "source_type", "capabilities_json", "capability_sha256", "observed_at", "recorded_at", "recorded_by"),
+    "native_configuration_snapshots": (
+        "snapshot_id", "project_id", "profile_id", "topology_revision_id",
+        "topology_content_sha256", "logical_node_id", "device_id",
+        "capability_report_id", "capability_sha256", "adapter_id", "adapter_version",
+        "platform", "software_version", "configuration_kind", "format_id", "filename",
+        "content_bytes", "sha256", "size_bytes", "metadata_json", "created_at", "created_by",
+    ),
     "ansible_automation_plans": ("plan_id", "project_id", "lab_id", "profile_id", "revision_id", "plan_sha256", "plan_json", "validation_json", "status", "created_at", "updated_at", "created_by", "approved_at", "approved_by"),
     "ansible_automation_approvals": ("approval_id", "plan_id", "plan_sha256", "approved_by", "confirmed_at"),
     "ansible_automation_executions": ("execution_id", "plan_id", "approval_id", "plan_sha256", "status", "result_json", "started_at", "completed_at", "executed_by"),
@@ -181,6 +188,9 @@ EXPECTED_TRIGGERS = (
     "trg_device_capability_reports_scope_insert",
     "trg_device_capability_reports_immutable",
     "trg_device_capability_reports_no_delete",
+    "trg_native_config_scope_insert",
+    "trg_native_config_immutable",
+    "trg_native_config_no_delete",
     "trg_ansible_automation_plans_scope_insert",
     "trg_ansible_automation_plans_identity_immutable",
     "trg_ansible_automation_plans_state_transition",
@@ -310,6 +320,9 @@ EXPECTED_INDEXES = (
     "idx_network_intent_revisions_topology",
     "idx_device_capability_reports_device_observed",
     "idx_device_capability_reports_project_observed",
+    "idx_native_config_profile_revision",
+    "idx_native_config_device_created",
+    "idx_native_config_capability_report",
     "idx_ansible_automation_plans_project_created",
     "idx_ansible_automation_plans_revision",
     "idx_ansible_automation_approvals_plan",
@@ -407,6 +420,11 @@ EXPECTED_FOREIGN_KEYS = {
     ("network_intent_revisions", "parent_revision_id", "network_intent_revisions", "revision_id"),
     ("device_capability_reports", "project_id", "projects", "project_id"),
     ("device_capability_reports", "device_id", "devices", "device_id"),
+    ("native_configuration_snapshots", "project_id", "projects", "project_id"),
+    ("native_configuration_snapshots", "profile_id", "topology_profiles", "profile_id"),
+    ("native_configuration_snapshots", "topology_revision_id", "topology_revisions", "revision_id"),
+    ("native_configuration_snapshots", "device_id", "devices", "device_id"),
+    ("native_configuration_snapshots", "capability_report_id", "device_capability_reports", "report_id"),
     ("ansible_automation_plans", "project_id", "projects", "project_id"),
     ("ansible_automation_plans", "project_id", "labs", "project_id"),
     ("ansible_automation_plans", "lab_id", "labs", "lab_id"),
@@ -606,9 +624,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "33":
+        if metadata.get("version") != "34":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '33'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '34'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")
