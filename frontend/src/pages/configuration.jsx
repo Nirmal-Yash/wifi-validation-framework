@@ -134,6 +134,7 @@ export function ConfigurationPage({user}){
  const [target,setTarget]=useState({target_type:"LAB",target_id:""});
  const [preview,setPreview]=useState(null);
  const [notice,setNotice]=useState("");
+ const [error,setError]=useState("");
  const [deploymentCredentials,setDeploymentCredentials]=useState({ssh_credential_id:"",wifi_psk_credential_id:""});
  const [deploymentPlan,setDeploymentPlan]=useState(null);
  const [deploymentRecord,setDeploymentRecord]=useState(null);
@@ -276,6 +277,7 @@ export function ConfigurationPage({user}){
   <div className="module-intro"><div className="module-intro-icon"><Settings2 size={19}/></div><div><strong>Versioned, schema-validated configuration</strong><p>Published revisions are immutable. Assignment updates the configuration resolver; physical device deployment is a separate, explicitly confirmed operation supported only by a validated device adapter.</p></div></div>
   <Section title="Project and scope" subtitle="Schemas and profiles are isolated by Project.">
    <div className="config-toolbar"><ProjectPicker projects={projects} projectId={projectId} onChange={value=>{setProjectId(value);setSelectedProfile("");setRevisionId("");setPreview(null);}}/><span className="context-caption">{(schemas.data?.items||[]).length} schemas · {(profiles.data?.items||[]).length} profiles</span></div>
+   {projects.loading?<LoadingState label="Loading Projects…"/>:projects.error?<ErrorState error={projects.error} onRetry={projects.reload}/>:null}
   </Section>
   <PageNotice notice={notice}/>{error?<InlineNotice tone="danger">{error}</InlineNotice>:null}
   {canPerform(user,"configurations.manage")?<Section title="Schema registry" subtitle="Register a typed object schema. Sensitive secret-like fields and open-ended properties are rejected.">
@@ -286,7 +288,7 @@ export function ConfigurationPage({user}){
     <Field label="Schema JSON" className="full-width"><textarea rows={7} value={schemaForm.definition} onChange={event=>setSchemaForm({...schemaForm,definition:event.target.value})}/></Field>
     <div className="form-actions"><Button type="submit" disabled={mutation.loading||!projectId}>Register schema v1</Button></div>
    </form>
-   {schemas.data?.items?.length?<DataTable caption="Registered configuration schemas" columns={[{key:"schema_id",label:"Schema"},{key:"version",label:"Version"},{key:"name",label:"Name"},{key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>}]} rows={schemas.data.items} rowKey={item=>item.schema_record_id}/>:null}
+   {schemas.loading?<LoadingState label="Loading configuration schemas…"/>:schemas.error?<ErrorState error={schemas.error} onRetry={schemas.reload}/>:schemas.data?.items?.length?<DataTable caption="Registered configuration schemas" columns={[{key:"schema_id",label:"Schema"},{key:"version",label:"Version"},{key:"name",label:"Name"},{key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>}]} rows={schemas.data.items} rowKey={item=>item.schema_record_id}/>:<EmptyState title="No registered schemas" message="Register a configuration schema to define which values a profile can contain."/>}
   </Section>:null}
   {canPerform(user,"configurations.manage")?<Section title="Create a profile" subtitle="Project, Lab and configured Device scopes feed the existing deterministic resolver.">
    <form className="form-grid" onSubmit={createProfile}>
@@ -299,6 +301,7 @@ export function ConfigurationPage({user}){
    </form>
   </Section>:null}
   <Section title="Profile revisions" subtitle="Edit a draft, inspect immutable history, publish, roll back or assign a known revision.">
+   {profiles.loading?<LoadingState label="Loading configuration profiles…"/>:profiles.error?<ErrorState error={profiles.error} onRetry={profiles.reload}/>:null}
    <div className="form-grid">
     <Field label="Selected profile"><select value={selectedProfile} onChange={event=>{setSelectedProfile(event.target.value);setRevisionId("");}}><option value="">Select profile</option>{(profiles.data?.items||[]).map(item=><option key={item.profile_id} value={item.profile_id}>{item.name} · {item.scope_type}</option>)}</select></Field>
     <Field label="Revision"><select value={revisionId} onChange={event=>setRevisionId(event.target.value)}><option value="">Select revision</option>{(revisions.data?.items||[]).map(item=><option key={item.revision_id} value={item.revision_id}>r{item.revision_number} · {item.status}</option>)}</select></Field>
@@ -362,12 +365,12 @@ export function ConfigurationPage({user}){
      <p><StatusBadge value={deploymentRecord.status}/> {deploymentRecord.result?.verified_fields?.length||0} settings verified by read-back</p>
      <div className="context-caption">Configuration SHA-256 · {deploymentRecord.configuration_hash}</div>
     </div>:null}
-    <DataTable caption="Device deployment history" columns={[
+    {deploymentHistory.loading?<LoadingState label="Loading device deployment history…"/>:deploymentHistory.error?<ErrorState error={deploymentHistory.error} onRetry={deploymentHistory.reload}/>:<DataTable caption="Device deployment history" columns={[
      {key:"deployment_id",label:"Deployment",render:item=><code>{item.deployment_id}</code>},
      {key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>},
      {key:"revision_id",label:"Revision"},
      {key:"created_at",label:"Started",render:item=>new Date(item.created_at).toLocaleString()},
-    ]} rows={deploymentHistory.data?.items||[]} rowKey={item=>item.deployment_id} emptyTitle="No device deployments" emptyMessage="A successful or attempted deployment will be retained here."/>
+    ]} rows={deploymentHistory.data?.items||[]} rowKey={item=>item.deployment_id} emptyTitle="No device deployments" emptyMessage="A successful or attempted deployment will be retained here."/>}
    </>}
   </Section>
 
@@ -384,7 +387,7 @@ export function ConfigurationPage({user}){
     <div className="form-actions"><Button variant="outline" onClick={resolveEffective} disabled={!projectId||mutation.loading}>Preview effective configuration</Button></div>
    </div>
    {preview?<div className="config-preview"><div className="config-preview-meta"><strong>Resolved configuration</strong><span>SHA-256 · {preview.configuration_hash}</span></div><pre>{JSON.stringify({values:preview.values,provenance:preview.provenance,assignments:preview.assignments},null,2)}</pre></div>:null}
-   <DataTable caption="Configuration assignments" columns={[{key:"target_type",label:"Target"},{key:"target_id",label:"Target ID"},{key:"profile_id",label:"Profile"},{key:"revision_id",label:"Revision"},{key:"assigned_at",label:"Assigned",render:item=>new Date(item.assigned_at).toLocaleString()}]} rows={assignments.data?.items||[]} rowKey={item=>item.assignment_id} emptyTitle="No assignments" emptyMessage="Assign a published revision to a Project, Lab or Device."/>
+   {assignments.loading?<LoadingState label="Loading configuration assignments…"/>:assignments.error?<ErrorState error={assignments.error} onRetry={assignments.reload}/>:<DataTable caption="Configuration assignments" columns={[{key:"target_type",label:"Target"},{key:"target_id",label:"Target ID"},{key:"profile_id",label:"Profile"},{key:"revision_id",label:"Revision"},{key:"assigned_at",label:"Assigned",render:item=>new Date(item.assigned_at).toLocaleString()}]} rows={assignments.data?.items||[]} rowKey={item=>item.assignment_id} emptyTitle="No assignments" emptyMessage="Assign a published revision to a Project, Lab or Device."/>}
   </Section>
  </div>;
 }
