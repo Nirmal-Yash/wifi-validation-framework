@@ -74,6 +74,11 @@ class GNS3TopologyCodec:
                 raise ValueError("GNS3 project contains duplicate node_id values")
             x = finite_number(node.get("x"), f"nodes[{index}].x")
             y = finite_number(node.get("y"), f"nodes[{index}].y")
+            raw_ports = node.get("ports", [])
+            if not isinstance(raw_ports, list) or len(raw_ports) > 256:
+                raise ValueError(f"GNS3 node {native_id} ports must contain at most 256 entries")
+            if any(not isinstance(port, dict) for port in raw_ports):
+                raise ValueError(f"GNS3 node {native_id} port entries must be objects")
             native_nodes[native_id] = node
             positions[native_id] = (x, y)
         if not raw_nodes:

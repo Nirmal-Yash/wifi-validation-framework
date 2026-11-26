@@ -35,12 +35,39 @@ def _no_duplicate_pairs(pairs):
     return result
 
 
+def _reject_json_constant(value: str):
+    raise ValueError(f"native JSON constant {value!r} is prohibited")
+
+
+def _validate_json_tree(value: Any) -> None:
+    stack = [(value, 1)]
+    visited = 0
+    while stack:
+        item, depth = stack.pop()
+        visited += 1
+        if depth > MAX_JSON_DEPTH:
+            raise ValueError("native JSON exceeds the nesting-depth limit")
+        if visited > MAX_JSON_ITEMS:
+            raise ValueError("native JSON exceeds the parsed item-count limit")
+        if isinstance(item, float) and not math.isfinite(item):
+            raise ValueError("native JSON contains a non-finite number")
+        if isinstance(item, dict):
+            stack.extend((child, depth + 1) for pair in item.items() for child in pair)
+        elif isinstance(item, list):
+            stack.extend((child, depth + 1) for child in item)
+
+
 def parse_json(source: bytes) -> dict[str, Any]:
     raw = ensure_source(source)
     try:
-        value = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=_no_duplicate_pairs)
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
-        raise ValueError("native JSON is invalid or contains duplicate object keys") from exc
+        value = json.loads(
+            raw.decode("utf-8-sig"),
+            object_pairs_hook=_no_duplicate_pairs,
+            parse_constant=_reject_json_constant,
+        )
+        _validate_json_tree(value)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
+        raise ValueError("native JSON is invalid, excessively nested, too large, or contains duplicate keys") from exc
     if not isinstance(value, dict):
         raise ValueError("native JSON root must be an object")
     return value

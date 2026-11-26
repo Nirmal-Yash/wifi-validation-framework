@@ -423,3 +423,39 @@ def test_native_topology_import_api_lists_codecs_sources_and_downloads_export(tm
     assert "api-fixture.gns3" in export.headers["Content-Disposition"]
     assert export.headers.get("X-NetRegress-Native-Report")
     assert export.data
+
+
+
+def test_native_json_parser_rejects_excessive_depth_item_count_and_nonfinite_constants():
+    with pytest.raises(ValueError, match="invalid"):
+        parse_json(b'{"value":NaN}')
+    deeply_nested = (b'{"x":' * 70) + b'0' + (b'}' * 70)
+    with pytest.raises(ValueError, match="invalid"):
+        parse_json(deeply_nested)
+    oversized_tree = b'{"items":[' + b'0,' * 250_001 + b'0]}'
+    with pytest.raises(ValueError, match="invalid"):
+        parse_json(oversized_tree)
+
+
+@pytest.mark.parametrize(
+    ("source", "filename"),
+    [
+        (GNS3_SOURCE, "fixture.gns3"),
+        (CML_SOURCE, "fixture.yaml"),
+        (VIRL_SOURCE, "fixture.virl"),
+        (EVE_SOURCE, "fixture.unl"),
+    ],
+)
+def test_native_codec_output_satisfies_the_shared_canonical_and_presentation_models(tmp_path, source, filename):
+    from lib.services.topology_presentation import TopologyPresentationService
+    from lib.services.topology_studio import TopologyStudioService
+
+    decoded = default_registry().decode(source, filename)
+    definition = TopologyStudioService.normalize_definition(decoded.topology_definition)
+    presentation = dict(decoded.presentation)
+    presentation["source_artifact_id"] = "tsr_" + ("0" * 24)
+    normalized, encoded, digest = TopologyPresentationService.canonical_payload(presentation, definition)
+    assert normalized["layout_origin"] == "NATIVE"
+    assert normalized["source_artifact_id"] == presentation["source_artifact_id"]
+    assert len(encoded) > 0
+    assert len(digest) == 64
