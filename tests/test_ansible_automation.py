@@ -11,6 +11,7 @@ import yaml
 from lib.repositories import SQLiteDatabase
 from lib.services.ansible_automation import (
     AnsibleAutomationConflict,
+    AnsibleAutomationError,
     AnsibleAutomationService,
 )
 from lib.services.credential_vault import CredentialVaultService
@@ -358,7 +359,7 @@ def test_juniper_playbook_uses_pinned_juniper_device_modules_and_set_statements(
         "intent_sha256": "a" * 64,
         "artifacts": [{
             "path": f"targets/router-a-{device['device_id']}/router-a.set",
-            "content": "set system host-name edge-router\\nset system services ssh\\n",
+            "content": "set system host-name edge-router\nset system services ssh\n",
             "sha256": "b" * 64,
             "change_type": "CREATE",
         }],
