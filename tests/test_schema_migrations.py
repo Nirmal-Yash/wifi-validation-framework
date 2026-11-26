@@ -24,7 +24,7 @@ def test_fresh_database_is_created_only_through_single_alembic_head(tmp_path):
     status = DatabaseMigrationManager(path).check()
 
     assert status.current_revision == status.head_revision
-    assert status.current_revision == "20261126_24"
+    assert status.current_revision == "20261126_25"
     assert status.is_up_to_date
     assert status.schema.is_clean
 
@@ -35,7 +35,7 @@ def test_fresh_database_is_created_only_through_single_alembic_head(tmp_path):
         authority = connection.execute(
             "SELECT value FROM schema_meta WHERE key='migration_authority'"
         ).fetchone()[0]
-        assert version == "34"
+        assert version == "35"
         assert authority == "alembic"
 
 
@@ -135,7 +135,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
 
     result = manager.upgrade()
 
-    assert result.current_revision == result.head_revision == "20261126_24"
+    assert result.current_revision == result.head_revision == "20261126_25"
     assert result.is_up_to_date
     assert result.last_backup is not None
     assert result.last_backup.is_file()
@@ -159,7 +159,7 @@ def test_pre_alembic_v11_database_is_backed_up_upgraded_and_preserved(tmp_path):
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "34"
+        ).fetchone()[0] == "35"
 
 
 def test_schema_drift_is_reported_without_silent_repair(tmp_path):
@@ -456,6 +456,21 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.execute("DROP TABLE opentofu_workspaces")
         connection.execute("DROP TABLE network_intent_revisions")
         connection.execute("DROP TABLE network_intent_profiles")
+        # Remove G12 immutable reconciliation snapshots before rewinding
+        # the native-source, presentation and topology tables they reference.
+        for trigger in (
+            "trg_native_topology_reconciliations_scope_insert",
+            "trg_native_topology_reconciliations_immutable",
+            "trg_native_topology_reconciliations_no_delete",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        for index in (
+            "idx_native_topology_reconciliations_profile_created",
+            "idx_native_topology_reconciliations_revision_created",
+            "idx_native_topology_reconciliations_project_created",
+        ):
+            connection.execute(f"DROP INDEX {index}")
+        connection.execute("DROP TABLE native_topology_reconciliations")
         # Remove G10 immutable vendor-configuration snapshots before rewinding
         # the topology/Device/capability schema to the historical v11 baseline.
         for trigger in (
@@ -565,7 +580,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.commit()
 
     status = DatabaseMigrationManager(path).upgrade()
-    assert status.current_revision == status.head_revision == "20261126_24"
+    assert status.current_revision == status.head_revision == "20261126_25"
     assert status.is_up_to_date
     with sqlite3.connect(path) as connection:
         assert connection.execute(
@@ -573,7 +588,7 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         ).fetchone() is not None
         assert connection.execute(
             "SELECT value FROM schema_meta WHERE key='version'"
-        ).fetchone()[0] == "34"
+        ).fetchone()[0] == "35"
 
 
 def test_database_operator_cli_commands(tmp_path):
