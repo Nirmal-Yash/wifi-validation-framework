@@ -9,8 +9,11 @@ import shutil
 import subprocess
 import uuid
 
+from lib.repositories import SQLiteDatabase
+from lib.security import AuthManager
 from lib.services.certification import CertificationMatrix
 from lib.services.doctor import RunnerDoctor
+from lib.services.identity import IdentityStore
 from lib.services.release_manifest import ReleaseManifestService
 from scripts.netregress_install import prepare_runtime_directories
 
@@ -312,7 +315,7 @@ def test_doctor_reports_first_run_authentication_as_pending_warning(tmp_path, mo
     auth_check = next(check for check in report.checks if check.check_id == "authentication")
 
     assert auth_check.status == "WARNING"
-    assert "first-run OWNER setup is pending" in auth_check.message
+    assert "first-run Global Owner setup is pending" in auth_check.message
 
 
 def test_install_rejects_local_state_symlink(tmp_path):
@@ -567,3 +570,63 @@ def test_doctor_database_integrity_accepts_relative_database_path(tmp_path, monk
 
     assert checks["database:integrity"].status == "PASS"
     assert "integrity_check=ok" in checks["database:integrity"].message
+
+
+def test_doctor_reports_pending_owner_even_when_launcher_session_secret_exists(tmp_path, monkeypatch):
+    local = tmp_path / ".local"
+    local.mkdir(mode=0o700)
+    secret = local / "session-secret"
+    secret.write_text("s" * 64, encoding="utf-8")
+    secret.chmod(0o600)
+
+    monkeypatch.setenv("NETREGRESS_AUTH_REQUIRED", "1")
+    monkeypatch.setenv("NETREGRESS_LOCAL_DIR", str(local))
+    monkeypatch.delenv("NETREGRESS_SESSION_SECRET", raising=False)
+    monkeypatch.delenv("NETREGRESS_AUTH_USERS_JSON", raising=False)
+
+    report = RunnerDoctor(tmp_path).run()
+    auth_check = next(check for check in report.checks if check.check_id == "authentication")
+
+    assert auth_check.status == "WARNING"
+    assert "first-run Global Owner setup is pending" in auth_check.message
+
+
+def test_doctor_accepts_persisted_global_owner_without_legacy_auth_file(tmp_path, monkeypatch):
+    database = SQLiteDatabase(tmp_path / "results" / "test_results.db")
+    database.initialize()
+    IdentityStore(database).bootstrap_first_owner(
+        "owner",
+        AuthManager.password_hash("persistent-owner-password-2026"),
+        actor="test",
+    )
+    local = tmp_path / ".local"
+    local.mkdir(mode=0o700)
+    secret = local / "session-secret"
+    secret.write_text("s" * 64, encoding="utf-8")
+    secret.chmod(0o600)
+
+    monkeypatch.setenv("NETREGRESS_AUTH_REQUIRED", "1")
+    monkeypatch.setenv("NETREGRESS_LOCAL_DIR", str(local))
+    monkeypatch.setenv("NETREGRESS_DATABASE_PATH", str(database.path))
+    monkeypatch.delenv("NETREGRESS_SESSION_SECRET", raising=False)
+    monkeypatch.delenv("NETREGRESS_AUTH_USERS_JSON", raising=False)
+
+    report = RunnerDoctor(tmp_path).run(database=database.path)
+    auth_check = next(check for check in report.checks if check.check_id == "authentication")
+
+    assert auth_check.status == "PASS"
+    assert "persistent IdentityStore Global Owner" in auth_check.message
+    assert not (local / "netregress-auth.json").exists()
+
+
+def test_dashboard_launcher_has_database_auth_and_loopback_cookie_guard():
+    root = Path(__file__).resolve().parents[1]
+    launcher = (root / "scripts" / "start_dashboard.sh").read_text(encoding="utf-8")
+
+    assert "load_legacy_auth_configuration" in launcher
+    assert "write_owner_config" not in launcher
+    assert "netregress_owner.py" in launcher
+    assert "NETREGRESS_SESSION_COOKIE_SECURE=0" in launcher
+    assert "NETREGRESS_SESSION_COOKIE_SAMESITE=Lax" in launcher
+    assert "Secure session cookies require an HTTPS deployment" in launcher
+    assert "first-run Global Owner setup is pending" not in launcher

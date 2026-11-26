@@ -83,7 +83,7 @@ python scripts/netregress_install.py
 # Read-only environment and database diagnostics.
 python scripts/netregress_doctor.py
 
-# Start the authenticated local dashboard (first run prompts for OWNER credentials).
+# Start the authenticated local dashboard (first run creates the Global Owner in the browser).
 ./scripts/start_dashboard.sh
 ~~~
 

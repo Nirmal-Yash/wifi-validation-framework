@@ -23,6 +23,7 @@ on:
       - "scripts/netregress_migrate_legacy.py"
       - "scripts/netregress_db.py"
       - "scripts/netregress_install.py"
+      - "scripts/netregress_owner.py"
       - "run_all.sh"
       - "tests/test_dashboard_port_contract.py"
       - "tests/test_auth_flow.py"
@@ -62,6 +63,7 @@ on:
       - "scripts/netregress_migrate_legacy.py"
       - "scripts/netregress_db.py"
       - "scripts/netregress_install.py"
+      - "scripts/netregress_owner.py"
       - "run_all.sh"
       - "tests/test_dashboard_port_contract.py"
       - "tests/test_auth_flow.py"
@@ -144,6 +146,7 @@ jobs:
           lib/services/linux_lab_host_network.py
           lib/services/linux_wifi_guest_provisioning.py
           scripts/netregress_lab_setup.py
+          scripts/netregress_owner.py
       - name: Run strict source security audit
         run: python scripts/netregress_security_audit.py --strict
       - name: Run API security boundary tests

@@ -11,7 +11,7 @@ import re
 import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Sequence
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -148,6 +148,93 @@ class IdentityStore:
         user = self.get_user(username)
         assert user is not None
         return user
+
+    def import_legacy_auth_users(
+        self, users: Sequence[Any], *, actor: str = "legacy-auth-config-migration",
+    ) -> dict[str, int]:
+        """Import old environment/file accounts once; persistent identities always win.
+
+        The legacy source is intentionally treated as an import format only. Existing
+        accounts are never overwritten, reactivated or granted additional memberships.
+        """
+        counts = {"imported": 0, "already_present": 0}
+        for configured in users:
+            username = str(getattr(configured, "username", "") or "").strip()
+            password_hash = str(getattr(configured, "password_hash", "") or "").strip()
+            role_value = getattr(configured, "role", "")
+            role_name = str(getattr(role_value, "value", role_value) or "").upper()
+            projects = tuple(getattr(configured, "projects", ()))
+            if not self.USERNAME_PATTERN.fullmatch(username):
+                raise ValueError("legacy authentication contains an invalid username")
+            if not password_hash:
+                raise ValueError("legacy authentication contains an empty password hash")
+            if role_name not in {"OWNER", "ADMIN", "OPERATOR", "VIEWER"}:
+                raise ValueError("legacy authentication contains an unsupported role")
+            if any(not isinstance(project, str) or not project.strip() for project in projects):
+                raise ValueError("legacy authentication contains an invalid Project scope")
+            projects = tuple(dict.fromkeys(project.strip() for project in projects))
+            wildcard = projects == ("*",)
+            if "*" in projects and not wildcard:
+                raise ValueError("legacy wildcard Project scope cannot be combined with named Projects")
+
+            now = self.iso()
+            project_membership_count = 0
+            workspace_scope = "WILDCARD" if wildcard else "MEMBERSHIP"
+            with self.database.transaction(immediate=True) as connection:
+                existing = connection.execute(
+                    "SELECT 1 FROM users WHERE username=? COLLATE NOCASE",
+                    (username,),
+                ).fetchone()
+                if existing is not None:
+                    counts["already_present"] += 1
+                    continue
+
+                connection.execute(
+                    """INSERT INTO users(
+                        username,email,display_name,password_hash,status,workspace_scope,
+                        created_at,updated_at,created_by,activated_at,password_changed_at
+                    ) VALUES(?,NULL,?,?, 'ACTIVE',?,?,?,?,?,?)""",
+                    (username, username, password_hash, workspace_scope, now, now, actor, now, now),
+                )
+                connection.execute(
+                    """INSERT INTO role_assignments(
+                        username,role_id,scope_type,scope_id,created_at,created_by
+                    ) VALUES(?,?,'GLOBAL','*',?,?)""",
+                    (username, self._role_id(role_name, "GLOBAL"), now, actor),
+                )
+
+                if not wildcard:
+                    for project_id in projects:
+                        project = connection.execute(
+                            "SELECT project_id FROM projects WHERE project_id=? AND status='ACTIVE'",
+                            (project_id,),
+                        ).fetchone()
+                        if project is None:
+                            continue
+                        project_membership_count += 1
+                        connection.execute(
+                            """INSERT OR IGNORE INTO project_memberships(
+                                username,project_id,role,created_at,created_by
+                            ) VALUES(?,?,?,?,?)""",
+                            (username, project_id, role_name, now, actor),
+                        )
+                        connection.execute(
+                            """INSERT OR IGNORE INTO role_assignments(
+                                username,role_id,scope_type,scope_id,created_at,created_by
+                            ) VALUES(?,?,'PROJECT',?,?,?)""",
+                            (username, self._role_id(role_name, "PROJECT"), project_id, now, actor),
+                        )
+
+                self._audit_in_transaction(
+                    connection, actor, "ACCOUNT_LEGACY_AUTH_IMPORTED", "USER", username,
+                    {
+                        "global_role": role_name,
+                        "workspace_scope": workspace_scope,
+                        "project_membership_count": project_membership_count,
+                    },
+                )
+            counts["imported"] += 1
+        return counts
 
     def bootstrap_first_owner(self, username: str, password_hash: str, *, actor: str = "desktop-first-run") -> dict[str, Any]:
         """Atomically create the first local Global Owner, exactly once."""
@@ -406,6 +493,52 @@ class IdentityStore:
         user = self.get_user(username)
         assert user is not None
         return user
+
+    def reset_owner_password(
+        self, username: str, password: str, *, actor: str = "local-console-reset",
+    ) -> dict[str, Any]:
+        """Reset one active Global Owner password and revoke that account's sessions."""
+        username = str(username or "").strip()
+        if not self.USERNAME_PATTERN.fullmatch(username):
+            raise ValueError("username does not satisfy the account identifier policy")
+        self.validate_password(password)
+        password_hash = generate_password_hash(password, method="scrypt")
+        now = self.iso()
+        with self.database.transaction(immediate=True) as connection:
+            owner = connection.execute(
+                """SELECT u.status FROM users u
+                   JOIN role_assignments a
+                     ON a.username=u.username AND a.scope_type='GLOBAL' AND a.scope_id='*'
+                   JOIN roles r ON r.role_id=a.role_id
+                   WHERE u.username=? COLLATE NOCASE AND r.name='OWNER'""",
+                (username,),
+            ).fetchone()
+            if owner is None:
+                raise IdentityNotFoundError("an account with the Global Owner role was not found")
+            if owner["status"] != "ACTIVE":
+                raise IdentityPolicyError("only an active Global Owner password can be reset")
+            connection.execute(
+                """UPDATE users SET password_hash=?,password_changed_at=?,updated_at=?
+                   WHERE username=? COLLATE NOCASE""",
+                (password_hash, now, now, username),
+            )
+            revoked = connection.execute(
+                """UPDATE user_sessions SET revoked_at=?
+                   WHERE username=? COLLATE NOCASE AND revoked_at IS NULL""",
+                (now, username),
+            ).rowcount
+            connection.execute(
+                """UPDATE password_reset_tokens SET consumed_at=?
+                   WHERE username=? COLLATE NOCASE AND consumed_at IS NULL""",
+                (now, username),
+            )
+            self._audit_in_transaction(
+                connection, actor, "OWNER_PASSWORD_RESET", "USER", username,
+                {"revoked_sessions": int(revoked)},
+            )
+        user = self.get_user(username)
+        assert user is not None
+        return {**user, "revoked_sessions": int(revoked)}
 
     def set_user_status(self, username: str, status: str, actor: str) -> dict[str, Any]:
         status = status.upper()

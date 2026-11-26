@@ -157,6 +157,15 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     lab_repository=SQLiteLabRepository(query.database)
     membership_repository=SQLiteProjectMembershipRepository(query.database)
 
+    # Older source-checkout launchers supplied local JSON/hash credentials.
+    # Import them once into the persistent identity store, then disable the
+    # compatibility authenticator so database accounts and RBAC are canonical.
+    if auth.configured_users:
+        identity.import_legacy_auth_users(
+            auth.configured_users, actor="legacy-auth-config-migration",
+        )
+        auth.clear_configured_users()
+
     def identity_profile(username, *, wildcard=False):
         user=identity.get_user(username)
         if user is None:

@@ -140,7 +140,7 @@ Important values:
 - `WIFI_ROUTER1_PASSWORD`, `WIFI_ROUTER2_PASSWORD`, `WIFI_AP_HOST_PASSWORD`, `WIFI_CLIENT_VM_PASSWORD`, `WIFI_MONITOR_VM_PASSWORD`, `WIFI_TEST_PSK`: populate only when required by your topology.
 - `NETREGRESS_SYNC_URL` and `NETREGRESS_SYNC_TOKEN`: leave unset unless an approved HTTPS receiver exists and outbound sync is intended.
 
-The launcher creates a random session secret and interactively prompts for the initial OWNER password. It stores a password hash and secret in owner-only `.local/` files, not plaintext password. Never commit `.env` or `.local/`.
+The launcher creates a random session-signing secret in owner-only `.local/` state. On an empty identity database, create the initial Global Owner in the browser's one-time setup form. The password hash, Global Owner role and audit event are stored in the canonical SQLite IdentityStore; subsequent login, session validation and RBAC use that same database. Never commit `.env`, `.local/`, or database backups.
 
 ## 6. Initialize or upgrade the database
 
@@ -182,14 +182,14 @@ The source is opened read-only; the import is idempotent. Reconcile imported, sk
 ./scripts/start_dashboard.sh
 ```
 
-On first startup, interactively create the OWNER password (at least 12 characters); username is `owner`. The launcher starts Flask and Vite and checks the local API/proxy. Defaults:
+On first startup, open the local UI and complete the one-time Global Owner form (username 2–64 policy-compliant characters; password at least 12 characters). The form creates the account in IdentityStore and immediately proceeds through the normal /auth/login and /auth/me session flow. The launcher verifies the API and identity setup status before starting Vite. Defaults:
 
 - UI: `http://127.0.0.1:5173`
 - API: `http://127.0.0.1:5050`
 
 Press Ctrl+C in the launcher terminal to stop both processes. Do not expose this localhost development launcher directly to the Internet or bind it to `0.0.0.0`. Production needs reviewed HTTPS reverse-proxy, secure-cookie/HSTS, trusted-proxy client-IP and secrets configuration; hosted smoke tests do not certify those.
 
-Reset OWNER and rotate the session secret (invalidates existing sessions):
+Reset an existing Global Owner password in the persistent identity database (revokes that account's active sessions without changing unrelated accounts):
 
 ```bash
 ./scripts/start_dashboard.sh --reset-owner
@@ -197,9 +197,11 @@ Reset OWNER and rotate the session secret (invalidates existing sessions):
 python scripts/netregress_doctor.py --check-dashboard
 ```
 
+Existing source-checkout installations with `.local/netregress-auth.json` or legacy `NETREGRESS_AUTH_USERS_JSON` are imported once into IdentityStore without overwriting any account already in the database. The local file is archived after successful migration. The doctor now validates the active persisted Global Owner and signing key instead of requiring the retired JSON file. The loopback HTTP launcher rejects `Secure` or `SameSite=None` cookie settings that browsers may discard without HTTPS; the packaged Tauri runtime has its separate loopback-cookie configuration.
+
 ## 7.1 Identity, workspace and Project-scoped execution
 
-The Stage B schema head is Alembic revision `20261113_06` (SQLite schema version `15`). Existing local bootstrap accounts are migrated into persistent identity records on successful login. The configured local OWNER remains the bootstrap administrator; subsequent account state, roles and sessions are database-backed.
+The Stage B schema head is Alembic revision `20261113_06` (SQLite schema version `15`). Existing local bootstrap account hashes from `.local/netregress-auth.json` or legacy `NETREGRESS_AUTH_USERS_JSON` are imported into persistent identity records during API startup before Vite is exposed. Existing database users always win and are never overwritten by a legacy hash; the local file is archived after successful migration. Subsequent account state, roles, Project memberships and revocable sessions are database-backed.
 
 After signing in:
 

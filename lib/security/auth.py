@@ -55,6 +55,12 @@ class AuthManager:
         return cls(users,required=required)
     @staticmethod
     def password_hash(password): return generate_password_hash(password,method="scrypt")
+    @property
+    def configured_users(self):
+        return tuple(self._users.values())
+    def clear_configured_users(self):
+        """Retire one-time bootstrap credentials after importing them to IdentityStore."""
+        self._users.clear()
     def authenticate(self,username,password):
         u=self._users.get(username)
         return AuthenticatedUser(u.username,u.role,u.projects) if u and check_password_hash(u.password_hash,password) else None

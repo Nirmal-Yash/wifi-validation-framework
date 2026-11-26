@@ -130,6 +130,10 @@ Any change touching execution, networking, provisioning, capture, device adapter
 
 If the lab cannot be run, say so. Do not represent unit/integration verification as real-lab validation.
 
+## Authentication and local first-run invariant
+
+The persistent SQLite IdentityStore is the only runtime authority for local accounts, roles, Project memberships and revocable sessions. First-run Owner creation is a one-time loopback-only API operation; the browser then signs in through the ordinary login endpoint. Legacy environment/file credential hashes may be imported for upgrade compatibility, but configured users are cleared after import and must never override an existing database account. Owner password reset updates the database hash, writes an audit event and revokes the account's persisted sessions.
+
 ## 12. Development workflow
 
 Work directly against the existing `main` branch. Do not create feature, review or temporary branches.

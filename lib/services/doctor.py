@@ -224,35 +224,36 @@ class RunnerDoctor:
             users_value = os.getenv("NETREGRESS_AUTH_USERS_JSON", "")
             auth_path = local_candidate / "netregress-auth.json"
             session_path = local_candidate / "session-secret"
-            if not local_path_symlink and not auth_path.is_symlink() and not users_value and auth_path.is_file():
+
+            credential_path_problems: list[str] = []
+            if local_path_symlink:
+                credential_path_problems.append("local-state directory must not be a symlink")
+            for credential_path in (auth_path, session_path):
+                if credential_path.is_symlink():
+                    credential_path_problems.append(f"{credential_path.name} must not be a symlink")
+                elif credential_path.is_file() and (
+                    stat.S_IMODE(credential_path.stat().st_mode) & 0o077
+                ):
+                    credential_path_problems.append(
+                        f"{credential_path.name} must be owner-readable only"
+                    )
+
+            if not users_value and auth_path.is_file() and not auth_path.is_symlink():
                 try:
                     users_value = auth_path.read_text(encoding="utf-8")
                 except OSError:
                     users_value = ""
-            if not local_path_symlink and not session_path.is_symlink() and not secret and session_path.is_file():
+            if not secret and session_path.is_file() and not session_path.is_symlink():
                 try:
                     secret = session_path.read_text(encoding="utf-8").strip()
                 except OSError:
                     secret = ""
-            bootstrap_pending = (
-                not secret
-                and not users_value
-                and not auth_path.exists()
-                and not session_path.exists()
-            )
-            if bootstrap_pending:
-                add(
-                    "authentication",
-                    "WARNING",
-                    "first-run OWNER setup is pending; use scripts/start_dashboard.sh interactively before exposing the service",
-                )
-            else:
-                auth_problems: list[str] = []
-                if len(secret) < 32:
-                    auth_problems.append("session signing secret must contain at least 32 characters")
+
+            valid_legacy_users = False
+            if users_value:
                 try:
                     users = json.loads(users_value)
-                    valid_users = (
+                    valid_legacy_users = (
                         isinstance(users, list)
                         and bool(users)
                         and any(
@@ -266,18 +267,69 @@ class RunnerDoctor:
                         )
                     )
                 except (TypeError, ValueError):
-                    valid_users = False
-                if not valid_users:
-                    auth_problems.append("authentication user configuration is missing or invalid")
-                for credential_path in (auth_path, session_path):
-                    if credential_path.is_symlink():
-                        auth_problems.append(f"{credential_path.name} must not be a symlink")
-                    elif credential_path.is_file() and (stat.S_IMODE(credential_path.stat().st_mode) & 0o077):
-                        auth_problems.append(f"{credential_path.name} must be owner-readable only")
+                    valid_legacy_users = False
+
+            # The persisted IdentityStore is the primary authority. Environment
+            # hashes and .local/netregress-auth.json are accepted only as an
+            # upgrade/import format; a configured DB Owner remains valid after
+            # that legacy material has been archived.
+            database_has_owner = False
+            identity_schema_error = False
+            try:
+                auth_database = resolve_database_path(database, project_root=self.root)
+                if auth_database.is_file():
+                    connection = sqlite3.connect(
+                        auth_database.resolve(strict=False).as_uri() + "?mode=ro",
+                        uri=True,
+                        timeout=5,
+                    )
+                    try:
+                        database_has_owner = bool(connection.execute(
+                            """SELECT 1
+                               FROM users u
+                               JOIN role_assignments a
+                                 ON a.username=u.username
+                                AND a.scope_type='GLOBAL' AND a.scope_id='*'
+                               JOIN roles r ON r.role_id=a.role_id
+                               WHERE u.status='ACTIVE' AND r.name='OWNER'
+                               LIMIT 1"""
+                        ).fetchone())
+                    finally:
+                        connection.close()
+            except (DatabaseConfigurationError, sqlite3.Error):
+                identity_schema_error = True
+
+            bootstrap_pending = not database_has_owner and not valid_legacy_users
+            if bootstrap_pending and not credential_path_problems and not identity_schema_error:
+                add(
+                    "authentication",
+                    "WARNING",
+                    "first-run Global Owner setup is pending; start scripts/start_dashboard.sh and create the Owner in the browser",
+                )
+            else:
+                auth_problems = list(credential_path_problems)
+                if identity_schema_error and not database_has_owner:
+                    auth_problems.append(
+                        "persistent identity schema could not be read; run the installer and verify the Alembic database head"
+                    )
+                if len(secret) < 32:
+                    auth_problems.append(
+                        "session signing secret must contain at least 32 characters"
+                    )
+                if not database_has_owner and not valid_legacy_users:
+                    auth_problems.append(
+                        "no active Global Owner exists in IdentityStore and no valid legacy import source is available"
+                    )
+                if users_value and not valid_legacy_users:
+                    auth_problems.append("legacy authentication import configuration is missing or invalid")
                 add(
                     "authentication",
                     "FAIL" if auth_problems else "PASS",
-                    "; ".join(auth_problems) if auth_problems else "required authentication and privileged user configuration are present",
+                    "; ".join(auth_problems) if auth_problems else (
+                        "persistent IdentityStore Global Owner and session signing secret are present"
+                        if database_has_owner
+                        else "valid legacy account hashes are available for one-time IdentityStore import"
+                    ),
                 )
         else:
             add("authentication", "WARNING", "authentication is disabled; do not expose the dashboard beyond a trusted local environment")

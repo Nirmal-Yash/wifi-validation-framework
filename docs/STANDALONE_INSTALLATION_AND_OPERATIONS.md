@@ -57,21 +57,23 @@ Copy .env.example to .env only when you are ready to configure the deployment. P
 
 The standard dashboard launcher reads NETREGRESS_LOCAL_DIR and the backend/frontend port settings from a private .env when the corresponding process environment variables are not set. The process environment takes precedence. The Python database resolver loads the same protected .env with override disabled, so database selection is consistent across the dashboard, installer and database CLI. The launcher rejects .env symlinks and files accessible by group/other users.
 
-The standard dashboard launcher manages first-run local credentials:
+The standard dashboard launcher uses the same persistent IdentityStore as the packaged desktop application:
 
 ~~~bash
 ./scripts/start_dashboard.sh
 ~~~
 
-On first startup it prompts interactively for an OWNER password, writes only the password hash to .local/netregress-auth.json, generates .local/session-secret, and applies owner-only permissions. The launcher does not print either secret. Keep .local/ private and backed up only under your organization's secret-handling procedure.
+On a new database, open the local dashboard and complete the one-time Owner setup form. The username, scrypt password hash, Global Owner role and bootstrap audit event are committed to SQLite. The login form then signs in through the same /api/v1/auth/login endpoint used for every later session. The API issues an HttpOnly session cookie and CSRF token; protected requests are revalidated against persisted session state and database-backed RBAC. No default password or shell-created Owner account is used.
 
-To rotate the local OWNER password and signing secret:
+Existing source-checkout installs that still have .local/netregress-auth.json or NETREGRESS_AUTH_USERS_JSON are imported into IdentityStore during API startup. The database remains authoritative: an existing account's password, status, roles and memberships are never overwritten by a legacy hash. A local legacy file is archived after successful startup. Keep the private .local/ directory and database backups protected.
+
+To reset an existing Global Owner password:
 
 ~~~bash
 ./scripts/start_dashboard.sh --reset-owner
 ~~~
 
-This command is interactive and invalidates existing signed sessions by rotating the session secret. Do not use non-interactive shell arguments or command history to pass passwords.
+This command securely prompts for the password, updates the active Global Owner in SQLite, records an audit event and revokes that account's persisted sessions. It does not rotate the signing secret or edit a separate credential file. Do not pass passwords as command-line arguments or through shell history.
 
 The dashboard defaults to Flask on 127.0.0.1:5050 and Vite on 127.0.0.1:5173. The launcher validates distinct, non-privileged ports, starts both processes, checks the API health endpoint and frontend/API proxy, and stops both on Ctrl+C. Do not bind this local development launcher to a public interface or expose it through an unreviewed reverse proxy.
 
