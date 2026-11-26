@@ -456,6 +456,21 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.execute("DROP TABLE opentofu_workspaces")
         connection.execute("DROP TABLE network_intent_revisions")
         connection.execute("DROP TABLE network_intent_profiles")
+        # Remove G12 immutable reconciliation snapshots before rewinding
+        # the native-source, presentation and topology tables they reference.
+        for trigger in (
+            "trg_native_topology_reconciliations_scope_insert",
+            "trg_native_topology_reconciliations_immutable",
+            "trg_native_topology_reconciliations_no_delete",
+        ):
+            connection.execute(f"DROP TRIGGER {trigger}")
+        for index in (
+            "idx_native_topology_reconciliations_profile_created",
+            "idx_native_topology_reconciliations_revision_created",
+            "idx_native_topology_reconciliations_project_created",
+        ):
+            connection.execute(f"DROP INDEX {index}")
+        connection.execute("DROP TABLE native_topology_reconciliations")
         # Remove G10 immutable vendor-configuration snapshots before rewinding
         # the topology/Device/capability schema to the historical v11 baseline.
         for trigger in (
