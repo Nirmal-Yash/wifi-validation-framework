@@ -24,7 +24,10 @@ def test_openapi_path_keys_are_unique_and_cover_runtime_routes():
         "/infrastructure/workspaces/{workspace_id}/resources",
         "/infrastructure/workspaces/{workspace_id}/reconciliations",
         "/infrastructure/workspaces/{workspace_id}/reconcile",
-        "/infrastructure/workspaces/{workspace_id}/recover"} <= set(paths)
+        "/infrastructure/workspaces/{workspace_id}/recover",
+        "/topologies/native-codecs", "/topologies/import/native",
+        "/topologies/{profile_id}/native-artifacts",
+        "/topologies/{profile_id}/native-artifacts/{source_id}/export"} <= set(paths)
 
 
 def test_openapi_auth_cookie_and_runtime_protection_match_flask():
@@ -139,3 +142,20 @@ def test_provider_observation_contract_uses_registered_vault_backed_adapter_and_
     assert "performance.read" in run and "evidence.read" in run
     assert "PCAP" in run and "protocol evidence" in run
     assert "filesystem paths" in run
+
+
+
+def test_openapi_documents_native_topology_codec_contracts():
+    content = SPEC.read_text(encoding="utf-8")
+    contracts = {
+        "/topologies/native-codecs": "listNativeTopologyCodecs",
+        "/topologies/import/native": "importNativeTopologyProject",
+        "/topologies/{profile_id}/native-artifacts": "listNativeTopologyArtifacts",
+        "/topologies/{profile_id}/native-artifacts/{source_id}/export": "exportNativeTopologyRevision",
+    }
+    for path, operation in contracts.items():
+        section = content.split(f"  {path}:", 1)[1].split("\\n  /", 1)[0]
+        assert f"operationId: {operation}" in section
+    native_import = content.split("  /topologies/import/native:", 1)[1].split("\\n  /", 1)[0]
+    for detail in ("50 MiB", "GNS3", "CML", "EVE-NG", "topology.manage", "source bytes"):
+        assert detail.lower() in native_import.lower()

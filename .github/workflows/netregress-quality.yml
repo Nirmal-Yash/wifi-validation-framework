@@ -185,6 +185,7 @@ jobs:
           tests/test_managed_device_binding.py
           tests/test_topology_studio.py
           tests/test_topology_presentation.py
+          tests/test_native_topology_codecs.py
           tests/test_stage_b_cml.py
           tests/test_stage_b_eve_ng.py
           tests/test_packet_tracer_interop.py

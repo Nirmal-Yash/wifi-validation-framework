@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
+import hashlib
 import pytest
+
+from dashboard.app import create_app
+from lib.repositories import SQLiteDatabase
+from lib.security import AuthManager
 
 from lib.native_topology import NativeTopologyCodecError, default_registry
 from lib.native_topology.cml import CMLTopologyCodec
@@ -310,3 +316,110 @@ def test_gns3_parser_rejects_unsupported_file_revision():
     unsupported = json.dumps({"type":"topology","revision":99,"topology":{"nodes":[],"links":[]}}).encode()
     with pytest.raises(NativeTopologyCodecError, match="unsupported"):
         GNS3TopologyCodec().decode(unsupported, "future.gns3")
+
+
+
+def _native_database(tmp_path):
+    database = SQLiteDatabase(tmp_path / "native-topology.sqlite")
+    database.initialize()
+    now = "2026-11-26T00:00:00+00:00"
+    with database.transaction(immediate=True) as connection:
+        connection.execute(
+            "INSERT INTO organizations(organization_id,slug,name,status,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+            ("org-native", "native-org", "Native Org", "ACTIVE", now, now),
+        )
+        connection.execute(
+            "INSERT INTO projects(project_id,organization_id,slug,name,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+            ("project-native", "org-native", "native-project", "Native Project", "ACTIVE", now, now),
+        )
+    return database
+
+
+def test_native_import_service_creates_immutable_scoped_source_and_presentation(tmp_path):
+    from lib.services.native_topology_interop import NativeTopologyInteropService
+
+    database = _native_database(tmp_path)
+    service = NativeTopologyInteropService(database)
+    imported = service.import_file(
+        project_id="project-native", name="GNS3 imported topology",
+        filename="fixture.gns3", content=GNS3_SOURCE, actor="test-operator",
+    )
+    profile, revision = imported["profile"], imported["revision"]
+    source, presentation = imported["source"], imported["presentation"]
+    assert profile["project_id"] == "project-native"
+    assert revision["status"] == "DRAFT"
+    assert presentation["status"] == "DRAFT"
+    assert presentation["source_artifact_id"] == source["source_id"]
+    assert source["format_id"] == "GNS3_PROJECT"
+    assert source["sha256"] == hashlib.sha256(GNS3_SOURCE).hexdigest()
+    assert "source_bytes" not in source
+    assert service.list_sources(profile["profile_id"])[0]["source_id"] == source["source_id"]
+
+    service.topology_studio.publish(profile["profile_id"], revision["revision_id"], actor="test-operator")
+    service.topology_presentation.publish(
+        presentation["presentation_id"], actor="test-operator",
+        expected_profile_id=profile["profile_id"],
+    )
+    exported = service.export_revision(
+        profile_id=profile["profile_id"], revision_id=revision["revision_id"],
+        presentation_id=presentation["presentation_id"], source_id=source["source_id"],
+    )
+    reopened = GNS3TopologyCodec().decode(exported.content, exported.filename)
+    assert len(reopened.topology_definition["nodes"]) == 2
+    assert exported.report["originating_application_reopen"] == "NOT_VERIFIED"
+
+
+def test_native_topology_import_api_lists_codecs_sources_and_downloads_export(tmp_path):
+    database = _native_database(tmp_path)
+    client = create_app(database.path, auth_manager=AuthManager((), required=False)).test_client()
+
+    codecs = client.get("/api/v1/topologies/native-codecs")
+    assert codecs.status_code == 200
+    assert {row["format_id"] for row in codecs.get_json()["data"]["items"]} == {
+        "GNS3_PROJECT", "CML_LAB", "EVE_NG_UNL",
+    }
+
+    imported = client.post(
+        "/api/v1/topologies/import/native",
+        headers={"Idempotency-Key": "native-topology-import-0001"},
+        data={
+            "project_id": "project-native",
+            "name": "Native API import",
+            "scope_type": "PROJECT",
+            "file": (BytesIO(GNS3_SOURCE), "api-fixture.gns3"),
+        },
+    )
+    assert imported.status_code == 201, imported.get_json()
+    data = imported.get_json()["data"]
+    profile_id = data["profile"]["profile_id"]
+    revision_id = data["revision"]["revision_id"]
+    source_id = data["source"]["source_id"]
+    presentation_id = data["presentation"]["presentation_id"]
+
+    listed = client.get(f"/api/v1/topologies/{profile_id}/native-artifacts")
+    assert listed.status_code == 200
+    source_row = listed.get_json()["data"]["items"][0]
+    assert source_row["source_id"] == source_id
+    assert "source_bytes" not in source_row
+
+    published = client.post(
+        f"/api/v1/topologies/{profile_id}/publish",
+        headers={"Idempotency-Key": "native-topology-publish-0001"},
+        json={"revision_id": revision_id},
+    )
+    assert published.status_code == 200, published.get_json()
+    presentation_published = client.post(
+        f"/api/v1/topologies/{profile_id}/presentation-revisions/{presentation_id}/publish",
+        headers={"Idempotency-Key": "native-presentation-publish-0001"},
+        json={},
+    )
+    assert presentation_published.status_code == 200, presentation_published.get_json()
+
+    export = client.get(
+        f"/api/v1/topologies/{profile_id}/native-artifacts/{source_id}/export"
+        f"?revision_id={revision_id}&presentation_id={presentation_id}"
+    )
+    assert export.status_code == 200
+    assert "api-fixture-netregress-export.gns3" in export.headers["Content-Disposition"]
+    assert export.headers.get("X-NetRegress-Native-Report")
+    assert export.data
