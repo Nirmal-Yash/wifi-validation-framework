@@ -111,12 +111,12 @@ def main(argv: list[str] | None = None) -> int:
                 "multiple active Global Owners exist; rerun with --username. Available: " + choices
             )
 
-        password = getpass("New Global Owner password (at least 12 characters): ")
-        confirmation = getpass("Confirm new password: ")
-        if password != confirmation:
-            raise ValueError("password confirmation does not match")
+        new_value = getpass("New Global Owner credential (minimum 12 characters): ")
+        repeated_value = getpass("Confirm Global Owner credential: ")
+        if new_value != repeated_value:
+            raise ValueError("credential confirmation does not match")
         result = identity.reset_owner_password(
-            selected["username"], password, actor="local-console-reset",
+            selected["username"], new_value, actor="local-console-reset",
         )
         _archive_legacy_accounts(local_dir)
         print(
