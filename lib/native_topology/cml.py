@@ -393,6 +393,23 @@ class CMLTopologyCodec:
                 annotation["x1"], annotation["y1"] = view.get("x", 0), view.get("y", 0)
                 if "text" in view:
                     annotation["text_content"] = str(view["text"])
+            style = view.get("style", {})
+            if not isinstance(style, dict):
+                raise ValueError("CML annotation presentation style must be an object")
+            if "stroke" in style:
+                annotation["border_color"] = str(style["stroke"])
+            if "fill" in style:
+                annotation["color"] = str(style["fill"])
+            elif kind == "text" and "stroke" in style:
+                annotation["color"] = str(style["stroke"])
+            if "stroke_width" in style:
+                annotation["thickness"] = float(style["stroke_width"])
+            if "font_family" in style:
+                annotation["text_font"] = str(style["font_family"])
+            if "font_size" in style:
+                annotation["text_size"] = float(style["font_size"])
+            if "dash" in style:
+                annotation["border_style"] = str(style["dash"])
         payload = yaml.safe_dump(root, sort_keys=False, allow_unicode=True, default_flow_style=False).encode("utf-8")
         version = str(root.get("lab", {}).get("version", "0.1.0"))
         return EncodedNativeTopology(

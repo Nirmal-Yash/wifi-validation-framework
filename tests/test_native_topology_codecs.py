@@ -420,6 +420,6 @@ def test_native_topology_import_api_lists_codecs_sources_and_downloads_export(tm
         f"?revision_id={revision_id}&presentation_id={presentation_id}"
     )
     assert export.status_code == 200
-    assert "api-fixture-netregress-export.gns3" in export.headers["Content-Disposition"]
+    assert "api-fixture.gns3" in export.headers["Content-Disposition"]
     assert export.headers.get("X-NetRegress-Native-Report")
     assert export.data

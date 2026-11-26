@@ -154,7 +154,7 @@ def test_openapi_documents_native_topology_codec_contracts():
         "/topologies/{profile_id}/native-artifacts/{source_id}/export": "exportNativeTopologyRevision",
     }
     for path, operation in contracts.items():
-        section = content.split(f"  {path}:", 1)[1].split("\\n  /", 1)[0]
+        section = content.split(f"  {path}:", 1)[1].split("\n  /", 1)[0]
         assert f"operationId: {operation}" in section
     native_import = content.split("  /topologies/import/native:", 1)[1].split("\\n  /", 1)[0]
     for detail in ("50 MiB", "GNS3", "CML", "EVE-NG", "topology.manage", "source bytes"):

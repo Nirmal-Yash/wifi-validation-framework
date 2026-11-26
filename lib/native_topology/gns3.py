@@ -242,14 +242,14 @@ class GNS3TopologyCodec:
             expected_nodes, expected_links, topology_definition, presentation,
             native_name="GNS3",
         )
-        by_id = {
-            str(item.get("node_id")): item
+        views_by_native_id = {
+            str(item.get("native_id")): item
             for item in presentation.get("nodes", [])
             if item.get("native_id") is not None
         }
         for item in nodes:
             native_id = str(item.get("node_id"))
-            view = by_id[node_map[next(key for key, value in node_map.items() if value == native_id)]]
+            view = views_by_native_id[native_id]
             if "x" in view:
                 item["x"] = int(round(float(view["x"])))
             if "y" in view:
