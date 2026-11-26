@@ -118,7 +118,9 @@ describe("visual topology studio editing workflow",()=>{
    presentation:{nodes:[],viewport:{}},
   }]});
   renderPage();
-  await findInitialTopologyNode();
+  await screen.findByText(/Topology revision.*r1.*PUBLISHED/,{},{timeout:5000});
+  await screen.findByText(/Matching presentation.*r1.*PUBLISHED/,{},{timeout:5000});
+  await screen.findByText(/Source integrity.*SHA-256/,{},{timeout:5000});
   const reconcileButton=await screen.findByRole("button",{name:"Save reconciliation snapshot"});
   await waitFor(()=>expect(reconcileButton).toBeEnabled(),{timeout:5000});
   fireEvent.click(reconcileButton);
