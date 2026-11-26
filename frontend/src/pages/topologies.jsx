@@ -118,11 +118,18 @@ export default function TopologyStudioPage({user}){
  const [conversionMapping,setConversionMapping]=useState("");
  const [conversionBusy,setConversionBusy]=useState(false);
  const [conversionReport,setConversionReport]=useState(null);
+ const [nativeConfigFile,setNativeConfigFile]=useState(null);
+ const [nativeConfigNode,setNativeConfigNode]=useState("");
+ const [nativeConfigDevice,setNativeConfigDevice]=useState("");
+ const [nativeConfigKind,setNativeConfigKind]=useState("NATIVE_SOURCE");
+ const [nativeConfigFormat,setNativeConfigFormat]=useState("IOS_XE_CLI");
+ const [nativeConfigBusy,setNativeConfigBusy]=useState(false);
  const profiles=useAsyncLoader(()=>projectId?api.topologies(projectId):Promise.resolve({items:[]}),[projectId],{enabled:Boolean(projectId),queryKey:"topology-studio-profiles"});
  const revisions=useAsyncLoader(()=>profileId?api.topologyRevisions(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"topology-studio-revisions"});
  const presentationRevisions=useAsyncLoader(()=>profileId&&revisionId?api.topologyPresentationRevisions(profileId,revisionId):Promise.resolve({items:[]}),[profileId,revisionId],{enabled:Boolean(profileId&&revisionId),queryKey:"topology-presentation-revisions"});
  const nativeSources=useAsyncLoader(()=>profileId?api.topologyNativeSources(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"topology-native-sources"});
  const nativeArtifacts=useAsyncLoader(()=>profileId?api.topologyNativeArtifacts(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"topology-native-artifacts"});
+ const nativeConfigurations=useAsyncLoader(()=>profileId?api.nativeConfigurationSnapshots(profileId,revisionId):Promise.resolve({items:[]}),[profileId,revisionId],{enabled:Boolean(profileId&&revisionId),queryKey:"topology-native-configurations"});
  const mutation=useMutation();
  const projectRows=projects.data?.items||[];
  const profileRows=profiles.data?.items||[];
@@ -316,6 +323,33 @@ export default function TopologyStudioPage({user}){
   }finally{
    setConversionBusy(false);
   }
+ }
+ async function saveNativeConfiguration(event){
+  event.preventDefault();
+  if(!canManage||!profileId||!selectedRevision||selectedRevision.status!=="PUBLISHED"||!nativeConfigFile||!nativeConfigNode||!nativeConfigDevice)return;
+  setNativeConfigBusy(true);setError("");setNotice("");
+  try{
+   const payload=new FormData();
+   payload.set("topology_revision_id",selectedRevision.revision_id);
+   payload.set("logical_node_id",nativeConfigNode);
+   payload.set("device_id",nativeConfigDevice);
+   payload.set("configuration_kind",nativeConfigKind);
+   payload.set("format_id",nativeConfigFormat);
+   payload.set("file",nativeConfigFile);
+   await api.createNativeConfigurationSnapshot(profileId,payload);
+   setNativeConfigFile(null);
+   await nativeConfigurations.reload().catch(()=>null);
+   setNotice("Immutable native configuration snapshot saved with the observed platform/version and capability SHA-256.");
+  }catch(exc){setError(exc.message||"Native configuration snapshot could not be saved.");}
+  finally{setNativeConfigBusy(false);}
+ }
+ async function downloadNativeConfiguration(snapshotId){
+  try{
+   const result=await api.downloadNativeConfigurationSnapshot(profileId,snapshotId);
+   const url=window.URL.createObjectURL(result.blob);
+   const anchor=document.createElement("a");anchor.href=url;anchor.download=result.filename||"native-configuration.txt";
+   document.body.appendChild(anchor);anchor.click();anchor.remove();window.URL.revokeObjectURL(url);
+  }catch(exc){setError(exc.message||"Native configuration download failed.");}
  }
  async function exportNativeProject(sourceId){
   if(!canManage||!profileId||!selectedRevision)return;
@@ -891,6 +925,27 @@ export default function TopologyStudioPage({user}){
     <p className="muted">Source SHA-256 · {nativeImportResult.source?.sha256}</p>
     {(nativeImportResult.report.warnings||[]).map((item,index)=><p className="muted" key={"native-warning-"+index}>{item}</p>)}
    </div>:null}
+  </Section>
+  <Section title="Versioned native configuration snapshots" subtitle="Keep vendor-specific configuration separate from portable Network Intent. Each snapshot is bound to a published topology revision, a logical node and managed Device, and a fresh observed platform/compiler capability report.">
+   {canManage?<form className="form-grid" onSubmit={saveNativeConfiguration}>
+    <Field label="Logical node" required><select aria-label="Native configuration logical node" value={nativeConfigNode} onChange={event=>setNativeConfigNode(event.target.value)} required><option value="">Select topology node</option>{nodes.map(node=><option key={node.id} value={node.id}>{node.name} · {node.id}</option>)}</select></Field>
+    <Field label="Managed Device ID" required><input aria-label="Native configuration managed Device ID" value={nativeConfigDevice} onChange={event=>setNativeConfigDevice(event.target.value)} maxLength={128} required placeholder="dev_…"/></Field>
+    <Field label="Snapshot kind"><select value={nativeConfigKind} onChange={event=>setNativeConfigKind(event.target.value)}><option value="NATIVE_SOURCE">Native source configuration</option><option value="CANDIDATE_CONFIG">Candidate configuration</option></select></Field>
+    <Field label="Native configuration format"><select value={nativeConfigFormat} onChange={event=>setNativeConfigFormat(event.target.value)}><option value="FRR_CONF">Linux / FRR</option><option value="LINUX_NETWORKD">systemd-networkd</option><option value="NFTABLES">nftables</option><option value="IOS_XE_CLI">Cisco IOS / IOS-XE</option><option value="EOS_CLI">Arista EOS</option><option value="JUNOS_SET">Juniper Junos set</option><option value="PANOS_SET">Palo Alto PAN-OS set</option></select></Field>
+    <Field label="Secret-free configuration file" required><input aria-label="Native configuration file" type="file" accept=".conf,.network,.nft,.txt,.cfg,.set,text/plain" onChange={event=>setNativeConfigFile(event.target.files?.[0]||null)} required/></Field>
+    <div className="form-actions"><Button type="submit" loading={nativeConfigBusy} disabled={!canManage||selectedRevision?.status!=="PUBLISHED"||!nativeConfigFile||!nativeConfigNode||!nativeConfigDevice}>Save immutable snapshot</Button></div>
+    <p className="muted">Maximum 2 MiB. Passwords, secrets, community strings, tokens and private keys are rejected. The snapshot is not executed. A published Network Intent revision must explicitly bind this logical node to this Device.</p>
+   </form>:<p className="muted">Saving native configuration snapshots requires topology.manage permission.</p>}
+   {nativeConfigurations.loading&&!nativeConfigurations.data?<LoadingState label="Loading native configuration history…"/>:null}
+   {nativeConfigurations.error?<ErrorState error={nativeConfigurations.error} onRetry={nativeConfigurations.reload}/>:null}
+   <DataTable caption="Immutable native configuration snapshots" rows={nativeConfigurations.data?.items||[]} rowKey={item=>item.snapshot_id} columns={[
+    {key:"logical_node_id",label:"Logical node"},{key:"device_id",label:"Managed Device"},{key:"adapter_id",label:"Observed adapter"},
+    {key:"platform",label:"Platform / version",render:item=><span>{item.platform} · {item.software_version}</span>},
+    {key:"format_id",label:"Format"},{key:"configuration_kind",label:"Kind"},
+    {key:"sha256",label:"SHA-256",render:item=><code title={item.sha256}>{item.sha256.slice(0,12)}…</code>},
+    {key:"actions",label:"Action",render:item=><Button type="button" size="sm" variant="outline" onClick={()=>downloadNativeConfiguration(item.snapshot_id)} disabled={!canPerform(user,"configurations.read")}>Download</Button>},
+   ]} emptyTitle="No native configuration snapshots" emptyMessage="Add a secret-free, version-bound configuration snapshot for a managed Device after publishing the topology and its Network Intent binding."/>
+   <p className="muted">Portable Network Intent remains vendor-neutral. These records preserve native configuration text and source capability hashes without translating, applying or replacing Network Intent.</p>
   </Section>
   <Section title="Cross-vendor native topology conversion" subtitle="Transfer a compatible topology layout into another vendor's native project template. Conversion refuses node, interface or link semantic mismatches and returns a per-object mapping and loss report.">
    {canManage?<form className="form-grid" onSubmit={convertNativeProject}>

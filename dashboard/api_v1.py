@@ -40,6 +40,10 @@ from lib.services.native_topology_interop import (
 from lib.services.native_topology_conversion import (
     NativeTopologyConversionError, NativeTopologyConversionService,
 )
+from lib.services.native_configuration_snapshots import (
+    NativeConfigurationSnapshotConflict, NativeConfigurationSnapshotError,
+    NativeConfigurationSnapshotNotFound, NativeConfigurationSnapshotService,
+)
 from lib.services.network_intent import (
     NetworkIntentConflict, NetworkIntentError, NetworkIntentNotFound, NetworkIntentService,
 )
@@ -119,6 +123,10 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     native_topology_interop=NativeTopologyInteropService(query.database,topology_studio=topology_studio,topology_presentation=topology_presentation)
     native_topology_conversion=NativeTopologyConversionService(native_topology_interop.codecs)
     network_intent=NetworkIntentService(query.database,topology_studio)
+    native_configuration_snapshots=NativeConfigurationSnapshotService(
+        query.database, topology_studio=topology_studio,
+        device_inventory=device_inventory, network_intent=network_intent,
+    )
     network_intent_compiler=NetworkIntentCompilerService(query.database,network_intent,device_inventory)
     topology_apply=TopologyApplyService(query.database,credential_vault,topology_studio)
     provider_observations=ProviderObservationService(query.database,topology_apply)
@@ -2788,6 +2796,93 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         )
         report = json.dumps(converted.report, sort_keys=True, separators=(",", ":")).encode("utf-8")
         response.headers["X-NetRegress-Conversion-Report"] = base64.urlsafe_b64encode(report).decode("ascii").rstrip("=")
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+
+    @api.get("/topologies/<profile_id>/native-configurations")
+    def list_native_configuration_snapshots(profile_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.read", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        revision_id = str(request.args.get("revision_id", "")).strip() or None
+        return ok({"items": native_configuration_snapshots.list_snapshots(
+            profile_id, topology_revision_id=revision_id,
+        )})
+
+    @api.post("/topologies/<profile_id>/native-configurations")
+    def create_native_configuration_snapshot(profile_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("topology.manage", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        uploaded = request.files.get("file")
+        if uploaded is None:
+            return error("INVALID_REQUEST", "A native configuration file is required", 400)
+        try:
+            content = uploaded.stream.read(NativeConfigurationSnapshotService.MAX_CONTENT_BYTES + 1)
+            if len(content) > NativeConfigurationSnapshotService.MAX_CONTENT_BYTES:
+                return error("NATIVE_CONFIGURATION_TOO_LARGE", "Native configuration exceeds the 2 MiB limit", 413)
+            revision_id = str(request.form.get("topology_revision_id", "")).strip()
+            node_id = str(request.form.get("logical_node_id", "")).strip()
+            device_id = str(request.form.get("device_id", "")).strip()
+            kind = str(request.form.get("configuration_kind", "NATIVE_SOURCE")).strip().upper()
+            format_id = str(request.form.get("format_id", "")).strip().upper()
+            filename = uploaded.filename or ""
+            if not all((revision_id, node_id, device_id, format_id)):
+                return error("INVALID_REQUEST", "topology_revision_id, logical_node_id, device_id and format_id are required", 400)
+        except RequestEntityTooLarge:
+            return error("NATIVE_CONFIGURATION_REQUEST_TOO_LARGE", "The multipart request exceeds the configured upload limit", 413)
+        scope = f"/api/v1/topologies/{profile_id}/native-configurations"
+        request_data = {
+            "profile_id": profile_id, "topology_revision_id": revision_id,
+            "logical_node_id": node_id, "device_id": device_id,
+            "configuration_kind": kind, "format_id": format_id,
+            "filename": filename, "content_sha256": hashlib.sha256(content).hexdigest(),
+        }
+        key, request_hash, cached, security_error = idempotency_preflight(scope, request_data)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            result = native_configuration_snapshots.record_snapshot(
+                profile_id, topology_revision_id=revision_id, logical_node_id=node_id,
+                device_id=device_id, configuration_kind=kind, format_id=format_id,
+                filename=filename, content=content,
+                actor=str(session.get("netregress_user", {}).get("username", "local")),
+            )
+        except NativeConfigurationSnapshotNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except NativeConfigurationSnapshotConflict as exc:
+            return error("NATIVE_CONFIGURATION_CONFLICT", str(exc), 409)
+        except NativeConfigurationSnapshotError as exc:
+            return error("INVALID_NATIVE_CONFIGURATION", str(exc), 422)
+        idempotency_store_response(scope, key, request_hash, result, 201)
+        return ok(result), 201
+
+    @api.get("/topologies/<profile_id>/native-configurations/<snapshot_id>/download")
+    def download_native_configuration_snapshot(profile_id, snapshot_id):
+        profile = topology_studio.get_profile(profile_id)
+        if profile is None:
+            return error("NOT_FOUND", "Topology profile not found", 404)
+        denied = require_permission("configurations.read", project_id=profile["project_id"])
+        if denied is not None:
+            return denied
+        try:
+            snapshot = native_configuration_snapshots.get_snapshot(snapshot_id, include_content=True)
+        except NativeConfigurationSnapshotError as exc:
+            return error("NATIVE_CONFIGURATION_INTEGRITY_FAILED", str(exc), 422)
+        if snapshot is None or snapshot["profile_id"] != profile_id or snapshot["project_id"] != profile["project_id"]:
+            return error("NOT_FOUND", "Native configuration snapshot not found in this topology profile", 404)
+        response = send_file(io.BytesIO(snapshot["content_bytes"]), mimetype="text/plain; charset=utf-8",
+                             as_attachment=True, download_name=snapshot["filename"], max_age=0)
+        response.headers["X-NetRegress-Configuration-SHA256"] = snapshot["sha256"]
         response.headers["Cache-Control"] = "no-store"
         return response
 

@@ -268,6 +268,65 @@ paths:
         "403": {description: Project infrastructure.execute and infrastructure.reconcile permissions required}
         "409": {description: Workspace is not in RECOVERY_REQUIRED state or a lock/plan conflict exists}
         "422": {description: OpenTofu reconciliation or recovery planning failed}
+  /topologies/{profile_id}/native-configurations:
+    get:
+      operationId: listNativeConfigurationSnapshots
+      parameters:
+        - {name: profile_id, in: path, required: true, schema: {type: string}}
+        - {name: revision_id, in: query, required: false, schema: {type: string}}
+      description: Return redacted metadata for immutable vendor-native configuration snapshots; content bytes are excluded.
+      responses:
+        "200": {description: Native configuration snapshot metadata and provenance}
+        "403": {description: Project topology.read permission required}
+        "404": {description: Topology profile not found}
+    post:
+      operationId: createNativeConfigurationSnapshot
+      parameters:
+        - {name: profile_id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      description: >-
+        Store secret-free native configuration separately from portable Network Intent.
+        Requires a published topology revision, a published Network Intent node-to-Device
+        binding and a fresh observed platform/version capability report. Content is hashed
+        and immutable; this endpoint never executes configuration.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [topology_revision_id, logical_node_id, device_id, configuration_kind, format_id, file]
+              properties:
+                topology_revision_id: {type: string}
+                logical_node_id: {type: string}
+                device_id: {type: string}
+                configuration_kind: {type: string, enum: [NATIVE_SOURCE, CANDIDATE_CONFIG]}
+                format_id: {type: string, enum: [FRR_CONF, LINUX_NETWORKD, NFTABLES, IOS_XE_CLI, EOS_CLI, JUNOS_SET, PANOS_SET]}
+                file: {type: string, format: binary, description: UTF-8 text; maximum 2 MiB; inline credentials are rejected}
+      responses:
+        "201": {description: Immutable native configuration snapshot metadata}
+        "400": {description: Missing fields or invalid idempotency key}
+        "403": {description: Project topology.manage permission required}
+        "409": {description: Missing or ambiguous intent binding, stale capabilities or unsupported adapter/format}
+        "413": {description: Configuration exceeds 2 MiB}
+        "422": {description: Unsafe file, secret material or scope mismatch}
+  /topologies/{profile_id}/native-configurations/{snapshot_id}/download:
+    get:
+      operationId: downloadNativeConfigurationSnapshot
+      parameters:
+        - {name: profile_id, in: path, required: true, schema: {type: string}}
+        - {name: snapshot_id, in: path, required: true, schema: {type: string}}
+      description: Download one immutable, SHA-256-verified, secret-free configuration snapshot; requires configurations.read and returns no-store.
+      responses:
+        "200":
+          description: UTF-8 native configuration text
+          headers:
+            X-NetRegress-Configuration-SHA256: {schema: {type: string, pattern: '^[0-9a-f]{64}$'}}
+          content:
+            text/plain: {schema: {type: string}}
+        "403": {description: Project configurations.read permission required}
+        "404": {description: Snapshot is not in the requested topology profile}
+        "422": {description: Stored content integrity verification failed}
   /topologies/convert/native:
     post:
       operationId: convertNativeTopology
