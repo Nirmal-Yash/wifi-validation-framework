@@ -4,6 +4,7 @@ import {useWorkspace} from "@/components/workspace-context";
 import {useAsyncLoader,useMutation} from "@/hooks";
 import {canPerform} from "@/permissions";
 import {autoLayoutTopology,copyTopologySelection,createTopologyHistory,moveTopologyNodes,pasteTopologySelection,removeTopologySelection} from "@/topology-editor";
+import {createDefaultPresentation,fitPresentationViewport,movePresentationNodes,presentationLayerLocked,presentationLayerVisible,presentationLinkPath,presentationPortPoint,resolveTopologyPresentation,updatePresentationNodePosition,zoomPresentationViewport} from "@/topology-presentation";
 import {Button,DataTable,EmptyState,ErrorState,Field,InlineNotice,LoadingState,Section,StatusBadge} from "@/components/ui";
 
 export const DEFAULT_TOPOLOGY_VIEWPORT=Object.freeze({x:0,y:0,width:1000,height:620});
@@ -89,6 +90,8 @@ export default function TopologyStudioPage({user}){
  const definitionRef=useRef(definition),canvasRef=useRef(null),dragSessionRef=useRef(null),clipboardRef=useRef(null);
  const [dragging,setDragging]=useState("");
  const [viewport,setViewport]=useState({...DEFAULT_TOPOLOGY_VIEWPORT});
+ const [presentationDraft,setPresentationDraft]=useState(null);
+ const [presentationDirty,setPresentationDirty]=useState(false);
  const [panning,setPanning]=useState(null);
  const [nodeSearch,setNodeSearch]=useState("");
  const [consoleTab,setConsoleTab]=useState("validation");
@@ -124,6 +127,12 @@ export default function TopologyStudioPage({user}){
  const nodes=definition.nodes||[];
  const links=definition.links||[];
  const selectedRevision=revisionRows.find(item=>item.revision_id===revisionId)||null;
+ const activePresentationRevision=presentationRevisionRows.filter(item=>item.topology_revision_id===revisionId&&item.presentation).sort((a,b)=>(b.revision_number||0)-(a.revision_number||0))[0]||null;
+ const activePresentation=presentationDraft||activePresentationRevision?.presentation||createDefaultPresentation(definition);
+ const presentationModel=resolveTopologyPresentation(definition,activePresentation);
+ const isNativePresentation=presentationModel.layoutOrigin==="NATIVE";
+ const renderNodes=presentationModel.nodes;
+ const renderNodeById=presentationModel.nodeById;
  const activeProfile=profileRows.find(item=>item.profile_id===profileId)||null;
  const activeLabId=activeProfile?.scope_type==="LAB"?activeProfile.lab_id:"";
  const [bindingForm,setBindingForm]=useState({provider_id:"gns3",endpoint_url:"http://127.0.0.1:3080",provider_workspace_id:"",gns3_project_id:"",controller_device_id:"",credential_id:""});
@@ -185,6 +194,14 @@ export default function TopologyStudioPage({user}){
    resetEditorDefinition(revisionRows[0].definition||emptyDefinition());
   }
  },[revisions.data,revisionId]);
+ useEffect(()=>{
+  if(!revisionId)return;
+  const matching=(presentationRevisions.data?.items||[]).filter(item=>item.topology_revision_id===revisionId&&item.presentation).sort((a,b)=>(b.revision_number||0)-(a.revision_number||0));
+  const selected=matching[0]?.presentation||createDefaultPresentation(revisionRows.find(item=>item.revision_id===revisionId)?.definition||definitionRef.current);
+  setPresentationDraft(selected);setPresentationDirty(false);
+  if(selected.viewport?.width&&selected.viewport?.height)setViewport({x:selected.viewport.x,y:selected.viewport.y,width:selected.viewport.width,height:selected.viewport.height});
+  else setViewport(fitPresentationViewport(resolveTopologyPresentation(revisionRows.find(item=>item.revision_id===revisionId)?.definition||definitionRef.current,selected).nodes));
+ },[revisionId,presentationRevisions.data,revisions.data]);
  useEffect(()=>{
   if(!nodes.some(item=>item.id===linkForm.source_node_id))
    setLinkForm(value=>({...value,source_node_id:nodes[0]?.id||""}));
@@ -439,11 +456,21 @@ export default function TopologyStudioPage({user}){
   event.preventDefault();event.stopPropagation();
   if(!canManage){setSelectedNodes([nodeId]);setSelectedNode(nodeId);setSelectedLink("");return;}
   if(event.ctrlKey||event.metaKey||event.shiftKey){const next=selectedNodes.includes(nodeId)?selectedNodes.filter(id=>id!==nodeId):[...selectedNodes,nodeId];setSelectedNodes(next);setSelectedNode(next[next.length-1]||"");setSelectedLink("");return;}
+  if(presentationLayerLocked(renderNodeById[nodeId]?.layout,presentationModel.layers)){setNotice("This native presentation layer is locked; its node placement is read-only.");return;}
   const ids=selectedNodes.includes(nodeId)?selectedNodes:[nodeId];setSelectedNodes(ids);setSelectedNode(nodeId);setSelectedLink("");
-  dragSessionRef.current={nodeIds:ids.slice(),start:canvasPoint(event),initialDefinition:JSON.parse(JSON.stringify(definitionRef.current))};
+  if(isNativePresentation){
+   const initial=presentationDraft||activePresentation;
+   dragSessionRef.current={mode:"presentation",nodeIds:ids.slice(),start:canvasPoint(event),initialPresentation:JSON.parse(JSON.stringify(initial))};
+  }else{
+   dragSessionRef.current={mode:"topology",nodeIds:ids.slice(),start:canvasPoint(event),initialDefinition:JSON.parse(JSON.stringify(definitionRef.current))};
+  }
   setDragging(nodeId);event.currentTarget.setPointerCapture?.(event.pointerId);
  }
- function finishCanvasInteraction(){const session=dragSessionRef.current;if(session){setEditorDefinition(definitionRef.current,{record:true,previous:session.initialDefinition});dragSessionRef.current=null;}setDragging("");setPanning(null);}
+ function finishCanvasInteraction(){
+  const session=dragSessionRef.current;
+  if(session?.mode==="topology")setEditorDefinition(definitionRef.current,{record:true,previous:session.initialDefinition});
+  dragSessionRef.current=null;setDragging("");setPanning(null);
+ }
  async function validateDraft(){
   if(!canManage)return null;
   setError("");setNotice("");setValidationLoading(true);
@@ -548,10 +575,9 @@ export default function TopologyStudioPage({user}){
  }
  function canvasPoint(event){
   const rect=(canvasRef.current||event.currentTarget).getBoundingClientRect();
-  return {
-   x:Math.max(0,Math.min(10000,viewport.x+(event.clientX-rect.left)*viewport.width/rect.width)),
-   y:Math.max(0,Math.min(10000,viewport.y+(event.clientY-rect.top)*viewport.height/rect.height))
-  };
+  const x=viewport.x+(event.clientX-rect.left)*viewport.width/rect.width;
+  const y=viewport.y+(event.clientY-rect.top)*viewport.height/rect.height;
+  return isNativePresentation?{x,y}:{x:Math.max(0,Math.min(10000,x)),y:Math.max(0,Math.min(10000,y))};
  }
  function startCanvasPan(event){
   const target=event.target;
@@ -562,7 +588,7 @@ export default function TopologyStudioPage({user}){
   event.currentTarget.setPointerCapture?.(event.pointerId);
  }
  function zoomCanvas(factor,anchorX=0.5,anchorY=0.5){
-  setViewport(value=>zoomTopologyViewport(value,factor,anchorX,anchorY));
+  setViewport(value=>isNativePresentation?zoomPresentationViewport(value,factor,anchorX,anchorY):zoomTopologyViewport(value,factor,anchorX,anchorY));
  }
  function zoomCanvasAtPointer(event){
   event.preventDefault();
@@ -571,7 +597,7 @@ export default function TopologyStudioPage({user}){
   const anchorY=(event.clientY-rect.top)/rect.height;
   zoomCanvas(event.deltaY<0?0.9:1.1,anchorX,anchorY);
  }
- function fitCanvas(){setViewport(fitTopologyViewport(nodes));}
+ function fitCanvas(){setViewport(isNativePresentation?fitPresentationViewport(renderNodes):fitTopologyViewport(nodes));}
  function onCanvasPointerMove(event){
   if(panning){
    const rect=event.currentTarget.getBoundingClientRect();
@@ -579,14 +605,19 @@ export default function TopologyStudioPage({user}){
    const dy=(event.clientY-panning.clientY)*panning.viewport.height/rect.height;
    setViewport({
     ...panning.viewport,
-    x:Math.max(0,Math.min(10000-panning.viewport.width,panning.viewport.x-dx)),
-    y:Math.max(0,Math.min(10000-panning.viewport.height,panning.viewport.y-dy))
+    x:isNativePresentation?panning.viewport.x-dx:Math.max(0,Math.min(10000-panning.viewport.width,panning.viewport.x-dx)),
+    y:isNativePresentation?panning.viewport.y-dy:Math.max(0,Math.min(10000-panning.viewport.height,panning.viewport.y-dy))
    });
    return;
   }
   const session=dragSessionRef.current;if(!session)return;
   const point=canvasPoint(event),dx=Math.round(point.x-session.start.x),dy=Math.round(point.y-session.start.y);
-  setEditorDefinition(moveTopologyNodes(session.initialDefinition,session.nodeIds,dx,dy),{record:false});
+  if(session.mode==="presentation"){
+   setPresentationDraft(movePresentationNodes(session.initialPresentation,session.nodeIds,dx,dy));
+   setPresentationDirty(true);
+  }else{
+   setEditorDefinition(moveTopologyNodes(session.initialDefinition,session.nodeIds,dx,dy),{record:false});
+  }
  }
  async function saveRevision(event){
   event.preventDefault();if(!canManage)return;
@@ -594,32 +625,33 @@ export default function TopologyStudioPage({user}){
   const result=await runMutation(()=>api.createTopologyRevision(profileId,{definition:definitionRef.current}),"Immutable topology draft revision created.");
   if(result?.revision_id){setRevisionId(result.revision_id);resetEditorDefinition(result.definition||definitionRef.current);}
  }
+ function payloadZoom(value){return Number((1000/value.width).toFixed(4));}
  async function savePresentationSnapshot(){
   if(!canManage||!profileId||!selectedRevision)return;
   if(JSON.stringify(definitionRef.current)!==JSON.stringify(selectedRevision.definition)){
-   setError("Save local topology changes as a new canonical revision before capturing presentation metadata.");
-   return;
+   setError("Save logical topology edits as a new canonical revision before saving its presentation.");return;
   }
   const canonical=selectedRevision.definition||emptyDefinition();
+  const existing=presentationDraft||activePresentation;
+  const native=existing.layout_origin==="NATIVE"&&Boolean(existing.source_artifact_id);
+  const nodeMap=new Map((existing.nodes||[]).map(item=>[item.node_id,item]));
+  const linkMap=new Map((existing.links||[]).map(item=>[item.link_id,item]));
   const payload={
-   schema_version:"1.0",
-   layout_origin:"NETREGRESS",
-   coordinate_space:{unit:"px",origin:"top_left",x_axis:"right",y_axis:"down",scale:1,offset_x:0,offset_y:0},
-   canvas:{width:1000,height:620},
-   viewport:{x:viewport.x,y:viewport.y,width:viewport.width,height:viewport.height,zoom:1000/viewport.width},
-   grid:{enabled:true,snap:false,size:25},
-   layers:[],
-   nodes:(canonical.nodes||[]).map(node=>({
-    node_id:node.id,x:node.x,y:node.y,width:136,height:72,label:node.name||node.id,z_index:0,
-   })),
-   links:(canonical.links||[]).map(link=>({link_id:link.id,route_style:"direct",z_index:0})),
-   drawings:[],
+   ...existing,schema_version:"1.0",layout_origin:native?"NATIVE":"NETREGRESS",
+   coordinate_space:existing.coordinate_space||{unit:"px",origin:"top_left",x_axis:"right",y_axis:"down",scale:1,offset_x:0,offset_y:0},
+   canvas:existing.canvas||{width:1000,height:620},
+   viewport:{x:viewport.x,y:viewport.y,width:viewport.width,height:viewport.height,zoom:payloadZoom(viewport)},
+   grid:existing.grid||{enabled:true,snap:false,size:25},
+   layers:existing.layers||[],
+   nodes:(canonical.nodes||[]).map(node=>nodeMap.get(node.id)||{node_id:node.id,x:node.x,y:node.y,width:136,height:68,label:node.name||node.id,z_index:0}),
+   links:(canonical.links||[]).map(link=>linkMap.get(link.id)||{link_id:link.id,route_style:"direct",z_index:0}),
+   drawings:existing.drawings||[],
   };
   const result=await runMutation(
    ()=>api.createTopologyPresentationRevision(profileId,selectedRevision.revision_id,{presentation:payload}),
-   "Immutable canvas presentation snapshot created."
+   "Immutable presentation revision saved; native layout and source provenance retained."
   );
-  if(result?.presentation_id)await presentationRevisions.reload().catch(()=>null);
+  if(result?.presentation_id){setPresentationDirty(false);await presentationRevisions.reload().catch(()=>null);}
  }
  async function publishPresentationSnapshot(presentationId){
   if(!canPublish||!profileId||!presentationId)return;
@@ -870,10 +902,10 @@ export default function TopologyStudioPage({user}){
     {presentationRevisions.loading&&!presentationRevisions.data?<LoadingState label="Loading presentation revisions…"/>:null}
     {presentationRevisions.error?<ErrorState error={presentationRevisions.error} onRetry={presentationRevisions.reload}/>:null}
     <div className="form-actions">
-     <Button type="button" variant="outline" onClick={savePresentationSnapshot} loading={mutation.loading} disabled={!canManage||!selectedRevision||JSON.stringify(definitionRef.current)!==JSON.stringify(selectedRevision.definition)}>Capture presentation snapshot</Button>
+     <Button type="button" variant="outline" onClick={savePresentationSnapshot} loading={mutation.loading} disabled={!canManage||!selectedRevision||JSON.stringify(definitionRef.current)!==JSON.stringify(selectedRevision.definition)||!presentationDirty}>Save presentation revision</Button>
      {presentationRevisionRows[0]?.presentation?.viewport?<Button type="button" variant="ghost" onClick={()=>restorePresentationViewport(presentationRevisionRows[0])}>Restore latest saved viewport</Button>:null}
     </div>
-    <p className="muted">A snapshot is tied to one immutable canonical revision. Save topology edits into a new canonical revision before capturing changed node placement. Viewport restore affects the canvas view only. Native parsing, asset import, route editing, drawings and vendor application fidelity are separate codec/rendering capabilities and are not implied by this snapshot.</p>
+    <p className="muted">Presentation edits are saved independently from canonical network intent. Native node placement, dimensions, rotations, port anchors, link routes, drawings, layers and grid are read from the immutable presentation revision; moving native nodes does not change device/link semantics. Unavailable external device-image binaries remain source asset references and are identified rather than fabricated.</p>
     <DataTable caption="Topology presentation revision history" rows={presentationRevisionRows} rowKey={item=>item.presentation_id} columns={[
      {key:"revision_number",label:"Presentation revision"},
      {key:"presentation",label:"Layout",render:item=>item.presentation?.layout_origin||"Not recorded"},
@@ -897,7 +929,7 @@ export default function TopologyStudioPage({user}){
     <p className="muted">Palette entries define logical intent only. Provider template IDs remain blank until a compatible template is selected.</p>
    </Section>
    <div className="topology-workbench-layout">
-   <Section title="Visual canvas" subtitle="Drag nodes to position them. Pan by dragging empty canvas; zoom with the wheel or controls. Canvas editing does not issue provider calls.">
+   <Section title="Visual canvas" subtitle={isNativePresentation?"Native vendor layout · placement edits are presentation-only · no provider calls":"Drag nodes to position them. Pan by dragging empty canvas; zoom with the wheel or controls. Canvas editing does not issue provider calls."}>
     <div className="topology-canvas-toolbar">
      <label className="topology-node-search"><span>Find node</span><input aria-label="Search topology nodes" value={nodeSearch} onChange={event=>setNodeSearch(event.target.value)} placeholder="Name, ID, type or template"/></label>
      <span className="topology-search-count" role="status">{nodes.filter(node=>!nodeSearch.trim()||[node.name,node.id,node.node_type,node.template_id].some(value=>String(value||"").toLowerCase().includes(nodeSearch.trim().toLowerCase()))).length} / {nodes.length} nodes</span>
@@ -920,45 +952,55 @@ export default function TopologyStudioPage({user}){
     <div className={"topology-canvas-dropzone"+(paletteDropActive?" is-drop-active":"")} onDragOver={allowPaletteDrop}
      onDragLeave={event=>{if(event.currentTarget===event.target)setPaletteDropActive(false);}} onDrop={dropPaletteNode}>
      <div className="topology-canvas-drop-hint" aria-live="polite">{paletteDropActive?"Release to add a logical node":"Drop a palette node here · drag empty canvas to pan"}</div>
-     <svg ref={canvasRef} viewBox={viewport.x+" "+viewport.y+" "+viewport.width+" "+viewport.height} role="application" aria-label="Interactive topology canvas. Select nodes and links, drag to move, or drag empty space to pan." style={{display:"block",width:"100%",minWidth:0,height:"auto",aspectRatio:"1000 / 620",touchAction:"none",cursor:panning?"grabbing":"grab"}}
+     <svg ref={canvasRef} viewBox={viewport.x+" "+viewport.y+" "+viewport.width+" "+viewport.height} role="application" aria-label="Vendor-aware native topology canvas; placement edits are stored separately from canonical network intent." style={{display:"block",width:"100%",minWidth:0,height:"auto",aspectRatio:"1000 / 620",touchAction:"none",cursor:panning?"grabbing":"grab"}}
       onPointerDown={startCanvasPan} onPointerMove={onCanvasPointerMove} onPointerUp={finishCanvasInteraction} onPointerCancel={finishCanvasInteraction} onWheel={zoomCanvasAtPointer}>
-      <defs><pattern id="topology-grid" width="25" height="25" patternUnits="userSpaceOnUse"><path d="M 25 0 L 0 0 0 25" fill="none" stroke="currentColor" strokeOpacity=".08" strokeWidth="1"/></pattern></defs>
-      <rect data-canvas-background="true" x="0" y="0" width="10000" height="10000" fill="url(#topology-grid)"/>
-      {links.map(link=>{
-       const source=nodeById[link.source_node_id],target=nodeById[link.target_node_id];
-       return source&&target?<g key={link.id} role="button" tabIndex="0"
-        aria-label={"Select link "+link.id+" from "+source.name+" port "+link.source_adapter+"/"+link.source_port+" to "+target.name+" port "+link.target_adapter+"/"+link.target_port}
-        aria-pressed={selectedLink===link.id}
-        onPointerDown={event=>event.stopPropagation()}
-        onClick={event=>{event.stopPropagation();selectCanvasLink(link);}}
-        onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();selectCanvasLink(link);}}}
-        style={{cursor:"pointer"}}>
-        <line x1={source.x+68} y1={source.y} x2={target.x-68} y2={target.y} stroke={selectedLink===link.id?"var(--warning)":"var(--primary)"} strokeWidth={selectedLink===link.id?8:4}/>
-        <circle cx={source.x+68} cy={source.y} r="6" fill={selectedLink===link.id?"var(--warning)":"var(--primary)"}/>
-        <circle cx={target.x-68} cy={target.y} r="6" fill={selectedLink===link.id?"var(--warning)":"var(--primary)"}/>
-        <text x={(source.x+target.x)/2} y={(source.y+target.y)/2-8} fill="currentColor" fontSize="12">{link.source_interface_name||link.source_adapter+"/"+link.source_port} ↔ {link.target_interface_name||link.target_adapter+"/"+link.target_port}</text>
-       </g>:null;
+      <defs><pattern id="topology-grid" width={presentationModel.grid.size||25} height={presentationModel.grid.size||25} patternUnits="userSpaceOnUse"><path d={"M "+(presentationModel.grid.size||25)+" 0 L 0 0 0 "+(presentationModel.grid.size||25)} fill="none" stroke="currentColor" strokeOpacity=".08" strokeWidth="1"/></pattern></defs>
+      <rect data-canvas-background="true" x={viewport.x} y={viewport.y} width={viewport.width} height={viewport.height} fill={presentationModel.canvas.background||"var(--background)"}/>
+      {presentationModel.grid.enabled?<rect x={viewport.x} y={viewport.y} width={viewport.width} height={viewport.height} fill="url(#topology-grid)" pointerEvents="none"/>:null}
+      {[...presentationModel.drawings].sort((a,b)=>(a.z_index||0)-(b.z_index||0)).filter(item=>presentationLayerVisible(item,presentationModel.layers)).map(item=>{
+       const style=item.style||{},stroke=style.stroke||"var(--primary)",fill=style.fill||"none",strokeWidth=style.stroke_width||2,opacity=style.opacity??1;
+       if(item.kind==="RECTANGLE")return <rect key={item.id} x={item.canvasX} y={item.canvasY} width={item.width||0} height={item.height||0} rx="2" stroke={stroke} fill={fill} strokeWidth={strokeWidth} opacity={opacity} pointerEvents="none"/>;
+       if(item.kind==="ELLIPSE")return <ellipse key={item.id} cx={item.canvasX+(item.width||0)/2} cy={item.canvasY+(item.height||0)/2} rx={(item.width||0)/2} ry={(item.height||0)/2} stroke={stroke} fill={fill} strokeWidth={strokeWidth} opacity={opacity} pointerEvents="none"/>;
+       if(item.kind==="LINE"||item.kind==="FREEHAND")return <polyline key={item.id} points={(item.canvasPoints||[]).map(point=>point.x+","+point.y).join(" ")} stroke={stroke} fill="none" strokeWidth={strokeWidth} opacity={opacity} strokeDasharray={style.dash||undefined} pointerEvents="none"/>;
+       if(item.kind==="TEXT")return <text key={item.id} x={item.canvasX} y={item.canvasY} fill={stroke} fontSize={style.font_size||14} textAnchor={style.text_align==="center"?"middle":style.text_align==="end"?"end":"start"} opacity={opacity} pointerEvents="none">{item.text||""}</text>;
+       return <g key={item.id} pointerEvents="none"><rect x={item.canvasX} y={item.canvasY} width={item.width||120} height={item.height||64} stroke={stroke} fill={fill} strokeDasharray="5 3"/><text x={item.canvasX+6} y={item.canvasY+18} fill="currentColor" fontSize="10">Asset reference · {item.asset_path||"image"}</text></g>;
       })}
-      {nodes.map(node=>{
-       const matches=!nodeSearch.trim()||[node.name,node.id,node.node_type,node.template_id].some(value=>String(value||"").toLowerCase().includes(nodeSearch.trim().toLowerCase()));
-       return <g key={node.id} transform={"translate("+node.x+" "+node.y+")"}
-        role="button" tabIndex="0" aria-label={"Select node "+node.name} aria-pressed={selectedNodes.includes(node.id)}
+      {presentationModel.links.filter(link=>presentationLayerVisible(link.layout,presentationModel.layers)).map(link=>{
+       const source=renderNodeById[link.source_node_id],target=renderNodeById[link.target_node_id];
+       if(!source||!target)return null;
+       const layout=link.layout||{};
+       return <g key={link.id} role="button" tabIndex="0" aria-label={"Select link "+link.id+" from "+source.name+" to "+target.name}
+        aria-pressed={selectedLink===link.id} onPointerDown={event=>event.stopPropagation()}
+        onClick={event=>{event.stopPropagation();selectCanvasLink(link);}}
+        onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();selectCanvasLink(link);}}} style={{cursor:"pointer"}}>
+        <path d={presentationLinkPath(source,target,link,presentationModel.coordinateSpace,presentationModel.canvas)} fill="none" stroke={selectedLink===link.id?"var(--warning)":"var(--primary)"} strokeWidth={selectedLink===link.id?5:3} strokeDasharray={layout.style?.dash||undefined}/>
+        {layout.label?<text x={(source.canvasX+target.canvasX)/2} y={(source.canvasY+target.canvasY)/2-8} fill="currentColor" fontSize="12">{layout.label}</text>:null}
+        <title>{link.source_interface_name||link.source_adapter+"/"+link.source_port} ↔ {link.target_interface_name||link.target_adapter+"/"+link.target_port}</title>
+       </g>;
+      })}
+      {[...renderNodes].sort((a,b)=>(a.layout.z_index||0)-(b.layout.z_index||0)).filter(node=>presentationLayerVisible(node.layout,presentationModel.layers)).map(node=>{
+       const matches=!nodeSearch.trim()||[node.name,node.id,node.node_type,node.template_id,node.displayLabel].some(value=>String(value||"").toLowerCase().includes(nodeSearch.trim().toLowerCase()));
+       const locked=presentationLayerLocked(node.layout,presentationModel.layers);
+       return <g key={node.id} transform={"translate("+node.canvasX+" "+node.canvasY+") rotate("+node.rotation+")"} role="button" tabIndex="0"
+        aria-label={"Select node "+node.displayLabel} aria-pressed={selectedNodes.includes(node.id)}
         onPointerDown={event=>{setPanning(null);startNodeDrag(event,node.id);}}
         onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();setSelectedNodes(current=>current.includes(node.id)?current:[node.id]);setSelectedNode(node.id);setSelectedLink("");}}}
-        style={{cursor:"grab",outline:"none"}} opacity={matches?1:0.25}>
-        <rect x="-68" y="-34" width="136" height="68" rx="12" fill={selectedNodes.includes(node.id)?"var(--primary)":"var(--muted)"} stroke={nodeSearch.trim()&&matches?"var(--warning)":selectedNodes.includes(node.id)?"var(--primary)":"var(--border)"} strokeWidth={nodeSearch.trim()&&matches?4:selectedNodes.includes(node.id)?4:2}/>
-        <text x="0" y="-4" textAnchor="middle" fill={selectedNode===node.id?"white":"currentColor"} fontSize="14" fontWeight="600">{node.name.slice(0,18)}</text>
-        <text x="0" y="16" textAnchor="middle" fill={selectedNode===node.id?"white":"currentColor"} fontSize="10">{node.node_type} · {node.id.slice(0,12)}</text>
-        {(node.interfaces||[]).map((interfaceItem,index)=>{
-         const cx=(index%2===0?-1:1)*70,cy=-21+Math.floor(index/2)*15;
+        style={{cursor:locked?"not-allowed":"grab",outline:"none"}} opacity={matches?1:0.22}>
+        <rect x={-node.width/2} y={-node.height/2} width={node.width} height={node.height} rx="9" fill={selectedNodes.includes(node.id)?"var(--primary)":"var(--muted)"} stroke={nodeSearch.trim()&&matches?"var(--warning)":selectedNodes.includes(node.id)?"var(--primary)":"var(--border)"} strokeWidth={selectedNodes.includes(node.id)||nodeSearch.trim()&&matches?3:1.5}/>
+        <text x="0" y="-5" textAnchor="middle" fill={selectedNode===node.id?"white":"currentColor"} fontSize="13" fontWeight="650">{String(node.displayLabel).slice(0,24)}</text>
+        <text x="0" y="14" textAnchor="middle" fill={selectedNode===node.id?"white":"currentColor"} fontSize="9">{node.node_type} · {node.id.slice(0,12)}</text>
+        {(node.interfaces||[]).map(interfaceItem=>{
+         const attached=presentationModel.links.find(link=>(link.source_node_id===node.id&&link.source_interface_name===interfaceItem.name)||(link.target_node_id===node.id&&link.target_interface_name===interfaceItem.name));
+         const other=attached?(attached.source_node_id===node.id?renderNodeById[attached.target_node_id]:renderNodeById[attached.source_node_id]):null;
+         const point=presentationPortPoint(node,interfaceItem,other);
          return <g key={interfaceItem.name} role="button" tabIndex="0" aria-label={"Connect port "+node.name+" "+interfaceItem.name}
           onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();chooseTopologyPort(node,interfaceItem);}}
-          onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();chooseTopologyPort(node,interfaceItem);}}}
-          style={{cursor:canManage?"crosshair":"pointer"}}>
-          <circle cx={cx} cy={cy} r="6" fill={portSelection?.node_id===node.id&&portSelection?.interface_name===interfaceItem.name?"var(--warning)":"var(--primary)"} stroke="var(--background)" strokeWidth="2"/>
+          onKeyDown={event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();chooseTopologyPort(node,interfaceItem);}}} style={{cursor:canManage?"crosshair":"pointer"}}>
+          <circle cx={point.x-node.canvasX} cy={point.y-node.canvasY} r="4.5" fill={portSelection?.node_id===node.id&&portSelection?.interface_name===interfaceItem.name?"var(--warning)":"var(--primary)"} stroke="var(--background)" strokeWidth="1.5"/>
           <title>{interfaceItem.name} · {interfaceItem.adapter}/{interfaceItem.port}</title>
          </g>;
         })}
+        {node.layout.icon_ref||node.layout.icon_asset_path?<title>{node.layout.icon_ref||node.layout.icon_asset_path}</title>:null}
        </g>;
       })}
      </svg>
@@ -975,8 +1017,8 @@ export default function TopologyStudioPage({user}){
         <Field label="Name"><input value={selectedNodeRecord.name} onChange={event=>updateNodeField(selectedNode,"name",event.target.value)} disabled={!canManage}/></Field>
         <Field label="Logical ID"><input value={selectedNodeRecord.id} readOnly/></Field>
         <Field label="Node type"><select value={selectedNodeRecord.node_type} onChange={event=>updateNodeField(selectedNode,"node_type",event.target.value)} disabled={!canManage}>{NODE_TYPES.map(type=><option key={type}>{type}</option>)}</select></Field>
-        <Field label="Canvas X"><input type="number" min="0" max="10000" value={selectedNodeRecord.x} onChange={event=>updateNodeField(selectedNode,"x",Number(event.target.value))} disabled={!canManage}/></Field>
-        <Field label="Canvas Y"><input type="number" min="0" max="10000" value={selectedNodeRecord.y} onChange={event=>updateNodeField(selectedNode,"y",Number(event.target.value))} disabled={!canManage}/></Field>
+        <Field label={isNativePresentation?"Presentation X":"Canvas X"}><input type="number" min={isNativePresentation?-100000:0} max="100000" value={isNativePresentation?(renderNodeById[selectedNode]?.canvasX??selectedNodeRecord.x):selectedNodeRecord.x} onChange={event=>{if(isNativePresentation){setPresentationDraft(current=>updatePresentationNodePosition(current||activePresentation,selectedNode,"x",Number(event.target.value)));setPresentationDirty(true);}else updateNodeField(selectedNode,"x",Number(event.target.value));}} disabled={!canManage}/></Field>
+        <Field label={isNativePresentation?"Presentation Y":"Canvas Y"}><input type="number" min={isNativePresentation?-100000:0} max="100000" value={isNativePresentation?(renderNodeById[selectedNode]?.canvasY??selectedNodeRecord.y):selectedNodeRecord.y} onChange={event=>{if(isNativePresentation){setPresentationDraft(current=>updatePresentationNodePosition(current||activePresentation,selectedNode,"y",Number(event.target.value)));setPresentationDirty(true);}else updateNodeField(selectedNode,"y",Number(event.target.value));}} disabled={!canManage}/></Field>
         <Field label="Vendor"><input value={selectedNodeRecord.vendor||""} onChange={event=>updateNodeField(selectedNode,"vendor",event.target.value)} disabled={!canManage}/></Field>
         <Field label="Operating system"><input value={selectedNodeRecord.operating_system||""} onChange={event=>updateNodeField(selectedNode,"operating_system",event.target.value)} disabled={!canManage}/></Field>
         <Field label="Image / OS image"><input value={selectedNodeRecord.image||""} onChange={event=>updateNodeField(selectedNode,"image",event.target.value)} disabled={!canManage}/></Field>

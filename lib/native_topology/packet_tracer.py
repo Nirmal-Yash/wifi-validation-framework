@@ -55,8 +55,31 @@ class PacketTracerTopologyCodec:
 
         version = str(network.version or network.edition or "unknown")[:32]
         presentation = empty_native_presentation(self.format_id, version)
-        presentation["canvas"] = {"width": 1000, "height": 620}
-        presentation["viewport"] = {"x": 0, "y": 0, "width": 1000, "height": 620, "zoom": 1}
+        transform = mapping.get("coordinate_transform", {})
+        scale = float(transform.get("scale", 1.0))
+        offset_x = float(transform.get("offset_x", 0.0))
+        offset_y = float(transform.get("offset_y", 0.0))
+        if not math.isfinite(scale) or scale <= 0:
+            raise NativeTopologyCodecError("Packet Tracer source coordinate scale is invalid")
+        presentation["coordinate_space"].update({
+            "unit": "native", "scale": scale, "offset_x": offset_x, "offset_y": offset_y,
+        })
+        coordinates = [device.xy for device in network.devices]
+        if coordinates:
+            min_x = min(float(point[0]) for point in coordinates)
+            min_y = min(float(point[1]) for point in coordinates)
+            max_x = max(float(point[0]) for point in coordinates)
+            max_y = max(float(point[1]) for point in coordinates)
+            width = max(1, min(100000, math.ceil(max_x - min_x + 120)))
+            height = max(1, min(100000, math.ceil(max_y - min_y + 120)))
+            presentation["canvas"] = {"width": width, "height": height}
+            presentation["viewport"] = {
+                "x": min_x - 60, "y": min_y - 60,
+                "width": max(250, min(16000, width)),
+                "height": max(155, min(9920, height)), "zoom": 1,
+            }
+        else:
+            presentation["canvas"] = {"width": 1000, "height": 620}
         presentation["nodes"] = []
         native_devices = mapping.get("devices", {})
         for node in definition["nodes"]:
@@ -69,11 +92,16 @@ class PacketTracerTopologyCodec:
                     "port": interface["port"],
                     "native_id": str(native.get("ref", "")) + ":" + interface["name"],
                 })
+            device_by_ref = {str(device.ref): device for device in network.devices}
+            native_device = device_by_ref.get(str(native.get("ref", "")))
+            if native_device is None:
+                raise NativeTopologyCodecError("Packet Tracer native device identity could not be resolved")
+            native_x, native_y = native_device.xy
             presentation["nodes"].append({
                 "node_id": node["id"],
                 "native_id": str(native.get("ref", "")),
-                "x": node["x"],
-                "y": node["y"],
+                "x": float(native_x),
+                "y": float(native_y),
                 "label": node["name"],
                 "ports": ports,
             })

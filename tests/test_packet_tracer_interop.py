@@ -333,3 +333,23 @@ def test_packet_tracer_generic_import_and_export_use_g02_provenance(interop_data
     assert exported.content == source
     assert exported.report["originating_application_reopen"] == "NOT_VERIFIED"
     assert exported.report["losses"]
+
+
+
+def test_packet_tracer_generic_codec_retains_negative_native_coordinates(interop_database):
+    from lib.native_topology.packet_tracer import PacketTracerTopologyCodec
+
+    source = _native_packet()
+    network = PacketTracerInteropService._load(source)
+    if not any(float(device.xy[0]) < 0 or float(device.xy[1]) < 0 for device in network.devices):
+        pytest.skip("fixture has no negative coordinates")
+    decoded = PacketTracerTopologyCodec().decode(source, "negative-coordinate.pkt")
+    native_positions = {
+        item["native_id"]: (item["x"], item["y"])
+        for item in decoded.presentation["nodes"]
+    }
+    for device in network.devices:
+        assert native_positions[str(device.ref)] == pytest.approx(tuple(map(float, device.xy)))
+    assert decoded.presentation["coordinate_space"]["scale"] == pytest.approx(
+        decoded.metadata["native_coordinate_transform"]["scale"]
+    )

@@ -3027,3 +3027,11 @@ G02–G06 source, fixtures, APIs and Topology Studio integration passed exact-ma
 ### Stage G G07 implementation checkpoint — 2026-11-26
 
 The existing EXP-P07-B Packet Tracer bridge is now registered as `CISCO_PACKET_TRACER_PKT` in the G03 native codec registry and uses the same G02 immutable source-artifact and presentation-revision services as GNS3/CML/EVE-NG. The adapter reuses the pinned `pktlib` parser, bounded decompression/DTD preflight, existing logical-device projection and native serializer; it does not create a second .pkt parser or alter the legacy Packet Tracer endpoints/schema. Unified import accepts `.pkt`; source provenance is SHA-256-bound to the canonical and presentation revisions. The serializer permits only device-name and X/Y placement edits, verifies device identity/name/coordinate/link read-back, and reports the codec's output edition and unsupported changes. Packet Tracer drawings/notes, interface/configuration edits and desktop application reopening remain outside the proven support boundary. Exact-head CI is pending.
+
+
+### Stage G G08 implementation checkpoint — 2026-11-26
+
+| Package | Scope | Source implementation | Current state |
+|---|---|---|---|
+| G08 | Vendor-aware presentation rendering and placement | frontend/src/topology-presentation.js; Topology Studio presentation lifecycle and SVG renderer; G02 immutable presentation/provenance services; G04–G07 native codec coordinate metadata | Implemented pending exact-head CI; import-time native layout is preserved; presentation-only edits do not mutate canonical intent |
+

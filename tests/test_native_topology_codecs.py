@@ -376,7 +376,7 @@ def test_native_topology_import_api_lists_codecs_sources_and_downloads_export(tm
     codecs = client.get("/api/v1/topologies/native-codecs")
     assert codecs.status_code == 200
     assert {row["format_id"] for row in codecs.get_json()["data"]["items"]} == {
-        "GNS3_PROJECT", "CML_LAB", "EVE_NG_UNL",
+        "GNS3_PROJECT", "CML_LAB", "EVE_NG_UNL", "CISCO_PACKET_TRACER_PKT",
     }
 
     imported = client.post(
