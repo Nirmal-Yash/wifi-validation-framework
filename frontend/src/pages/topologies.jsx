@@ -113,6 +113,11 @@ export default function TopologyStudioPage({user}){
  const [nativeLabId,setNativeLabId]=useState("");
  const [nativeBusy,setNativeBusy]=useState(false);
  const [nativeImportResult,setNativeImportResult]=useState(null);
+ const [conversionSourceFile,setConversionSourceFile]=useState(null);
+ const [conversionTemplateFile,setConversionTemplateFile]=useState(null);
+ const [conversionMapping,setConversionMapping]=useState("");
+ const [conversionBusy,setConversionBusy]=useState(false);
+ const [conversionReport,setConversionReport]=useState(null);
  const profiles=useAsyncLoader(()=>projectId?api.topologies(projectId):Promise.resolve({items:[]}),[projectId],{enabled:Boolean(projectId),queryKey:"topology-studio-profiles"});
  const revisions=useAsyncLoader(()=>profileId?api.topologyRevisions(profileId):Promise.resolve({items:[]}),[profileId],{enabled:Boolean(profileId),queryKey:"topology-studio-revisions"});
  const presentationRevisions=useAsyncLoader(()=>profileId&&revisionId?api.topologyPresentationRevisions(profileId,revisionId):Promise.resolve({items:[]}),[profileId,revisionId],{enabled:Boolean(profileId&&revisionId),queryKey:"topology-presentation-revisions"});
@@ -285,6 +290,31 @@ export default function TopologyStudioPage({user}){
    setError(exc.message||"Native topology import failed.");
   }finally{
    setNativeBusy(false);
+  }
+ }
+ async function convertNativeProject(event){
+  event.preventDefault();
+  if(!canManage||!projectId||!conversionSourceFile||!conversionTemplateFile)return;
+  setConversionBusy(true);setError("");setNotice("");setConversionReport(null);
+  try{
+   const payload=new FormData();
+   payload.set("project_id",projectId);
+   payload.set("source_file",conversionSourceFile);
+   payload.set("target_template",conversionTemplateFile);
+   if(conversionMapping.trim())payload.set("mapping_json",conversionMapping.trim());
+   const result=await api.convertNativeTopology(payload);
+   const url=window.URL.createObjectURL(result.blob);
+   const anchor=document.createElement("a");
+   anchor.href=url;anchor.download=result.filename||"native-topology-conversion";
+   document.body.appendChild(anchor);anchor.click();anchor.remove();
+   window.URL.revokeObjectURL(url);
+   setConversionSourceFile(null);setConversionTemplateFile(null);
+   setConversionReport(result.report||null);
+   setNotice("Structure-preserving cross-vendor project created from the destination template. Review the conversion report; configurations, models and assets are not translated.");
+  }catch(exc){
+   setError(exc.message||"Cross-vendor topology conversion failed.");
+  }finally{
+   setConversionBusy(false);
   }
  }
  async function exportNativeProject(sourceId){
@@ -861,6 +891,16 @@ export default function TopologyStudioPage({user}){
     <p className="muted">Source SHA-256 · {nativeImportResult.source?.sha256}</p>
     {(nativeImportResult.report.warnings||[]).map((item,index)=><p className="muted" key={"native-warning-"+index}>{item}</p>)}
    </div>:null}
+  </Section>
+  <Section title="Cross-vendor native topology conversion" subtitle="Transfer a compatible topology layout into another vendor's native project template. Conversion refuses node, interface or link semantic mismatches and returns a per-object mapping and loss report.">
+   {canManage?<form className="form-grid" onSubmit={convertNativeProject}>
+    <Field label="Source native project" required><input aria-label="Conversion source native project" type="file" accept=".gns3,.yaml,.yml,.virl,.unl,.pkt" onChange={event=>setConversionSourceFile(event.target.files?.[0]||null)} required/></Field>
+    <Field label="Destination native template" required><input aria-label="Conversion destination native template" type="file" accept=".gns3,.yaml,.yml,.virl,.unl,.pkt" onChange={event=>setConversionTemplateFile(event.target.files?.[0]||null)} required/></Field>
+    <Field label="Optional explicit object mapping JSON"><textarea aria-label="Conversion object mapping JSON" rows={3} value={conversionMapping} onChange={event=>setConversionMapping(event.target.value)} placeholder='{"nodes":{"source-node":"target-node"},"links":{"source-link":"target-link"}}'/></Field>
+    <div className="form-actions"><Button type="submit" loading={conversionBusy} disabled={!projectId||!conversionSourceFile||!conversionTemplateFile}>Convert native project</Button></div>
+    <p className="muted">Automatic mapping uses unique node names and canonical link endpoints. Explicit mappings must cover every node and link exactly once. This transfers compatible presentation only; destination device models, configurations and image assets remain from the destination template.</p>
+   </form>:<p className="muted">Cross-vendor conversion requires topology.manage permission in the selected Project.</p>}
+   {conversionReport?<div className="topology-observed-panel"><strong>Conversion report</strong><p>{conversionReport.source?.format_id} → {conversionReport.output?.format_id} · {conversionReport.counts?.nodes_mapped||0} nodes · {conversionReport.counts?.links_mapped||0} links</p><p className="muted">Output SHA-256 · {conversionReport.output?.sha256}</p>{(conversionReport.losses||[]).map((loss,index)=><p className="muted" key={"conversion-loss-"+index}>{loss.category}: {loss.message}</p>)}</div>:null}
   </Section>
   <Section title="Packet Tracer native import" subtitle="Import a .pkt project into the existing canonical topology and retain the original native bytes, hash and conversion report.">
    {canManage?<form className="form-grid" onSubmit={importPacketTracer}>

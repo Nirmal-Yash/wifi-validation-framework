@@ -128,6 +128,28 @@ async function rawDownload(path){
  try{filename=encodedName?decodeURIComponent(encodedName):plainName||filename;}catch{filename=plainName||filename;}
  return {blob:await response.blob(),filename,report:response.headers?.get?.("X-NetRegress-Native-Report")||response.headers?.get?.("X-NetRegress-Export-Report")||""};
 }
+async function rawDownloadPost(path,body){
+ let response;
+ try{
+  const base=await resolveApiBase();
+  const credentials=base.startsWith("http://127.0.0.1:")?"include":"same-origin";
+  response=await fetch(base+path,{method:"POST",body,credentials,cache:"no-store",headers:{Accept:"application/octet-stream"}});
+ }catch(error){
+  if(error instanceof TypeError)throw new ApiError("Cannot reach the Runner API. Launch the NetRegress desktop app or start the developer launcher.",0,"API_UNREACHABLE");
+  throw error;
+ }
+ if(!response.ok){
+  const body=await response.json().catch(()=>null);
+  const detail=body?.error||{};
+  throw new ApiError(detail.message||`Runner API request failed (HTTP ${response.status})`,response.status,detail.code||"REQUEST_FAILED",detail.details||{});
+ }
+ const disposition=response.headers?.get?.("content-disposition")||"";
+ const encodedName=disposition.match(/filename\\*=UTF-8''([^;]+)/i)?.[1];
+ const plainName=disposition.match(/filename="?([^";]+)"?/i)?.[1];
+ let filename="native-topology-conversion";
+ try{filename=encodedName?decodeURIComponent(encodedName):plainName||filename;}catch{filename=plainName||filename;}
+ return {blob:await response.blob(),filename,report:response.headers?.get?.("X-NetRegress-Conversion-Report")||""};
+}
 export const api={
  health:()=>request("/health"),readiness:()=>request("/readiness"),
  setupStatus:()=>request("/setup/status"),
@@ -186,6 +208,7 @@ export const api={
  topologyNativeSources:profileId=>request("/topologies/"+encode(profileId)+"/native-sources"),
  exportPacketTracerRevision:(profileId,sourceId,revisionId)=>rawDownload("/topologies/"+encode(profileId)+"/native-sources/"+encode(sourceId)+"/export"+query({revision_id:revisionId})),
   importNativeTopology:formData=>request("/topologies/import/native",{method:"POST",body:formData}),
+  convertNativeTopology:formData=>rawDownloadPost("/topologies/convert/native",formData),
   topologyNativeArtifacts:profileId=>request("/topologies/"+encode(profileId)+"/native-artifacts"),
   exportNativeTopologyArtifact:(profileId,sourceId,revisionId,presentationId)=>rawDownload("/topologies/"+encode(profileId)+"/native-artifacts/"+encode(sourceId)+"/export"+query({revision_id:revisionId,presentation_id:presentationId})),
  createTopology:payload=>request("/topologies",{method:"POST",body:JSON.stringify(payload)}),

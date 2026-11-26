@@ -268,6 +268,40 @@ paths:
         "403": {description: Project infrastructure.execute and infrastructure.reconcile permissions required}
         "409": {description: Workspace is not in RECOVERY_REQUIRED state or a lock/plan conflict exists}
         "422": {description: OpenTofu reconciliation or recovery planning failed}
+  /topologies/convert/native:
+    post:
+      operationId: convertNativeTopology
+      description: >-
+        Convert between two native project formats using a destination-native template.
+        Source and destination must have a one-to-one mapping of canonical node types,
+        interface adapter/ports and link endpoints. Transfers compatible labels and node
+        placement only. Device configuration, model/image definitions, link route geometry,
+        drawings and external assets are reported as losses and are not silently translated.
+        The destination codec performs bounded serialization/read-back; vendor application
+        reopening remains an external acceptance step.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [project_id, source_file, target_template]
+              properties:
+                project_id: {type: string}
+                source_file: {type: string, format: binary, description: Native source project; maximum 50 MiB}
+                target_template: {type: string, format: binary, description: Destination native template; maximum 50 MiB}
+                mapping_json: {type: string, maxLength: 65536, description: Optional explicit nodes and links ID mapping}
+      responses:
+        "200":
+          description: Destination native project file
+          headers:
+            X-NetRegress-Conversion-Report: {schema: {type: string}, description: Base64url-encoded per-object mapping, hashes and conversion losses}
+          content:
+            application/octet-stream: {schema: {type: string, format: binary}}
+        "400": {description: Invalid fields or mapping JSON}
+        "403": {description: Project topology.manage permission required}
+        "413": {description: Source or destination exceeds 50 MiB}
+        "422": {description: Ambiguous mapping, unsupported semantic mismatch or serialization failure}
   /network-intent/profiles:
     get:
       operationId: listNetworkIntentProfiles

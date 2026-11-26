@@ -37,6 +37,9 @@ from lib.services.native_topology_interop import (
     NativeTopologyInteropConflict, NativeTopologyInteropError,
     NativeTopologyInteropNotFound, NativeTopologyInteropService,
 )
+from lib.services.native_topology_conversion import (
+    NativeTopologyConversionError, NativeTopologyConversionService,
+)
 from lib.services.network_intent import (
     NetworkIntentConflict, NetworkIntentError, NetworkIntentNotFound, NetworkIntentService,
 )
@@ -114,6 +117,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     topology_presentation=TopologyPresentationService(query.database)
     packet_tracer_interop=PacketTracerInteropService(query.database)
     native_topology_interop=NativeTopologyInteropService(query.database,topology_studio=topology_studio,topology_presentation=topology_presentation)
+    native_topology_conversion=NativeTopologyConversionService(native_topology_interop.codecs)
     network_intent=NetworkIntentService(query.database,topology_studio)
     network_intent_compiler=NetworkIntentCompilerService(query.database,network_intent,device_inventory)
     topology_apply=TopologyApplyService(query.database,credential_vault,topology_studio)
@@ -2737,6 +2741,53 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         )
         report = json.dumps(exported.report, sort_keys=True, separators=(",", ":")).encode("utf-8")
         response.headers["X-NetRegress-Native-Report"] = base64.urlsafe_b64encode(report).decode("ascii").rstrip("=")
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+
+    @api.post("/topologies/convert/native")
+    def convert_native_topology():
+        try:
+            project_id = str(request.form.get("project_id", "")).strip()
+            source_file = request.files.get("source_file")
+            target_template = request.files.get("target_template")
+            mapping_text = request.form.get("mapping_json", "").strip()
+            if not project_id or source_file is None or target_template is None:
+                return error("INVALID_REQUEST", "project_id, source_file and target_template are required", 400)
+            source_filename = source_file.filename or ""
+            target_filename = target_template.filename or ""
+            source_bytes = source_file.stream.read(NativeTopologyInteropService.MAX_SOURCE_BYTES + 1)
+            target_bytes = target_template.stream.read(NativeTopologyInteropService.MAX_SOURCE_BYTES + 1)
+            if len(source_bytes) > NativeTopologyInteropService.MAX_SOURCE_BYTES or len(target_bytes) > NativeTopologyInteropService.MAX_SOURCE_BYTES:
+                return error("NATIVE_CONVERSION_FILE_TOO_LARGE", "Source and destination template files are each limited to 50 MiB", 413)
+            if len(mapping_text.encode("utf-8")) > NativeTopologyConversionService.MAX_MAPPING_BYTES:
+                return error("INVALID_MAPPING", "mapping_json exceeds the 64 KiB limit", 400)
+            mapping = json.loads(mapping_text) if mapping_text else None
+        except RequestEntityTooLarge:
+            return error("NATIVE_CONVERSION_REQUEST_TOO_LARGE", "The multipart conversion request exceeds the upload limit", 413)
+        except json.JSONDecodeError:
+            return error("INVALID_MAPPING", "mapping_json must contain valid JSON", 400)
+
+        denied = require_permission("topology.manage", project_id=project_id)
+        if denied is not None:
+            return denied
+        if project_repository.get(project_id) is None:
+            return error("NOT_FOUND", "Project not found", 404)
+        try:
+            converted = native_topology_conversion.convert(
+                source_bytes, target_bytes,
+                source_filename=source_filename,
+                target_template_filename=target_filename,
+                mapping=mapping,
+            )
+        except NativeTopologyConversionError as exc:
+            return error("NATIVE_TOPOLOGY_CONVERSION_REFUSED", str(exc), 422)
+        response = send_file(
+            io.BytesIO(converted.content), mimetype=converted.media_type,
+            as_attachment=True, download_name=converted.filename, max_age=0,
+        )
+        report = json.dumps(converted.report, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        response.headers["X-NetRegress-Conversion-Report"] = base64.urlsafe_b64encode(report).decode("ascii").rstrip("=")
         response.headers["Cache-Control"] = "no-store"
         return response
 
