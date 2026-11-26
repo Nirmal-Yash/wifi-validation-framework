@@ -3125,15 +3125,22 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         if denied is not None:
             return denied
         payload = request.get_json(silent=True) or {}
-        if not isinstance(payload, dict) or set(payload) != {"credential_bindings"}:
-            return error("INVALID_REQUEST", "request must contain only credential_bindings", 400)
+        allowed_fields = {"credential_bindings", "execution_mode", "native_operations"}
+        if not isinstance(payload, dict) or "credential_bindings" not in payload or set(payload) - allowed_fields:
+            return error("INVALID_REQUEST", "request requires credential_bindings and only supported execution_mode/native_operations options", 400)
         bindings = payload.get("credential_bindings")
+        execution_mode = payload.get("execution_mode", "CONFIGURATION")
+        native_operations = payload.get("native_operations", [])
+        if not isinstance(native_operations, list):
+            return error("INVALID_REQUEST", "native_operations must be an array of allowlisted operation IDs", 400)
         if not isinstance(bindings, dict):
             return error("INVALID_REQUEST", "credential_bindings must map Device IDs to managed SSH credential IDs", 400)
         scope = f"/api/v1/network-intent/profiles/{profile_id}/revisions/{revision_id}/ansible-plan"
         key, request_hash, cached, security_error = idempotency_preflight(scope, {
             "profile_id": profile_id, "revision_id": revision_id,
             "credential_bindings": bindings,
+            "execution_mode": execution_mode,
+            "native_operations": native_operations,
         })
         if security_error is not None:
             return security_error
@@ -3142,6 +3149,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         try:
             item = ansible_automation.create_plan(
                 profile_id, revision_id, credential_bindings=bindings,
+                execution_mode=execution_mode, native_operations=native_operations,
                 actor=str((session.get("netregress_user") or {}).get("username", "local")),
             )
         except AnsibleAutomationNotFound as exc:

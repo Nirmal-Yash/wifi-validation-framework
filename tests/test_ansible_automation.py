@@ -50,8 +50,11 @@ class FakeAnsibleRunner:
         assert all("ansible_ssh_private_key_file" not in host for host in hosts.values())
         plays = yaml.safe_load(playbook.read_text(encoding="utf-8"))
         assert isinstance(plays, list) and len(plays) == 1
-        assert any("ansible.netcommon.cli_config" in task for task in plays[0]["tasks"])
-        assert any("ansible.netcommon.cli_command" in task for task in plays[0]["tasks"])
+        assert plays[0]["tasks"]
+        assert all(
+            not ({"ansible.builtin.shell", "ansible.builtin.raw"} & set(task))
+            for task in plays[0]["tasks"]
+        )
         return {
             "valid": self.validation_valid,
             "code": "ANSIBLE_PLAYBOOK_VALIDATED" if self.validation_valid else "ANSIBLE_PLAYBOOK_SYNTAX_FAILED",
@@ -344,4 +347,97 @@ def test_ansible_nonzero_execution_records_failure_and_requires_reconciliation(a
 
 def test_pan_os_compiler_output_is_not_sent_through_an_unqualified_ssh_transport(ansible_lab):
     assert "paloalto_panos" not in AnsibleAutomationService.SUPPORTED_ADAPTERS
-    assert "juniper_junos" not in AnsibleAutomationService.SUPPORTED_ADAPTERS
+    assert "juniper_junos" in AnsibleAutomationService.SUPPORTED_ADAPTERS
+
+
+
+def test_juniper_playbook_uses_pinned_juniper_device_modules_and_set_statements(ansible_lab):
+    service = ansible_lab["service"]
+    device = ansible_lab["device"]
+    compilation = {
+        "intent_sha256": "a" * 64,
+        "artifacts": [{
+            "path": f"targets/router-a-{device['device_id']}/router-a.set",
+            "content": "set system host-name edge-router\\nset system services ssh\\n",
+            "sha256": "b" * 64,
+            "change_type": "CREATE",
+        }],
+    }
+    target = {
+        "device_id": device["device_id"], "lab_id": "lab-1", "device_key": "router-a",
+        "name": "Router A", "host": "192.0.2.10", "port": 22,
+        "vendor": "Juniper", "model": "vMX", "username": "operator",
+        "credential_id": "vault-1", "credential_type": "SSH_PASSWORD",
+        "adapter_id": "juniper_junos",
+    }
+    playbook, inventory = service._build_playbook(compilation, [target])
+    host = next(iter(inventory["all"]["children"]["netregress_targets"]["hosts"].values()))
+    tasks = playbook["plays"][0]["tasks"]
+    assert host["ansible_connection"] == "ansible.netcommon.network_cli"
+    assert host["ansible_network_os"] == "juniper.device.junos"
+    config = next(task["juniper.device.junos_config"] for task in tasks if "juniper.device.junos_config" in task)
+    assert config["lines"] == ["set system host-name edge-router", "set system services ssh"]
+    assert config["backup"] is True
+    assert any("juniper.device.junos_command" in task for task in tasks)
+    assert not any("ansible.netcommon.cli_config" in task for task in tasks)
+    assert not any("ansible.netcommon.cli_command" in task for task in tasks)
+
+
+def test_read_only_catalog_generates_fixed_commands_and_no_configuration_modules(ansible_lab):
+    service = ansible_lab["service"]
+    device = ansible_lab["device"]
+    compilation = {
+        "intent_sha256": "c" * 64,
+        "artifacts": [{
+            "path": f"targets/router-a-{device['device_id']}/router-a.cfg",
+            "content": "hostname router-a\\n",
+            "sha256": "d" * 64,
+            "change_type": "CREATE",
+        }],
+    }
+    target = {
+        "device_id": device["device_id"], "lab_id": "lab-1", "device_key": "router-a",
+        "name": "Router A", "host": "192.0.2.10", "port": 22,
+        "vendor": "Cisco", "model": "IOS-XE", "username": "operator",
+        "credential_id": "vault-1", "credential_type": "SSH_PASSWORD",
+        "adapter_id": "cisco_iosxe",
+    }
+    playbook, _inventory = service._build_playbook(
+        compilation, [target], execution_mode="READ_ONLY",
+        native_operations=("device_version", "interface_summary", "routing_summary"),
+    )
+    tasks = playbook["plays"][0]["tasks"]
+    modules = [key for task in tasks for key in task]
+    assert modules.count("ansible.netcommon.cli_command") == 3
+    assert "ansible.netcommon.cli_config" not in modules
+    assert "ansible.builtin.copy" in modules  # only the local evidence file
+    commands = [task["ansible.netcommon.cli_command"]["command"] for task in tasks if "ansible.netcommon.cli_command" in task]
+    assert commands == ["show version", "show ip interface brief", "show ip route"]
+    assert playbook["targets"][0]["execution_mode"] == "READ_ONLY"
+
+
+def test_read_only_plan_mode_and_operations_are_hash_pinned(ansible_lab):
+    service = ansible_lab["service"]
+    plan = service.create_plan(
+        ansible_lab["profile"]["profile_id"], ansible_lab["revision"]["revision_id"],
+        credential_bindings={ansible_lab["device"]["device_id"]: ansible_lab["credential"]["credential_id"]},
+        execution_mode="READ_ONLY", native_operations=["device_version", "interface_summary"],
+        actor="owner",
+    )
+    assert plan["status"] == "PREVIEWED"
+    assert plan["plan"]["execution_mode"] == "READ_ONLY"
+    assert plan["plan"]["native_operations"] == ["device_version", "interface_summary"]
+    assert plan["plan"]["preview_contract"]["configuration_apply"] is False
+    assert plan["plan"]["preview_contract"]["native_operations_are_read_only"] is True
+    with pytest.raises(AnsibleAutomationError, match="allowlisted"):
+        service.create_plan(
+            ansible_lab["profile"]["profile_id"], ansible_lab["revision"]["revision_id"],
+            credential_bindings={ansible_lab["device"]["device_id"]: ansible_lab["credential"]["credential_id"]},
+            execution_mode="READ_ONLY", native_operations=["raw_shell"], actor="owner",
+        )
+    with pytest.raises(AnsibleAutomationError, match="unique"):
+        service.create_plan(
+            ansible_lab["profile"]["profile_id"], ansible_lab["revision"]["revision_id"],
+            credential_bindings={ansible_lab["device"]["device_id"]: ansible_lab["credential"]["credential_id"]},
+            execution_mode="READ_ONLY", native_operations=["device_version", "device_version"], actor="owner",
+        )

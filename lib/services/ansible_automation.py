@@ -100,6 +100,7 @@ class _AnsibleCliRunner:
             "ansible.netcommon": "8.7.1",
             "cisco.ios": "11.6.0",
             "arista.eos": "12.3.0",
+            "juniper.device": "2.0.0",
         }
         discovered = {}
         for line in (collection_result.stdout + "\n" + collection_result.stderr).splitlines():
@@ -163,21 +164,101 @@ class AnsibleAutomationService:
     EXECUTION_TIMEOUT_SECONDS = 1800
     SUPPORTED_ADAPTERS = {
         "linux_frr": {
-            "platform": "Linux/FRR",
-            "connection": "ssh",
-            "network_os": None,
+            "platform": "Linux/FRR", "connection": "ssh", "network_os": None,
         },
         "cisco_iosxe": {
-            "platform": "Cisco IOS/IOS-XE",
-            "connection": "ansible.netcommon.network_cli",
+            "platform": "Cisco IOS/IOS-XE", "connection": "ansible.netcommon.network_cli",
             "network_os": "cisco.ios.ios",
         },
         "arista_eos": {
-            "platform": "Arista EOS",
-            "connection": "ansible.netcommon.network_cli",
+            "platform": "Arista EOS", "connection": "ansible.netcommon.network_cli",
             "network_os": "arista.eos.eos",
         },
+        "juniper_junos": {
+            "platform": "Juniper Junos", "connection": "ansible.netcommon.network_cli",
+            "network_os": "juniper.device.junos",
+        },
     }
+
+    NATIVE_OPERATION_CATALOG = {
+        "device_version": {
+            "label": "Device version",
+            "description": "Read the operating-system and software release banner",
+            "commands": {
+                "linux_frr": {"kind": "argv", "value": ["/usr/bin/uname", "-a"]},
+                "cisco_iosxe": {"kind": "cli", "value": "show version"},
+                "arista_eos": {"kind": "cli", "value": "show version"},
+                "juniper_junos": {"kind": "junos", "value": "show version"},
+            },
+        },
+        "interface_summary": {
+            "label": "Interface summary",
+            "description": "Read interface names and operational/address state",
+            "commands": {
+                "linux_frr": {"kind": "argv", "value": ["/usr/sbin/ip", "-brief", "address", "show"]},
+                "cisco_iosxe": {"kind": "cli", "value": "show ip interface brief"},
+                "arista_eos": {"kind": "cli", "value": "show ip interface brief"},
+                "juniper_junos": {"kind": "junos", "value": "show interfaces terse"},
+            },
+        },
+        "routing_summary": {
+            "label": "Routing summary",
+            "description": "Read the active routing table",
+            "commands": {
+                "linux_frr": {"kind": "argv", "value": ["/usr/sbin/ip", "route", "show"]},
+                "cisco_iosxe": {"kind": "cli", "value": "show ip route"},
+                "arista_eos": {"kind": "cli", "value": "show ip route"},
+                "juniper_junos": {"kind": "junos", "value": "show route"},
+            },
+        },
+    }
+
+    @classmethod
+    def list_native_operations(cls) -> list[dict]:
+        return [
+            {"operation_id": op_id, "label": value["label"],
+             "description": value["description"], "read_only": True,
+             "supported_adapters": sorted(value["commands"])}
+            for op_id, value in cls.NATIVE_OPERATION_CATALOG.items()
+        ]
+
+    @staticmethod
+    def _native_operation_task(adapter_id: str, operation_id: str, index: int) -> dict:
+        definition = AnsibleAutomationService.NATIVE_OPERATION_CATALOG.get(operation_id)
+        if definition is None:
+            raise AnsibleAutomationError("native operation is not in the fixed allowlist")
+        command = definition["commands"].get(adapter_id)
+        if command is None:
+            raise AnsibleAutomationConflict(f"native operation {operation_id} is not qualified for {adapter_id}")
+        if command["kind"] == "argv":
+            module, arguments = "ansible.builtin.command", {"argv": list(command["value"])}
+        elif command["kind"] == "junos":
+            module, arguments = "juniper.device.junos_command", {"commands": [command["value"]]}
+        else:
+            module, arguments = "ansible.netcommon.cli_command", {"command": command["value"]}
+        return {
+            "name": "Read-only native operation · " + definition["label"],
+            module: arguments, "register": f"netregress_native_operation_{index}",
+            "changed_when": False, "no_log": True,
+        }
+
+    @staticmethod
+    def _junos_set_lines(content: str) -> list[str]:
+        if not isinstance(content, str) or len(content.encode("utf-8")) > 1_000_000:
+            raise AnsibleAutomationError("Juniper candidate configuration is invalid or exceeds one megabyte")
+        lines = []
+        for raw in content.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if not (line.startswith("set ") or line.startswith("delete ")):
+                raise AnsibleAutomationError("Juniper native execution accepts only compiled 'set' and 'delete' statements")
+            if len(line) > 4096 or any(ord(char) < 32 for char in line):
+                raise AnsibleAutomationError("Juniper configuration contains an invalid line")
+            lines.append(line)
+        if not lines:
+            raise AnsibleAutomationError("Juniper compiler artifact contains no allowlisted set/delete statements")
+        return lines
 
     def __init__(
         self,
@@ -281,39 +362,38 @@ class AnsibleAutomationService:
             return "/usr/local/sbin/netregress-link-state.sh"
         raise AnsibleAutomationError("Linux adapter returned an artifact outside the approved deployment paths")
 
-    def _build_playbook(self, compilation: dict, target_devices: list[dict]) -> tuple[dict, dict]:
+    def _build_playbook(
+        self,
+        compilation: dict,
+        target_devices: list[dict],
+        *,
+        execution_mode: str = "CONFIGURATION",
+        native_operations: tuple[str, ...] = (),
+    ) -> tuple[dict, dict]:
         artifacts_by_device: dict[str, list[dict]] = {}
         for artifact in compilation["artifacts"]:
             match = re.fullmatch(r"targets/[^/]+-(dev_[A-Za-z0-9]+)/(.*)", artifact["path"])
             if not match:
                 raise AnsibleAutomationError("compiler artifact path cannot be mapped to a managed Device")
             device_id = match.group(1)
-            artifacts_by_device.setdefault(device_id, []).append({
-                **artifact, "relative_path": match.group(2),
-            })
+            artifacts_by_device.setdefault(device_id, []).append({**artifact, "relative_path": match.group(2)})
 
         hosts: dict[str, dict] = {}
         plays: list[dict] = []
         targets: list[dict] = []
         for target in target_devices:
-            device_id = target["device_id"]
-            adapter_id = target["adapter_id"]
+            device_id, adapter_id = target["device_id"], target["adapter_id"]
             adapter = self.SUPPORTED_ADAPTERS.get(adapter_id)
             if adapter is None:
-                raise AnsibleAutomationConflict(
-                    f"Ansible P10 does not yet provide a validated execution transport for {adapter_id}; no plan was created"
-                )
+                raise AnsibleAutomationConflict(f"Ansible execution has no qualified transport for {adapter_id}")
             artifacts = artifacts_by_device.get(device_id, [])
             if not artifacts:
                 raise AnsibleAutomationError("compiler output contains no artifact for a mapped Device")
             alias = self._safe_alias(device_id)
-            host_vars: dict[str, Any] = {
-                "ansible_host": target["host"],
-                "ansible_port": int(target["port"]),
-                "ansible_user": target["username"],
-                "ansible_connection": adapter["connection"],
-                "ansible_connect_timeout": 30,
-                "ansible_command_timeout": 180,
+            host_vars = {
+                "ansible_host": target["host"], "ansible_port": int(target["port"]),
+                "ansible_user": target["username"], "ansible_connection": adapter["connection"],
+                "ansible_connect_timeout": 30, "ansible_command_timeout": 180,
             }
             if adapter["network_os"]:
                 host_vars["ansible_network_os"] = adapter["network_os"]
@@ -321,26 +401,23 @@ class AnsibleAutomationService:
                 host_vars["ansible_persistent_connect_timeout"] = 30
             hosts[alias] = host_vars
             play = {
-                "name": f"NetRegress approved configuration deployment · {device_id}",
-                "hosts": alias,
-                "gather_facts": False,
-                "serial": 1,
-                "any_errors_fatal": True,
-                "tasks": [],
+                "name": f"NetRegress {execution_mode.lower().replace('_', ' ')} · {device_id}",
+                "hosts": alias, "gather_facts": False, "serial": 1,
+                "any_errors_fatal": True, "tasks": [],
             }
             if adapter_id == "linux_frr" and str(target["username"]).casefold() != "root":
                 play.update({"become": True, "become_method": "sudo", "become_flags": "-n"})
             tasks = play["tasks"]
-            if adapter_id == "linux_frr":
+            if execution_mode == "READ_ONLY":
+                readback_method = "allowlisted read-only native operations completed"
+            elif adapter_id == "linux_frr":
                 destinations = []
                 for artifact in artifacts:
                     destination = self._linux_destination(artifact["relative_path"])
                     directory = str(PurePosixPath(destination).parent)
                     tasks.append({
                         "name": "Create approved configuration directory",
-                        "ansible.builtin.file": {
-                            "path": directory, "state": "directory", "owner": "root", "group": "root", "mode": "0755",
-                        },
+                        "ansible.builtin.file": {"path": directory, "state": "directory", "owner": "root", "group": "root", "mode": "0755"},
                     })
                     tasks.append({
                         "name": "Install hash-pinned compiled Linux configuration",
@@ -357,11 +434,8 @@ class AnsibleAutomationService:
                 if nft:
                     tasks.append({
                         "name": "Validate nftables configuration before activation",
-                        "ansible.builtin.command": {
-                            "argv": ["/usr/sbin/nft", "-c", "-f", nft["path"]],
-                        },
-                        "changed_when": False,
-                        "no_log": True,
+                        "ansible.builtin.command": {"argv": ["/usr/sbin/nft", "-c", "-f", nft["path"]]},
+                        "changed_when": False, "no_log": True,
                     })
                 if any(item["path"].startswith("/etc/systemd/network/") for item in destinations):
                     tasks.extend([
@@ -369,32 +443,17 @@ class AnsibleAutomationService:
                         {"name": "Apply systemd-networkd configuration", "ansible.builtin.systemd": {"name": "systemd-networkd", "state": "restarted"}, "no_log": True},
                     ])
                 if any(item["path"] == "/etc/frr/frr.conf" for item in destinations):
-                    tasks.append({
-                        "name": "Apply FRRouting configuration",
-                        "ansible.builtin.systemd": {"name": "frr", "state": "restarted"},
-                        "no_log": True,
-                    })
+                    tasks.append({"name": "Apply FRRouting configuration", "ansible.builtin.systemd": {"name": "frr", "state": "restarted"}, "no_log": True})
                 if nft:
-                    tasks.append({
-                        "name": "Apply nftables policy",
-                        "ansible.builtin.command": {"argv": ["/usr/sbin/nft", "-f", nft["path"]]},
-                        "no_log": True,
-                    })
+                    tasks.append({"name": "Apply nftables policy", "ansible.builtin.command": {"argv": ["/usr/sbin/nft", "-f", nft["path"]]}, "no_log": True})
                 script = next((item for item in destinations if item["path"] == "/usr/local/sbin/netregress-link-state.sh"), None)
                 if script:
-                    tasks.append({
-                        "name": "Apply reviewed Linux link state",
-                        "ansible.builtin.command": {"argv": [script["path"]]},
-                        "no_log": True,
-                    })
+                    tasks.append({"name": "Apply reviewed Linux link state", "ansible.builtin.command": {"argv": [script["path"]]}, "no_log": True})
                 for index, item in enumerate(destinations):
                     tasks.append({
                         "name": f"Read back deployed artifact {index + 1}",
-                        "ansible.builtin.stat": {
-                            "path": item["path"], "checksum_algorithm": "sha256",
-                        },
-                        "register": f"netregress_artifact_{index}",
-                        "no_log": True,
+                        "ansible.builtin.stat": {"path": item["path"], "checksum_algorithm": "sha256"},
+                        "register": f"netregress_artifact_{index}", "no_log": True,
                     })
                     tasks.append({
                         "name": f"Verify artifact checksum {index + 1}",
@@ -405,29 +464,50 @@ class AnsibleAutomationService:
                         "no_log": True,
                     })
                 readback_method = "remote SHA-256 checksum of every installed file"
+            elif adapter_id == "juniper_junos":
+                primary = next((item for item in artifacts if item["relative_path"].endswith(".set")), None)
+                if primary is None:
+                    raise AnsibleAutomationError("Juniper execution requires a compiler-produced .set artifact")
+                lines = self._junos_set_lines(primary["content"])
+                anchor = self._readback_anchor(adapter_id, primary["content"])
+                tasks.extend([
+                    {
+                        "name": "Apply approved Juniper set/delete configuration with a rollback backup",
+                        "juniper.device.junos_config": {
+                            "lines": lines, "backup": True,
+                            "comment": "NetRegress approved Network Intent deployment",
+                        },
+                        "no_log": True,
+                    },
+                    {
+                        "name": "Read back committed Juniper configuration",
+                        "juniper.device.junos_command": {"commands": ["show configuration | display set"]},
+                        "register": "netregress_running_config", "no_log": True,
+                    },
+                    {
+                        "name": "Verify Juniper hostname anchor in committed configuration",
+                        "ansible.builtin.assert": {
+                            "that": [f"{json.dumps(anchor)} in netregress_running_config.stdout[0]"],
+                            "fail_msg": "Juniper read-back did not contain the expected configuration anchor",
+                        },
+                        "no_log": True,
+                    },
+                ])
+                readback_method = "Junos committed display-set read-back contains the compiled hostname anchor"
             else:
                 primary = next((item for item in artifacts if item["relative_path"].endswith(".txt") or item["relative_path"].endswith(".set")), artifacts[0])
-                readback = (
-                    "show configuration | display set"
-                    if adapter_id == "juniper_junos" else "show running-config"
-                )
                 anchor = self._readback_anchor(adapter_id, primary["content"])
                 config_text = self._network_config_text(adapter_id, primary["content"])
                 tasks.extend([
                     {
                         "name": "Apply hash-pinned vendor configuration using network_cli",
-                        "ansible.netcommon.cli_config": {
-                            "config": config_text,
-                            "backup": True,
-                            "commit": True,
-                        },
+                        "ansible.netcommon.cli_config": {"config": config_text, "backup": True, "commit": True},
                         "no_log": True,
                     },
                     {
                         "name": "Read back live vendor configuration",
-                        "ansible.netcommon.cli_command": {"command": readback},
-                        "register": "netregress_running_config",
-                        "no_log": True,
+                        "ansible.netcommon.cli_command": {"command": "show running-config"},
+                        "register": "netregress_running_config", "no_log": True,
                     },
                     {
                         "name": "Verify expected configuration anchor in read-back",
@@ -439,19 +519,27 @@ class AnsibleAutomationService:
                     },
                 ])
                 readback_method = "live show configuration output contains the compiled hostname anchor"
+
+            operation_evidence = []
+            for index, operation_id in enumerate(native_operations):
+                tasks.append(self._native_operation_task(adapter_id, operation_id, index))
+                operation_evidence.append({"operation_id": operation_id, "status": "COMPLETED"})
+            if execution_mode == "READ_ONLY" and not native_operations:
+                raise AnsibleAutomationError("READ_ONLY plans must contain at least one allowlisted native operation")
             tasks.append({
-                "name": "Record verified device read-back evidence",
+                "name": "Record verified device execution evidence",
                 "ansible.builtin.copy": {
                     "content": json.dumps({
                         "device_id": device_id, "adapter_id": adapter_id,
-                        "verified": True, "readback_method": readback_method,
+                        "execution_mode": execution_mode, "verified": True,
+                        "readback_method": readback_method,
+                        "native_operations": operation_evidence,
                         "intent_sha256": compilation["intent_sha256"],
                     }, sort_keys=True, separators=(",", ":")),
                     "dest": "{{ lookup('ansible.builtin.env', 'NETREGRESS_ANSIBLE_EVIDENCE_DIR') }}/" + alias + ".json",
                     "mode": "0600",
                 },
-                "delegate_to": "localhost",
-                "no_log": True,
+                "delegate_to": "localhost", "no_log": True,
             })
             plays.append(play)
             targets.append({
@@ -461,9 +549,13 @@ class AnsibleAutomationService:
                 "adapter_id": adapter_id, "credential_id": target["credential_id"],
                 "credential_type": target["credential_type"], "inventory_alias": alias,
                 "artifact_paths": [item["path"] for item in artifacts],
-                "readback_method": readback_method,
+                "readback_method": readback_method, "execution_mode": execution_mode,
             })
         inventory = {
+            "all": {"children": {"netregress_targets": {"hosts": hosts}}},
+        }
+        playbook = {"plays": plays, "targets": targets}
+        return playbook, inventory        inventory = {
             "all": {
                 "children": {
                     "netregress_targets": {
@@ -578,8 +670,22 @@ class AnsibleAutomationService:
         *,
         credential_bindings: Mapping[str, str],
         actor: str,
+        execution_mode: str = "CONFIGURATION",
+        native_operations: list[str] | tuple[str, ...] = (),
     ) -> dict:
         actor = self._actor(actor)
+        if execution_mode not in {"CONFIGURATION", "READ_ONLY"}:
+            raise AnsibleAutomationError("execution_mode must be CONFIGURATION or READ_ONLY")
+        if not isinstance(native_operations, (list, tuple)) or len(native_operations) > 3:
+            raise AnsibleAutomationError("native_operations must contain at most three allowlisted operation IDs")
+        if any(not isinstance(item, str) for item in native_operations):
+            raise AnsibleAutomationError("native operation IDs must be strings")
+        if len(set(native_operations)) != len(native_operations):
+            raise AnsibleAutomationError("native operation IDs must be unique")
+        if any(item not in self.NATIVE_OPERATION_CATALOG for item in native_operations):
+            raise AnsibleAutomationError("one or more native operation IDs are not in the fixed allowlist")
+        if execution_mode == "READ_ONLY" and not native_operations:
+            raise AnsibleAutomationError("READ_ONLY execution requires at least one allowlisted native operation")
         profile = self.network_intent.get_profile(profile_id)
         revision = self.network_intent.get_revision(revision_id)
         if profile is None or revision is None or revision["profile_id"] != profile_id:
@@ -639,13 +745,24 @@ class AnsibleAutomationService:
                 "credential_type": credential["credential_type"],
                 "adapter_id": adapter_id,
             })
-        playbook_data, inventory = self._build_playbook(compilation, target_devices)
+        for target in target_devices:
+            for operation_id in native_operations:
+                if target["adapter_id"] not in self.NATIVE_OPERATION_CATALOG[operation_id]["commands"]:
+                    raise AnsibleAutomationConflict(
+                        f"native operation {operation_id} is not qualified for target adapter {target['adapter_id']}"
+                    )
+        playbook_data, inventory = self._build_playbook(
+            compilation, target_devices, execution_mode=execution_mode,
+            native_operations=tuple(native_operations),
+        )
         playbook_yaml = yaml.safe_dump(playbook_data["plays"], sort_keys=False, allow_unicode=True)
         if len(playbook_yaml.encode("utf-8")) > self.MAX_PLAYBOOK_BYTES:
             raise AnsibleAutomationError("generated Ansible playbook exceeds the one-megabyte limit")
         # The inventory preview deliberately excludes passwords and private keys.
         plan_body = {
             "schema_version": self.SCHEMA_VERSION,
+            "execution_mode": execution_mode,
+            "native_operations": list(native_operations),
             "project_id": profile["project_id"],
             "lab_id": profile["lab_id"],
             "profile_id": profile_id,
@@ -668,6 +785,9 @@ class AnsibleAutomationService:
                 "inventory_check": "ansible-playbook --list-hosts",
                 "device_connection": False,
                 "configuration_apply": False,
+                "execution_mode": execution_mode,
+                "native_operations": list(native_operations),
+                "native_operations_are_read_only": True,
                 "approval_required": True,
             },
         }
@@ -965,7 +1085,15 @@ class AnsibleAutomationService:
                                 evidence = json.loads(evidence_file.read_text(encoding="utf-8"))
                             except (OSError, json.JSONDecodeError):
                                 evidence = {}
-                            if evidence.get("verified") is True and evidence.get("device_id") == target["device_id"]:
+                            if (
+                                evidence.get("verified") is True
+                                and evidence.get("device_id") == target["device_id"]
+                                and evidence.get("execution_mode", "CONFIGURATION") == plan_data.get("execution_mode", "CONFIGURATION")
+                                and evidence.get("native_operations", []) == [
+                                    {"operation_id": item, "status": "COMPLETED"}
+                                    for item in plan_data.get("native_operations", [])
+                                ]
+                            ):
                                 verified.append(target["device_id"])
                     secrets_to_redact = tuple(secret for _record, secret in secrets_by_device.values())
                     summary = {
@@ -977,11 +1105,18 @@ class AnsibleAutomationService:
                                 "adapter_id": item["adapter_id"],
                                 "readback_status": "VERIFIED" if item["device_id"] in verified else "NOT_VERIFIED",
                                 "readback_method": item["readback_method"],
+                                "execution_mode": item.get("execution_mode", plan_data.get("execution_mode", "CONFIGURATION")),
+                                "native_operations": plan_data.get("native_operations", []),
                             } for item in plan_data["targets"]
                         ],
+                        "execution_mode": plan_data.get("execution_mode", "CONFIGURATION"),
+                        "native_operations": plan_data.get("native_operations", []),
                         "verified_device_count": len(verified),
                         "target_count": len(plan_data["targets"]),
-                        "partial_changes_possible": result["exit_code"] != 0,
+                        "partial_changes_possible": (
+                            result["exit_code"] != 0
+                            and plan_data.get("execution_mode", "CONFIGURATION") == "CONFIGURATION"
+                        ),
                         "diagnostic": self._safe_summary(
                             result["stderr"] or result["stdout"], secrets_to_redact=secrets_to_redact,
                         ),
@@ -997,10 +1132,13 @@ class AnsibleAutomationService:
                 status="SUCCEEDED" if success else "FAILED",
                 result={
                     **summary,
-                    "application_performed": True,
+                    "application_performed": plan_data.get("execution_mode", "CONFIGURATION") == "CONFIGURATION",
+                    "read_only_operations_performed": plan_data.get("execution_mode") == "READ_ONLY" and success,
                     "readback_status": "VERIFIED" if success else "INCOMPLETE",
                     "rollback_performed": False,
-                    "reconciliation_required": not success,
+                    "reconciliation_required": (
+                        not success and plan_data.get("execution_mode", "CONFIGURATION") == "CONFIGURATION"
+                    ),
                 },
                 actor=actor,
             )

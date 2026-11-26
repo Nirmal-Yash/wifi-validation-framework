@@ -482,9 +482,11 @@ paths:
         The server recompiles the revision through P09, requires current adapter observations and
         same-Device OS-vault SSH credential references, generates a fixed Ansible playbook and static
         inventory, then performs syntax/inventory validation. Plan creation never connects to Devices
-        or applies configuration. Only Linux/FRR, Cisco IOS/IOS-XE and Arista EOS are enabled for
-        the initial Ansible SSH/network_cli execution path; Juniper Junos and Palo Alto PAN-OS remain
-        compiler-only until their separate NETCONF/API transports are qualified.
+        or applies configuration. Configuration execution supports Linux/FRR, Cisco IOS/IOS-XE,
+        Arista EOS and Juniper Junos through pinned collections and the existing SSH/Vault/approval path.
+        READ_ONLY mode accepts only device_version, interface_summary and routing_summary. Arbitrary
+        commands, modules, roles, scripts, dynamic inventories and user playbooks are not accepted.
+        Palo Alto PAN-OS remains compiler-only.
       parameters:
         - {name: profile_id, in: path, required: true, schema: {type: string}}
         - {name: revision_id, in: path, required: true, schema: {type: string}}
@@ -498,6 +500,16 @@ paths:
               required: [credential_bindings]
               additionalProperties: false
               properties:
+                execution_mode:
+                  type: string
+                  enum: [CONFIGURATION, READ_ONLY]
+                  default: CONFIGURATION
+                native_operations:
+                  type: array
+                  maxItems: 3
+                  uniqueItems: true
+                  items: {type: string, enum: [device_version, interface_summary, routing_summary]}
+                  description: Fixed read-only operations; READ_ONLY mode requires at least one operation.
                 credential_bindings:
                   type: object
                   minProperties: 1

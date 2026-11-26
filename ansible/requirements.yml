@@ -6,3 +6,5 @@ collections:
     version: "11.6.0"
   - name: arista.eos
     version: "12.3.0"
+  - name: juniper.device
+    version: "2.0.0"

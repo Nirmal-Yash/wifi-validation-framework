@@ -76,6 +76,8 @@ export default function NetworkIntentPage({user}) {
  const [validation,setValidation]=useState(null);
  const [compilation,setCompilation]=useState(null);
  const [ansibleCredentialBindingsText,setAnsibleCredentialBindingsText]=useState("{}");
+ const [ansibleExecutionMode,setAnsibleExecutionMode]=useState("CONFIGURATION");
+ const [ansibleNativeOperations,setAnsibleNativeOperations]=useState([]);
  const [ansiblePlanId,setAnsiblePlanId]=useState("");
  const [ansiblePlanResult,setAnsiblePlanResult]=useState(null);
  const [ansibleExecutionResult,setAnsibleExecutionResult]=useState(null);
@@ -309,6 +311,8 @@ export default function NetworkIntentPage({user}) {
   try{
    const item=await api.createNetworkAnsiblePlan(profileId,revisionId,{
     credential_bindings:parseAnsibleCredentialBindings(),
+    execution_mode:ansibleExecutionMode,
+    native_operations:ansibleNativeOperations,
    });
    setAnsiblePlanResult(item);
    setAnsiblePlanId(item.plan_id||"");
@@ -546,8 +550,27 @@ export default function NetworkIntentPage({user}) {
      />
     </Field>
     <p className="muted">Enter a JSON object mapping each target Device ID to its active same-Device SSH_PASSWORD or SSH_PRIVATE_KEY credential ID. Secret values are never accepted here or persisted in the plan.</p>
+    <Field label="Execution mode">
+     <select aria-label="Ansible execution mode" value={ansibleExecutionMode} onChange={event=>setAnsibleExecutionMode(event.target.value)} disabled={!canAutomationManage}>
+      <option value="CONFIGURATION">Apply compiled configuration after approval</option>
+      <option value="READ_ONLY">Read-only native operations after approval</option>
+     </select>
+    </Field>
+    <fieldset className="network-intent-native-operations">
+     <legend>Allowlisted read-only native operations</legend>
+     {[
+      ["device_version","Device version","Read operating-system and software release"],
+      ["interface_summary","Interface summary","Read interface state and addresses"],
+      ["routing_summary","Routing summary","Read the active routing table"],
+     ].map(([id,label,description])=><label key={id} className="inline-option">
+      <input type="checkbox" checked={ansibleNativeOperations.includes(id)} disabled={!canAutomationManage}
+       onChange={event=>setAnsibleNativeOperations(current=>event.target.checked?[...current,id]:current.filter(item=>item!==id))}/>
+      <span><strong>{label}</strong><small>{description}</small></span>
+     </label>)}
+    </fieldset>
+    <p className="muted">Only fixed commands are supported. Arbitrary shell, command, module, script, playbook and inventory inputs are rejected. Read-only mode does not apply configuration.</p>
     <div className="form-actions">
-     {canAutomationManage?<Button type="button" loading={busyAction==="ansible-plan"} disabled={!profileId||selectedRevision?.status!=="PUBLISHED"} onClick={createAnsiblePlan}>Create Ansible plan preview</Button>:null}
+     {canAutomationManage?<Button type="button" loading={busyAction==="ansible-plan"} disabled={!profileId||selectedRevision?.status!=="PUBLISHED"||(ansibleExecutionMode==="READ_ONLY"&&!ansibleNativeOperations.length)} onClick={createAnsiblePlan}>Create Ansible plan preview</Button>:null}
     </div>
    </div>:null}
    {ansiblePlanResult&&!ansiblePlanResult.plan_id?<div className="network-intent-validation" aria-live="polite">
@@ -567,6 +590,8 @@ export default function NetworkIntentPage({user}) {
     <div className="network-intent-validation-heading"><strong>Selected Ansible plan</strong><StatusBadge value={selectedAnsiblePlan.status}/></div>
     <p>Plan ID · <code>{selectedAnsiblePlan.plan_id}</code></p>
     <p>Plan SHA-256 · <code>{selectedAnsiblePlan.plan_sha256}</code></p>
+    <p>Execution mode · <strong>{selectedAnsiblePlan.plan?.execution_mode||"CONFIGURATION"}</strong></p>
+    {selectedAnsiblePlan.plan?.native_operations?.length?<p>Read-only operation catalog · {selectedAnsiblePlan.plan.native_operations.join(", ")}</p>:null}
     <p>{selectedAnsiblePlan.validation?.message||"Plan syntax and inventory validation result."} {selectedAnsiblePlan.validation?.ansible_core?("Ansible Core "+selectedAnsiblePlan.validation.ansible_core):""}</p>
     {selectedAnsiblePlan.plan?.playbook_yaml?<details className="network-intent-artifact"><summary>Review generated Ansible playbook</summary><pre>{selectedAnsiblePlan.plan.playbook_yaml}</pre></details>:null}
     {selectedAnsiblePlan.plan?.inventory?<details className="network-intent-artifact"><summary>Review scoped inventory (vault secrets excluded)</summary><pre>{JSON.stringify(selectedAnsiblePlan.plan.inventory,null,2)}</pre></details>:null}
@@ -587,7 +612,7 @@ export default function NetworkIntentPage({user}) {
     </div>)}
     {ansibleExecutionResult?<p className="table-secondary">Latest execution request · {ansibleExecutionResult.status}</p>:null}
    </div>:null}
-   <p className="muted">Initial live execution support: Linux/FRR over SSH, Cisco IOS/IOS-XE and Arista EOS over network_cli. Juniper Junos and Palo Alto PAN-OS remain compile-only until their separate NETCONF/API transports are qualified. Linux execution requires non-interactive sudo privileges. The first run must trust the Device's SSH host key in the operator's known_hosts file.</p>
+   <p className="muted">Qualified execution transports: Linux/FRR over SSH, Cisco IOS/IOS-XE and Arista EOS over network_cli, plus Juniper Junos over network_cli with the pinned juniper.device collection. PAN-OS remains compiler-only. Configuration mode changes live Device state and requires independent approval; read-only mode is limited to three fixed operation IDs and cannot apply configuration. Linux execution requires non-interactive sudo privileges. The first run must trust the Device SSH host key in the operator's known_hosts file.</p>
   </Section>
 
   <Section title="Registered vendor compilers" subtitle="Compiler availability is advertised independently of topology emulator providers. Software versions are gated by the registered tested range; device changes are not performed here.">

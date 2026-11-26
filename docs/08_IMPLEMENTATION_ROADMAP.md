@@ -3053,3 +3053,12 @@ The first conversion slice is intentionally structure-preserving: the destinatio
 | G10 | Versioned native configuration duality | Migration 20261126_24; NativeConfigurationSnapshotService; Topology Studio native configuration history and download API | Implemented pending exact-head CI; immutable secret-free configuration snapshots are pinned to published topology nodes, published Network Intent node-to-Device binding and fresh observed compiler/platform versions |
 
 Native configuration stays separate from portable Network Intent. Each record binds the canonical topology hash, logical node, active same-Project/Lab Device, immutable capability report ID/hash, adapter/version, observed platform/software version, format and content SHA-256. Tested format allowlists, a 2 MiB UTF-8 limit, inline-secret rejection and append-only audit are enforced. Snapshot content is not executed; this package does not claim candidate validation or device application.
+
+
+### Stage G G11 implementation checkpoint — 2026-11-26
+
+| Package | Scope | Source implementation | Current state |
+|---|---|---|---|
+| G11 | Controlled Ansible/native execution expansion | lib/services/ansible_automation.py; ansible/requirements.yml; P10 Ansible plan APIs; Network Intent UI; tests/test_ansible_automation.py | Implemented pending exact-head CI; Juniper Junos uses pinned juniper.device; three fixed read-only operations can run in independently approved READ_ONLY plans |
+
+The G11 expansion reuses P10 same-Device Vault references, independent approval, exact plan SHA-256, pinned compiler artifacts, strict SSH host-key checking, serial target execution, ResourceLockManager leases, immutable audit/execution evidence and no-automatic-retry recovery. The read-only catalog contains only device_version, interface_summary and routing_summary; inputs do not accept arbitrary commands, modules, scripts, dynamic inventories, roles or playbooks. Juniper configuration mode accepts compiler-produced set/delete lines only, uses a native backup and verifies committed display-set output. PAN-OS remains compiler-only pending its separately qualified API credential and transport lifecycle.
