@@ -30,6 +30,10 @@ class EVENGTopologyCodec:
 
     @staticmethod
     def _children(parent, name):
+        # EVE .unl declares interfaces as direct children of each <node>;
+        # <nodes> and <networks> are wrapper containers.
+        if name == "interfaces":
+            return [item for item in list(parent) if local_name(item.tag) == "interface"]
         container = next((item for item in list(parent) if local_name(item.tag) == name), None)
         return list(container) if container is not None else []
 
