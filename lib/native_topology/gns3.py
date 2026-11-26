@@ -57,7 +57,7 @@ class GNS3TopologyCodec:
         root = parse_json(source)
         revision = root.get("revision")
         if revision not in _REVISION_VERSIONS or root.get("type") != "topology":
-            raise NativeTopologyCodecError("GNS3 project file revision/type is not supported")
+            raise NativeTopologyCodecError("GNS3 project file revision/type is unsupported")
         version = str(root.get("version") or _REVISION_VERSIONS[revision])
         topology = root.get("topology")
         if not isinstance(topology, dict):
@@ -213,7 +213,7 @@ class GNS3TopologyCodec:
 
         warnings = []
         if topology.get("drawings"):
-            warnings.append("GNS3 drawing SVG objects remain preserved in the immutable source; they are not editable in the shared v1 presentation canvas.")
+            warnings.append("GNS3 native drawings (SVG objects) remain preserved in the immutable source; they are not editable in the shared v1 presentation canvas.")
         if any(node.get("ports") for node in raw_nodes):
             warnings.append("GNS3 native port metadata not referenced by a link remains preserved in the source document.")
         warnings.append("Compute bindings, node configurations, console settings and external project assets are retained in the source document and are not interpreted as execution instructions.")
