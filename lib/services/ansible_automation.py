@@ -669,7 +669,7 @@ class AnsibleAutomationService:
         if len(set(native_operations)) != len(native_operations):
             raise AnsibleAutomationError("native operation IDs must be unique")
         if any(item not in self.NATIVE_OPERATION_CATALOG for item in native_operations):
-            raise AnsibleAutomationError("one or more native operation IDs are not in the fixed allowlist")
+            raise AnsibleAutomationError("one or more native operation IDs are not allowlisted by the fixed read-only operation catalog")
         if execution_mode == "READ_ONLY" and not native_operations:
             raise AnsibleAutomationError("READ_ONLY execution requires at least one allowlisted native operation")
         profile = self.network_intent.get_profile(profile_id)
