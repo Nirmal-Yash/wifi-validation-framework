@@ -2,7 +2,7 @@
 
 **Checkpoint:** 2026-11-26  
 **Scope:** G03 codec framework, G04 GNS3 native project, G05 Cisco CML YAML/legacy VIRL, G06 EVE-NG .unl.  
-**Source status:** IMPLEMENTED_PENDING_CI. The exact final-main quality workflow is the CI acceptance gate.  
+**Source status:** CI_VERIFIED on exact commit `9ded2e3462c2a2a82b2979ed343e9e8ab726622a`. Exact-main quality workflow [45825419696](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45825419696) passed all three jobs: backend, frontend/build and dashboard/session smoke, including source/API security gates and repeated Linux reliability checks. Linux desktop package matrix remains a separate pending workflow; originating vendor application reopen/live controller qualification remains external.  
 **Dependencies:** G02 schema 1.0, TopologyStudioService, TopologyPresentationService and TopologySourceArtifactService. No second topology authority or new migration is introduced.
 
 ## 1. Architecture and ownership
@@ -94,3 +94,12 @@ tests/test_native_topology_codecs.py covers deterministic detection; GNS3/CML/VI
 - Cisco Modeling Labs documentation: https://developer.cisco.com/docs/modeling-labs/
 - Cisco Modeling Labs community YAML examples: https://github.com/CiscoDevNet/cml-community
 - EVE-NG documentation: https://www.eve-ng.net/index.php/documentation/
+
+
+## 9. Exact-main automated verification record
+
+- Source and fixture/API implementation commit: `9ded2e3462c2a2a82b2979ed343e9e8ab726622a`.
+- NetRegress quality workflow: [45825419696](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45825419696) — SUCCESS, all 3 jobs, including backend, frontend production build and dashboard startup/proxy/session smoke.
+- Backend job included strict source security audit, API security boundary tests, the full authentication/dashboard/Phase B–I correctness suite and repeated Linux locking/process/recovery contracts.
+- NetRegress Linux desktop package matrix: [45825419789](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45825419789) was still running at the time this audit was updated; package artifacts are not claimed complete here.
+- This CI result does not prove opening exported projects in licensed GNS3, CML/VM Maestro or EVE-NG desktop/controller versions. Those remain external acceptance.

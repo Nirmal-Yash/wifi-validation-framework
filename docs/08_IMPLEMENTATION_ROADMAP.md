@@ -3016,3 +3016,8 @@ Both batches are committed separately and integrated in one final fast-forward u
 | G06 | EVE-NG .unl versions 1/2 | lib/native_topology/eve_ng.py | Implemented; explicit shared-network segment projection |
 
 All formats reuse canonical topology and G02 presentation/provenance owners. Native imports retain original source bytes and SHA-256. Export requires published topology and presentation revisions and the exact associated source artifact. Configurations are never executed. External disk images/asset directories are not imported. Vendor application reopening and live controller acceptance remain external. See docs/STAGE_G_G03_G06_NATIVE_CODECS_AUDIT.md.
+
+
+### Stage G exact-head CI update — 2026-11-26
+
+G02–G06 source, fixtures, APIs and Topology Studio integration passed exact-main NetRegress quality workflow [45825419696](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45825419696) on commit `9ded2e3462c2a2a82b2979ed343e9e8ab726622a`. Backend, frontend/build and dashboard/session jobs passed, including source/API security and repeated Linux reliability checks. RQ-055–RQ-059 are CI_VERIFIED. Linux desktop package matrix [45825419789](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45825419789) was still in progress when recorded. Vendor GUI/controller reopen and external asset/image qualification remain separate external acceptance gates.
