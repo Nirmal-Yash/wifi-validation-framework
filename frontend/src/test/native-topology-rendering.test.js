@@ -23,6 +23,12 @@ describe("native topology presentation model",()=>{
   expect(model.links[0].layout.route_style).toBe("orthogonal");
   expect(definition.nodes[0]).toMatchObject({x:0,y:0});
  });
+ it("converts auto-layout canvas points back into native coordinate systems",()=>{
+  const coordinateSpace={unit:"native",origin:"bottom_left",x_axis:"right",y_axis:"up"};
+  const canvas={width:1200,height:800};
+  const point=canvasPointToPresentation(320,240,coordinateSpace,canvas);
+  expect(presentationPointToCanvas(point.x,point.y,coordinateSpace,canvas)).toEqual({x:320,y:240});
+ });
  it("round-trips bottom-left and centered coordinate systems",()=>{
   for(const coordinateSpace of [{origin:"bottom_left",x_axis:"right",y_axis:"up"},{origin:"center",x_axis:"left",y_axis:"up"}]){
    const canvas={width:1200,height:800},point=presentationPointToCanvas(120,240,coordinateSpace,canvas);

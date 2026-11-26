@@ -4,7 +4,7 @@ import {useWorkspace} from "@/components/workspace-context";
 import {useAsyncLoader,useMutation} from "@/hooks";
 import {canPerform} from "@/permissions";
 import {autoLayoutTopology,copyTopologySelection,createTopologyHistory,moveTopologyNodes,pasteTopologySelection,removeTopologySelection} from "@/topology-editor";
-import {createDefaultPresentation,fitPresentationViewport,movePresentationNodes,presentationLayerLocked,presentationLayerVisible,presentationLinkPath,presentationPortPoint,resolveTopologyPresentation,updatePresentationNodePosition,zoomPresentationViewport} from "@/topology-presentation";
+import {canvasPointToPresentation,createDefaultPresentation,fitPresentationViewport,movePresentationNodes,presentationLayerLocked,presentationLayerVisible,presentationLinkPath,presentationPortPoint,resolveTopologyPresentation,updatePresentationNodePosition,zoomPresentationViewport} from "@/topology-presentation";
 import {Button,DataTable,EmptyState,ErrorState,Field,InlineNotice,LoadingState,Section,StatusBadge} from "@/components/ui";
 
 export const DEFAULT_TOPOLOGY_VIEWPORT=Object.freeze({x:0,y:0,width:1000,height:620});
@@ -935,7 +935,7 @@ export default function TopologyStudioPage({user}){
     {presentationRevisions.loading&&!presentationRevisions.data?<LoadingState label="Loading presentation revisions…"/>:null}
     {presentationRevisions.error?<ErrorState error={presentationRevisions.error} onRetry={presentationRevisions.reload}/>:null}
     <div className="form-actions">
-     <Button type="button" variant="outline" onClick={savePresentationSnapshot} loading={mutation.loading} disabled={!canManage||!selectedRevision||JSON.stringify(definitionRef.current)!==JSON.stringify(selectedRevision.definition)||!presentationDirty}>Save presentation revision</Button>
+     <Button type="button" variant="outline" onClick={savePresentationSnapshot} loading={mutation.loading} disabled={!canManage||!selectedRevision||JSON.stringify(definitionRef.current)!==JSON.stringify(selectedRevision.definition)||(!presentationDirty&&Boolean(activePresentationRevision))}>Save presentation revision</Button>
      {presentationRevisionRows[0]?.presentation?.viewport?<Button type="button" variant="ghost" onClick={()=>restorePresentationViewport(presentationRevisionRows[0])}>Restore latest saved viewport</Button>:null}
     </div>
     <p className="muted">Presentation edits are saved independently from canonical network intent. Native node placement, dimensions, rotations, port anchors, link routes, drawings, layers and grid are read from the immutable presentation revision; moving native nodes does not change device/link semantics. Unavailable external device-image binaries remain source asset references and are identified rather than fabricated.</p>
