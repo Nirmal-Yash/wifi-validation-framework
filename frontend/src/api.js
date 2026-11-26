@@ -124,9 +124,9 @@ async function rawDownload(path){
  const disposition=response.headers?.get?.("content-disposition")||"";
  const encodedName=disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
  const plainName=disposition.match(/filename="?([^";]+)"?/i)?.[1];
- let filename="packet-tracer-export.pkt";
+ let filename="native-topology-export";
  try{filename=encodedName?decodeURIComponent(encodedName):plainName||filename;}catch{filename=plainName||filename;}
- return {blob:await response.blob(),filename,report:response.headers?.get?.("X-NetRegress-Export-Report")||""};
+ return {blob:await response.blob(),filename,report:response.headers?.get?.("X-NetRegress-Native-Report")||response.headers?.get?.("X-NetRegress-Export-Report")||""};
 }
 export const api={
  health:()=>request("/health"),readiness:()=>request("/readiness"),
