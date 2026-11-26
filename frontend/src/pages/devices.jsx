@@ -30,11 +30,12 @@ export default function DevicesPage({user}){
  const [credentialReference,setCredentialReference]=useState("");
  const [notice,setNotice]=useState("");
  const [error,setError]=useState("");
+ const canRead=canPerform(user,"devices.read");
  const canManage=canPerform(user,"devices.manage");
  const canOperate=canPerform(user,"devices.operate");
  const observationHistory=useAsyncLoader(
   ()=>observationDeviceId?api.deviceObservations(observationDeviceId):Promise.resolve({items:[]}),
-  [observationDeviceId],{enabled:Boolean(observationDeviceId),queryKey:"device-network-observations"}
+  [observationDeviceId,canRead],{enabled:Boolean(observationDeviceId&&canRead),queryKey:"device-network-observations"}
  );
  const labs=useAsyncLoader(()=>projectId?api.workspaceLabs(projectId):Promise.resolve({items:[]}),
   [projectId],{enabled:Boolean(projectId),queryKey:"device-inventory-labs"});
@@ -153,13 +154,14 @@ export default function DevicesPage({user}){
     {key:"device_id",label:"Device ID",render:item=><code title={item.device_id}>{item.device_id}</code>},
     {key:"credential_id",label:"Vault reference",render:item=>item.credential_id?<code title={item.credential_id}>{item.credential_id}</code>:"Not linked"},
     {key:"actions",label:"Actions",render:item=><div className="button-row">
+     {canRead?<Button size="sm" variant="ghost" onClick={()=>{setObservationDeviceId(item.device_id);setLatestObservation(null);}}>History</Button>:null}
      {canOperate?<Button size="sm" variant="outline" disabled={mutation.loading||!item.credential_id||item.capabilities?.supports_ssh===false} title={!item.credential_id?"Link an active same-device SSH_PASSWORD credential first":"Collect read-only network interface counters"} onClick={()=>captureObservation(item)}>Observe</Button>:null}
      {canManage?<Button size="sm" variant="ghost" disabled={mutation.loading} onClick={()=>archiveDevice(item)}>Archive</Button>:null}
-     {!canOperate&&!canManage?"—":null}
+     {!canRead&&!canOperate&&!canManage?"—":null}
     </div>}
    ]} emptyTitle="No devices in this scope" emptyMessage="Register the first device or choose another Lab."/>
   </Section>
-  {canOperate&&observationDeviceId?<Section title="Network interface observations" subtitle="Read-only Linux RX/TX counters collected through host-key-verified SSH. Snapshots are immutable and SHA-256 verified." actions={<Button size="sm" variant="outline" onClick={()=>observationHistory.reload()}>Refresh history</Button>}>
+  {canRead&&observationDeviceId?<Section title="Network interface observations" subtitle="Read-only Linux RX/TX counters collected through host-key-verified SSH. Snapshots are immutable and SHA-256 verified." actions={<Button size="sm" variant="outline" onClick={()=>observationHistory.reload()}>Refresh history</Button>}>
    {observationHistory.loading?<LoadingState label="Loading device observation history…"/>:null}
    {observationHistory.error?<InlineNotice tone="danger">{observationHistory.error.message}</InlineNotice>:null}
    {latestObservation?.device_id===observationDeviceId?<div className="environment-summary"><strong>Latest capture</strong><span>{new Date(latestObservation.captured_at).toLocaleString()}</span><code>{latestObservation.payload_sha256}</code></div>:null}

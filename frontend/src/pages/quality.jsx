@@ -373,10 +373,10 @@ export function TelemetryPage({user}){
   {observability.error?<InlineNotice tone="danger">{observability.error.message}</InlineNotice>:null}
   {observability.data?<>
    <div className="stat-grid">
-    <StatCard label="Metric groups" value={measuredRows.length} hint={observability.data.performance?.access==="AVAILABLE"?"Persisted test measurements":"Performance evidence restricted"} icon={<Activity size={17}/>}/>
-    <StatCard label="PCAP artifacts" value={captureRows.length} hint="Binary captures, metadata only" icon={<Activity size={17}/>}/>
-    <StatCard label="Protocol evidence" value={protocolRows.length} hint="Integrity-verified JSON records" icon={<Wifi size={17}/>}/>
-    <StatCard label="Wi-Fi snapshots" value={observability.data.telemetry?.items?.length??"—"} hint="Run-linked telemetry artifacts" icon={<Activity size={17}/>}/>
+    <StatCard label="Metric groups" value={observability.data.performance?.access==="RESTRICTED"?"Restricted":measuredRows.length} hint={observability.data.performance?.access==="AVAILABLE"?"Persisted test measurements":"Performance evidence is permission-restricted"} icon={<Activity size={17}/>}/>
+    <StatCard label="PCAP artifacts" value={observability.data.packet_captures?.access==="RESTRICTED"?"Restricted":captureRows.length} hint="Binary captures, metadata only" icon={<Activity size={17}/>}/>
+    <StatCard label="Protocol evidence" value={observability.data.protocol_evidence?.access==="RESTRICTED"?"Restricted":protocolRows.length} hint="Integrity-verified JSON records" icon={<Wifi size={17}/>}/>
+    <StatCard label="Wi-Fi snapshots" value={observability.data.telemetry?.access==="RESTRICTED"?"Restricted":observability.data.telemetry?.items?.length??"—"} hint="Run-linked telemetry artifacts" icon={<Activity size={17}/>}/>
    </div>
    {observability.data.performance?.access==="AVAILABLE"?<Section title="Measured Run metrics" subtitle="Raw samples, units and source test identities from persisted test results; no unit mixing or inferred metric values.">
     <DataTable caption="Measured Run metric samples" rows={measuredRows} rowKey={(row,index)=>row.test_id+"-"+row.metric_name+"-"+index} columns={[
