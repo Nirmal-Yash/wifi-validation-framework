@@ -630,3 +630,20 @@ def test_dashboard_launcher_has_database_auth_and_loopback_cookie_guard():
     assert "NETREGRESS_SESSION_COOKIE_SAMESITE=Lax" in launcher
     assert "Secure session cookies require an HTTPS deployment" in launcher
     assert "first-run Global Owner setup is pending" not in launcher
+
+
+def test_real_dashboard_smoke_starts_without_manual_credentials_and_bootstraps_owner():
+    root = Path(__file__).resolve().parents[1]
+    smoke = (root / "scripts" / "test_dashboard_startup.sh").read_text(encoding="utf-8")
+
+    assert "netregress-auth.json" not in smoke
+    assert "NETREGRESS_AUTH_USERS_JSON" in smoke
+    assert "unset NETREGRESS_AUTH_USERS_JSON" in smoke
+    assert "/api/v1/setup/status" in smoke
+    assert "/api/v1/setup/owner" in smoke
+    assert '"Origin": base' in smoke
+    assert "/api/v1/auth/login" in smoke
+    assert "/api/v1/auth/me" in smoke
+    assert "/api/v1/workspace/organizations" in smoke
+    assert "/api/v1/workspace/projects" in smoke
+    assert "SameSite=Lax" in smoke

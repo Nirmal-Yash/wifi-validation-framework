@@ -34,32 +34,17 @@ exec > >(tee -a "$VERIFY_LOG") 2>&1
 echo "[INFO] End-to-end dashboard smoke verification log: $VERIFY_LOG"
 export NETREGRESS_LOCAL_DIR="$LOCAL_DIR"
 export NETREGRESS_DATABASE_PATH="$SMOKE_ROOT/test-results.sqlite"
-unset NETREGRESS_PORT NETREGRESS_FRONTEND_PORT NETREGRESS_API_TARGET
+unset NETREGRESS_PORT NETREGRESS_FRONTEND_PORT NETREGRESS_API_TARGET NETREGRESS_AUTH_USERS_JSON
 
 SMOKE_PASSWORD="$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_urlsafe(32))')"
-NETREGRESS_SMOKE_PASSWORD="$SMOKE_PASSWORD" "$PYTHON_BIN" - "$LOCAL_DIR/netregress-auth.json" "$LOCAL_DIR/session-secret" <<'PY'
-import json
-import os
+NETREGRESS_SMOKE_PASSWORD="$SMOKE_PASSWORD" "$PYTHON_BIN" - "$LOCAL_DIR/session-secret" <<'PY'
 import secrets
 import sys
-from lib.security import AuthManager
+from pathlib import Path
 
-auth_path, secret_path = sys.argv[1:3]
-record = [{
-    "username": "owner",
-    "password_hash": AuthManager.password_hash(os.environ["NETREGRESS_SMOKE_PASSWORD"]),
-    "role": "OWNER",
-    "projects": ["*"],
-}]
-fd = os.open(auth_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-with os.fdopen(fd, "w", encoding="utf-8") as handle:
-    json.dump(record, handle)
-    handle.write("\n")
-fd = os.open(secret_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-with os.fdopen(fd, "w", encoding="utf-8") as handle:
-    handle.write(secrets.token_hex(32) + "\n")
-os.chmod(auth_path, 0o600)
-os.chmod(secret_path, 0o600)
+secret_path = Path(sys.argv[1])
+secret_path.write_text(secrets.token_hex(32) + "\n", encoding="utf-8")
+secret_path.chmod(0o600)
 PY
 
 LAUNCHER_PID=""
@@ -178,6 +163,25 @@ status, body, _ = request("/api/v1/auth/me")
 assert status == 401 and json.loads(body).get("error", {}).get("code") == "UNAUTHENTICATED"
 print("[PASS] Unauthenticated session restore is rejected with HTTP 401.")
 
+status, body, _ = request("/api/v1/setup/status")
+setup = json.loads(body)
+assert status == 200 and setup.get("data", {}).get("first_run_required") is True
+print("[PASS] A clean local database is correctly identified as requiring first-run Owner setup.")
+
+status, body, _ = request(
+    "/api/v1/setup/owner",
+    {"username": "owner", "password": os.environ["NETREGRESS_SMOKE_PASSWORD"]},
+    {"Origin": base},
+)
+created = json.loads(body)
+assert status == 200 and created.get("data", {}).get("global_role") == "OWNER"
+print("[PASS] First-run Owner setup creates the Global Owner through the same-origin API.")
+
+status, body, _ = request("/api/v1/setup/status")
+setup = json.loads(body)
+assert status == 200 and setup.get("data", {}).get("first_run_required") is False
+print("[PASS] First-run setup closes after the first Owner is persisted.")
+
 status, body, login_headers = request(
     "/api/v1/auth/login",
     {"username": "owner", "password": os.environ["NETREGRESS_SMOKE_PASSWORD"]},
@@ -186,7 +190,18 @@ login = json.loads(body)
 assert status == 200 and login.get("data", {}).get("role") == "OWNER"
 set_cookie = login_headers.get("Set-Cookie", "")
 assert "HttpOnly" in set_cookie and "SameSite=Lax" in set_cookie
-print("[PASS] OWNER login works through Vite and returns an HttpOnly, SameSite=Lax session cookie.")
+print("[PASS] The newly created Global Owner signs in through the ordinary login endpoint.")
+
+status, body, _ = request("/api/v1/auth/me")
+current = json.loads(body)
+assert status == 200 and current.get("data", {}).get("username") == "owner"
+print("[PASS] The signed session restores the persisted Owner identity through /auth/me.")
+
+for endpoint in ("/api/v1/workspace/organizations", "/api/v1/workspace/projects"):
+    status, body, _ = request(endpoint)
+    payload = json.loads(body)
+    assert status == 200 and isinstance(payload.get("data", {}).get("items"), list), (endpoint, payload)
+print("[PASS] First protected Organization and Project reads succeed after login.")
 
 status, body, _ = request("/api/v1/auth/csrf")
 csrf = json.loads(body).get("data", {}).get("csrf_token")
