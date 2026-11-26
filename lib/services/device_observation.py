@@ -62,10 +62,12 @@ class DeviceObservationService:
 
     @classmethod
     def parse_ip_link_stats(cls, output: str) -> dict[str, Any]:
-        if not isinstance(output, str) or not output.strip():
+        if not isinstance(output, str):
             raise DeviceObservationError("target returned no interface statistics")
         if len(output.encode("utf-8")) > cls.MAX_PAYLOAD_BYTES:
             raise DeviceObservationError("target interface output exceeds the two MiB safety limit")
+        if not output.strip():
+            raise DeviceObservationError("target returned no interface statistics")
         try:
             raw_interfaces = json.loads(output)
         except json.JSONDecodeError as exc:

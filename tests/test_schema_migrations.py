@@ -508,6 +508,9 @@ def test_existing_20260924_02_database_gets_forward_schema_reconciliation(tmp_pa
         connection.execute("DROP TABLE pipeline_executions")
         connection.execute("DROP TABLE pipeline_revisions")
         connection.execute("DROP TABLE pipeline_definitions")
+        # P14's provider insert trigger references the later provider-binding
+        # table. Remove this post-baseline trigger before reconstructing 20260924_02.
+        connection.execute("DROP TRIGGER trg_provider_observations_scope_insert")
         connection.execute("ALTER TABLE runs DROP COLUMN project_id")
         connection.execute("DROP TABLE labs")
         connection.execute("DROP TABLE projects")
