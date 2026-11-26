@@ -143,10 +143,10 @@ def _nodes_by_name(definition):
     return {item["name"]: item for item in definition["nodes"]}
 
 
-def test_default_registry_detects_the_three_native_formats_and_legacy_virl():
+def test_default_registry_detects_native_formats_and_legacy_virl():
     registry = default_registry()
     assert {item.format_id for item in registry.descriptors()} == {
-        "GNS3_PROJECT", "CML_LAB", "EVE_NG_UNL",
+        "GNS3_PROJECT", "CML_LAB", "EVE_NG_UNL", "CISCO_PACKET_TRACER_PKT",
     }
     assert registry.detect(GNS3_SOURCE, "lab.gns3").format_id == "GNS3_PROJECT"
     assert registry.detect(CML_SOURCE, "lab.yaml").format_id == "CML_LAB"

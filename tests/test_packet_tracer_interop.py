@@ -267,3 +267,69 @@ def test_packet_tracer_api_import_lists_source_and_downloads_export(interop_data
     assert "api-lab-netregress-export.pkt" in download.headers["Content-Disposition"]
     assert download.data == native
     assert download.headers.get("X-NetRegress-Export-Report")
+
+
+
+def test_packet_tracer_codec_joins_unified_native_registry_and_round_trips(interop_database):
+    from lib.native_topology.packet_tracer import PacketTracerTopologyCodec
+    from lib.native_topology.registry import default_registry
+
+    source = _native_packet()
+    codec = PacketTracerTopologyCodec()
+    assert codec.detect(source, "native-lab.pkt") is True
+    decoded = codec.decode(source, "native-lab.pkt")
+    assert decoded.format_id == "CISCO_PACKET_TRACER_PKT"
+    assert decoded.topology_definition["nodes"]
+    assert decoded.presentation["layout_origin"] == "NATIVE"
+    assert len(decoded.presentation["nodes"]) == len(decoded.topology_definition["nodes"])
+    assert len(decoded.presentation["links"]) == len(decoded.topology_definition["links"])
+    assert any("drawing objects" in warning for warning in decoded.warnings)
+    assert "CISCO_PACKET_TRACER_PKT" in {
+        item.format_id for item in default_registry().descriptors()
+    }
+
+    encoded = codec.encode(
+        decoded.topology_definition,
+        decoded.presentation,
+        original_source=source,
+        filename="native-lab.pkt",
+    )
+    assert encoded.content == source
+    assert encoded.format_id == "CISCO_PACKET_TRACER_PKT"
+    assert encoded.losses
+
+
+def test_packet_tracer_generic_import_and_export_use_g02_provenance(interop_database):
+    from lib.services.native_topology_interop import NativeTopologyInteropService
+
+    source = _native_packet()
+    service = NativeTopologyInteropService(interop_database)
+    imported = service.import_file(
+        project_id="project-1",
+        name="Unified Packet Tracer",
+        filename="unified.pkt",
+        content=source,
+        actor="test-operator",
+    )
+    assert imported["source"]["format_id"] == "CISCO_PACKET_TRACER_PKT"
+    assert imported["source"]["sha256"] == hashlib.sha256(source).hexdigest()
+    assert imported["presentation"]["source_artifact_id"] == imported["source"]["source_id"]
+    assert imported["report"]["format_id"] == "CISCO_PACKET_TRACER_PKT"
+
+    service.topology_studio.publish(
+        imported["profile"]["profile_id"], imported["revision"]["revision_id"], actor="test-operator"
+    )
+    service.topology_presentation.publish(
+        imported["presentation"]["presentation_id"],
+        actor="test-operator",
+        expected_profile_id=imported["profile"]["profile_id"],
+    )
+    exported = service.export_revision(
+        profile_id=imported["profile"]["profile_id"],
+        revision_id=imported["revision"]["revision_id"],
+        presentation_id=imported["presentation"]["presentation_id"],
+        source_id=imported["source"]["source_id"],
+    )
+    assert exported.content == source
+    assert exported.report["originating_application_reopen"] == "NOT_VERIFIED"
+    assert exported.report["losses"]

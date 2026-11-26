@@ -3014,6 +3014,7 @@ Both batches are committed separately and integrated in one final fast-forward u
 | G04 | GNS3 .gns3 format revision 7/8/9 | lib/native_topology/gns3.py | Implemented; bounded node/link projection and presentation-only export; exact-head quality CI passed on `3fc4ab7` |
 | G05 | CML YAML 0.1.x and legacy VIRL 0.95 subset | lib/native_topology/cml.py | Implemented; bounded node/interface/link/annotation mapping; exact-head quality CI passed on `3fc4ab7` |
 | G06 | EVE-NG .unl versions 1/2 | lib/native_topology/eve_ng.py | Implemented; explicit shared-network segment projection; exact-head quality CI passed on `3fc4ab7` |
+| G07 | Cisco Packet Tracer native .pkt through the shared codec/provenance workflow | lib/native_topology/packet_tracer.py; existing bounded PacketTracerInteropService/pktlib parser and serializer; unified native import/export API and UI | Implemented pending exact-head CI; codec read-back and declared name/placement write subset; desktop reopen pending |
 
 All formats reuse canonical topology and G02 presentation/provenance owners. Native imports retain original source bytes and SHA-256. Export requires published topology and presentation revisions and the exact associated source artifact. Configurations are never executed. External disk images/asset directories are not imported. Vendor application reopening and live controller acceptance remain external. See docs/STAGE_G_G03_G06_NATIVE_CODECS_AUDIT.md.
 
@@ -3021,3 +3022,8 @@ All formats reuse canonical topology and G02 presentation/provenance owners. Nat
 ### Stage G exact-head CI update — 2026-11-26
 
 G02–G06 source, fixtures, APIs and Topology Studio integration passed exact-main NetRegress quality workflow [45825419696](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45825419696) on commit `9ded2e3462c2a2a82b2979ed343e9e8ab726622a`. Backend, frontend/build and dashboard/session jobs passed, including source/API security and repeated Linux reliability checks. RQ-055–RQ-059 are CI_VERIFIED. Linux desktop package matrix [45825419789](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45825419789) was still in progress when recorded. Vendor GUI/controller reopen and external asset/image qualification remain separate external acceptance gates.
+
+
+### Stage G G07 implementation checkpoint — 2026-11-26
+
+The existing EXP-P07-B Packet Tracer bridge is now registered as `CISCO_PACKET_TRACER_PKT` in the G03 native codec registry and uses the same G02 immutable source-artifact and presentation-revision services as GNS3/CML/EVE-NG. The adapter reuses the pinned `pktlib` parser, bounded decompression/DTD preflight, existing logical-device projection and native serializer; it does not create a second .pkt parser or alter the legacy Packet Tracer endpoints/schema. Unified import accepts `.pkt`; source provenance is SHA-256-bound to the canonical and presentation revisions. The serializer permits only device-name and X/Y placement edits, verifies device identity/name/coordinate/link read-back, and reports the codec's output edition and unsupported changes. Packet Tracer drawings/notes, interface/configuration edits and desktop application reopening remain outside the proven support boundary. Exact-head CI is pending.

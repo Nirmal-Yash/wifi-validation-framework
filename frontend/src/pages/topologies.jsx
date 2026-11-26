@@ -120,7 +120,7 @@ export default function TopologyStudioPage({user}){
  const profileRows=profiles.data?.items||[];
  const revisionRows=revisions.data?.items||[];
  const presentationRevisionRows=presentationRevisions.data?.items||[];
- const nativeArtifactRows=(nativeArtifacts.data?.items||[]).filter(item=>["GNS3_PROJECT","CML_LAB","EVE_NG_UNL"].includes(item.format_id));
+ const nativeArtifactRows=(nativeArtifacts.data?.items||[]).filter(item=>["GNS3_PROJECT","CML_LAB","EVE_NG_UNL","CISCO_PACKET_TRACER_PKT"].includes(item.format_id));
  const nodes=definition.nodes||[];
  const links=definition.links||[];
  const selectedRevision=revisionRows.find(item=>item.revision_id===revisionId)||null;
@@ -781,12 +781,12 @@ export default function TopologyStudioPage({user}){
     <div className="form-actions"><Button type="submit" loading={mutation.loading} disabled={!projectId||!profileForm.name.trim()||(scope.scope_type==="LAB"&&!scope.scope_id.trim())}>Create profile</Button></div>
    </form>:null}
   </Section>
-  <Section title="GNS3 / CML / EVE-NG native import" subtitle="Import native .gns3, CML lab YAML/legacy VIRL XML or EVE-NG .unl files into canonical topology with immutable source provenance.">
+  <Section title="Unified native project import" subtitle="Import supported GNS3, CML, EVE-NG and Cisco Packet Tracer files through the shared codec, canonical topology and immutable provenance workflow.">
    {canManage?<form className="form-grid" onSubmit={importNativeProject}>
     <Field label="New topology profile name" required><input aria-label="Native topology profile name" value={nativeName} onChange={event=>setNativeName(event.target.value)} maxLength={120} required/></Field>
     <Field label="Import scope"><select aria-label="Native topology import scope" value={nativeScope} onChange={event=>setNativeScope(event.target.value)}><option value="PROJECT">Project</option><option value="LAB">Lab</option></select></Field>
     {nativeScope==="LAB"?<Field label="Lab ID" required><input aria-label="Native topology Lab ID" value={nativeLabId} onChange={event=>setNativeLabId(event.target.value)} maxLength={128} required/></Field>:null}
-    <Field label="Native project file" required><input aria-label="GNS3 CML or EVE-NG project file" type="file" accept=".gns3,.yaml,.yml,.virl,.unl,application/json,application/yaml,application/xml,text/xml" onChange={event=>setNativeFile(event.target.files?.[0]||null)} required/></Field>
+    <Field label="Native project file" required><input aria-label="GNS3 CML EVE-NG or Packet Tracer project file" type="file" accept=".gns3,.yaml,.yml,.virl,.unl,.pkt,application/json,application/yaml,application/xml,text/xml,application/octet-stream" onChange={event=>setNativeFile(event.target.files?.[0]||null)} required/></Field>
     <div className="form-actions"><Button type="submit" loading={nativeBusy} disabled={!projectId||!nativeFile||!nativeName.trim()||(nativeScope==="LAB"&&!nativeLabId.trim())}>Import native project</Button></div>
     <p className="muted">Automatic format detection · maximum 50 MiB · original bytes and SHA-256 retained. Import never connects to a controller, provisions a lab or executes node configurations.</p>
    </form>:<p className="muted">Native project import requires topology.manage permission in the selected Project.</p>}
@@ -834,10 +834,10 @@ export default function TopologyStudioPage({user}){
     ]} emptyTitle="No native Packet Tracer sources" emptyMessage="Import a .pkt file above to retain its source bytes and provenance beside the canonical topology revision."/>
     <p className="muted">The first serializer subset supports device-name and canvas-coordinate edits. Node/device changes, link rewiring and interface/configuration changes are rejected until explicit native mappings exist. Codec round-trip is not the same as reopening in Packet Tracer.</p>
    </Section>
-    <Section title="Native GNS3 / CML / EVE-NG source artifacts" subtitle="Source files are immutable and hash-verified. Export requires published topology and matching presentation revisions.">
+    <Section title="Unified native source artifacts" subtitle="GNS3, CML, EVE-NG and Packet Tracer source files are immutable and hash-verified. Export requires published topology and matching presentation revisions.">
      {nativeArtifacts.loading&&!nativeArtifacts.data?<LoadingState label="Loading native project source records…"/>:null}
      {nativeArtifacts.error?<ErrorState error={nativeArtifacts.error} onRetry={nativeArtifacts.reload}/>:null}
-     <DataTable caption="Native GNS3, CML and EVE-NG source artifacts" rows={nativeArtifactRows} rowKey={item=>item.source_id} columns={[
+     <DataTable caption="Unified native topology source artifacts" rows={nativeArtifactRows} rowKey={item=>item.source_id} columns={[
       {key:"filename",label:"Source file",render:item=><strong>{item.filename}</strong>},
       {key:"format_id",label:"Format"},
       {key:"format_version",label:"Native version"},
@@ -845,8 +845,8 @@ export default function TopologyStudioPage({user}){
       {key:"size_bytes",label:"Bytes",render:item=>Number(item.size_bytes).toLocaleString()},
       {key:"imported_at",label:"Imported"},
       {key:"actions",label:"Action",render:item=><Button type="button" size="sm" variant="outline" onClick={()=>exportNativeProject(item.source_id)} loading={nativeBusy} disabled={!canManage||selectedRevision?.revision_id!==item.topology_revision_id||selectedRevision?.status!=="PUBLISHED"||!presentationRevisionRows.some(view=>view.source_artifact_id===item.source_id&&view.status==="PUBLISHED")}>Export selected revision</Button>},
-     ]} emptyTitle="No GNS3, CML or EVE-NG source artifacts" emptyMessage="Import a native project to retain its original file and supported format/version provenance."/>
-     <p className="muted">The current native serializer supports mapped node/network placement and labels only. Device add/remove, link rewiring, configuration mutation and image migration are outside this export subset. Export read-back does not replace testing the generated file in the originating vendor application.</p>
+     ]} emptyTitle="No unified native source artifacts" emptyMessage="Import a supported native project to retain its original file and format/version provenance."/>
+     <p className="muted">GNS3, CML and EVE-NG serializers support their documented placement/label subsets. Packet Tracer additionally supports only device-name and X/Y edits. Device/link/configuration changes outside each codec's capability report are rejected rather than discarded. Export read-back does not replace testing the generated file in the originating vendor application.</p>
     </Section>
    <Section title="Revision history" subtitle="Published revisions are immutable. Continue editing by saving a new draft from the local canvas.">
     <div className="form-grid">

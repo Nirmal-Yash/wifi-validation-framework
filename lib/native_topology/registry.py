@@ -94,9 +94,11 @@ def default_registry() -> NativeTopologyCodecRegistry:
     from .cml import CMLTopologyCodec
     from .eve_ng import EVENGTopologyCodec
     from .gns3 import GNS3TopologyCodec
+    from .packet_tracer import PacketTracerTopologyCodec
 
     return NativeTopologyCodecRegistry((
         GNS3TopologyCodec(),
         CMLTopologyCodec(),
         EVENGTopologyCodec(),
+        PacketTracerTopologyCodec(),
     ))
