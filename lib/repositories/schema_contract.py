@@ -640,9 +640,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "34":
+        if metadata.get("version") != "35":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '34'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '35'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")
