@@ -16,7 +16,7 @@ from .helpers import (
 )
 
 
-_CML_YAML_VERSION = re.compile(r"^0\\.1\\.\\d+$")
+_CML_YAML_VERSION = re.compile(r"^0\.1\.\d+$")
 _VIRL_SCHEMA_VERSION = "0.95"
 
 

@@ -38,7 +38,7 @@ class GNS3TopologyCodec:
         version = family if raw_version in (None, "") else text(
             raw_version, "GNS3 project version", maximum=32
         )
-        if not re.fullmatch(re.escape(family) + r"(?:\\.\\d+)?", version):
+        if not re.fullmatch(re.escape(family) + r"(?:\.\d+)?", version):
             raise NativeTopologyCodecError(
                 "GNS3 project version does not match its declared file revision"
             )
