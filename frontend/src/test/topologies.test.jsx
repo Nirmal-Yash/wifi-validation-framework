@@ -108,7 +108,8 @@ describe("visual topology studio editing workflow",()=>{
   api.topologyPresentationRevisions.mockResolvedValue({items:[{
    presentation_id:"presentation-g12",profile_id:"profile-a",
    topology_revision_id:"revision-a",source_artifact_id:"source-g12",
-   revision_number:1,status:"PUBLISHED",presentation:{nodes:[],viewport:{}},
+   revision_number:1,status:"PUBLISHED",presentation_sha256:"e".repeat(64),
+   presentation:{nodes:[],viewport:{}},
   }]});
   renderPage();
   const reconcileButton=await screen.findByRole("button",{name:"Save reconciliation snapshot"});
