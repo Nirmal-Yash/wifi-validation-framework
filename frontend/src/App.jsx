@@ -86,7 +86,7 @@ export default function App(){
   case"test":page=<TestDetailPage runId={route.runId} testResultId={route.testResultId}/>;break;
   case"regressions":page=<RegressionPage/>;break;
   case"performance":page=<PerformancePage user={user}/>;break;
-  case"telemetry":page=<TelemetryPage/>;break;
+  case"telemetry":page=<TelemetryPage user={user}/>;break;
   case"lab-health":page=<LabHealthPage/>;break;
   case"artifacts":page=<ArtifactsPage/>;break;
   case"baselines":page=<BaselinesPage user={user}/>;break;

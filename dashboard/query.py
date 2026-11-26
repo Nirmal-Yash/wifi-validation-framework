@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from datetime import datetime, timezone
 from math import isfinite
 from typing import Any, Mapping
 
@@ -1037,6 +1038,86 @@ class DashboardQueryService:
             if data is not None:
                 payloads.append({"artifact": self.serialize_artifact(artifact), "snapshot": data})
         return sorted(payloads, key=lambda item: item["snapshot"].get("completed_at") or "")
+
+    def network_observability(
+        self, run_id: str, *, include_performance: bool = True,
+        include_evidence: bool = True,
+    ) -> dict[str, Any]:
+        """Return one Run-scoped view of measured metrics and verified network evidence.
+
+        Performance samples and evidence artifacts have independent permission
+        boundaries at the API layer. PCAP bytes and filesystem paths are never
+        returned by this query.
+        """
+        run = self.run_repository.get(run_id)
+        if run is None:
+            raise DashboardQueryError(f"Run not found: {run_id}")
+
+        if include_performance:
+            performance = {
+                "access": "AVAILABLE",
+                "items": self.metrics_for_run(run_id),
+                "source": "metrics_and_samples",
+            }
+        else:
+            performance = {"access": "RESTRICTED", "items": None, "source": None}
+
+        if include_evidence:
+            telemetry = {
+                "access": "AVAILABLE",
+                "environment_class": self.environment_class(run_id),
+                "items": self.telemetry(run_id),
+            }
+            health = {"access": "AVAILABLE", "items": self.health(run_id)}
+            packet_captures = []
+            protocol_evidence = []
+            for artifact in self.artifact_repository.list_for_run(run_id):
+                kind = artifact.artifact_type.value
+                if kind not in {ArtifactType.PCAP.value, ArtifactType.PROTOCOL_EVIDENCE.value}:
+                    continue
+                verified_path = self._safe_artifact_path(artifact)
+                verified = verified_path is not None
+                record = self.serialize_artifact(artifact) | {
+                    "downloadable": verified,
+                    "integrity_status": "VERIFIED" if verified else "UNAVAILABLE",
+                    "content_available": False,
+                }
+                if kind == ArtifactType.PCAP.value:
+                    # A packet capture is potentially sensitive binary evidence.
+                    # Expose its integrity metadata, never its bytes or local path.
+                    packet_captures.append(record)
+                else:
+                    evidence_record = dict(record)
+                    payload = self._read_json_artifact(artifact) if verified else None
+                    evidence_record["parse_status"] = (
+                        "VERIFIED_JSON" if isinstance(payload, (dict, list))
+                        else "UNPARSEABLE" if verified else "UNAVAILABLE"
+                    )
+                    evidence_record["evidence"] = payload if isinstance(payload, (dict, list)) else None
+                    protocol_evidence.append(evidence_record)
+        else:
+            telemetry = {"access": "RESTRICTED", "environment_class": None, "items": None}
+            health = {"access": "RESTRICTED", "items": None}
+            packet_captures = None
+            protocol_evidence = None
+
+        return {
+            "run_id": run_id,
+            "project_id": run.project_id,
+            "lab_id": run.lab_id,
+            "observed_at": self._iso(datetime.now(timezone.utc)),
+            "performance": performance,
+            "telemetry": telemetry,
+            "health": health,
+            "packet_captures": (
+                {"access": "AVAILABLE", "items": packet_captures}
+                if include_evidence else {"access": "RESTRICTED", "items": None}
+            ),
+            "protocol_evidence": (
+                {"access": "AVAILABLE", "items": protocol_evidence}
+                if include_evidence else {"access": "RESTRICTED", "items": None}
+            ),
+        }
 
     def environment_class(self, run_id: str) -> str | None:
         classes = set()

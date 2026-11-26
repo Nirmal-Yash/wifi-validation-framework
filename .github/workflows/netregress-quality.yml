@@ -175,6 +175,7 @@ jobs:
           tests/test_schema_migrations.py
           tests/test_credential_vault.py
           tests/test_device_inventory.py
+          tests/test_device_observability.py
           tests/test_wifi_lab_provisioning.py
           tests/test_linux_lab_host_bootstrap.py
           tests/test_linux_lab_host_network.py

@@ -13,6 +13,9 @@ def test_openapi_path_keys_are_unique_and_cover_runtime_routes():
     assert len(paths) == len(set(paths)), "duplicate OpenAPI path key"
     assert {"/auth/activity", "/readiness", "/runs/{run_id}/release-gate", "/waivers", "/sync/queue", "/firmware/{device_id}/rollback", "/topologies/validate", "/topologies/{profile_id}/plan", "/dashboard/operations-overview",
         "/providers/registry", "/labs/{lab_id}/provider-catalog",
+        "/labs/{lab_id}/provider-observations",
+        "/runs/{run_id}/network-observability",
+        "/runs/{run_id}/metrics", "/devices/{device_id}/observations",
         "/labs/{lab_id}/provider-nodes/{provider_node_id}/interfaces",
         "/infrastructure/modules", "/infrastructure/workspaces", "/infrastructure/workspaces/{workspace_id}",
         "/infrastructure/workspaces/{workspace_id}/plans", "/infrastructure/plans",
@@ -119,3 +122,20 @@ def test_openapi_is_a_single_valid_yaml_document_with_complete_path_and_componen
     assert {"parameters", "schemas", "securitySchemes"} <= set(document["components"])
     assert "/infrastructure/workspaces/{workspace_id}/resources" in document["paths"]
     assert "/infrastructure/workspaces/{workspace_id}/recover" in document["paths"]
+
+
+def test_provider_observation_contract_uses_registered_vault_backed_adapter_and_immutable_history():
+    content = SPEC.read_text(encoding="utf-8")
+    provider = content.split("  /labs/{lab_id}/provider-observations:", 1)[1].split(
+        "\n  /labs/{lab_id}/provider-catalog:", 1
+    )[0]
+    assert "topology.read" in provider
+    assert "Credential Vault" in provider
+    assert "SHA-256" in provider
+    assert "caller-supplied measurements" in provider
+    run = content.split("  /runs/{run_id}/network-observability:", 1)[1].split(
+        "\n  /runs/{run_id}/metrics:", 1
+    )[0]
+    assert "performance.read" in run and "evidence.read" in run
+    assert "PCAP" in run and "protocol evidence" in run
+    assert "filesystem paths" in run

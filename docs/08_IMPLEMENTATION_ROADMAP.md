@@ -1,284 +1,3005 @@
-# NetRegress Product Expansion — Implementation Roadmap
+# NetRegress — Development Plan & Roadmap
 
-**Baseline:** `3b8e5504b3824401a22e774ff1e37b2b253474a6`  
-**Programme:** Product expansion P00–P17 (called **EXP-P00–EXP-P17** in this repository to distinguish it from historical/Stage D phases that already use P00/P17–P37 names).
+> Canonical document for development order, implementation phases, historical implementation detail, current iterations, roadmap status, and completion gates.
+>
+> This document aggregates the previously separate development-plan and roadmap documents without deleting their technical detail. The current authoritative sequence is presented first; the historical phase detail and explicit roadmap checklist are preserved afterward.
 
-This is an additive programme layered over the existing Runner implementation. It does not replace the canonical B–P, Stage D P17–P24, Stage E P25–P29 or Stage F P30–P37 records in `01_DEVELOPMENT_PLAN_AND_ROADMAP.md`.
+Companion canonical documents:
+- docs/02_SYSTEM_ARCHITECTURE_DATA_API.md
+- docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md
+- docs/04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md
+- docs/05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md
+- docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md
+- docs/STAGE_C_FOUNDATION.md
+- docs/STAGE_D_FOUNDATION.md
 
-## Stage A — Product foundation and frontend
+## 1. Authority and development rules
 
-| Expansion phase | Scope | Dependencies | Exit evidence |
+- The development plan controls implementation order.
+- The roadmap controls iteration/status visibility.
+- The architecture, data/API, business, testing, and execution documents remain authoritative for their respective technical contracts.
+- Existing executable code remains the current behavioral source until the relevant phase explicitly migrates that behavior.
+- Protected behavioral baseline: 436026eba597b2c6ae2e291a9cd8054b70ebbf7c.
+- Canonical real-lab invocation: pytest tests/ -v --firmware-version=v1.0.
+- Real-lab evidence is never substituted by simulated or source-only evidence.
+
+## 2. Current authoritative development plan
+
+### Current bounded implementation sequence — Phases B–P
+
+This B–P programme is the current execution order for the next development slices. It supersedes older phase groupings as the active work sequence while preserving all historical Iteration 20–30 notes below for traceability. Each phase is delivered as a coherent, testable slice; implementation is not spread across an oversized multi-module session.
+
+| Phase | Scope | Status |
+|---|---|---|
+| B | Run and Evidence Correctness: latest-Attempt result mapping, exact selected-node coverage, fail-closed evidence ownership, pytest phase metadata, retry lineage and atomic baseline replacement | Implemented; source/CI baseline previously green; REAL_LAB certification remains separate |
+| C | Canonical Persistence Foundation: one SQLite path resolver, explicit database transaction scope, atomic initial Run + Attempt + creation events, and consistent resolver use by application entry points | Implemented and pushed in 82743fc; Actions run 41855004616 passed; REAL_LAB certification remains unverified |
+| D | Legacy Compatibility and Historical Migration: legacy helper facade, read-only source handling, deterministic IDs/provenance, migration ledger, idempotent import and legacy-baseline ineligibility | Implemented; hosted CI gate included; deployment database import remains an operator-run migration |
+| E | Database Schema Governance and Reliability: make Alembic the schema migration authority, versioned upgrades, schema drift checks, compatibility validation, and migration recovery | Implemented; migration, drift, backup and rollback tests included in hosted CI |
+| F | Execution and Process Reliability: worker lifecycle, subprocess supervision, cancellation, timeout taxonomy, crash/interrupt recovery and deterministic finalization | Implemented; hosted workflow 42216004283 passed all three jobs; protected REAL_LAB remains separate |
+| G | Configuration, Environment and Resource Orchestration: typed configuration provenance, environment fingerprints, lab/device leases, orchestration boundaries and preflight contracts | Implemented; hosted workflow 42363358706 passed frontend, backend and dashboard jobs; protected REAL_LAB remains separate |
+| H | Protocol Evidence Certification: live DHCP DORA, EAPOL four-way, Beacon/RSN and DNS correlation against verified real captures | Source implementation and focused CI coverage delivered: replay/direction-aware EAPOL, endpoint/time-aware DNS, strict RSN/Beacon validation, and protected live EAPOL/Beacon/DNS capture tests; REAL_LAB acceptance pending, including operator-approved DHCP T1/T2 capture |
+| I | Telemetry, Performance and Recovery Validation: measured WiFi telemetry, statistically governed performance tests, fault/recovery assertions and evidence correlation | Implemented; repeated performance samples, warm-up exclusion, immutable environment-aware telemetry, secured fault restoration and hosted CI passed; protected RF/performance/recovery certification outstanding |
+| J | Device and Firmware Lifecycle: adapter capability contracts, image verification, flash/reboot/readiness, rollback and target-specific lifecycle certification | Source hardened; hosted workflow 42472939649 passed 3/3 jobs; physical target flash/reboot/rollback certification outstanding |
+| K | Security and Deployment Hardening: credential handling, auth/RBAC, secure command boundaries, artifact controls, deployment policy and security regression | Source hardening delivered; strict audit, SSRF/API/RBAC/session and artifact-download tests passed workflows 42510776806 and 42511179934 (3/3 jobs); production proxy/secrets, DNS-rebinding and threat-model acceptance remain |
+| L | API, Dashboard and Frontend Completion: typed API contract, consistent errors, pagination, operational UX, authenticated downloads and browser/runtime parity | Source integration and contract tests delivered; hosted workflow [42619327281](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42619327281) passed 3/3 jobs; authenticated reverse-proxy runtime and protected REAL_LAB acceptance remain |
+| M | Regression Intelligence, Release Gate and Offline Operations: comparable baseline logic, metric classification, waiver boundaries, local queue recovery and release decision evidence | Source hardening and regression corrections delivered; hosted workflow [42619327281](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42619327281) passed 3/3 jobs; Cloud endpoint and protected release acceptance remain separate |
+| N | Standalone Packaging and Production Certification: reproducible install, upgrade/backup/restore, doctor/manifest, operator runbooks and the full standalone certification matrix | Source tooling delivered; P33–P37 extend Linux desktop qualification, dependency/supply-chain controls, repeatable reliability checks, packaged business-logic contracts and exact-commit certification packet. Python and npm runtime locks are tracked and validated; hash-locked PyInstaller and Cargo build locks, clean-machine rehearsal, production proxy acceptance, protected REAL_LAB and physical firmware evidence remain open |
+| O | Cloud/SaaS Expansion and Integration: separate control-plane contracts, tenant/project ownership, outbound synchronization and remote release workflows; begin only after standalone Runner certification | Future scope. Combined O/P adds only local read-only sync-queue visibility over the existing outbound-only transport; no Cloud receiver, tenant model, PostgreSQL or remote-control feature is implemented |
+| P | GitHub Repository Organization and Cleanup: source and docs ownership audit, tests/workflow coverage, dependency hygiene, stale-file/branch cleanup, secret scan, release metadata and final repository freeze | Source/governance cleanup delivered in `a87bfd1`; hosted workflow [42632716718](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42632716718) passed all 3 jobs and the single-branch/no-open-PR audit passed. No history rewrite or compatibility-file deletion |
+
+### Additional Stage D implementation track — P17–P24
+
+Stage D — Device Management and Topology Studio — is an additional product-stage programme created after Stage C. It is intentionally distinct from the historical Phase D row above (legacy compatibility and historical migration). Its authoritative phase contracts and safety gates are documented in docs/STAGE_D_FOUNDATION.md.
+
+| Phase | Scope | Status |
+|---|---|---|
+| P17 | Device Inventory Domain and API | Implemented in Stage D source checkpoint |
+| P18 | Device Management Frontend | Implemented in Stage D source checkpoint |
+| P19 | Canonical Topology Model and immutable revisions | Implemented; immutable revision and validation tests |
+| P20 | Visual Topology Canvas and node editor | Implemented; local authoring and persisted coordinates |
+| P21 | Interfaces, ports and link editor | Implemented; exact adapter/port occupancy validation |
+| P22 | GNS3 provider project/template/node lifecycle | Implemented; private controller binding, scoped vault credentials, provider catalogue, logical-to-provider mappings and explicit start/stop with verified read-back |
+| P23 | GNS3 provider link lifecycle | Implemented; deterministic logical mappings, adapter/port validation, conflict-safe create/adopt and provider drift detection |
+| P24 | Explicit apply, reconciliation and device configuration provider seam | Implemented; hash-confirmed idempotent topology apply, immutable apply evidence and PARTIAL recovery, plus allow-listed OpenWrt Wi-Fi deployment with vault-backed SSH and read-back verification |
+
+Stage D implementation is complete through P24, with mocked provider and dashboard
+integration coverage in CI. Live GNS3/OpenWrt hardware acceptance remains a deployment
+release gate. The current lock backend is POSIX-specific; Windows lock portability and
+Windows runtime acceptance remain separate platform gates. No Cloud/SaaS control plane
+is included in this Stage D increment.
+
+### Additional Stage E implementation track — P25–P29
+
+Stage E — Provisioning, Pipelines and Run Integration — follows Stage D. Its
+authoritative contracts and protected-lab gates are in
+docs/STAGE_E_FOUNDATION.md.
+
+| Phase | Scope | Status |
+|---|---|---|
+| P25 | Provisioning Adapter Migration | Python GNS3, Ubuntu host-readiness, libvirt dual-subnet, Docker guest package/SSH, hwsim placement, hostapd/wpa_supplicant, FRR DHCP/DNS and guest path/SSH preflight adapters implemented with hosted contract tests; actual PCAP and protected GNS3/mac80211_hwsim/OpenWrt acceptance remain operator-owned; compatibility shell retained for repository/config repair, destructive reset and protected-suite/capture workflow |
+| P26 | Persisted Pipeline Orchestration | Implemented; immutable Project/Lab revisions, persisted execution/step/attempt records, worker leases, bounded safe retries and explicit recovery |
+| P27 | Pipeline Management Frontend | Implemented; scoped authoring/publication, execution monitoring, cancellation and reviewed recovery |
+| P28 | Complete Run and Policy Integration | Implemented in source; canonical RunProcessManager/RunService execution, same-Project/Lab Run association, pinned policy/configuration/topology references and post-Run policy evaluation |
+| P29 | Qualification and Release Gate | Hosted backend (532 passed, 7 skipped on 2026-11-17), frontend and dashboard checks pass for the current Stage E checkpoint; protected GNS3/mac80211_hwsim/physical OpenWrt Run, capture and evidence acceptance remains operator-owned |
+
+Stage E does not introduce a Cloud control plane or retire the protected shell
+entry point. Run/evidence remains authoritative, and uncertain validation
+processes require explicit recovery rather than automatic replay.
+
+#### Phase C — implementation contract
+
+Phase C deliberately establishes persistence primitives without taking ownership of historical data conversion or schema migration governance.
+
+- **Canonical database location:** `SQLiteDatabase(path=None)` delegates to `resolve_database_path`. Explicit path wins; otherwise `NETREGRESS_DATABASE_PATH`, then the compatible `TEST_DB_PATH` alias, then a synchronous SQLite `DATABASE_URL`, then repository-root `results/test_results.db`. Conflicting canonical/legacy environment paths fail closed.
+- **Connection versus transaction:** `SQLiteDatabase.connection()` remains the low-level connection context and preserves existing caller-managed commit semantics. `SQLiteDatabase.transaction(immediate=False)` is the explicit write-unit boundary; it commits on normal exit and rolls back on any exception. `immediate=True` acquires the SQLite write reservation before the unit starts.
+- **Initial Run unit-of-work:** `SQLiteRunRepository.save_initial_bundle` stores the Run, Attempt 1, `RUN_CREATED` and `ATTEMPT_CREATED` events in one immediate transaction. A conflict/failure in any member leaves none of the bundle persisted. The service generates IDs in the existing order and returns only after the unit commits.
+- **Repository entry points:** dashboard defaults, pytest RunService setup, RunnerDoctor, sync CLI and reproduction CLI share the same resolver. Explicit programmatic/CLI paths remain supported.
+- **Existing result boundary:** TestResult, its metrics, raw samples and associated artifact references continue to be written by the existing single-connection atomic repository operation. This phase does not weaken or replace that behavior.
+- **Explicit exclusions:** legacy `lib/db_helper.py` conversion and historical import belong to Phase D. Alembic authority, schema version strategy and migration drift governance belong to Phase E. No schema version change is introduced by Phase C.
+
+**Phase C completion gate:** resolver precedence/conflict behavior is tested; transaction rollback is tested; successful and failing Run bundle persistence is tested; all supported entry points use the resolver; existing Run/TestResult/repository contracts remain compatible; focused CI is green. The GNS3/mac80211_hwsim 11-test protected suite remains a separate runtime certification gate and is not inferred from source tests.
+
+#### Phase D — implementation contract
+
+Phase D retires the parallel legacy persistence path without deleting or silently rewriting historical data.
+
+- **Compatibility facade:** the public functions in lib/db_helper.py retain their signatures but read canonical repository projections and write legacy calls as untrusted LEGACY_IMPORTED Runs/Attempts/TestResults.
+- **Pytest lifecycle:** when a Run context exists, the pytest result hook writes only through RunService. The compatibility facade is reserved for isolated pytest invocations without RunContext; the previous duplicate write is removed.
+- **Historical source handling:** the migration service supports in-place migration and a separate SQLite source opened read-only. Source identity is configurable and otherwise derived from the resolved source path.
+- **Deterministic provenance:** imported Run/Attempt/TestResult/Artifact/Baseline identifiers and ledger keys include a stable source namespace and source row ID. The migration ledger is updated in the same target transaction as the imported records.
+- **Historical facts:** source status, firmware, timestamp, duration, metrics, samples and PCAP references are retained. Available PCAP files are hashed; missing references produce explicit unavailable-artifact events.
+- **Trust boundary:** imported Runs carry LEGACY_IMPORTED provenance, UNKNOWN environment health, UNVALIDATED outcome and incomplete evidence. Imported baselines remain IMPORTED and are excluded from the active native baseline list.
+- **Restart safety:** a successful source row is skipped on subsequent runs. Failed rows roll back as a unit and remain retryable. Unledgered records from the earlier partial importer cause a fail-closed diagnostic instead of duplicate imports.
+- **Operator CLI:** scripts/netregress_migrate_legacy.py reports imported, skipped, failed and unavailable artifact counts and supports a separate --source, --target and stable --source-identity.
+- **Baseline entry point:** regression/baseline_runner.py now selects/promotes only native validated Runs with healthy environment state and lets RunService enforce complete evidence and metric policy.
+
+The migration JSON report distinguishes imported, skipped, invalid and failed rows, plus registered and unavailable artifacts. Unknown legacy statuses are imported as UNVALIDATED with the original value retained, and cause a nonzero CLI exit for explicit operator review.
+
+~~~bash
+python scripts/netregress_migrate_legacy.py
+python scripts/netregress_migrate_legacy.py --source /path/to/archive.sqlite --target results/test_results.db --source-identity wifi-lab-archive-2024
+~~~
+
+**Phase D completion gate:** legacy public callers remain usable; new legacy writes no longer create a second schema; historical sources remain unchanged; row and ledger writes are atomic; imported facts reconcile; migration reruns are idempotent; incomplete prior imports fail closed; imported baselines are never treated as trusted release baselines.
+
+#### Phase F implementation update — 2026-11-06
+
+Delivered in this pass:
+- Runner-launched pytest uses an isolated Linux session/process group; stdout/stderr is captured in a private log under `results/processes/`.
+- A private manifest binds PID, PGID, SID, Linux `/proc` start-time identity, command, working directory and log path.
+- Cancel/kill validates that ownership record before signalling; unmanaged, stale and reused PIDs fail closed.
+- Cancellation sends SIGTERM, waits a bounded grace period, revalidates identity, escalates to SIGKILL and confirms process-group exit.
+- A child reaper waits for the pytest process and keeps ownership metadata while same-session descendants remain.
+- API cancellation persists `RUN_CANCEL_REQUESTED` before signalling. Pytest finalization honors this intent so an operator cancellation is not misclassified as an abort.
+- Pytest session finalization has an outer `finally` that releases the lab lease despite persistence or cleanup errors, and attempts worker-crash classification if finalization raises.
+- Focused process-control/cancellation-intent tests are added to hosted backend CI.
+
+Hosted workflow 42216004283 passed all three jobs, including the focused process tests. Protected REAL_LAB must still be re-established after execution/process behavior changes. Local pytest and attached GNS3 execution were not available in this session.
+
+#### Phase G implementation update — 2026-11-07
+
+Delivered in this pass:
+- Configuration layers merge in the declared order `Defaults → Environment → Lab → Device → Run → Test Override`. Inputs are detached; nested maps/lists are immutable in the resolved result; per-leaf provenance is retained; hashes use canonical JSON and reject non-finite values.
+- Environment fingerprints now hash stable host/repository/interface/lab/configuration/topology/device identity. Capture time and volatile observations are retained in the payload but excluded from the stable identity digest.
+- Resource lock paths are collision-resistant and persistent. Lock files are opened without following symlinks, use restrictive permissions and are never unlinked on release/recovery, preventing a waiter/new-opener inode split.
+- Leases support renewal and repeat-safe release. Multi-resource acquisition is sorted and all-or-nothing; lab, device and optional network-namespace resources are held together through Run finalization.
+- Firmware operations use the same database-adjacent `locks` directory and `device:<id>` lock key as validation Runs, preventing firmware mutation from overlapping a validation Run on that device.
+- Stale recovery checks the actual advisory lock, marks expired/dead-owner metadata recovered only after acquiring the lock, and preserves the lock inode. A live lock is never reclaimed even if its metadata expiry has passed.
+- Run preparation validates the provisioning launcher before creating a Run or acquiring resources. Provision/cleanup remain explicit operations; pytest does not automatically mutate or reprovision the lab.
+- LabController quotes every argument, applies bounded timeouts, and fails closed on timeout, transport failure, non-zero exit, or missing exit status.
+- Added tests for configuration, fingerprints, resource locks, stale recovery, LabController and end-to-end orchestration/resource scope. These tests are included in backend CI.
+
+Phase G hosted CI passed workflow 42363358706 across backend correctness, frontend tests/build and dashboard startup/proxy/session smoke tests. The protected GNS3/mac80211_hwsim REAL_LAB suite remains a separate required execution gate.
+
+#### Current execution handoff — 2026-11-07
+
+Phase H implementation baseline: `64ff134690b03d6fd10c18eb6062a5c6c7a24aae`. Phase G passed hosted workflow 42363358706 across backend correctness tests, frontend tests/build and dashboard startup/proxy/session smoke tests. Phase H source/analyzer and protected-capture test collection passed hosted workflow 42379801150; its three live packet-capture cases were skipped in hardware-free CI. Hosted CI is not a substitute for the protected GNS3/mac80211_hwsim gate.
+
+**Phase H source implementation is delivered in this checkpoint.** The protocol analyzers now require:
+- EAPOL M1/M2 replay-counter equality, M3/M4 replay-counter equality, an increasing M3 counter, correct AP/client direction and pairwise-key messages;
+- DNS transaction ID, normalized question, transport protocol, reverse source/destination IP/ports and response-after-query ordering, with one-to-one response use and only correlated IP answers;
+- a valid RSN information element, expected SSID/BSSID selection and 802.11 beacon interval conversion from Time Units to milliseconds;
+- DHCP renewal/rebind classification from unicast vs limited-broadcast requests with non-zero `ciaddr`, and an ACK observed no earlier than the request.
+
+The new protected tests capture EAPOL plus Beacon/RSN frames on a temporary `mon0` interface created on the existing AP PHY, and capture DNS on AP `br0`. Both use foreground Paramiko tcpdump, SFTP transfer, remote/local SHA-256 verification, immutable raw PCAPs and Run/TestResult-scoped PCAP plus protocol JSON artifacts. The existing DHCP capture test and its node ID are preserved. The focused Scapy protocol tests are added to hosted backend CI.
+
+**Protected acceptance remains outstanding.** Run the new tests and the full protected real-lab suite on the established GNS3/mac80211_hwsim host. The current FRR dnsmasq lease is 12 hours, so normal short runs do not exercise DHCP T1/T2. Do not alter the service automatically; schedule a separately approved short-lease lab window for live renewal and rebind evidence. The current explicit implementation directive authorizes Phase I source/CI work while the Phase H live gate remains pending; combined protected acceptance and any physical RF/performance/recovery claim still require the Phase H live evidence first.
+
+#### Phase I implementation update — 2026-11-07
+
+Delivered in this source/hosted-CI pass:
+- Telemetry points and snapshots deep-detach and freeze nested metadata, validate environment/metric types and retain per-source provenance. Known non-zero read-only command results cannot contribute partial telemetry; Netmiko's unavailable exit status is recorded as a warning, not misrepresented as verified command success. Derived SNR provenance lists each contributing source once.
+- Performance tests use one configured warm-up followed by three measured repetitions by default. Raw samples are retained; warm-ups are flagged and excluded by registry policy. Ping success uses MEAN, packet loss uses MEAN, latency uses P95 and throughput uses MEAN; each requires at least three eligible samples. Baseline-promotion and regression API fixtures now provide three eligible observations rather than weakening that policy.
+- Fault application/restoration rejects known non-zero remote command status, verifies restoration postconditions and preserves the original validation/apply exception if restoration also fails.
+- Hosted backend CI covers telemetry parsing/provenance, statistics, measurement collection, fault service contracts, registry policy minima and performance-module collection. Protected real-lab tests remain skipped in hardware-free CI.
+
+Phase H protected live protocol acceptance remains pending. Phase I source and hosted-CI verification are complete, but protected RF/performance/recovery acceptance must follow the Phase H live gate on GNS3/mac80211_hwsim. Virtual hwsim telemetry is diagnostic and is not physical RF certification.
+
+Preserve the GNS3 topology, phy0/phy1 placement, eth1 management, wlan0 validation traffic, AP br0 DHCP/DNS capture, AP-side monitor capture on the existing AP wiphy, foreground Paramiko tcpdump, SFTP PCAP verification, existing pytest node IDs and provisioning CLI. Provisioning/cleanup remain explicit; Run preflight does not automatically mutate the physical lab. Cloud/SaaS remains after standalone certification; Phase P remains final cleanup.
+
+
+#### Phase E — implementation contract
+
+Phase E makes Alembic the only schema mutation authority. Application initialization upgrades to one repository head, while read-only status/check commands never mutate the database.
+
+- **Migration authority:** the base revision `20261105_00` adopts the complete Runner SQLite schema; the pre-existing runner-controls and backend-completion revisions remain in the chain; `20261105_03` applies the remaining provenance, evidence and compatibility columns and preserves the historical baseline archive; the additive `20261111_04` revision adds Organization, Project and Lab ownership tables without rewriting Runner records; `20261112_05` adds durable ProjectMembership records and nullable Run ownership, guarded by SQLite triggers that validate Project/Lab alignment while preserving the original Run table. The additive `20261113_06` revision adds persistent users, Global/Project roles, a permission registry, role assignments, hashed server-side sessions and one-time invitation/reset tokens, plus append-only audit events; it advances SQLite schema version 15 without rewriting historical Run/evidence records.
+- **Fresh and existing databases:** a fresh file is created by the Alembic chain. A pre-Alembic database is backed up first, then adopted in place; pre-existing Runs and historical baselines are preserved. Databases already at `20260924_01` or `20260924_02` continue forward to the new head.
+- **Runtime boundary:** `SQLiteDatabase.initialize()` delegates to `DatabaseMigrationManager.upgrade()`. The former `executescript(SCHEMA)` and handwritten `_migrate_schema` path is removed from application runtime.
+- **Single head:** repository startup rejects multiple Alembic heads, unknown database revisions and multiple recorded database revisions.
+- **Schema drift:** the read-only schema contract checks required tables/columns, required indexes, foreign keys, foreign-key violations, Alembic revision and schema metadata. Drift is reported and application initialization fails closed; it is not repaired outside a migration.
+- **Backup and recovery:** every upgrade of an existing database creates a consistent SQLite online backup. Backup integrity and SHA-256 are recorded. A failed upgrade restores the pre-migration file; a failed restore is surfaced explicitly rather than reported as success.
+- **Operator commands:** `scripts/netregress_db.py` provides `status`, `check`, `upgrade`, `backup` and explicitly confirmed `restore` operations. Stop all Runner processes before a manual restore.
+- **Downgrade policy:** schema revisions are intentionally non-destructive and raise rather than drop production data. Rollback is performed by restoring a verified pre-migration backup.
+
+Operator commands:
+
+~~~bash
+python scripts/netregress_db.py status
+python scripts/netregress_db.py check
+python scripts/netregress_db.py upgrade
+python scripts/netregress_db.py backup --output results/backups/manual.sqlite
+python scripts/netregress_db.py restore --backup results/backups/manual.sqlite --confirm
+~~~
+
+**Phase E completion gate:** one Alembic head; fresh database bootstrap; pre-Alembic adoption; preservation of existing data; schema drift detection; backup integrity; upgrade rollback; restore verification; focused CI green. No destructive downgrade is offered.
+
+The historical consolidated Iteration programme below remains preserved as implementation history. Where it conflicts with the current B–P sequence, the B–P sequence above determines the next phase to execute.
+
+## 0. Purpose
+
+This is the authoritative implementation plan for all development after the current Iteration 19 Runner state.
+
+It consolidates the previously granular Iterations 20–36 into **8 larger, coherent implementation iterations**. Each iteration represents a complete architectural slice with an executable implementation scope, verification scope, and completion gate.
+
+During development, this document is the primary iteration-context document. Existing architecture, business-logic, data-model, execution, security, frontend, testing, and operations documents remain authoritative for their respective contracts; this document determines implementation order and grouping.
+
+The target is a certified production-grade standalone NetRegress Runner. Cloud/SaaS control-plane implementation is intentionally deferred until the standalone Runner is complete and certified.
+
+---
+
+## 1. Protected Baseline and Non-Negotiable Rules
+
+### 1.1 Protected behavioral baseline
+
+Baseline commit:
+
+```
+436026eba597b2c6ae2e291a9cd8054b70ebbf7c
+```
+
+Protected documented behavior:
+
+- GNS3 topology and node roles.
+- `mac80211_hwsim` placement: `phy0` AP, `phy1` client.
+- Client management over `eth1`; WiFi validation over `wlan0`.
+- DHCP service path.
+- AP-side DHCP capture on `br0`.
+- Dedicated Paramiko foreground SSH channel for protected tcpdump capture.
+- Real PCAP retrieval and SHA-256 verification.
+- Existing pytest node IDs.
+- Existing pytest CLI invocation.
+- Existing provisioning CLI and flags.
+- Real traffic only; no synthetic traffic in real validation paths.
+
+Canonical real-lab invocation remains:
+
+```bash
+pytest tests/ -v --firmware-version=v1.0
+```
+
+The documented historical reference is 11/11 real-lab tests passing. This baseline must be re-established whenever the execution environment permits before claiming completion of execution-affecting iterations.
+
+### 1.2 Engineering rules
+
+1. **Runner first:** finish and certify the standalone Runner before implementing Cloud.
+2. **Evidence over assertions:** required evidence missing, invalid, or unverifiable means `UNVALIDATED`, never `PASS`.
+3. **Fault isolation:** lab, infrastructure, worker, Runner, timeout, and synchronization faults do not become DUT product failures.
+4. **No synthetic proof:** analyzers may derive facts from captured evidence but may never synthesize missing protocol traffic.
+5. **No destructive silent retry:** firmware flash, lab mutation, validation tests, and other non-idempotent operations are never blindly retried.
+6. **No credential leakage:** operational secrets are never committed to tracked configuration.
+7. **No concurrent physical-lab execution:** exclusive labs/devices/resources are locked.
+8. **Compatibility first:** existing CLI, pytest node IDs, provisioning behavior, and protected capture paths remain usable while internal ownership is migrated.
+9. **Layering:** Controller -> Service -> Adapter/Repository. Tests consume contracts; they do not bypass production boundaries.
+10. **Documentation/code synchronization:** every behavior, contract, schema, lifecycle, API, or architecture change updates the applicable documentation in the same implementation iteration.
+11. **No placeholder production paths:** no stubs, TODO-only implementations, fake production behavior, or temporary bypasses may remain on a completion path.
+12. **Runtime truth is separate from source implementation:** a feature is not called verified until its relevant execution gate has actually run.
+
+---
+
+## 2. Development and Git Workflow
+
+### 2.1 Iteration workflow
+
+Every iteration is executed completely before starting the next:
+
+1. Read this plan plus the relevant architecture documents and current source.
+2. Audit the existing implementation against the iteration requirements.
+3. Write the implementation plan internally from the actual current state; do not assume the code matches documentation.
+4. Implement the complete iteration, including code, tests, migrations, API/UI updates, and documentation.
+5. Run targeted verification.
+6. Run broader regression appropriate to the changed layers.
+7. Run the real 11-test protected suite whenever execution, networking, provisioning, capture, adapters, orchestration, or persistence behavior is affected.
+8. Inspect evidence/results rather than relying only on process exit codes.
+9. Update documentation and status only after verification.
+10. Do not move to the next iteration while a completion-gate requirement remains unresolved.
+
+### 2.2 Commit policy
+
+- Work directly on `main`; do not create feature, review, or temporary branches.
+- Keep each phase free of per-file, micro, scratch, or partial commits.
+- When a phase checkpoint is explicitly requested for delivery, complete its implementation, tests, documentation and review first, then create exactly one consolidated Conventional Commit for that phase and push once with a fast-forward update.
+- Never rewrite existing history or force-update `main`.
+- The approved Phase C checkpoint is delivered as one commit with the subject:
+
+```
+feat(persistence): establish canonical SQLite transaction foundation
+```
+
+The Phase C commit must not contain unfinished Phase D migration work or Phase E schema-governance work. The remaining B–P programme proceeds according to the phase gates above and explicit delivery instructions; no per-file or per-module commits are permitted.
+
+---
+
+# ITERATION 20 — FOUNDATION FREEZE, SECURITY, AND ARCHITECTURAL RECONCILIATION
+
+## Objective
+
+Make the post-Iteration-19 repository internally coherent and safe before large implementation changes.
+
+This iteration is a prerequisite for every subsequent iteration.
+
+## 20.1 Establish the authoritative system state
+
+Create:
+
+```
+docs/03_TRACEABILITY_AND_SYSTEM_READINESS.md
+```
+
+It must classify every major subsystem as exactly one of:
+
+- Implemented
+- Partially Implemented
+- Deferred
+- Unverified
+- Production Blocker
+
+The file must identify, at minimum:
+
+- domain/persistence;
+- Run/Attempt lifecycle;
+- TestRegistry/RunContext;
+- CommandRunner/SecureCommandRunner;
+- LabHealthService;
+- configuration resolution;
+- LabController;
+- environment fingerprinting;
+- protocol evidence;
+- telemetry;
+- regression intelligence;
+- dashboard/API;
+- authentication/RBAC;
+- device/firmware adapters;
+- release gate;
+- offline synchronization;
+- database migrations;
+- frontend;
+- real-lab verification.
+
+## 20.2 Reconcile documentation drift
+
+Audit and reconcile:
+
+- `05_ARCHITECTURE_DECISIONS_AND_05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md`
+- `01_DEVELOPMENT_PLAN_AND_ROADMAP.md`
+- `01_DEVELOPMENT_PLAN_AND_ROADMAP.md`
+- `05_ARCHITECTURE_DECISIONS_AND_BUSINESS_LOGIC.md`
+- `02_SYSTEM_ARCHITECTURE_DATA_API.md`
+- `EXECUTION_AND_ADAPTERS.md`
+- `SECURITY_AND_SAAS.md`
+- `04_WIFI_LAB_REPRODUCTION_TESTING_OPERATIONS.md`
+- `FRONTEND_DESIGN.md`
+- `AGENT_CONTEXT.md`
+- source tree;
+- database schema;
+- pytest fixtures;
+- API routes;
+- scripts;
+- adapters.
+
+Remove stale statements that identify older iterations as current work. Never mark implementation as verified merely because source code exists.
+
+## 20.3 Security baseline cleanup
+
+Remove operational credentials from tracked files.
+
+Audit at minimum:
+
+```
+configs/
+.env.example
+tests/
+scripts/
+docs/
+CI configuration
+```
+
+Use environment/secret resolution for runtime credentials.
+
+Implement or normalize:
+
+- secret redaction;
+- credential loading boundary;
+- secure storage boundary;
+- authentication boundary;
+- artifact authorization boundary;
+- privileged-action audit events.
+
+The repository scan must contain zero operational credentials.
+
+## 20.4 Production security and RBAC foundation
+
+Implement local authentication and authorization primitives needed by the remaining standalone platform.
+
+Roles:
+
+```
+OWNER
+ADMIN
+OPERATOR
+VIEWER
+```
+
+Authorization must be project-scoped for:
+
+- runs;
+- tests;
+- devices;
+- labs;
+- artifacts;
+- baselines;
+- firmware operations;
+- administrative settings.
+
+Implement secure password hashing, session/token lifecycle, idle/absolute expiry, logout, and protected middleware.
+
+State-changing operations must be authorization-gated, not merely hidden in UI.
+
+## 20.5 Completion gate
+
+Iteration 20 is complete only when:
+
+- `03_TRACEABILITY_AND_SYSTEM_READINESS.md` is accurate;
+- documentation no longer contradicts the source tree;
+- tracked configuration contains no operational secrets;
+- protected routes have an authorization decision;
+- existing CLI/provisioning behavior remains compatible;
+- no architectural implementation work is started with unresolved contract drift.
+
+---
+
+# ITERATION 21 — DETERMINISTIC ORCHESTRATION, CONFIGURATION, LAB CONTROL, AND RESOURCE OWNERSHIP
+
+## Objective
+
+Move execution ownership out of pytest/session plumbing and shell-script-heavy behavior into deterministic Python orchestration while keeping compatibility boundaries intact.
+
+## 21.1 ConfigurationResolver
+
+Implement a first-class configuration subsystem with exact precedence:
+
+```
+Defaults
+  ↓
+Environment
+  ↓
+Lab
+  ↓
+Device
+  ↓
+Run
+  ↓
+Test Override
+```
+
+Requirements:
+
+- typed configuration sources;
+- deterministic merge;
+- explicit conflict detection;
+- no silent overwrite of incompatible values;
+- immutable `ResolvedConfiguration`;
+- deterministic `ConfigurationHash`;
+- `ConfigurationProvenance` explaining every final value;
+- persisted configuration snapshot attached to the Run;
+- compatibility with current YAML configuration.
+
+Test overrides may modify only fields explicitly permitted by the test definition.
+
+## 21.2 EnvironmentFingerprintService
+
+Create a dedicated service responsible for reproducible environment identity.
+
+Fingerprint inputs should include, where applicable:
+
+- lab identity;
+- GNS3 project identity;
+- topology;
+- node roles/state;
+- `mac80211_hwsim` topology and PHY state;
+- interfaces and carrier state;
+- kernel version;
+- driver/module versions;
+- device identity;
+- firmware version;
+- selected configuration;
+- relevant service versions;
+- environment class.
+
+Produce:
+
+```
+EnvironmentFingerprint
+EnvironmentSnapshot
+FingerprintHash
+```
+
+The fingerprint is deterministic and persisted with the Run.
+
+## 21.3 LabController
+
+Create the Python owner for lab lifecycle operations.
+
+Responsibilities:
+
+- GNS3 project discovery/validation;
+- node discovery;
+- topology validation;
+- hwsim provisioning/validation;
+- namespace/interface operations;
+- AP/client/router/monitor readiness;
+- service lifecycle operations required by tests;
+- cleanup;
+- controlled restoration.
+
+Migration strategy:
+
+1. preserve `wifi_lab_reprovision_robust.sh`;
+2. move one responsibility at a time behind Python interfaces;
+3. retain the shell script as a thin compatibility launcher;
+4. do not duplicate conflicting provisioning logic in Python and shell;
+5. delete obsolete duplicated implementation only after parity is demonstrated.
+
+The protected DHCP Paramiko capture path is not replaced by a generic terminal mechanism.
+
+## 21.4 Resource locking
+
+Implement exclusive resource leases for:
+
+- lab;
+- device;
+- network namespace/resource;
+- firmware operation.
+
+Each lock requires:
+
+- resource identity;
+- owner;
+- acquisition timestamp;
+- lease expiry;
+- timeout;
+- release;
+- stale-lock detection;
+- stale-lock recovery;
+- audit event.
+
+A second Run requiring an occupied exclusive resource must be deterministically rejected or queued.
+
+## 21.5 RunOrchestrator
+
+Create the concrete executable orchestration path:
+
+```
+CLI/API
+  ↓
+RunOrchestrator
+  ↓
+RunService
+  ↓
+ConfigurationResolver
+  ↓
+LabController
+  ↓
+LabHealthService
+  ↓
+EnvironmentFingerprintService
+  ↓
+pytest / TestRegistry
+  ↓
+RunContext
+  ↓
+CommandRunner / DeviceAdapter
+  ↓
+Metrics / Evidence / Telemetry / Artifacts
+  ↓
+Regression
+  ↓
+Release Gate
+  ↓
+Run finalization
+```
+
+Responsibilities:
+
+- construct the Run;
+- resolve configuration;
+- lock resources;
+- perform preflight health;
+- fingerprint environment;
+- launch selected tests;
+- handle lifecycle transitions;
+- finalize outcome;
+- release resources;
+- create diagnostics;
+- queue offline synchronization.
+
+`conftest.py` becomes an integration adapter, not the primary orchestration owner.
+
+## 21.6 Completion gate
+
+- documented architecture matches executable call flow;
+- no duplicate orchestration owners remain;
+- configuration precedence is deterministic and tested;
+- two conflicting Runs cannot share a locked resource;
+- provisioning shell remains compatible;
+- failed preflight never starts product validation;
+- lock release works on success, failure, cancellation, timeout, and crash recovery.
+
+---
+
+# ITERATION 22 — EVIDENCE ENFORCEMENT, PROTOCOL VALIDATION, TELEMETRY, AND PERFORMANCE MEASUREMENT
+
+## Objective
+
+Turn evidence, packet protocol validation, telemetry, and performance measurements into mandatory execution lifecycle components rather than optional services.
+
+## 22.1 Evidence contract
+
+Implement the full pipeline:
+
+```
+TestDefinition
+  ↓
+EvidenceRequirement[]
+  ↓
+EvidenceCollector
+  ↓
+EvidenceValidator
+  ↓
+EvidenceState
+  ↓
+PASS / FAIL / UNVALIDATED
+```
+
+Rules:
+
+- required evidence must be declared by test definition;
+- evidence collection occurs automatically at lifecycle points;
+- evidence is Run/TestResult scoped;
+- source artifact integrity is verified before interpretation;
+- invalid/missing required evidence blocks PASS;
+- evidence analyzers never invent data.
+
+## 22.2 Protocol evidence
+
+Complete live integration for DHCP, EAPOL/WPA, 802.11 Beacon/RSN, and DNS.
+
+### DHCP
+
+Validate real transaction behavior using captured traffic:
+
+```
+DISCOVER
+→ OFFER
+→ REQUEST
+→ ACK
+```
+
+Also implement:
+
+- transaction-ID correlation;
+- client identity correlation;
+- server identifier;
+- T1 renewal;
+- T2 rebind;
+- REBINDING;
+- ACK/NAK handling;
+- negative cases;
+- incomplete transaction classification.
+
+No synthetic DHCP packets.
+
+### EAPOL/WPA
+
+Correlate the ordered four-way handshake:
+
+```
+1/4 → 2/4 → 3/4 → 4/4
+```
+
+Correlation must include endpoint identity and appropriate replay/sequence semantics.
+
+### Beacon/RSN
+
+Validate where required:
+
+- SSID;
+- BSSID;
+- channel;
+- RSN presence;
+- group cipher;
+- pairwise cipher;
+- AKM;
+- beacon interval;
+- capabilities.
+
+### DNS
+
+Correlate:
+
+- query/response by transaction ID;
+- question;
+- answer;
+- unmatched queries;
+- malformed/failed responses.
+
+## 22.3 Required evidence policy
+
+Define when a test result may be:
+
+```
+PASS
+FAIL
+UNVALIDATED
+```
+
+Examples:
+
+- assertion PASS + valid required evidence -> PASS;
+- assertion PASS + missing required PCAP -> UNVALIDATED;
+- assertion PASS + corrupt PCAP -> UNVALIDATED;
+- assertion PASS + insufficient telemetry -> UNVALIDATED when telemetry is required;
+- product assertion FAIL + valid evidence -> FAIL;
+- lab failure -> LAB_FAILED, not product FAIL.
+
+## 22.4 Telemetry lifecycle
+
+Collect automatically at appropriate lifecycle points:
+
+1. pre-test baseline;
+2. in-test polling;
+3. post-test state;
+4. recovery state after negative/recovery tests.
+
+Typed telemetry must include:
+
+- RSSI;
+- SNR;
+- channel;
+- frequency;
+- bitrate/PHY rate;
+- PHY mode;
+- retries;
+- failure counters;
+- CPU;
+- memory;
+- interface drops/utilization;
+- performance-tool context where applicable.
+
+Every point must preserve:
+
+- environment class;
+- source command/derivation;
+- interface;
+- timestamp;
+- unit;
+- observed value.
+
+No synthetic values.
+
+Virtual lab telemetry must remain clearly classified as `VIRTUAL_WIFI`; it must never be presented as calibrated RF certification.
+
+## 22.5 Performance measurement
+
+Implement the complete matrix:
+
+```
+Downlink
+Uplink
+Bidirectional
+
+TCP
+UDP
+
+Throughput
+Latency
+Jitter
+Packet Loss
+```
+
+Use:
+
+- warm-up samples;
+- N measurement samples;
+- raw-sample preservation;
+- explicit measurement policy;
+- deterministic aggregate selection;
+- resource telemetry during measurement;
+- environment fingerprint association.
+
+Differentiate DUT regressions from host/resource starvation.
+
+## 22.6 Negative/recovery validation
+
+Every fault test proves:
+
+```
+baseline
+→ inject fault
+→ expected disruption
+→ capture evidence
+→ restore
+→ recovery
+→ capture recovery evidence
+```
+
+Coverage must include:
+
+- wrong PSK;
+- disconnect/reconnect;
+- DHCP renewal;
+- DHCP T2/rebind;
+- DHCP server failure/recovery;
+- DNS failure/recovery;
+- AP restart;
+- client WiFi restart;
+- link flap.
+
+Passing only recovery is insufficient; the expected disruption itself must also be proven.
+
+## 22.7 Completion gate
+
+- missing required evidence can never produce PASS;
+- DHCP rebind/T2 is implemented and tested;
+- protocol analyzers are live-wired into declared tests;
+- telemetry automatically appears where required;
+- performance statistics are deterministic;
+- negative/recovery tests prove both fault and recovery;
+- protected real-lab regression remains green for execution-affecting changes.
+
+---
+
+# ITERATION 23 — DEVICE/FIRMWARE OPERATIONS, FAILURE SEMANTICS, CANCELLATION, AND DIAGNOSTICS
+
+## Objective
+
+Finish physical-device lifecycle management and make all execution failure paths explicit, recoverable, auditable, and operationally useful.
+
+## 23.1 Firmware artifact model
+
+Implement complete firmware metadata:
+
+- version;
+- device model;
+- hardware revision;
+- architecture;
+- SHA-256;
+- signature;
+- compatibility range;
+- source/build provenance;
+- release metadata.
+
+Firmware image validation occurs before any upload.
+
+## 23.2 Transport adapters
+
+Unified firmware transport abstraction supporting:
+
+- SSH/SCP/SFTP current implementation;
+- TFTP implementation.
+
+Transport choice must be adapter/configuration driven, never embedded in business logic.
+
+## 23.3 Firmware state machine
+
+Implement:
+
+```
+REGISTERED
+→ VALIDATED
+→ COMPATIBLE
+→ AUTHORIZED
+→ UPLOADING
+→ UPLOADED
+→ READY_TO_FLASH
+→ FLASHING
+→ REBOOTING
+→ VERIFYING
+→ VALIDATED
+```
+
+Failure:
+
+```
+FAILED
+```
+
+Every transition is persisted and audited.
+
+Flash prerequisites:
+
+- compatible device;
+- validated image;
+- checksum;
+- signature where configured;
+- explicit authorization;
+- exclusive firmware-operation lock.
+
+## 23.4 Firmware rollback
+
+Rollback is explicit and authorized:
+
+```
+authorize
+→ prepare rollback
+→ rollback
+→ reboot
+→ readiness check
+→ verify version
+→ audit
+```
+
+Never automatically rollback after uncertain state.
+
+Never silently retry firmware mutation.
+
+## 23.5 Failure taxonomy
+
+Separate:
+
+```
+PRODUCT_FAILED
+LAB_FAILED
+RUNNER_DISCONNECTED
+WORKER_CRASHED
+TIMED_OUT
+CANCELLED
+ABORTED
+```
+
+Lifecycle classification must distinguish product behavior, infrastructure/lab behavior, Runner behavior, worker behavior, timeout, and operator cancellation.
+
+These classifications must not contaminate DUT-quality statistics.
+
+## 23.6 Cancellation and timeout
+
+Implement:
+
+- per-test timeout;
+- per-Run timeout;
+- explicit cancellation;
+- SIGINT handling;
+- child-process termination;
+- lock release;
+- namespace cleanup;
+- temporary-artifact cleanup;
+- deterministic final state;
+- partial-evidence retention.
+
+A cancelled/timeout Run must not remain indefinitely in a transitional state.
+
+## 23.7 Observability
+
+Implement structured JSON logs with:
+
+```
+request_id
+run_id
+attempt_id
+test_result_id
+test_id
+device_id
+lab_id
+severity
+timestamp
+event_type
+```
+
+Implement:
+
+```
+/api/v1/health
+/api/v1/readiness
+```
+
+Health responses must expose component-level status without leaking secrets.
+
+## 23.8 Diagnostic bundles
+
+For abnormal Runs automatically capture relevant:
+
+- structured logs;
+- health snapshots;
+- configuration snapshot;
+- environment fingerprint;
+- command audit;
+- test lifecycle;
+- exception/stack context;
+- relevant PCAPs;
+- telemetry;
+- firmware-operation evidence.
+
+Create a deterministic bundle manifest and integrity hash.
+
+## 23.9 ReproductionManifest
+
+Generate a machine-readable manifest containing:
+
+- firmware;
+- device;
+- lab;
+- environment fingerprint;
+- configuration hash;
+- test selection;
+- test-definition versions;
+- thresholds;
+- dependencies;
+- required artifacts.
+
+Provide a CLI command that reconstructs the executable reproduction request without silently executing disruptive operations.
+
+## 23.10 Completion gate
+
+- injected crash produces `WORKER_CRASHED`;
+- missing Runner/connection produces `RUNNER_DISCONNECTED`;
+- timeout produces `TIMED_OUT`;
+- cancellation cleans the lab;
+- firmware incompatibility blocks before flash;
+- corrupt firmware blocks before flash;
+- real/fake adapter workflows follow the same state machine;
+- every abnormal Run has usable diagnostics and reproduction metadata.
+
+---
+
+# ITERATION 24 — API CONTRACT, AUTHORIZED STATE CHANGES, FRONTEND, AND PERSISTENCE HARDENING
+
+## Objective
+
+Turn the current read-oriented dashboard/API into the complete local operational product while preserving authorization at the API layer.
+
+## 24.1 OpenAPI contract
+
+Create the canonical OpenAPI 3 specification for:
+
+- authentication;
+- projects;
+- users/roles;
+- labs;
+- devices;
+- firmware;
+- Runs;
+- Attempts;
+- TestResults;
+- metrics;
+- telemetry;
+- artifacts;
+- baselines;
+- regression;
+- release gates;
+- health;
+- audit.
+
+The API contract must define:
+
+- request schemas;
+- response schemas;
+- standard error format;
+- pagination;
+- filtering;
+- sorting;
+- correlation IDs;
+- idempotency;
+- optimistic concurrency where needed;
+- HTTP status conventions;
+- versioning policy.
+
+## 24.2 State-changing API
+
+Implement and authorize:
+
+```
+POST /api/v1/runs
+POST /api/v1/runs/{id}/cancel
+POST /api/v1/runs/{id}/retry
+POST /api/v1/baselines
+POST /api/v1/baselines/{id}/promote
+POST /api/v1/firmware/operations
+POST /api/v1/firmware/{id}/rollback
+```
+
+Operation semantics must be idempotent where practical.
+
+Retry endpoint must never mean blind re-execution of unsafe operations.
+
+## 24.3 Contract testing
+
+Use OpenAPI contract tests to verify:
+
+- every route schema;
+- request validation;
+- response schema;
+- status codes;
+- auth/RBAC;
+- pagination;
+- error responses;
+- idempotency behavior.
+
+Hardware-free contract tests remain separate from real-lab execution.
+
+## 24.4 React/Vite frontend
+
+The production local dashboard is implemented under `frontend/` using React + Vite. The React UI is the canonical modern presentation layer over `/api/v1`. The Jinja dashboard remains as a compatibility presentation layer pending browser/runtime parity validation and retirement.
+
+Required product views:
+
+- login;
+- project selection;
+- run launch;
+- Run monitor;
+- test results;
+- evidence/PCAP inspection;
+- telemetry;
+- performance;
+- regression;
+- lab health;
+- devices;
+- firmware;
+- baselines;
+- release gate;
+- audit;
+- administration.
+
+The UI may hide or disable unavailable actions based on role, but API authorization remains authoritative.
+
+## 24.5 Real-time execution UX
+
+Implement a polling or event stream contract that shows:
+
+- Run lifecycle;
+- current test;
+- completed tests;
+- evidence state;
+- telemetry status;
+- health state;
+- failures;
+- resource-lock state.
+
+The initial implementation may use reliable polling; event streaming must not be introduced merely for visual effect.
+
+## 24.6 Persistence hardening
+
+Establish SQLAlchemy repository implementations behind stable repository interfaces.
+
+Support:
+
+- SQLite with WAL where appropriate;
+- PostgreSQL-compatible model/schema;
+- Alembic as the sole migration authority.
+
+Index major query paths:
+
+- project/run;
+- run/test result;
+- telemetry/run;
+- artifact/run;
+- baseline;
+- regression;
+- timestamp;
+- device;
+- firmware;
+- environment fingerprint.
+
+Historical migrations must preserve facts and provenance.
+
+## 24.7 Completion gate
+
+- OpenAPI is canonical;
+- all state-changing routes are authorization-protected;
+- contract tests cover every route;
+- dashboard can launch/cancel/inspect a Run through the API;
+- persistence schema is migration-controlled;
+- legacy compatibility routes remain only where required and no longer own the new implementation.
+
+---
+
+# ITERATION 25 — BASELINE/REGRESSION/RELEASE INTELLIGENCE AND OFFLINE RUNNER FINALIZATION
+
+## Objective
+
+Finish the business decision layer inside the standalone Runner without mixing technical evidence with human release authorization.
+
+## 25.1 Baseline lifecycle
+
+Implement:
+
+```
+CANDIDATE
+→ VALIDATED
+→ ACTIVE
+→ SUPERSEDED
+```
+
+Promoted baselines are immutable.
+
+Promotion is an authorized action.
+
+Historical baselines remain queryable.
+
+## 25.2 Baseline comparability
+
+Comparison requires compatible:
+
+- project;
+- device/device family;
+- hardware revision;
+- firmware scope;
+- selected tests;
+- frozen test-definition versions;
+- validation profile;
+- lab/environment class;
+- relevant configuration;
+- region/band/SKU where applicable.
+
+A comparable baseline is never guessed from the nearest Run.
+
+## 25.3 Regression evaluation
+
+Maintain independent regression dimensions:
+
+```
+FUNCTIONAL
+PERFORMANCE
+CONFIGURATION
+PROTOCOL
+AVAILABILITY
+RECOVERY
+```
+
+Maintain classifications:
+
+```
+REGRESSION
+SOFT_REGRESSION
+FIXED
+IMPROVED
+UNCHANGED
+NEW_FAILURE
+NEW_PASS
+NO_BASELINE
+UNVALIDATED
+```
+
+Keep functional outcome independent from metric regression.
+
+## 25.4 Measurement-policy enforcement
+
+Use frozen Run/test configuration for regression.
+
+Every decision metric must identify:
+
+- metric;
+- unit;
+- aggregate;
+- minimum sample count;
+- threshold;
+- source samples.
+
+Raw samples stay immutable.
+
+Outliers remain retained and visible.
+
+## 25.5 Release gate
+
+Separate the three decisions:
+
+1. Technical classification.
+2. Automated release policy.
+3. Human release approval.
+
+The release gate must fail closed for:
+
+- blocking regression;
+- disallowed soft regression;
+- missing required tests;
+- invalid required evidence;
+- `UNVALIDATED`;
+- `NO_BASELINE` where baseline is required;
+- incomplete Run;
+- unhealthy required lab state.
+
+Waivers are explicit, scoped, audited, and expiration-capable.
+
+## 25.6 Offline Runner finalization
+
+The existing durable sync queue becomes a stable Runner subsystem.
+
+Requirements:
+
+- terminal Run snapshot;
+- deterministic content-addressed envelope;
+- idempotency;
+- lease/recovery;
+- bounded retry;
+- BLOCKED state;
+- outbound-only synchronization;
+- synchronization never changes the recorded technical result;
+- artifacts remain locally authoritative until separate controlled transfer exists.
+
+## 25.7 Completion gate
+
+- baseline promotion rules work;
+- regression comparison is fail-closed;
+- release decision is deterministic;
+- waiver use is explicit/audited;
+- offline queue survives process restart and transport outage;
+- synchronized and unsynchronized Runs have identical local technical outcomes.
+
+---
+
+# ITERATION 26 — FULL FAILURE INJECTION, MULTI-LAYER INTEGRATION, SECURITY HARDENING, AND RELEASE READINESS
+
+## Objective
+
+Prove the complete standalone platform behaves correctly under failure before final certification.
+
+## 26.1 Failure injection matrix
+
+Automate tests for:
+
+- SSH timeout;
+- device unavailable;
+- DUT restart/crash;
+- DHCP failure;
+- DHCP recovery;
+- DNS failure;
+- GNS3 process unavailable;
+- GNS3 project corruption/unavailability;
+- hwsim missing;
+- hwsim topology mismatch;
+- interface/carrier failure;
+- disk exhaustion;
+- clock/NTP failure;
+- command timeout;
+- worker crash;
+- Runner disconnect;
+- network partition;
+- synchronization endpoint unavailable;
+- artifact corruption;
+- database interruption;
+- firmware checksum failure;
+- firmware signature failure;
+- firmware incompatibility;
+- rollback failure;
+- stale lock;
+- duplicate job request;
+- duplicate synchronization request.
+
+For every injection verify:
+
+- failure class;
+- Run state;
+- artifact preservation;
+- cleanup;
+- lock recovery;
+- statistics isolation;
+- ability to diagnose/reproduce.
+
+## 26.2 Three-layer test architecture
+
+### Layer 1 — Hardware-free
+
+Run:
+
+- domain tests;
+- repository tests;
+- service tests;
+- configuration resolver tests;
+- lock tests;
+- orchestration tests;
+- API/OpenAPI tests;
+- RBAC tests;
+- fake device/firmware adapter tests;
+- regression tests;
+- migration tests;
+- sync queue tests.
+
+### Layer 2 — Simulated integration
+
+Use:
+
+- fake lab;
+- fake devices;
+- fake firmware;
+- network namespaces;
+- controlled command failures;
+- end-to-end orchestration.
+
+Validate complete state transitions without physical hardware.
+
+### Layer 3 — Real lab
+
+Use:
+
+- GNS3;
+- `mac80211_hwsim`;
+- real DHCP;
+- real DNS;
+- real iperf3;
+- real traffic;
+- real PCAP;
+- real fault/recovery;
+- protected capture path.
+
+Synthetic fixtures must never be accepted by the real validation path.
+
+## 26.3 Security hardening
+
+Run and resolve:
+
+- credential scanning;
+- dependency vulnerability scans;
+- Bandit;
+- Semgrep;
+- input validation;
+- command-injection defenses;
+- SSRF defenses;
+- path traversal defenses;
+- secure artifact handling;
+- upload validation;
+- rate limiting;
+- replay protection;
+- idempotency;
+- secure cookies/tokens;
+- CSRF protection where applicable;
+- secure HTTP headers;
+- audit integrity;
+- encryption at rest/in transit where applicable;
+- database access controls;
+- backup/restore procedures.
+
+No high/critical security finding may remain open for certification.
+
+## 26.4 Operational hardening
+
+Verify:
+
+- graceful shutdown;
+- restart recovery;
+- database recovery;
+- queue recovery;
+- stale lock recovery;
+- diagnostic bundle generation;
+- log rotation/retention;
+- result retention;
+- artifact retention;
+- export and deletion semantics;
+- health/readiness behavior.
+
+## 26.5 Completion gate
+
+All failure-injection cases are classified correctly with no orphan processes, stale locks, dangling namespaces, corrupt final states, or contaminated product metrics.
+
+All three test layers are green to the extent permitted by the available lab/hardware.
+
+---
+
+# ITERATION 27 — FINAL END-TO-END RUNNER CERTIFICATION AND DOCUMENTATION FREEZE
+
+## Objective
+
+Certify the complete standalone Runner as one coherent product.
+
+No new features are introduced in this iteration. Only defects required to pass certification are fixed.
+
+## 27.1 Certification scenario 1 — Healthy Run
+
+Expected:
+
+```
+Run completed
+→ all required tests pass
+→ evidence complete
+→ telemetry complete where required
+→ regression policy satisfied
+→ PASS / VALIDATED
+```
+
+Verify complete Run/Attempt/TestResult/Metric/Sample/Artifact lineage.
+
+## 27.2 Certification scenario 2 — Real product failure
+
+Introduce a controlled DUT/product failure.
+
+Expected:
+
+```
+FAIL
+```
+
+Verify:
+
+- evidence proves failure;
+- product metrics reflect the failure;
+- infrastructure statistics remain clean;
+- Run lifecycle is complete.
+
+## 27.3 Certification scenario 3 — Missing evidence
+
+Cause an assertion to succeed while required evidence is unavailable or corrupt.
+
+Expected:
+
+```
+UNVALIDATED
+```
+
+PASS must be impossible.
+
+## 27.4 Certification scenario 4 — Lab failure
+
+Break a required lab dependency.
+
+Expected:
+
+```
+LAB_FAILED
+```
+
+Verify no product-quality contamination.
+
+## 27.5 Certification scenario 5 — Runner failure
+
+Simulate Runner/worker loss.
+
+Expected:
+
+```
+RUNNER_DISCONNECTED
+```
+
+or
+
+```
+WORKER_CRASHED
+```
+
+with deterministic cleanup and recoverable diagnostics.
+
+## 27.6 Certification scenario 6 — Timeout/cancellation
+
+Trigger test timeout, Run timeout, and user cancellation.
+
+Verify:
+
+- deterministic final state;
+- child cleanup;
+- resource unlock;
+- preserved evidence.
+
+## 27.7 Certification scenario 7 — Concurrent execution
+
+Start two Runs against the same exclusive lab/device.
+
+Expected:
+
+- one owns the resource;
+- second Run is safely queued or rejected;
+- no concurrent destructive access;
+- no race-created inconsistent state.
+
+## 27.8 Certification scenario 8 — Firmware lifecycle
+
+Against supported target hardware or protected virtual target:
+
+```
+register
+→ validate
+→ compatibility check
+→ authorize
+→ upload
+→ flash
+→ reboot
+→ verify
+→ rollback if explicitly requested
+```
+
+Verify hashes, state transitions, audit trail, and failure safety.
+
+## 27.9 Certification scenario 9 — Offline operation
+
+Disconnect synchronization endpoint during Run.
+
+Expected:
+
+- Runner continues;
+- Run result remains unchanged;
+- terminal Run is queued;
+- retry later succeeds;
+- duplicate delivery is idempotent.
+
+## 27.10 Certification scenario 10 — Restart recovery
+
+Restart the application/worker after:
+
+- Run creation;
+- lock acquisition;
+- test execution;
+- terminal Run;
+- sync claim.
+
+Verify recovery without duplicate destructive operations.
+
+## 27.11 Certification scenario 11 — Real-lab protected baseline
+
+Execute the canonical 11-test real-lab suite and inspect:
+
+- test outcomes;
+- Run lifecycle;
+- evidence state;
+- DHCP PCAP;
+- protocol evidence;
+- telemetry;
+- metrics;
+- artifact hashes;
+- lab health;
+- environment fingerprint.
+
+The protected baseline behavior must remain intact.
+
+## 27.12 Final documentation freeze
+
+Update and reconcile:
+
+- `03_TRACEABILITY_AND_SYSTEM_READINESS.md`;
+- `AGENT_CONTEXT.md`;
+- architecture documents;
+- implementation roadmap;
+- data/API documentation;
+- security documentation;
+- testing/operations documentation;
+- frontend documentation;
+- installation/run instructions.
+
+Document the final Runner architecture and all verification results.
+
+No document may claim a feature is verified when it was only source-audited.
+
+## 27.13 Final repository audit
+
+Before the final commit:
+
+- scan for credentials;
+- scan for debug code;
+- scan for TODO/FIXME on production paths;
+- scan for dead duplicate implementations;
+- scan for stale compatibility paths;
+- scan for untracked generated runtime data;
+- scan for unexpected binary artifacts;
+- verify migrations;
+- verify API schemas;
+- verify test inventory;
+- verify documentation links;
+- verify no accidental external endpoint dependency;
+- verify no production feature depends on fake adapters.
+
+---
+
+# ITERATION 28 — FINAL SINGLE-COMMIT RELEASE INTEGRATION
+
+## Objective
+Package the completed implementation as one clean release state on main.
+
+## 28.1 Freeze
+- stop feature development;
+- stop refactoring;
+- do not introduce unrelated cleanup;
+- do not alter protected behavior unless required by release-readiness evidence.
+
+## 28.2 Final verification contract
+The release tooling covers Python compilation, security/readiness auditing, certification-matrix generation, optional core release-policy tests, working-tree/tracked-artifact auditing, manifest generation and release invariants. Protected real-lab execution remains an execution-class gate.
+
+## 28.3 Single commit
+The complete release wave uses exactly one final commit on main with:
+
+~~~text
+feat(runner): complete production-grade validation platform
+~~~
+
+# ITERATION 29 — REPRODUCIBLE OPERATIONAL READINESS
+
+## Objective
+Make release consumption deterministic and diagnosable without a Cloud dependency or a parallel production execution path.
+
+## Implementation
+- ReleaseManifestService records branch, commit, tree, cleanliness, tracked-file inventory and SHA-256 hashes.
+- RunnerDoctor checks interpreter/tool/path/authentication/database readiness.
+- Release and doctor CLIs expose deterministic operational checks.
+- SQLite integrity is inspected when a database exists.
+- Generated manifests remain in ignored runtime output.
+
+# ITERATION 30 — FINAL GOVERNANCE AND ARCHITECTURE FREEZE
+
+## Objective
+Freeze the standalone Runner as the coherent release unit and reconcile the operational contracts around it.
+
+## Implementation
+- Runner authority remains local for labs, devices, raw evidence and execution.
+- Cloud/SaaS remains above the certified Runner and is not part of this release.
+- Fake/simulated adapters remain verification seams only.
+- REAL_LAB certification remains an explicit evidence class.
+- API, security, release-gate, baseline, waiver and artifact invariants are frozen.
+- Documentation is synchronized to the final architecture.
+- No unrelated post-freeze feature is permitted.
+
+# FINAL TARGET ARCHITECTURE
+
+The completed standalone system must converge to:
+
+```
+                 ┌──────────────────────────────────────┐
+                 │          Local NetRegress UI         │
+                 │       React / Vite Operational UI    │
+                 └──────────────────┬───────────────────┘
+                                    │
+                                    ▼
+                 ┌──────────────────────────────────────┐
+                 │             Versioned API             │
+                 │ Auth / RBAC / Runs / Tests / Evidence│
+                 │ Telemetry / Regression / Firmware    │
+                 └──────────────────┬───────────────────┘
+                                    │
+                                    ▼
+                 ┌──────────────────────────────────────┐
+                 │            RunOrchestrator            │
+                 │ Configuration / Locks / Lifecycle     │
+                 └───────────────┬──────────────────────┘
+                                 │
+          ┌──────────────────────┼──────────────────────────┐
+          ▼                      ▼                          ▼
+   ConfigurationResolver   LabController          EnvironmentFingerprint
+          │                      │                          │
+          └──────────────────────┼──────────────────────────┘
+                                 ▼
+                        ┌──────────────────┐
+                        │ LabHealthService │
+                        └────────┬─────────┘
+                                 ▼
+                        ┌──────────────────┐
+                        │ pytest/TestRegistry │
+                        └────────┬─────────┘
+                                 ▼
+                        ┌──────────────────┐
+                        │    RunContext    │
+                        └────────┬─────────┘
+                                 ▼
+           ┌─────────────────────┼──────────────────────┐
+           ▼                     ▼                      ▼
+   CommandRunner         DeviceAdapter          FirmwareAdapter
+           │                     │                      │
+           └─────────────────────┼──────────────────────┘
+                                 ▼
+          ┌────────────────────────────────────────────────┐
+          │ Evidence / Protocol / Telemetry / Metrics     │
+          └───────────────────────┬────────────────────────┘
+                                  ▼
+          ┌────────────────────────────────────────────────┐
+          │ Regression Intelligence / Baselines / Gate    │
+          └───────────────────────┬────────────────────────┘
+                                  ▼
+          ┌────────────────────────────────────────────────┐
+          │ SQLite / SQLAlchemy / PostgreSQL-compatible   │
+          │ Artifact Registry / Durable Offline Outbox    │
+          └────────────────────────────────────────────────┘
+```
+
+The future Cloud control plane remains a separate layer above the certified Runner. It must not bypass the Runner's local authority over labs, devices, raw evidence, and execution.
+
+---
+
+
+# FINAL IMPLEMENTATION ORDER
+
+~~~text
+20 → 21 → 22 → 23 → 24 → 25 → 26 → 27 → 28 → 29 → 30 → ONE FINAL COMMIT ON main
+~~~
+
+No Cloud/SaaS implementation is introduced in this release wave.
+
+## Final implementation status — Iterations 20–30
+Iterations 20–27 are source-complete from the preceding consolidated passes. Iterations 28–30 are the final release wave: release integration, reproducible operational readiness and governance/architecture freeze. The final Git state is consolidated into one commit on main.
+
+
+## Current-State Amendment — 2026-09-24
+
+The post-release implementation audit traced completion gates into source and closed the identified defects in DHCP T1/T2 evidence, firmware-operation locking, firmware API validation metadata, scoped release waivers, operational mutation idempotency, readiness depth, frontend CSRF integration and OpenAPI synchronization. The subsequent React/Vite completion slice brought the documented frontend surface to source-complete status and added a CI frontend build/test gate.
+
+The following remain deliberately execution-bound or deferred:
+- first-class multi-project domain ownership in the future Cloud/SaaS control plane;
+- complete live wiring of EAPOL, Beacon/RSN and DNS analyzers into protected validation tests;
+- protected REAL_LAB and production-like runtime certification.
+
+Therefore, “source implemented” and “runtime certified” remain separate completion states. No source manifest, fake adapter, simulated integration or unit fixture can satisfy the protected REAL_LAB gate.
+
+## 3. Historical implementation phases and preserved design detail
+
+The original detailed implementation plan is retained here as the historical implementation specification for Phases 0–11 and Iterations 15–19. Its exact technical details, compatibility constraints, acceptance criteria, and implementation ordering are preserved below.
+
+## 1. Purpose
+
+This document converts the frozen Architecture Decision Record into an executable repository refactor sequence.
+
+The objective is to evolve the proven WiFi validation engine into a run-scoped, evidence-driven, statistically rigorous, secure Runner core without rewriting the working GNS3/mac80211_hwsim laboratory.
+
+## 2. Protected starting point
+
+Behavioral baseline:
+
+~~~text
+436026eba597b2c6ae2e291a9cd8054b70ebbf7c
+~~~
+
+Observed validation:
+
+~~~text
+11 / 11 real-lab tests PASS
+~~~
+
+Protected behaviors:
+
+- GNS3 topology and node roles.
+- mac80211_hwsim AP/client placement.
+- client management through eth1 while WiFi validation uses wlan0.
+- DHCP service path.
+- AP-side DHCP capture on br0.
+- dedicated Paramiko tcpdump lifecycle.
+- real DHCP traffic and SHA-256 PCAP verification.
+- existing pytest node IDs.
+- existing pytest CLI.
+- existing provisioning CLI.
+- real traffic only; no synthetic validation traffic.
+
+## 3. Governing refactor rule
+
+Every change follows:
+
+~~~text
+design
+→ compatibility boundary
+→ additive implementation
+→ targeted verification
+→ full real-lab regression
+→ evidence inspection
+→ documentation update
+→ commit to main
+~~~
+
+No broad rewrite of a working subsystem is allowed merely because its current structure is imperfect.
+
+## 4. Phase 0 — Baseline protection
+
+### Work
+
+1. Verify current main state.
+2. Preserve the behavioral baseline SHA.
+3. Record the 11-test execution command.
+4. Verify runtime results remain gitignored.
+5. Record baseline artifact locations.
+6. Keep the existing shell invocation behavior unchanged.
+
+### Gate
+
+The real lab must pass all 11 current tests.
+
+## 5. Phase 1 — Domain model and persistence foundation
+
+### Target model
+
+~~~text
+Run
+ ├── Attempt
+ │    ├── TestResult
+ │    │    ├── Metric[]
+ │    │    │    └── Sample[]
+ │    │    └── Artifact[]
+ │    ├── lifecycle events
+ │    └── diagnostics
+ ├── EnvironmentSnapshot
+ ├── ConfigSnapshot
+ └── Run-level artifacts
+~~~
+
+### New package boundaries
+
+~~~text
+lib/domain/
+lib/models/
+lib/repositories/
+lib/services/
+~~~
+
+Initial domain objects:
+
+- Run
+- Attempt
+- TestResult
+- Metric
+- Sample
+- Artifact
+- EnvironmentSnapshot
+- ConfigSnapshot
+- LifecycleEvent
+- Baseline
+- Regression
+
+Repositories:
+
+- RunRepository
+- AttemptRepository
+- TestResultRepository
+- ArtifactRepository
+- BaselineRepository
+- EventRepository
+
+### Compatibility
+
+The current db_helper functions remain temporarily and delegate to the new service/repository layer.
+
+This prevents a destructive rewrite of existing callers.
+
+### Run creation
+
+The Run exists before the first test result.
+
+The CLI remains:
+
+~~~bash
+pytest tests/ -v --firmware-version=v1.0
+~~~
+
+### Frozen Run snapshot
+
+Record:
+
+- run ID;
+- display ID;
+- firmware;
+- lab ID;
+- validation profile;
+- selected tests;
+- test-definition versions;
+- resolved configuration;
+- configuration hash;
+- repository commit;
+- environment fingerprint;
+- thresholds;
+- timestamps.
+
+### Acceptance
+
+- every test result has a run ID;
+- the old CLI still works;
+- legacy queries remain valid;
+- historical DB migration works;
+- the real 11-test suite remains green.
+
+## 6. Phase 1A — Test Registry and RunContext
+
+Introduce an explicit test registry containing semantic metadata.
+
+Minimum metadata:
+
+- test ID;
+- test version;
+- category;
+- protocol;
+- severity;
+- criticality;
+- equipment;
+- direction;
+- prerequisites;
+- destructive flag;
+- estimated duration;
+- capability requirements;
+- metric definitions;
+- threshold definitions;
+- evidence requirements.
+
+Introduce a RunContext carrying:
+
+- run ID;
+- attempt ID;
+- lab;
+- device;
+- resolved config;
+- command runner;
+- artifact service;
+- logger.
+
+Existing pytest fixtures remain compatible while new services are injected through the context.
+
+## 7. Phase 1B — Multiple metrics and raw samples
+
+Replace the single metric-value model with a Metric collection.
+
+A TestResult may contain:
+
+~~~text
+latency
+packet loss
+jitter
+throughput
+CPU
+memory
+interface utilization
+~~~
+
+Raw samples are always preserved.
+
+Retrying a measurement command is not the same as collecting another valid statistical sample.
+
+## 8. Phase 1C — Artifact registry
+
+Introduce ArtifactService.
+
+Artifact lifecycle:
+
+~~~text
+create
+→ verify
+→ hash
+→ register
+→ available
+~~~
+
+Artifact metadata:
+
+- artifact ID;
+- Run ID;
+- optional TestResult ID;
+- type;
+- physical path;
+- display name;
+- size;
+- SHA-256;
+- timestamp;
+- evidence state;
+- sensitivity classification;
+- retention metadata.
+
+Phase 1 uses the local results directory.
+
+## 9. Phase 1D — Historical database migration
+
+The current SQLite file becomes migration input.
+
+Historical rows without Run IDs are imported into synthetic historical Runs.
+
+Do not invent missing information.
+
+Imported historical records must carry a clear legacy/imported indicator so they cannot be confused with fully instrumented Runs.
+
+Migration must be tested using a real copy of the current database.
+
+## 10. Phase 1E — Security gate
+
+The security gate runs alongside Phase 1.
+
+Required:
+
+- credentials removed from tracked YAML;
+- environment/secret based credential resolution;
+- secret scrubbing;
+- authenticated local dashboard;
+- role-aware authorization boundary;
+- command construction audit;
+- destructive-command allow list;
+- safe artifact access;
+- privileged-action audit logging.
+
+A repository scan must find no operational credentials in tracked configuration.
+
+## 11. Phase 1F — CommandRunner extraction
+
+Current command execution is split across Netmiko, raw Paramiko, local subprocess, tests, fault injection and capture code.
+
+Unify behind:
+
+~~~text
+CommandRunner
+ ├── NetmikoRunner
+ ├── ParamikoExecRunner
+ └── LocalRunner
+~~~
+
+Command results must be structured:
+
+- command ID;
+- host/device;
+- safe display command;
+- stdout;
+- stderr;
+- exit code;
+- duration;
+- connect timeout;
+- execution timeout;
+- idle timeout where relevant;
+- timed-out state;
+- idempotent flag;
+- privilege mode.
+
+Retries are allowed only when explicitly safe.
+
+State mutation commands such as link changes, traffic-control changes and DHCP mutations are not blindly retried.
+
+## 12. Phase 2 — Lab Health and lab control
+
+Create:
+
+- LabHealthService;
+- LabController;
+- EnvironmentFingerprintService.
+
+Extract provisioning logic incrementally from the current shell script.
+
+First extraction order:
+
+1. GNS3 connectivity.
+2. GNS3 project discovery.
+3. required node discovery.
+4. management path validation.
+5. hwsim PHY validation.
+6. interface/carrier validation.
+7. AP validation.
+8. client validation.
+9. router validation.
+10. DHCP validation.
+11. DNS validation.
+12. iperf validation.
+13. SSH validation.
+14. disk space.
+15. clock/NTP.
+
+### Health states
+
+~~~text
+HEALTHY
+DEGRADED
+FAILED
+UNKNOWN
+~~~
+
+Run behavior:
+
+- FAILED before execution blocks the test set.
+- DEGRADED may run but is recorded.
+- mid-run infrastructure collapse becomes LAB_FAILED.
+- every failed health component produces diagnostic evidence.
+
+Automatic repair is not silent.
+
+## 13. Phase 2B — Configuration normalization
+
+Use:
+
+~~~text
+defaults
+→ environment
+→ lab
+→ device
+→ run
+→ test override
+~~~
+
+YAML remains human-authored.
+
+Shell constants migrate gradually into structured configuration.
+
+The existing provisioning CLI stays operational during migration.
+
+## 14. Phase 3 — Statistical rigor
+
+### New concepts
+
+- Sample;
+- MetricDefinition;
+- MeasurementPolicy;
+- StatisticSummary.
+
+### Initial statistics
+
+- count;
+- minimum;
+- maximum;
+- mean;
+- median;
+- p90;
+- p95;
+- standard deviation.
+
+Warm-up samples remain diagnostic but are excluded from aggregates.
+
+Outliers are retained, never silently discarded.
+
+Each performance test declares the aggregate metric used for its decision.
+
+## 15. Phase 4 — Functional WiFi expansion
+
+Add:
+
+- wrong PSK behavior;
+- disconnect/reconnect;
+- DHCP renewal;
+- DHCP rebind;
+- DNS failure/recovery;
+- AP restart recovery;
+- client restart recovery;
+- DHCP server failure/recovery.
+
+Every negative test proves both disruption and recovery.
+
+~~~text
+baseline
+→ fault
+→ expected disruption
+→ evidence
+→ restore
+→ recovery
+→ evidence
+~~~
+
+## 16. Phase 5 — Protocol evidence
+
+Replace packet-count validation with transaction-aware protocol evidence.
+
+DHCP:
+- correlate DISCOVER → OFFER → REQUEST → ACK using transaction ID and client identity;
+- preserve the assigned address and server identifier where available;
+- do not treat independent message counts as a valid transaction.
+
+EAPOL:
+- identify the ordered WPA four-way handshake messages 1/4 through 4/4;
+- correlate the exchange to the same endpoints and replay sequence.
+
+Beacon checks:
+- SSID;
+- BSSID;
+- channel;
+- RSN presence;
+- group/pairwise cipher;
+- AKM;
+- beacon interval;
+- capabilities.
+
+DNS:
+- correlate query and response by transaction ID and question;
+- preserve response/answer data;
+- distinguish unmatched queries from correlated responses.
+
+Protocol evidence is immutable Run-scoped derived evidence. The raw PCAP remains the source of truth. No analyzer may synthesize or repair missing protocol frames.
+
+## 17. Phase 6 — WiFi telemetry
+
+Initial fields:
+
+- RSSI;
+- SNR;
+- channel;
+- frequency;
+- bitrate;
+- PHY mode;
+- retry counters where available.
+
+Iteration 14 introduces a typed `WifiTelemetrySnapshot` made of immutable `TelemetryPoint` values. Every point carries the environment class, source command/derivation, interface, capture timestamp, unit and observed value.
+
+Supported environment classes are:
+
+~~~text
+VIRTUAL_WIFI
+PHYSICAL_WIFI
+~~~
+
+The current virtual GNS3/mac80211_hwsim lab is labeled `VIRTUAL_WIFI`. Physical adapters can emit the same schema with `PHYSICAL_WIFI`.
+
+Virtual hwsim measurements are diagnostic/network-behavior telemetry only. They are never presented as RF certification or as proof of calibrated physical radio performance.
+
+Telemetry collection is read-only and must execute through `SecureCommandRunner`. No telemetry value is synthesized when its source observation is unavailable.
+
+## 18. Phase 7 — Regression Intelligence 2.0
+
+Required improvements:
+
+- explicit baseline Run reference;
+- per-test thresholds;
+- multiple metrics;
+- environment comparability;
+- NO_BASELINE;
+- UNVALIDATED;
+- composable regression dimensions;
+- flaky-test history.
+
+Automatic comparison is rejected when evidence, test definition or environment compatibility is insufficient.
+
+## 19. Phase 8 — Dashboard 2.0
+
+Keep Flask/Jinja.
+
+New API-first routes:
+
+~~~text
+/runs
+/runs/<run_id>
+/runs/<run_id>/tests/<test_result_id>
+/regressions
+/performance
+/telemetry
+/lab-health
+/artifacts
+~~~
+
+The dashboard must answer:
+
+- what ran;
+- firmware;
+- lab;
+- environment;
+- pass/fail;
+- failure cause;
+- baseline;
+- regression classification;
+- evidence;
+- reproduction information.
+
+Continue ten-second polling initially.
+
+## 20. Phase 9 — Device and Firmware adapters
+
+Introduce DeviceAdapter and FirmwareAdapter.
+
+Reference fake implementation:
+
+~~~text
+fw_simulator
+~~~
+
+Real first transport:
+
+~~~text
+SSH/SCP
+~~~
+
+Optional second:
+
+~~~text
+TFTP
+~~~
+
+Firmware lifecycle:
+
+~~~text
+identify
+→ validate image
+→ compatibility check
+→ upload
+→ prepare
+→ flash
+→ reboot
+→ wait ready
+→ verify version
+→ validate
+→ optional authorized rollback
+~~~
+
+No automatic flash or rollback.
+
+## 21. Phase 10a — Internal CI gate
+
+~~~text
+commit
+→ configuration validation
+→ Lab Health
+→ Run
+→ evidence
+→ regression
+→ release gate
+~~~
+
+Default fail-closed conditions:
+
+- blocking regression;
+- disallowed soft regression;
+- NO_BASELINE;
+- UNVALIDATED;
+- missing required test;
+- invalid required evidence.
+
+## 22. Phase 10b — NetRegress Cloud
+
+Cloud owns:
+
+- organizations;
+- projects;
+- identities;
+- policies;
+- baselines;
+- waivers;
+- release decisions;
+- CI integration.
+
+Runner owns:
+
+- labs;
+- devices;
+- execution;
+- raw evidence;
+- offline queue;
+- synchronization.
+
+Cloud jobs initially use Celery/Redis.
+
+Labs are exclusive resources and cannot run two concurrent Runs.
+
+## 23. Phase 11 — PostgreSQL
+
+Only move beyond SQLite once multi-tenant concurrency is real.
+
+Use:
+
+- SQLAlchemy;
+- Alembic;
+- PostgreSQL.
+
+Move large evidence to object storage only when retention and scale justify it.
+
+## 24. Completion gate
+
+A phase is complete only when:
+
+1. documentation and implementation agree;
+2. targeted tests pass;
+3. failure paths are verified;
+4. database migrations are verified where relevant;
+5. APIs satisfy their contract where relevant;
+6. affected artifacts are inspected;
+7. real 11-test validation remains green whenever execution/network behavior changed.
+
+## 25. Immediate implementation sequence
+
+1. Preserve/tag behavioral baseline.
+2. Add typed domain models.
+3. Add repository interfaces.
+4. Add Run and Attempt.
+5. Integrate conftest without CLI breakage.
+6. Add Metric and Sample collections.
+7. Add ArtifactService.
+8. Add historical DB migration.
+9. Extract CommandRunner.
+10. Apply Phase 1S security controls.
+11. Extract LabHealthService.
+12. Add statistical policies.
+
+Only then expand functional WiFi coverage.
+
+
+## 18A. Iteration 15 — Regression Intelligence 2.0
+
+The new regression path is Run-scoped and requires an explicit `baseline_run_id`. Firmware version strings remain only a compatibility lookup for the legacy CLI.
+
+Comparability is fail-closed:
+- validation profile must match;
+- lab identity must match;
+- selected tests and frozen test-definition versions must match;
+- both environment classes must be supplied and equal.
+
+A comparable baseline is never inferred from the nearest firmware run.
+
+For PASS→PASS results, each metric is evaluated independently using its declared `MeasurementPolicy`. Per-test/per-metric percentage thresholds may be supplied under the Run's `regression.thresholds` configuration; the existing 20% behavior remains the compatibility default.
+
+The evaluator emits composable regression dimensions, explicit `NO_BASELINE`/ `UNVALIDATED` states and optional flaky-history diagnostics. Flaky history never erases the underlying Attempt/result.
+
+
+## 19A. Iteration 16 implementation
+
+Phase 8 is implemented as an additive, read-only API/UI layer over the Run/Attempt/TestResult/Artifact repositories.
+
+Canonical versioned endpoints now cover:
+- Runs and Run detail;
+- Test results and test detail;
+- metrics and historical samples;
+- explicit Run-to-Run regression comparison;
+- Run telemetry and inferred environment class;
+- Run/lab health evidence;
+- artifact metadata and constrained download;
+- active baseline metadata.
+
+Jinja pages consume these same contracts. Legacy /api routes and the existing firmware pass-rate/chart/export views remain compatibility views.
+
+Artifact JSON is never trusted solely because its database record exists: the registered path must remain under the results root and its SHA-256 must still match before interpretation.
+
+
+## 20A. Iteration 17 implementation
+
+Iteration 17 makes Phase 9 executable through typed adapters rather than documentation-only interfaces.
+
+Implemented:
+- DeviceAdapter with profile-driven SSH execution.
+- VirtualLinuxDeviceAdapter for the current GNS3/Linux device class.
+- OpenWrtDeviceAdapter with OpenWrt-specific version and sysupgrade defaults.
+- machine-readable capability declarations controlling firmware applicability.
+- FirmwareImage SHA-256 validation and optional detached-signature verification.
+- SFTP upload and remote SHA-256 verification.
+- explicit authorization for upload, prepare, flash, reboot and rollback.
+- staged FirmwareOperationService lifecycle with Run audit events.
+- explicit rollback only; no automatic retry or rollback after uncertain state.
+- deterministic fake Device/Firmware adapters for hardware-free lifecycle testing.
+
+Real firmware mutation is not invoked by the current WiFi pytest suite.
+
+## 21A. Iteration 18 implementation
+
+The internal release gate is now a fail-closed policy boundary. Core CI performs source parsing and hardware-free release-policy contract tests. A separate dispatchable self-hosted job runs the protected GNS3/mac80211_hwsim suite using the existing provisioning script and canonical pytest command. Persisted Run/regression evaluation is available through scripts/ci_release_gate.py.
+
+## 22A. Iteration 19 implementation
+
+Iteration 19 implements the Runner-side offline synchronization seam as a durable SQLite outbox. A terminal Run is snapshotted locally into a deterministic envelope containing Run, Attempt, TestResult, metric/sample, artifact metadata and lifecycle facts. Artifact binaries remain local; the envelope carries immutable integrity metadata only.
+
+Synchronization is outbound-only and transport-agnostic. `HttpSyncTransport` is a minimal HTTPS implementation for the future Cloud contract. Queue delivery is idempotent, lease-based and retryable. Cloud unavailability never changes an already persisted Run outcome.
+
+## 4. Explicit roadmap and status checklist
+
+The roadmap is preserved below as the implementation-status checklist so development order and completion status remain in one place.
+
+## Iteration 1 — Typed Domain Model ✅
+- [x] Typed domain entities and invariants.
+- [x] Domain tests.
+
+## Iteration 2 — Repository + SQLite Persistence ✅
+- [x] Repository interfaces and normalized SQLite persistence.
+- [x] Legacy SQLite preservation.
+
+## Iteration 3 — Run/Attempt Lifecycle + Pytest Integration ✅
+- [x] ULID/display IDs, lifecycle transitions/events, Run + Attempt creation.
+- [x] Existing CLI/node IDs and legacy result writes preserved.
+
+## Iteration 4 — Metrics + Raw Samples ✅
+- [x] Multi-sample MetricCollector with warmup/retry/status/metadata/timestamp support.
+- [x] Backward-compatible metric_logger.log(value, unit).
+- [x] Run-scoped TestResult persistence with Metric/Sample children.
+- [x] Legacy single-metric persistence retained.
+- [x] Unit/service verification added.
+
+Verification:
+- [ ] Python syntax compilation: not executable from this environment.
+- [ ] MetricCollector multi-sample verification: not executable from this environment.
+- [ ] Run-scoped sample persistence verification: not executable from this environment.
+- [ ] Full real-lab 11/11 gate: unavailable in this environment.
+
+## Iteration 5 — ArtifactService + Evidence Registry ✅
+- [x] Artifact metadata: display name, creation time, sensitivity class, retention fields.
+- [x] Migration-safe SQLite schema for new artifact metadata.
+- [x] ArtifactService verifies file existence, expected size and SHA-256 before registration.
+- [x] ARTIFACT_CREATED lifecycle events persisted.
+- [x] Existing real DHCP PCAP producer registers the verified PCAP as Run-scoped evidence.
+- [x] Artifact integrity verification and legacy-schema migration tests added.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required because the DHCP evidence path changed; unavailable in this environment.
+
+
+
+## Iteration 6 — Historical Database Migration + Legacy Run Attribution ✅
+- [x] Deterministic legacy-to-Run/Attempt/TestResult attribution.
+- [x] Explicit \`LEGACY_IMPORTED\` provenance on migrated Run/TestResult/Artifact/Baseline records.
+- [x] Raw legacy metrics preserved where units are available.
+- [x] Existing PCAP paths registered only when the file actually exists; unavailable paths produce explicit lifecycle evidence.
+- [x] Legacy baseline-table naming collision isolated from normalized \`run_baselines\`.
+- [x] Migration ledger makes repeated execution idempotent.
+- [x] Legacy source tables remain intact.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required; result persistence/schema changes require the gate and it is unavailable here.
+
+
+
+## Iteration 7 — Test Registry + RunContext ✅
+- [x] Stable semantic IDs mapped 1:1 to existing pytest node IDs.
+- [x] Full test-definition metadata and deterministic internal fallback definitions.
+- [x] RunContext introduced with Run/Attempt, lab/device, resolved config, TestRegistry and ArtifactService.
+- [x] Semantic test metadata integrated into Run-scoped TestResult persistence.
+- [x] Existing pytest CLI and node IDs preserved.
+- [x] Unit tests added for registry and context behavior.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required; unavailable in this environment.
+
+## Iteration 8 — CommandRunner Extraction + Structured Command Results ✅
+- [x] Typed CommandRunner protocol and immutable CommandResult contract.
+- [x] NetmikoRunner wraps the existing ConnectionPool without altering protected connection behavior.
+- [x] ParamikoExecRunner added for structured non-interactive SSH execution.
+- [x] LocalRunner added with shell execution available only through explicit execute_shell().
+- [x] Command timeout, idempotency, privilege and redaction metadata captured for each result.
+- [x] Common command-secret redaction for display/logging implemented.
+- [x] RunContext now carries a typed CommandRunner instance.
+- [x] Existing raw Paramiko DHCP tcpdump lifecycle remains untouched.
+- [x] Unit tests added for redaction, structured Netmiko results, local execution and RunContext integration.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required because execution plumbing changed; unavailable in this environment.
+
+
+
+## Iteration 9 — Execution Security + Command Authorization/Redaction ✅
+- [x] Central CommandSecurityPolicy with per-target executable and destructive-operation allow lists.
+- [x] Strict structured execution rejects shell operators and command substitution by default.
+- [x] Explicit compatibility shell execution supports only the existing limited validation grammar (semicolon, double-pipe, /dev/null redirection).
+- [x] Destructive lab operations require explicit policy authorization and remain limited to documented prefixes: dhclient, ip link set, iptables, pkill, systemctl start/stop and tc qdisc.
+- [x] Privilege normalization centralizes sudo handling and uses non-interactive sudo -n.
+- [x] Command and output redaction covers passwords, PSKs, tokens, authorization headers and sensitive query values.
+- [x] SecureCommandRunner wraps all standard pytest remote-command compatibility calls without changing existing test node IDs or CLI behavior.
+- [x] COMMAND_EXECUTED lifecycle audit events include command IDs, safe commands, transport, privilege and outcome metadata without raw secrets.
+- [x] Run-scoped COMMAND_OUTPUT evidence is registered through ArtifactService at session close.
+- [x] Local command compatibility and protected DHCP raw Paramiko capture boundaries remain explicit.
+- [x] Security-focused unit tests added for injection resistance, destructive allow-list enforcement, privilege normalization, redaction and audit evidence.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required because execution security and pytest command routing changed; unavailable in this environment.
+
+
+
+## Iteration 10 — LabHealthService + Typed Infrastructure Health Evidence ✅
+- [x] Added typed EnvironmentHealthStatus, HealthObservation and LabHealthSnapshot domain models.
+- [x] Added Run.environment_health with SQLite persistence and additive schema migration.
+- [x] Added LabHealthService with read-only checks for GNS3, Docker, libvirt, hwsim PHY placement, management SSH, AP/client/router/monitor, DHCP, DNS, iperf3, disk and clock/NTP.
+- [x] GNS3 health validates API reachability, configured project discovery and required node availability/state.
+- [x] hwsim health validates PHY visibility inside the AP/client namespaces, matching the protected topology rather than relying on host-only PHY visibility.
+- [x] FAILED required health blocks validation before tests execute and marks the Run LAB_FAILED.
+- [x] DEGRADED/UNKNOWN health is retained as Run context without silently repairing the lab.
+- [x] BEFORE and AFTER health snapshots are executed around the pytest Run.
+- [x] Every health snapshot is registered as LAB_HEALTH_SNAPSHOT evidence; unhealthy snapshots also register DIAGNOSTIC_BUNDLE evidence.
+- [x] LAB_HEALTH_STARTED and LAB_HEALTH_COMPLETED lifecycle events are emitted.
+- [x] Component/unit tests cover healthy, failed and degraded health paths plus Run persistence.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required because orchestration, SSH health checks and pytest gating changed; unavailable in this environment.
+
+
+
+## Iteration 11 — Statistical Measurement Policies + Aggregate Evaluation ✅
+- [x] Added typed `StatisticKind`, `MeasurementPolicy`, `MetricDefinition` and `StatisticSummary` contracts.
+- [x] Added deterministic evaluator for count, minimum, maximum, mean, median, p90, p95 and population standard deviation.
+- [x] Warm-up samples and disallowed sample statuses are excluded from aggregates.
+- [x] Retried measurements retain explicit retry metadata without multiplying statistical observations.
+- [x] Added minimum-sample enforcement and metric name/unit validation.
+- [x] Extended TestRegistry so performance tests declare a semantic `decision_metric` and aggregate policy.
+- [x] Added semantic metric naming in the pytest collector when a test has one policy-driven metric, without changing existing test node IDs or CLI behavior.
+- [x] Added unit coverage for statistics, policy enforcement and registry metadata.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Full real-lab 11/11 gate: required because pytest metric collection and result semantics changed; unavailable in this environment.
+
+
+
+## Iteration 12 — Functional WiFi Negative + Recovery Validation ✅
+- [x] Added typed `FaultDefinition`/`FaultService` over the secured `CommandRunner`.
+- [x] Fault contexts restore unconditionally, including when fault application or validation raises.
+- [x] Added real wrong-PSK rejection and recovery validation.
+- [x] Added explicit WiFi disconnect/reconnect recovery validation.
+- [x] Added DHCP lease renewal validation.
+- [x] Added DHCP service-loss and lease recovery validation using the real FRR/dnsmasq service.
+- [x] Added DNS failure/recovery validation using a real client firewall fault.
+- [x] Added AP hostapd restart recovery validation.
+- [x] Added client wpa_supplicant restart recovery validation while management remains on eth1.
+- [x] Registered all new recovery cases with semantic TestRegistry metadata and destructive classification.
+- [x] Added recovery marker and FaultService unit coverage.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Protected original 11-test real-lab subset: unavailable in this environment.
+- [ ] Full expanded recovery suite real-lab execution: unavailable in this environment.
+- [ ] Protocol-accurate DHCP T2 rebind evidence: deferred to the transaction-aware protocol-evidence phase.
+
+
+## Iteration 13 — Protocol-Aware Evidence + Transaction Correlation ✅
+- [x] Added typed DHCP, EAPOL, beacon and DNS evidence models.
+- [x] Added `ProtocolEvidenceService` with transaction-aware DHCP DORA correlation.
+- [x] DHCP correlation uses transaction ID and client identity instead of independent packet counts.
+- [x] Added ordered WPA2/EAPOL four-way handshake detection.
+- [x] Added beacon SSID/BSSID/channel/RSN/cipher/AKM/beacon-interval/capability extraction.
+- [x] Added DNS query/response correlation by transaction ID and question.
+- [x] Preserved `lib.wifi_analyzer` compatibility entry points as wrappers over the new service.
+- [x] Upgraded real DHCP PCAP validation to require correlated DORA evidence.
+- [x] Registered derived DHCP protocol JSON as Run-scoped `PROTOCOL_EVIDENCE` while preserving the verified raw PCAP.
+- [x] Added parser/component tests covering correlation failures that packet counts alone would incorrectly accept.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Protected original 11-test real-lab gate: unavailable in this environment.
+- [ ] Real DHCP capture + protocol-evidence gate: unavailable in this environment.
+
+## Iteration 14 — WiFi Telemetry + Environment-Class-Aware Measurements ✅
+- [x] Added typed `TelemetryEnvironmentClass`, `TelemetryMetric`, `TelemetryPoint` and `WifiTelemetrySnapshot` contracts.
+- [x] Added `WifiTelemetryService` using only secured read-only `wpa_cli`/`iw` observations.
+- [x] Added RSSI, SNR, frequency, derived channel, bitrate, PHY-mode and available retry/failure telemetry parsing.
+- [x] Every telemetry point carries explicit `VIRTUAL_WIFI` or `PHYSICAL_WIFI` environment class.
+- [x] Missing measurements remain unavailable; no synthetic or inferred RF values are emitted.
+- [x] Added Run-scoped `TELEMETRY` artifact support and JSON serialization.
+- [x] Wired telemetry service into `RunContext` and the pytest session fixture without changing protected test node IDs, topology or traffic/capture paths.
+- [x] Added parser/service tests for environment labeling, missing-source behavior, interface validation and JSON provenance.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Real-lab telemetry capture: unavailable in this environment.
+- [ ] Protected original 11-test real-lab gate: unavailable in this environment.
+
+
+
+## Iteration 15 — Regression Intelligence 2.0 ✅
+- [x] Added typed comparability, regression-dimension, metric-comparison, assessment and Run-report contracts.
+- [x] Added explicit Run-to-Run comparison keyed by baseline Run ID.
+- [x] Added fail-closed profile/lab/test-definition/environment comparability checks.
+- [x] Added multi-metric PASS→PASS evaluation through the declared MeasurementPolicy.
+- [x] Added per-test/per-metric threshold overrides with the existing 20% compatibility default.
+- [x] Added `NO_BASELINE` and `UNVALIDATED` handling.
+- [x] Added composable regression dimensions and flaky-history diagnostics.
+- [x] Preserved the legacy firmware-string regression path as compatibility code.
+- [x] Added focused regression-intelligence tests.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Protected real-lab gate: unavailable in this environment.
+
+
+
+## Iteration 16 — Dashboard/API 2.0 + Regression/Telemetry Integration ✅
+- [x] Added read-only repository collection methods for Runs, TestResults and Artifacts.
+- [x] Added DashboardQueryService as the presentation/query boundary.
+- [x] Added versioned /api/v1 success/error envelopes.
+- [x] Implemented Run/Test/Metrics/Regression/Telemetry/Lab Health/Artifact/Baseline endpoints.
+- [x] Integrated Iteration 15 regression intelligence into the canonical dashboard.
+- [x] Integrated persisted Iteration 14 telemetry and environment-class evidence.
+- [x] Added integrity-checked JSON artifact interpretation.
+- [x] Added constrained artifact downloads.
+- [x] Added Jinja pages for Runs, Run Detail, Test Detail, Regression, Performance, Telemetry, Lab Health and Artifacts.
+- [x] Preserved legacy /api/* compatibility endpoints.
+- [ ] Local/unit execution: unavailable in this environment.
+- [ ] Browser/API runtime verification: unavailable in this environment.
+- [ ] Protected real-lab gate: unavailable in this environment.
+
+
+
+## Iteration 17 — Device/Firmware Adapter Production Seam ✅
+- [x] Added typed DeviceAdapter/FirmwareAdapter contracts.
+- [x] Added VirtualLinux and OpenWrt SSH adapter implementations.
+- [x] Added machine-readable device capabilities.
+- [x] Added FirmwareImage SHA-256 and optional detached-signature validation.
+- [x] Added SFTP upload plus remote integrity verification.
+- [x] Added explicit authorization for firmware mutation stages.
+- [x] Added staged firmware lifecycle orchestration and Run audit events.
+- [x] Added explicit rollback as a separate operation; no automatic retry/rollback.
+- [x] Added deterministic fake adapters and failure-path tests.
+- [x] Wired adapters into RunContext without changing protected validation traffic.
+- [x] Migrated `regression/fw_simulator.py` to the fake adapter boundary.
+- [ ] Real hardware flash/reboot/rollback execution: unavailable in this environment.
+- [ ] Protected 11-test real-lab gate: unavailable in this environment.
+
+
+## Iteration 18 — Internal CI Release Gate ✅
+- [x] Added fail-closed ReleaseGateEvaluator.
+- [x] Rejects NO_BASELINE, UNVALIDATED, REGRESSION, SOFT_REGRESSION, NEW_FAILURE, missing required tests and invalid required evidence.
+- [x] Requires completed Run and healthy lab by default.
+- [x] Added persisted Run/regression evaluation CLI.
+- [x] Added GitHub Actions core gate on main/PR.
+- [x] Added dispatch-only protected real-lab gate for self-hosted netregress-lab runners.
+- [x] Fixed pytest-node-ID versus semantic-test-ID normalization in RegressionIntelligenceService.
+- [ ] GitHub Actions execution: unavailable in this environment.
+- [ ] Protected real-lab execution: unavailable in this environment.
+
+
+## Iteration 19 — Runner Offline Execution + Synchronization ✅
+- [x] Added typed sync envelope and durable SQLite queue.
+- [x] Added deterministic Run snapshot and idempotency key.
+- [x] Added lease-based in-flight recovery.
+- [x] Added bounded retry and BLOCKED state after repeated failures.
+- [x] Added outbound HTTPS transport seam with optional bearer token.
+- [x] Added explicit sync CLI.
+- [x] Queued terminal Runs from pytest without changing Run outcomes on queue failure.
+- [x] Added queue/service contract tests.
+- [ ] External Cloud synchronization: unavailable/not configured in this environment.
+- [ ] Protected 11-test real-lab gate: unavailable in this environment.
+
+
+## Iterations 20–22 — Consolidated implementation pass
+- [x] Iteration 20: secret externalization, local authentication/RBAC, API/dashboard protection, state reconciliation.
+- [x] Iteration 21: deterministic configuration, environment fingerprinting, LabController boundary, exclusive resource locking, RunOrchestrator and pytest integration.
+- [x] Iteration 22: evidence/protocol/telemetry/statistical contracts retained as mandatory Runner lifecycle boundaries; required evidence remains fail-closed.
+- [ ] Runtime/unit execution in the available environment.
+- [ ] Protected 11-test GNS3/mac80211_hwsim verification.
+
+Next: Iteration 23 — Device/Firmware operations, failure semantics, cancellation and diagnostics.
+
+
+## Iterations 23–25 — Consolidated implementation pass
+
+### Iteration 23 — Device/Firmware Operations + Failure Semantics ✅
+- [x] Explicit firmware lifecycle state transitions and audit events.
+- [x] Image SHA-256/signature/model validation remains mandatory before mutation.
+- [x] SSH/SFTP and TFTP transport seams.
+- [x] Explicit cancellation, process-group termination and Run execution PID persistence.
+- [x] PRODUCT_FAILED/LAB_FAILED/RUNNER_DISCONNECTED/WORKER_CRASHED/TIMED_OUT/CANCELLED/ABORTED classification.
+- [x] Diagnostic ZIP/manifest generation.
+- [x] ReproductionManifest generation and CLI.
+
+### Iteration 24 — API/OpenAPI + Operational Frontend + Persistence Boundary ✅
+- [x] Authorized POST Run/cancel/retry/baseline/firmware operations.
+- [x] Scoped waiver creation boundary.
+- [x] Canonical OpenAPI 3 contract.
+- [x] React + Vite operational UI shell.
+- [x] Alembic/SQLAlchemy migration boundary added while retaining SQLite compatibility.
+
+### Iteration 25 — Baseline/Regression/Release + Offline Runner ✅
+- [x] Explicit baseline promotion with blocking-test/evidence/health requirements.
+- [x] Active-baseline supersession semantics.
+- [x] Scoped, expiring, audited waiver model.
+- [x] Release-gate waiver filtering remains fail-closed.
+- [x] Durable outbound sync/idempotency/lease retry path remains the Runner synchronization authority.
+- [x] Diagnostic/reproduction evidence remains locally authoritative.
+
+
+
+## Iteration 26 — Full Failure Injection, Multi-Layer Integration, Security Hardening & Release Readiness ✅
+- [x] Added a 27-case typed failure-injection matrix covering device, lab, network, runner, persistence, evidence, firmware, concurrency, API and synchronization failure classes.
+- [x] Added a failure-injection harness with unconditional cleanup semantics and explicit product-statistics isolation expectations.
+- [x] Added restart/orphan Run recovery, stale-lock inspection/recovery, SQLite backup/restore and retention controls.
+- [x] Added durable API idempotency/replay protection with request-fingerprint binding.
+- [x] Added CSRF enforcement for authenticated state-changing API calls, login rate limiting and secure response headers.
+- [x] Added outbound HTTPS SSRF/IP-range validation and firmware-path confinement.
+- [x] Added audit event chain integrity digesting into diagnostic evidence.
+- [x] Added source security/readiness audit and CI integration.
+- [x] Preserved the existing fake-adapter boundary for hardware-free integration; no synthetic path replaces real validation.
+
+## Iteration 27 — Final Runner Certification & Documentation Freeze ✅
+- [x] Added the canonical 11-scenario certification matrix.
+- [x] Added evidence-completeness evaluation and certification report CLI.
+- [x] Added certification contract tests covering healthy, failure, evidence, lab, Runner, concurrency, firmware, offline and recovery semantics.
+- [x] Reconciled current-state, roadmap, security, testing, data/API, frontend, installation, traceability and README documentation.
+- [x] Added final source/readiness CI checks without claiming real-lab execution from source-only gates.
+
+
+ 
+## Iteration 28 — Final Single-Commit Release Integration ✅
+- [x] Deterministic release manifest with commit/tree/file inventory and SHA-256 content addressing.
+- [x] Final main-branch/source inventory audit.
+- [x] Release CLI with verify/manifest/doctor modes.
+- [x] Final CI release-readiness integration.
+- [x] Generated runtime reports remain outside tracked source.
+
+## Iteration 29 — Reproducible Operational Readiness ✅
+- [x] RunnerDoctor for Python, toolchain, directory, authentication and SQLite readiness.
+- [x] Database integrity inspection before operational consumption.
+- [x] Reproducible release inventory and documentation hashes.
+- [x] Controlled operational commands for verification and manifest generation.
+
+## Iteration 30 — Final Governance + Architecture Freeze ✅
+- [x] Standalone Runner authority boundary frozen.
+- [x] API/security/certification invariants and execution-class distinctions frozen.
+- [x] Final architecture, current-state, roadmap, security, testing, data/API and release documentation reconciled.
+
+## Completeness Audit — 2026-09-24
+The post-release source audit identified implementation gaps in DHCP T1/T2 transaction evidence, firmware operation locking, firmware API validation metadata, scoped release-waiver enforcement, mutation idempotency coverage, API readiness depth, frontend CSRF integration and API/OpenAPI synchronization. These are being closed in the current completeness wave.
+
+Production readiness is intentionally split into source completeness and execution certification:
+- source implementation readiness can be assessed from repository evidence;
+- REAL_LAB certification still requires the protected GNS3/mac80211_hwsim execution class and is not inferred from simulation or source scans.
+
+## 5. Canonical completion rule
+
+1. Implementation and documentation agree.
+2. Targeted tests pass.
+3. Failure paths are verified.
+4. Database migrations are verified where relevant.
+5. APIs satisfy their contracts where relevant.
+6. Affected artifacts are inspected.
+7. Real 11-test validation remains green whenever execution/network behavior changed.
+8. Source readiness is never misrepresented as protected REAL_LAB certification.
+
+
+#### Phase L implementation update — 2026-11-09
+
+- Remote artifact downloads accept verified browser sessions; non-browser remote clients still require the configured bearer token and SENSITIVE files remain admin-only.
+- Owner/Admin waiver inventory is exposed through GET /api/v1/waivers; expiry is normalized to UTC and past expiry is rejected.
+- Run Detail exposes attempt history and explicit-baseline Release Gate decisions from the backend evaluator.
+- Rollback submits the expected restored firmware version required by the API.
+- Metrics expose registry aggregates, sample minimums, eligible counts and decision values while preserving raw samples.
+- OpenAPI cookie/readiness contracts and duplicate release-gate path declarations are reconciled, with backend/frontend contract tests added to CI.
+
+Browser/reverse-proxy runtime acceptance and protected REAL_LAB execution remain separate gates.
+
+#### Phase M implementation update — 2026-11-09
+
+- Regression comparison requires a completed, healthy baseline and valid comparison evidence on both sides. Suite signatures normalize semantic TestRegistry IDs against equivalent pytest node IDs.
+- Metric regression direction is explicit: known metrics use their semantic direction; custom metrics require `regression.metric_directions`. Undefined zero-baseline percentage changes and non-finite/non-positive thresholds fail closed as UNVALIDATED.
+- Release acceptance requires every selected test to have a regression classification, PASS status and COMPLETE/NOT_REQUIRED evidence. TEST/RUN/REGRESSION waiver scope is exact; only explicit RELEASE-wide or exact-Run waivers can cross test boundaries.
+- Applied waivers are returned with waiver IDs and audit references and displayed in the Release Gate UI.
+- Offline sync accepts only terminal Run snapshots, verifies payload SHA-256 before publish, uses atomic enqueue/claim/ack/fail and lease compare-and-set, counts expired leases against the retry budget, blocks corrupted envelopes, and preserves ACKED state when audit persistence fails.
+- Admins can inspect a read-only sync queue view. Actual synchronization remains manually invoked, outbound-only and dependent on an operator-configured HTTPS endpoint/token; no Cloud control plane is claimed.
+
+Hosted CI, protected REAL_LAB and production Cloud acceptance remain separate gates.
+
+#### Phase J implementation update — 2026-11-08
+
+Delivered in this source/hosted-CI pass:
+- Device capability configuration uses strict boolean parsing. Explicit string values such as `"false"` and `"0"` remain false, while unknown names or invalid values fail closed.
+- OpenWrt configuration-derived profiles receive firmware-capable defaults and the ubus version query/parser. Rollback remains disabled unless explicitly configured.
+- `__ENV__:VARIABLE` credential markers are resolved for the SSH/SFTP device profile. Missing credentials fail closed instead of being passed as literal marker strings to Paramiko.
+- Firmware version identifiers and supplied SHA-256 digests are validated; metadata is detached and recursively immutable. Remote firmware paths remain beneath the configured firmware directory.
+- Reboot capability is enforced and readiness polling validates positive finite timeout/interval bounds. The generic version-field regex is corrected.
+- Firmware update now acquires the shared device-exclusive lock before image/model validation and holds it across upload, remote hash verification, preparation, flash, reboot, readiness and final version verification.
+- Rollback requires an explicit expected version, uses the same device-exclusive lock, waits for readiness, confirms the same device identity, and independently verifies the restored version before recording completion. The API and OpenAPI request contract require and fingerprint that expected version.
+
+The hosted adapter suite exercises these contracts with fake adapters and command stubs. This does not constitute physical firmware certification. Real target flash/reboot/rollback, interruption behavior, compatibility/signature policy and post-flash recovery must still be executed on the approved device family. No real firmware mutation was attempted in this pass.
+
+
+#### Phase K implementation update — 2026-11-09
+
+The live audit confirmed that the standalone Runner already contains the core security architecture: OWNER/ADMIN/OPERATOR/VIEWER authorization, password hashing, project-scope primitives, session expiry, CSRF protection, login rate limiting, response security headers, durable request-fingerprint idempotency, command allowlists, destructive-operation policy, command/output redaction, command audit evidence, artifact integrity/sensitivity metadata, firmware path confinement and audit/recovery services.
+
+This Phase K source hardening:
+- Tightens `validate_https_endpoint` used by the outbound synchronization transport. It now requires HTTPS, rejects embedded URL credentials, malformed ports and fragments, rejects DNS resolution failures or empty answer sets, and requires every resolved IPv4/IPv6 address to be globally routable. Mixed public/non-public DNS responses fail closed.
+- Adds focused API security regression coverage for invalid URL forms, loopback/private/link-local/shared/reserved/documentation addresses, mixed DNS answers, empty DNS answers, and valid public IPv4/IPv6 answers.
+- Updates the source security audit output and wires `python scripts/netregress_security_audit.py --strict` plus the focused API/RBAC/session suite into the backend quality workflow.
+
+Hosted workflows [42510776806](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42510776806) and [42511179934](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/42511179934) passed all three jobs each. The latter also exercised the artifact download sensitivity and remote-token route tests through the full backend regression suite.
+
+**Phase K acceptance still outstanding:** verify secure cookies and HSTS behind the actual HTTPS reverse proxy; validate production secret provisioning and deployment configuration; run an independent dependency scanner and threat-model review; review DNS-rebinding/connection-time resolution behavior in the outbound transport. The current source audit reports optional scanner availability but does not itself execute Bandit, Semgrep or pip-audit. Local project-scope RBAC is not durable multi-tenant isolation. These operational/security acceptance items must not be represented as completed by hosted CI.
+
+
+#### Phase K artifact download control — 2026-11-09
+
+The artifact download route now applies the persisted sensitivity classification. `PUBLIC` and `INTERNAL` artifacts retain the existing authenticated-viewer policy; any other or unknown sensitivity value requires an OWNER/ADMIN-level authorization decision. Remote artifact downloads fail closed unless `NETREGRESS_DASHBOARD_TOKEN` is configured and the supplied bearer token matches using constant-time comparison. Local authenticated sessions retain the direct download path. SHA-256 and results-root containment checks remain mandatory.
+
+Route-level regression tests cover remote token absence, invalid and valid bearer tokens, plus OPERATOR denial and ADMIN approval for a `SENSITIVE` artifact. Hosted CI must pass these tests before this route-level slice is considered verified. Reverse-proxy client-IP trust remains a deployment review item; do not trust arbitrary forwarded-IP headers.
+
+
+## Phase N — Standalone packaging implementation handoff (2026-11-09)
+
+The Phase N source slice adds a standalone installer/bootstrap command, a read-only operational doctor, deterministic source-bound release metadata, and a scenario-specific certification evidence evaluator. Existing Alembic migration ownership and SQLite backup/restore services are reused; no competing migration or recovery implementation was introduced.
+
+- scripts/netregress_install.py creates the standard results tree and private local-state directories, supports a non-mutating --check-only preflight, rejects runtime symlinks and fails closed on unsafe pre-existing local-state permissions, and delegates schema changes to DatabaseMigrationManager/Alembic.
+- RunnerDoctor reports PASS, WARNING, FAIL and NOT_CHECKED separately. It checks required Python imports, supported Node.js runtime, configuration shape, private authentication-file permissions, writable runtime locations, SQLite integrity and Alembic schema state. Dashboard and protected-lab checks are opt-in and read-only.
+- ReleaseManifestService emits deterministic source-bound metadata without a wall-clock field, records source commit/tree and per-file SHA-256, validates the Python runtime and npm dependency locks, and reports the additional PyInstaller and Rust build lock state separately. It also reads the desktop application version from `src-tauri/tauri.conf.json`.
+- CertificationMatrix documents objective, preconditions, execution method, expected behavior, required evidence types and verification criteria for each of the 11 scenarios. The new evaluator requires all execution classes, source-commit and environment-fingerprint binding, a timestamp, command, typed/hash-verified files beneath results/, and operator/approval attestation for REAL_LAB/PROTECTED_TARGET.
+- Focused Phase N tests are included in the hosted backend workflow. CI result is pending for the exact delivery commit until GitHub Actions completes.
+
+**Outstanding acceptance is intentional and explicit.** The Python SHA-256 runtime lock and frontend npm lockfile are tracked and validated. Full desktop build reproducibility remains incomplete because `requirements-desktop-build.lock` and `src-tauri/Cargo.lock` are not yet tracked; the release manifest reports `INCOMPLETE_BUILD_LOCKFILES` and keeps `production_reproducible=false`. P33–P37 add Ubuntu 22.04/24.04 package qualification, dependency audits/SBOM/attestations, repeated recovery tests, packaged pipeline/Run contract tests and an exact-commit PRE_CERTIFICATION workflow. Clean-machine interactive upgrade/backup/restore, production proxy/secrets review, protected 11-scenario REAL_LAB execution and physical firmware acceptance remain operator-owned. Phase O remains deferred until those standalone acceptance requirements are met.
+
+
+## Combined Phase O/P — Bounded integration and repository governance (2026-11-09)
+
+The user elected to keep the full Phase O Cloud/SaaS programme as future scope. This combined delivery does not introduce organizations, tenant/project persistence, a remote control plane, PostgreSQL, Celery/Redis, inbound Runner commands, distributed sessions or a Cloud deployment.
+
+### Small Phase O integration retained
+
+- The existing Runner-owned SQLite sync queue, stable idempotency envelopes, retry leases and outbound HTTPS transport remain the only current synchronization path.
+- The command python scripts/netregress_sync.py --status now exposes aggregate queue state counts locally. It requires no Cloud URL or token, does not invoke the transport, does not run Alembic migration, and does not expose queued payloads or error strings.
+- The queue summary is read through a SQLite read-only connection. Missing database and missing sync schema are reported distinctly instead of being silently initialized.
+- Remote endpoint ownership, authentication/credential lifecycle, schema negotiation and tenant/project authorization remain unimplemented future control-plane responsibilities. A successful local queue inspection is not evidence of remote delivery.
+
+### Phase P repository cleanup
+
+- Legacy run_all.sh and verify_system.py names remain as compatibility entry points but delegate to the current installer, release gate and authenticated dashboard launcher. The stale direct dashboard startup and ad-hoc verification database/report mutations are removed.
+- .gitignore now consistently excludes runtime databases/sidecars, PCAP variants, logs, temporary files, local state, Python caches, Node dependencies and .env.* secrets while explicitly preserving .env.example. Duplicate ignore entries are removed.
+- docs/README.md indexes the standalone installation/operations runbook; the README exposes the read-only queue status command and documents the compatibility entry points.
+- The source release manifest's required-file inventory now includes the documentation index, sync CLI, governance entry points and the new governance/sync tests.
+- Repository governance tests cover read-only sync status, no implicit database creation/migration, legacy entry-point routing, documentation indexing and ignore-file rules.
+
+### Explicitly not claimed
+
+The Python and frontend runtime lockfiles are now tracked and validated. The missing PyInstaller build-tool and Rust Cargo lockfiles remain explicit blockers; no lock data is guessed or manually fabricated. No obsolete compatibility entry points or secondary branches were deleted without a verified reference audit. No Git history was rewritten. The standalone production certification gaps listed under Phase N remain open; Phase O's full Cloud implementation remains future scope.
+
+
+### Stage E — Provisioning, Pipelines and End-to-End Integration (P25–P29)
+
+| Phase | Scope | Current delivery |
+|---|---|---|
+| P25 | Provisioning Adapter Migration | Python GNS3 provider, Ubuntu host bootstrap, libvirt dual-subnet host network, Docker guest package/SSH, hwsim, hostapd/wpa_supplicant, FRR DHCP/DNS and end-to-end guest preflight adapters delivered with hosted contract tests; actual PCAP/physical-lab acceptance remains operator-owned |
+| P26 | Persisted Pipeline Orchestration | Versioned definitions, durable execution/step/attempt state, worker leases, bounded retries, cancellation and operator-reviewed recovery delivered |
+| P27 | Pipeline Management Frontend | Scoped authoring, publication, monitoring, cancellation and recovery workflows delivered |
+| P28 | Complete Run and Policy Integration | Canonical validation Run linkage, configuration/device/topology revision pinning and post-Run performance policy evaluation delivered |
+| P29 | Security, Migration and End-to-End Qualification | Hosted migration/RBAC/idempotency/worker/Run/policy/frontend/dashboard qualification passes; protected GNS3/mac80211_hwsim/OpenWrt Run/evidence acceptance remains operator-owned |
+
+The Python provisioning adapters retain the legacy shell as a fallback for
+repository/config repair, destructive reset, and direct protected-suite and
+capture/evidence operations. CI does not substitute for actual protected-lab
+acceptance or verified PCAP evidence.
+
+### Additional Stage F implementation track — P30–P37
+
+| Phase | Scope | Current delivery |
+|---|---|---|
+| P30 | Tauri Desktop Shell | Implemented; local React webview, loopback backend sidecar, health gate, secure data paths and orderly shutdown |
+| P31 | Packaged Backend Runtime | Implemented; PyInstaller sidecar with migrations, pytest tree and pipeline worker dispatch, persistent SQLite/session state and one-time Owner bootstrap |
+| P32 | Linux Packaging and Lifecycle | Debian and AppImage build pipeline plus Xvfb install/first-run/login/restart/data-retention smoke, including frozen pytest/worker dispatch; exact release-head package workflows are the gate |
+| P33 | Linux Workstation Qualification | Hosted package matrix targets Ubuntu 22.04 and 24.04; interactive desktop-session, clean-machine upgrade/reinstall/rollback and data-preservation acceptance remain operator tasks |
+| P34 | Supply-Chain and Build Reproducibility | Python/frontend dependency audits, Dependabot coverage, SPDX source SBOM, GitHub package attestations, SHA-256 verification and pinned Tauri CLI added; full reproducibility remains blocked on hash-locked PyInstaller build requirements and Cargo.lock |
+| P35 | Reliability and Recovery Qualification | Hosted workflow repeats resource-lock, owned-process, Run/pipeline recovery, SQLite and sync-queue contracts twice; clean-machine soak, concurrency/load, full-disk and reboot recovery evidence remain |
+| P36 | Packaged End-to-End Business Logic | Frozen backend smoke executes first-run, pipeline orchestration and canonical Run/policy integration test modules plus worker dispatch; live provider/lab execution remains operator-owned |
+| P37 | Exact-Commit Release Certification | Manual workflow verifies both CI workflow families on the exact commit, checks source governance, and emits a PRE_CERTIFICATION manifest/matrix packet; it does not certify the 11 scenarios without their execution evidence |
+
+Windows packaging (W1) and the SaaS control plane (S1) remain separate future
+targets. Hosted Linux CI does not certify every supported desktop distribution,
+the protected Wi-Fi lab, or a Windows build.
+
+
+## Stage H — EXP-P13/P14: workflow graph and managed-device observability
+
+| Batch | Scope | Implementation boundary | Verification |
 |---|---|---|---|
-| EXP-P00 | Requirements, repository baseline and architecture freeze | Current main and canonical docs | Inventory, approved decisions, requirement traceability and exact baseline |
-| EXP-P01 | Unified design system and application shell | EXP-P00 | Existing routes work in the shared shell; tokens/theme/accessibility tests pass |
-| EXP-P02 | Operational overview dashboard | EXP-P00, dashboard query/API contracts | Real Project/Lab/provider/device/pipeline/run metrics with provenance and RBAC |
-| EXP-P03 | Complete visual Topology Studio over the existing canonical profile/revision domain | EXP-P00; provider actions remain aligned with EXP-P04/05 | Accessible node/link selection and inspectors; multi-select/group movement; undo/redo; copy/paste with logical-ID remapping; keyboard actions; canonical backend validation; immutable revision save/publish; read-only plan, reconciliation and explicit confirmed apply; Project RBAC and integration tests |
+| P13 | Directed pipeline graph and visual authoring | Backward-compatible DAG dependencies, SUCCESS/FAILURE/COMPLETED conditions, deterministic graph editor, cycle validation, conditional worker scheduling and recovery halt; reuse immutable pipeline revisions and existing step/attempt state | Backend pipeline orchestration/runtime tests, graph utility tests, frontend test/build, exact-head quality gate |
+| P14 | Network observability across provider, managed Device and Run evidence | Vault-scoped provider health/version/resource/capture-capability observations; fixed read-only managed-device interface counters; one integrity-verified Run view for metrics, Wi-Fi telemetry, PCAP metadata and protocol evidence; independent RBAC and immutable Project/Lab history | Provider/device observation tests, Run evidence/API integrity tests, schema/OpenAPI contracts, frontend test/build, exact-head quality gate |
 
-## Stage B — Topology and emulator providers
+P13 and P14 are additive to the existing pipeline, Device Inventory, Credential Vault, Run telemetry, topology/provider and Project/Lab security contracts. P13 has no arbitrary command/script node and does not introduce parallel worker execution. P14 reuses existing provider adapters, packet-capture execution and ProtocolEvidenceService; it does not accept caller-authored metrics or invent health/rate/RF values. PCAP bytes are not embedded in the observability API, and protocol JSON is returned only after SHA-256 verification. Physical-lab and real-device acceptance remain explicit operator gates.
 
-| Expansion phase | Scope | Dependencies | Exit evidence |
-|---|---|---|---|
-| EXP-P04 | Common provider contract and capability registry | EXP-P00 | Contract tests and provider connection records; GNS3 passes |
-| EXP-P05 | GNS3 consolidation behind the common contract | EXP-P04 | Existing mappings, apply, reconciliation and recovery regressions pass |
-| EXP-P06 | Cisco Modeling Labs adapter | EXP-P04/05 | Authenticated catalog, lab/node lifecycle, topology translation and read-back |
-| EXP-P07-A | EVE-NG adapter | EXP-P04/05 | Independent EVE-NG capability and lifecycle contract tests |
-| EXP-P07-B | Packet Tracer compatibility bridge | Canonical topology/import schema | Provenance-preserving import/export subset and incompatibility report |
-
-## Stage C — Multi-vendor network engineering
-
-| Expansion phase | Scope | Dependencies | Exit evidence |
-|---|---|---|---|
-| EXP-P08 | Canonical network intent and device capability model | EXP-P04; existing device/topology domains | Versioned vendor-neutral intent; unsupported features fail validation |
-| EXP-P09-A | Linux and FRR configuration compiler | EXP-P08 | Deterministic systemd-networkd, FRR and nftables preview fixtures; explicit unsupported diagnostics; no configuration apply |
-| EXP-P09-B | Cisco IOS/IOS-XE configuration compiler | EXP-P08 | Platform/version-gated routed/switchport interfaces, VLANs, routes, OSPF/OSPFv3, BGP, LACP and zone-firewall previews |
-| EXP-P09-C | Arista EOS configuration compiler | EXP-P08 | EOS-native interface, VLAN, route, OSPFv4, BGP and LACP previews; unsupported zone firewall/OSPFv3 blocked |
-| EXP-P09-D | Juniper Junos configuration compiler | EXP-P08 | Hierarchical set previews, IPv4/IPv6 RIB, OSPF/OSPFv3, BGP/LACP and SRX-scoped security; live candidate/commit-check deferred |
-| EXP-P09-E | Palo Alto PAN-OS configuration compiler | EXP-P08 | Routed interfaces, IPv4/IPv6 static routes, OSPFv4/BGP/LACP, zones and security policy previews; unsupported L2/NAT semantics blocked or deferred |
-| EXP-P10 | Ansible configuration automation | EXP-P08/09 | Published revision → deterministic compiler artifacts → Project/Lab/Device-scoped static inventory → syntax/collection validation → independent plan-hash approval → bounded execution → per-Device read-back and immutable audit evidence; stale plans and partial failures block automatic retry. Initial live transport: Linux/FRR SSH, IOS/IOS-XE and EOS network_cli; Junos/PAN-OS remain compile-only. |
-
-## Stage G — Universal native vendor interoperability
-
-**Programme extension:** G01–G12 is a major, additive interoperability stage. It extends EXP-P00–EXP-P17; it does not renumber, replace or silently redefine the existing Stage A–F phases. Stage G owns native project-file interoperability, vendor-native topology presentation and cross-format conversion. Existing provider adapters continue to own live controller operations.
-
-| Package | Scope | Dependencies | Exit evidence |
-|---|---|---|---|
-| G01 | Comprehensive P06–P10 implementation audit and gap register | Current main; source, migrations, APIs, frontend, tests and current exact-commit CI | Source-backed gap register; verified P06–P10 status; protected boundaries and external acceptance gates; next task selected. **Audit: SPECIFICATION_COMPLETE** in docs/STAGE_G_NATIVE_INTEROPERABILITY_AUDIT.md. |
-| G02 | Extended native topology data model | G01; existing TopologyStudioService and immutable revisions | **Implementation integrated; exact-head quality verification pending.** Additive schema v30 / Alembic 20261124_20, immutable presentation revisions, generic source/asset provenance, bounded namespaced extensions, Project/Profile/topology hash binding, authorized idempotent presentation APIs, Topology Studio snapshot/viewport controls and migration/service/API regressions. Detailed audit: docs/STAGE_G_G02_PRESENTATION_MODEL_AUDIT.md. Native format codecs and full native renderer are subsequent G03–G08 packages. |
-| G03 | Native format interoperability framework | G02 | Independent codec contracts/registry for detect, version, parse, validate, semantic/presentation extraction, asset resolution, canonical mapping, serialization, compatibility reports and codec round-trip verification; safe bounded parsing and typed diagnostics. |
-| G04 | GNS3 native project interoperability | G02/G03; representative .gns3 files and associated assets | Native import, reconstruction, editing, export, provenance, asset manifest, reopen in declared GNS3 version and semantic/presentation round-trip report. Existing GNS3 provider and Wi-Fi paths remain unchanged. |
-| G05 | Cisco Modeling Labs native interoperability | G02/G03; documented CML YAML versions and representative CML environment | YAML and supported legacy VIRL detection/import/export; node definitions, images, interfaces, links, annotations/layout mapping; exact-version validation and CML reopen report. |
-| G06 | EVE-NG native interoperability | G02/G03; representative .unl projects and required assets | Safe file-level .unl parse/serialize, native identifiers, templates/images, nodes/interfaces/bridges/links/layout; Community/Professional differences and EVE reopen evidence. |
-| G07 | Packet Tracer native interoperability expansion | Existing P07-B codec and provenance; G02/G03 | Extend beyond name/coordinate edits only where pktlib/native structure permits; broaden devices/ports/configuration/drawings/notes; retain exact unsupported-change diagnostics; version matrix and Packet Tracer desktop reopen tests. |
-| G08 | Universal topology rendering and placement engine | G02; codec presentation mappings | Format-aware coordinate transforms, canvas/view state, node and port geometry, link routes, labels, icons/assets, annotations, drawings, layers and visibility; native placement preserved; auto-layout remains explicit. |
-| G09 | Cross-vendor topology translation | G03–G08; provider capability/template catalogues | Bidirectional supported conversions and per-object mappings; actual missing-image/interface checks; unsupported/manual-map warnings; semantic, configuration, asset and presentation loss report; no false equivalence claims. |
-| G10 | Advanced native vendor configuration | P08/P09; exact platform/version capability observations | Separate versioned vendor-native configuration path for advanced interface/routing/policy/VRF/security/NAT/API/CLI features; common intent remains portable and no unsupported semantics are silently dropped. |
-| G11 | Extensible full-capability execution engine | P10; G10 transports; existing Vault, RBAC, audit, lock and recovery services | Configurable execution profiles; supported user playbooks, roles, collections, custom modules/runtimes and native operations; SSH/NETCONF/RESTCONF/HTTPS transports where qualified; validation, execution, verification and persistent evidence; policy-driven approvals without security bypass. |
-| G12 | Unified reconciliation, recovery and evidence | G02–G11 and existing Run/artifact/audit/recovery services | Source provenance, import/export/conversion history, immutable config snapshots, actual provider observations, drift, asset integrity, partial-failure recovery, evidence hashes and restart-safe reconciliation. |
-
-### Stage G sequencing and dependency rules
-
-- G01 is the mandatory audit baseline and must precede implementation.
-- G02 establishes the shared presentation/provenance model. G03 consumes it; native codecs must not create format-specific parallel topology databases.
-- G04–G07 are independent codec implementations only after G03 contracts and representative fixture strategy are stable. A codec may expose a partial support matrix; it must not claim universal fidelity.
-- G08 consumes the native presentation model and codec mappings. It must not auto-layout an imported topology on import.
-- G09 depends on codecs, canonical mapping and rendering metadata. Each conversion reports semantic, configuration, asset and presentation losses.
-- G10 extends P08/P09 without forcing every advanced vendor feature into the portable schema.
-- G11 extends P10; it must retain authentication, scoped authorization, Vault-only secrets, audit, process supervision, host identity checks and resource locking.
-- G12 integrates the existing persistence/evidence owners. It must not duplicate Run, Artifact, Pipeline or provider state ownership.
-- Stage D–F EXP-P11–EXP-P17 remain in the roadmap. G10/G11 may proceed in parallel only where their dependencies and execution ownership are explicit; release qualification must cover the full integrated workflow.
-- AI/LLM/agent/model integration remains excluded from this implementation programme.
-
-### Stage G implementation package contract
-
-Each G package uses the four existing delivery packages: **A — Specification**, **B — Backend**, **C — Frontend**, **D — Integration and acceptance**. Every package records the exact source baseline, files/services to reuse, persistence/API contracts, Project/Lab authorization, failure/recovery behavior, representative native fixtures, test results, limitations and documentation/traceability updates.
-
-A native format is not accepted merely because detection or parsing succeeds. Acceptance requires representative native sources, explicit version support, the full set of claimed semantic objects, presentation extraction, bounded asset handling, serialization, round-trip comparison, reopening in the originating application and documented losses. When external application or licensed environment access is unavailable, finish independent software work and retain the external gate as pending.
-
-## Stage D — Infrastructure automation
-
-| Expansion phase | Scope | Dependencies | Exit evidence |
-|---|---|---|---|
-| EXP-P11 | OpenTofu workspaces and infrastructure automation | EXP-P04 | Isolated workspace, validate/plan/review/approve/apply/inspect/destroy tests; source checkpoint documented in docs/EXP_P11_OPENTOFU_IMPLEMENTATION_AUDIT.md; exact CI deferred until P12 |
-| EXP-P12 | Infrastructure-resource lifecycle integration | EXP-P11 and existing Lab/topology domains | Resource mapping, drift, orphan detection and partial recovery — source checkpoint documented in docs/EXP_P12_INFRASTRUCTURE_RESOURCE_LIFECYCLE_AUDIT.md; final CI deferred until integrated P12 commit |
-
-## Stage E — Workflow and observability
-
-| Expansion phase | Scope | Dependencies | Exit evidence |
-|---|---|---|---|
-| EXP-P13 | Visual pipeline builder | Existing PipelineService and approved handler contracts | Visual draft/publish/execute/monitor/recover with no inert steps |
-| EXP-P14 | Network observability and telemetry | Provider/device metric contracts | Provenance-aware metrics, packet capture and protocol evidence |
-| EXP-P15 | Operations dashboard and evidence integration | EXP-P02, P13, P14 | Issue-to-device/provider/pipeline/evidence drill-down |
-
-## Stage F — Qualification and release
-
-| Expansion phase | Scope | Dependencies | Exit evidence |
-|---|---|---|---|
-| EXP-P16 | Integrated end-to-end verification | All functional phases | Full workflow and failure/recovery matrix with provider/version declarations |
-| EXP-P17 | Security, packaging, documentation and release certification | EXP-P16 | Secure, installable release with verified test/evidence and licence manifest |
-
-## Dependency and parallel execution
-
-- After EXP-P00, EXP-P01, EXP-P02 and EXP-P03 may proceed as separate workstreams. EXP-P02 backend aggregation must use real APIs; EXP-P03 provider-specific controls remain bounded by EXP-P04/05 contracts.
-- EXP-P04 provider contract can proceed independently of EXP-P01/P02. EXP-P05 must wrap the current GNS3 implementation, not duplicate it.
-- EXP-P08 model design may proceed while provider capability contracts are refined, but adapter implementation must use the approved capability schema.
-- EXP-P11 infrastructure design can proceed after the provider/resource contract is stable. Do not let Ansible and OpenTofu own the same lifecycle.
-- EXP-P13 canvas primitives can progress in parallel with handler implementation. A node is executable only after a tested backend handler is registered.
-- EXP-P16/P17 begin only after functional workflows and recovery paths are present.
-
-## Implementation chunk contract
-
-Every phase is delivered in four work packages (combine for a genuinely small phase):
-
-1. **Specification:** objective, current code to reuse, files, dependencies, business rules, data/API contracts and security boundaries.
-2. **Backend:** model/service/migration/API/validation and focused unit/contract tests.
-3. **Frontend:** real API integration, authorization-aware controls, inspector, loading/error/empty states and accessibility.
-4. **Integration:** E2E/regression tests, exact acceptance evidence, documentation and review.
-
-Every work item must specify objective, current state, file scope, dependencies, behavior, data model, API contract, frontend state, security, tests, acceptance criteria and docs. Scope expansion requires an explicit decision, not silent drift.
-
-## Definition of Done
-
-- Requirements and business logic are implemented.
-- Additive migration exists only when persisted state is required.
-- API request/response, authorization and typed error behavior are documented.
-- Credential handling and state-changing boundaries are tested.
-- Frontend uses real API data and handles loading/error/empty/permission states.
-- Unit, integration, existing regression and applicable E2E tests pass.
-- Existing Wi-Fi Run/evidence/GNS3 tests remain green.
-- End-to-end workflow is verified against the declared environment class.
-- Documentation and requirement traceability are updated.
-- No unresolved critical defects remain.
-
-## Git and release controls
-
-Follow the current repository's `docs/AGENT_CONTEXT.md`: integrate on the established `main` branch using the repository's single-main-branch discipline, small logical commits and fast-forward-only updates. Never rewrite history or force-push. Do not commit credentials, database files, private keys, OpenTofu state, PCAPs or generated runtime artifacts. Do not mark mocked-provider tests as real provider acceptance.
-
-
-## EXP-P02 implementation checkpoint — operational overview
-
-The operational overview reuses the existing SQLite workspace, device, topology/provider-binding, configuration deployment, pipeline/step, Run, artifact and metric sample records. The endpoint is read-only and Project/Lab scoped. Project-wide Lab totals remain stable when a single Lab filter is applied, while `in_scope` and child metrics reflect the selected Lab. Each subsystem has an independent read permission and a stable restricted response shape with null aggregates and withheld provenance. The dashboard shows deployment and pipeline step outcomes and distinct execution-level/step-level recovery counts, latest published topology revisions, historical telemetry/health artifacts, integrity-verified typed Wi-Fi telemetry points with interface/environment provenance, and mean/min/max/latest summaries from valid timestamped Run metric samples. Missing or hash-invalid artifact files do not contribute measurement values. `RUNNING` and `CANCELLING` executions are separate. Provider configuration is distinguished from live health: connection health remains `UNKNOWN`; reachability, live drift, infrastructure state, regressions and provider sync errors remain `UNAVAILABLE` until the platform has the actual scoped observation or comparison source.
-
-The dashboard surfaces Project/Organization/Lab scope, persisted distributions, active Run totals, section freshness, configuration outcomes, evidence counts, measured performance observations and explicit unavailable/restricted states. Backend tests exercise Project/Lab ownership, RBAC for every child domain, aggregation, cancellation/step states, source timestamps and read-only behavior. Frontend tests exercise successful rendering, Project/Lab transitions, no-Project behavior, independent Run-list failure, and overview error/retry. OpenAPI documents the complete GET contract. This checkpoint does not certify live external-provider or physical network health.
-
-
-## EXP-P03 implementation checkpoint — visual Topology Studio
-
-The completed implementation extends the existing `TopologyStudioService`, Project/Lab profile ownership, immutable revision hashes, GNS3 provider adapter and `TopologyApplyService`. It does not create a parallel topology schema, revision repository or provider controller client.
-
-**Visual authoring:** the categorized palette covers Routers (Cisco/Arista/Juniper/FRR/VyOS), Switches (Cisco/Arista/Open vSwitch), Firewalls (Palo Alto/Linux), Wireless (OpenWrt/hostapd), Servers (Linux/Ubuntu/Docker), Endpoints (Linux/Windows) and Network utilities (NAT/bridge/cloud/network segment). Entries may be dragged onto the canvas or clicked to add logical nodes. Provider template IDs remain a separate mapping step and can be selected from the actual discovered provider catalogue. A deterministic graph-based auto-layout arranges connected components, while pan/zoom/fit, node search, group move, multi-select, copy/paste with fresh logical IDs, delete and bounded undo/redo remain local editor operations.
-
-**Node and link intent:** node inspector covers logical identity, vendor/OS/image, provider template mapping, CPU/memory, management IP/gateway, VLAN, interfaces/adapter/port assignments, configuration profile and opaque Credential Vault reference. Interface definitions include name, adapter/port, mode, IP, VLAN and description. Link inspector covers source/destination node and interface, link type, network segment and VLAN association. All new fields are optional within the existing immutable JSON definition, preserving readability of historical revisions. The canonical backend validates bounds, IP values, duplicate interface ports and link/interface consistency. Credential values are never accepted or stored.
-
-**Validation, revisions and provider operations:** `POST /api/v1/topologies/validate` requires `topology.manage` for the Project and uses the same canonical normalizer/hash as revision creation; it does not write a revision or contact a provider. A logical-only node can be saved and validated before a provider mapping exists, but provider dry-run planning returns a conflict until a valid template is mapped. Saving re-validates and creates a new immutable DRAFT revision; publication remains explicit and separate. Provider binding/catalogue inspection, dry-run, reconciliation, start/stop, confirmed apply and history remain in the bottom operational console with existing capability/RBAC checks, read-back, resource lock, idempotency and the revision SHA-256 confirmation boundary.
-
-**Observed-only data:** provider resource IDs and node/link operational state are populated only from the existing mapping records and actual provider catalogue/reconciliation responses. Missing observations display as unknown/unmapped; no template or link status is guessed. The console tabs are Validation, Provider operations, Logs, Apply history, Reconciliation and Warnings; session Logs are explicitly not represented as persistent Audit history.
-
-**Verification:** backend tests cover optional structured node/link fields, invalid CPU/memory/IP/VLAN/interface/link combinations, persisted logical-only revisions, provider-plan rejection for missing templates, actual logical-to-provider node/link mappings and unchanged apply safety. Frontend tests cover categorized palette, click/drag-add, auto-layout, interface editing/port-to-port linking, node/link inspectors, six console tabs, read-only viewers, multi-select/history/clipboard and viewport bounds. OpenAPI documents the typed JSON contract. Hosted exact-commit CI passed on PR head `e1e4519278e84015c96af10c22961764338adf84` in run `45022564639` on 2026-11-22: backend correctness/reliability, frontend tests/production build, and dashboard startup/session smoke all PASS. The software implementation is CI-verified; interactive desktop/assistive-technology and real GNS3 apply/recovery tests remain separate operator acceptance gates (RQ-042/RQ-044).
-
-
-## EXP-P04 implementation checkpoint — common provider contract and capability registry
-
-**Contract and capabilities:** The structural `ProviderAdapter` contract now covers connect/disconnect, health checks, capability reporting, project discovery, lab create/delete, template discovery, node create/delete/start/stop/state, link create/delete, interface discovery, observed-topology retrieval and packet-capture capability reporting. `CapabilityRegistry` maintains stable operation IDs with mutation and explicit-confirmation metadata; `ProviderRegistry` is instance-scoped, verifies every required adapter method and rejects unknown providers/capabilities with typed errors. GNS3 is the sole registered reference adapter for P04.
-
-**Connection records:** P04 reuses existing `gns3_lab_bindings` Project/Lab-scoped persistence. `ProviderConnectionRecord` is a provider-neutral projection with provider ID, endpoint, provider workspace ID, controller Device, opaque Credential Vault reference and lifecycle metadata. It never contains a password, token or secret value. Existing binding persistence remains the single source of truth; no parallel connection table or migration is introduced.
-
-**GNS3 adapter and integration:** The existing bounded REST client implements the complete common method contract using the documented GNS3 Controller API. `TopologyApplyService` establishes/closes the adapter lifecycle inside the Vault callback and consumes actual nodes/links through `get_observed_topology()`. Existing Lab locking, immutable apply history, revision-hash confirmation, idempotency, read-back, reconciliation and uncertain-operation recovery remain authoritative. Existing binding/catalogue/apply APIs remain compatible; `GET /api/v1/providers/registry?project_id=...` stays Project-scoped and read-only.
-
-**Verification boundary:** A deterministic HTTP fixture exercises all adapter methods without contacting a live controller. The provider contract module is explicitly included in hosted quality-gates tests. This does not certify live GNS3, CML, EVE-NG, Packet Tracer or physical-lab operations; RQ-042 and provider-specific operator gates remain separate. Provider binding metadata is never treated as a health observation.
-
-
-
-## EXP-P05 implementation checkpoint — GNS3 consolidation behind the common contract
-
-**Single implementation and session ownership:** `lib/services/gns3_provider.py` remains the only GNS3 HTTP adapter. `ProviderSessionService` is the shared Vault-to-adapter boundary used by `TopologyApplyService` and the protected `WiFiLabProvisioningService`; the dashboard and pipeline runtime inject the same application-scoped `ProviderRegistry` and session service. Adapter construction happens only inside `CredentialVaultService.use_secret`, and connect/disconnect are paired even when a callback fails. No provider secret is placed in a binding projection, plan, interface response or audit record.
-
-**Observed catalogue and readiness:** the GNS3 template projection is extended only with explicit template/compute/image metadata. `GET /v2/computes` is projected into bounded compute identity, connected state and valid CPU/RAM utilization percentages; hostnames and provider diagnostic strings are not exposed. For templates referenced by a published revision, the adapter reads the template detail and assigned compute's emulator image catalogue. Built-in templates report `NOT_REQUIRED`; an unavailable catalogue entry, unsupported emulator, missing compute assignment or incomplete image declaration remains `UNAVAILABLE`/`UNKNOWN` rather than being guessed. Confirmed missing images or an explicitly disconnected assigned compute block creation of that node, while already observed mapped nodes remain manageable. Apply repeats the readiness observation immediately before mutation.
-
-**Topology operations:** dry-run plans return template/compute/image compatibility, provider compute observations and actual node lifecycle counts alongside the existing node/link plan and conflict report. `GET /api/v1/labs/{lab_id}/provider-nodes/{provider_node_id}/interfaces` verifies the node is part of the bound controller project and returns its actual adapter/port inventory. Provider project choices come from the observed catalogue after the initial binding is established. Existing mappings, safe resource adoption, immutable revisions, SHA-256 confirmation, Lab lease, apply history, actual read-back, reconciliation, partial-operation recovery and no-implicit-prune behavior remain owned by `TopologyApplyService`.
-
-**Wi-Fi compatibility:** the existing incremental Wi-Fi provisioning service now uses the same registry and Vault session as topology operations. Its additive-only management-link behavior, free-port checks, start ordering, read-back, audit event and shared Lab lease are preserved. It still never deletes resources, stops nodes or rewires existing links. The protected Runner, Docker, mac80211_hwsim, capture and evidence contracts are not replaced.
-
-**Verification boundary:** focused tests cover adapter image/compute observations, secret-safe session lifetime, shared registry/session reuse by the Wi-Fi provisioner, template-image conflict blocking, API RBAC/interface reads, mappings, repeatable apply, drift and uncertain-operation recovery. Hosted exact-commit CI is required before marking this checkpoint CI_VERIFIED. These hardware-free fixtures do not prove a live GNS3 compute image, real controller create/delete operation or physical Wi-Fi behavior; RQ-042 remains an external operator gate.
-
-
-## EXP-P06 implementation checkpoint — Cisco Modeling Labs provider
-
-The CML adapter is an independent implementation of the shared provider contract; it does not wrap or route requests through the GNS3 client. Its authenticated REST lifecycle covers user-visible labs, node definitions, image-definition associations, compute-host/licensing observations, node lifecycle, interface inventory, link lifecycle and observed topology. A single bounded HTTP transport enforces approved private/local controller endpoints, verified TLS, disabled environment proxy inheritance, redirects disabled, bounded connect/read timeouts and a bounded response body. Provider errors are sanitized.
-
-The existing gns3_lab_bindings table remains the sole Project/Lab connection record. Additive migration 20261122_16 adds provider identity and provider_workspace_id, backfills historic GNS3 bindings, and keeps the old gns3_project_id as a mirrored compatibility field. TopologyApplyService resolves the provider from the application-scoped registry and uses the generic workspace ID for catalogue, dry-run, apply, node lifecycle, interfaces, read-back and reconciliation. The original GNS3 adapter and protected Wi-Fi provisioning path remain in place.
-
-CML image-definition association is not treated as proof that the VM image is installed or bootable. Image readiness remains UNKNOWN unless CML explicitly reports installed/ready or missing state. The software acceptance suite uses deterministic HTTP/session fixtures. Live controller access, licensing, image readiness and actual node boot are separate operator acceptance evidence; no hosted mock test is reported as live CML certification.
-
-
-## EXP-P07-A implementation checkpoint — EVE-NG provider
-
-EVE-NG is registered as an independent adapter alongside GNS3 and CML through the same application-scoped ProviderRegistry and CredentialVault-backed ProviderSessionService. It uses the shared private-controller HTTPS transport with TLS verification, disabled environment proxy inheritance, no redirects, bounded response sizes/timeouts and sanitized JSend/API failures. Login is verified through the authenticated user and status endpoints; workspace discovery is restricted to the folder returned for that user and bounded by folder/lab limits. EVE-NG workspaces are validated absolute .unl paths; folder traversal and ambiguous paths fail closed.
-
-Template discovery and per-template image choice use the EVE-NG template catalogue and image options. A missing image never becomes available merely because a template exists. Node summaries are enriched with the real Ethernet/serial interface endpoints. The EVE-NG topology edge list is translated into canonical node/link endpoint records; direct serial links remain observed-only. Ethernet links are created through an explicitly named bridge network followed by two native interface-to-network attachments. An attach failure triggers best-effort detach of already attached interfaces and network deletion; it is recorded as an error and is never reported as success. Node start/stop operations read back the resulting state. Packet capture and unsupported serial mutations are not advertised.
-
-The adapter is integrated into the existing provider binding and topology apply service. No second topology schema or connection table is introduced. The EVE-NG workspace is stored in the provider-neutral workspace field while the historical GNS3 alias remains compatibility data. The frontend selector exposes EVE-NG and clarifies that its workspace is an absolute .unl path.
-
-Deterministic fixtures cover folder-scoped listing, authentication and logout, lab create/read-back/delete, template/image catalogue, resource observations, interface and topology translation, bridge-link creation, partial-attach rollback, node lifecycle state read-back and unsafe path rejection. These tests prove the software contract only; live EVE-NG edition/licensing, installed image and actual lab/node execution remain controller-specific operator acceptance.
-
-
-## EXP-P07-B implementation checkpoint — Cisco Packet Tracer native project bridge
-
-The first P07-B software package is integrated through an independent native `.pkt` codec, not through the emulator ProviderRegistry. It uses existing Project/Lab topology profiles and immutable revisions. Imported source bytes, SHA-256, codec/version, original device/interface/link mapping and compatibility report are retained in `topology_native_sources`, linked to the canonical profile and initial DRAFT revision. Source records are immutable; metadata reads do not return source bytes.
-
-The parser uses strict decoding, a 3.5 MB source limit, and a bounded 24 MB expanded-XML preflight before the pinned codec parses the file. It maps supported device types, interfaces, IP/VLAN observations, layout coordinates and native link endpoints into canonical topology. Provider template IDs remain blank because Packet Tracer identities are not GNS3/CML/EVE-NG template IDs. Provider apply therefore remains blocked until an operator supplies a real compatible mapping.
-
-The initial export subset preserves original bytes exactly when unchanged. For revisions that change only logical-device names or canvas coordinates, the codec serializes the native document and reads it back to verify device identity/name and link endpoints. Device/model addition/removal, link mutation and interface/configuration edits fail with an explicit unsupported-change conflict. No full-fidelity or Packet Tracer desktop-reopen claim is made. Codec output may upgrade older files to its latest known edition; source and output versions are reported.
-
-Migration `20261123_17` adds immutable provenance persistence and schema contracts. REST endpoints and Topology Studio use existing Project permissions, session/CSRF and POST idempotency behavior. `pktlib==0.2.2` is MIT-licensed and hash-pinned; its upstream documents testing against Packet Tracer 8.2.0 and labels the package alpha.
-
-The focused Packet Tracer suite is wired into the existing NetRegress quality workflow. Native Packet Tracer desktop reopen, representative files from each claimed version, complete visual-object fidelity and broader serializer qualification remain external acceptance gates. See `docs/EXP-P07B_PACKET_TRACER_IMPLEMENTATION_AUDIT.md` and RQ-018.
-
-
-## EXP-P08 implementation checkpoint — canonical Network Intent v1.0
-
-P08 adds a distinct vendor-neutral Network Intent service and relational persistence. Intent profiles bind to an existing canonical topology profile and inherit its Project/Lab scope. Each immutable intent revision is pinned to a specific immutable topology revision ID and content SHA-256; it has its own canonical SHA-256, schema version, provenance, parent reference and DRAFT/PUBLISHED lifecycle. Rollback creates a new DRAFT rather than rewriting history.
-
-Schema v1.0 models IPv4/IPv6 addressing, VLANs, interface admin/modes, static routes, OSPF, BGP, LACP, firewall zones/basic ACLs, published DHCP/DNS configuration references, Linux bridges and VLAN interfaces. Validation rejects unknown schema fields, inline secrets, invalid values, duplicate IDs, dangling topology/interface/zone/segment references and cross-Project/Lab target bindings.
-
-Device capability reports are immutable adapter/device-discovery observations with platform/software version, adapter identity/version, source type, feature status/constraints, SHA-256, observed time and recording provenance. No user-facing API can mark a capability SUPPORTED. Missing or stale (older than seven days) observations, observations more than five minutes in the future and explicit UNSUPPORTED reports are blocking for capability-aware publication. The internal recording service is the P09 adapter seam; P08 does not claim live GNS3/CML/EVE-NG/physical-device observations have been collected.
-
-The REST API adds Project-scoped read/manage/publish operations for intent profiles and revisions, read-only structural/capability validation, rollback-as-new-draft, and a read-only capability-report history endpoint. The `/network-intent` React page exposes the schema editor, topology binding, target Device mapping, diagnostics, revision lifecycle and capability provenance.
-
-Migration `20261123_18` advances the Alembic/schema contract to version 28. See `docs/EXP_P08_NETWORK_INTENT_IMPLEMENTATION_AUDIT.md` and RQ-021. P09 compilers and P10 Ansible remain separate downstream stages.
-
-
-## EXP-P09 implementation checkpoint — multi-vendor configuration compiler v1.0
-
-P09 introduces a configuration-compiler domain independent of the GNS3/CML/EVE-NG topology-provider registry. The compiler consumes only an immutable PUBLISHED P08 Network Intent revision, revalidates pinned topology and intent SHA-256 values, requires fresh adapter-observed capability reports for every target, corroborates observed platform/software version with managed Device vendor/model, then renders deterministic text artifacts.
-
-Registered compiler families are Linux + FRRouting, Cisco IOS/IOS-XE, Arista EOS, Juniper Junos and Palo Alto PAN-OS. Adapter descriptors expose platform family, tested software-version range, output format and adapter version. Device model can further narrow a feature boundary (for example Junos firewall policy is exposed only for SRX models).
-
-Compilation is read-only and all-or-nothing: a blocked target, unreported/unsupported capability, unknown platform/version, unsupported semantic or unsafe output produces diagnostics and no partial artifact collection. Artifacts include relative paths, SHA-256 hashes, content and optional unified baseline diffs. Baseline inputs are bounded, path-confined, secret-screened and never persisted. No CLI is executed, no SSH/HTTP device session is opened, no device configuration is written, and no successful-apply or observed-state claim is made.
-
-The v1.0 feature boundaries are intentionally explicit:
-- Linux/FRR: systemd-networkd interfaces, bridge/bond/VLAN netdevs, static routes, OSPF/OSPFv3, BGP and nftables zone rules. DHCP/DNS profile references are unresolved and block output.
-- Cisco IOS/IOS-XE: routed/access/trunk interfaces, VLANs, IPv4/IPv6 routes, OSPF/OSPFv3, BGP, LACP and basic zone-based ACL policy. IPv6 ACL translation is not yet supported and blocks.
-- Arista EOS: interface/VLAN, IPv4/IPv6 static routing, OSPFv4, BGP and LACP. OSPFv3 and P08 zone-based stateful firewall semantics are explicitly blocked rather than flattened into stateless ACLs.
-- Juniper Junos: hierarchical set syntax, inet/inet6 static routes, OSPF/OSPFv3, BGP, LACP and SRX zone/policy statements. Firewall compilation is limited to SRX models; non-default canonical static-route metrics are blocked because Junos preference semantics differ.
-- Palo Alto PAN-OS: routed Ethernet, IPv4/IPv6 static routes, OSPFv4, BGP, aggregate Ethernet, zones and security rules. Generic ACCESS/TRUNK switchport semantics, OSPFv3 and DHCP/DNS profile translation are not represented.
-
-No platform-specific configuration parser, device read-back, candidate commit-check, deployment workflow, secret injection into generated configuration, NAT model or Ansible execution is claimed by P09 v1.0. Those require separate contracts and validation against real OS versions. P10 remains the separate Ansible execution/approval boundary.
-
-Automated evidence is deterministic fixture/unit coverage for adapter discovery, version/platform mismatch, output rendering, protocol-family edge cases, injection/path safety, all-or-nothing output, revision/hash binding and API/frontend preview. It does not replace physical/device-in-the-loop acceptance tests.
-
-
-## EXP-P10 implementation checkpoint — approval-gated Ansible automation
-
-P10 adds a separate Ansible domain over published P08 Network Intent and P09 compiler outputs. Ansible never accepts user-supplied arbitrary playbooks, dynamic inventory sources, modules or shell commands. NetRegress generates a constrained playbook and static inventory from the exact P09 SHA-256 artifacts. Every target Device is Project-scoped, and a Lab-scoped intent additionally requires that each target belongs to that Lab. Project-wide intent acquires the locks for every target Lab and Device during execution.
-
-Plan creation uses active same-Device OS Credential Vault references of type SSH_PASSWORD or SSH_PRIVATE_KEY; it never accepts a password/private-key value. Secret material is resolved only via `CredentialVaultService.use_secret` during execution, placed into private temporary inventory/key files and removed with the temporary workspace. Inventory previews, persisted plans, approval records and result summaries do not contain credential material. SSH host-key verification is enabled; an operator must trust each target host key first. Linux execution uses non-interactive sudo for non-root accounts.
-
-An optional local Ansible runtime is pinned separately from NetRegress' default install: Ansible Core 2.21.6, `ansible.netcommon` 8.7.1, `cisco.ios` 11.6.0 and `arista.eos` 12.3.0. Run `scripts/netregress_ansible_setup.sh` from the same activated Python environment used by NetRegress. Plan validation fails closed when the exact runtime/collections are absent or unpinned. P10 does not silently install Ansible when the application starts.
-
-Only Linux/FRR over SSH, Cisco IOS/IOS-XE and Arista EOS over network_cli have a generated execution path in this checkpoint. Junos compiles through P09 but remains blocked from P10 until a qualified NETCONF workflow exists. PAN-OS compiles through P09 but remains blocked until a qualified API transport exists. A compiled preview is not evidence that a live target is reachable or configured.
-
-Plan lifecycle is `PREVIEWED → APPROVED → EXECUTING → SUCCEEDED/FAILED`, with `STALE` as an explicit rejection when the source revision, topology pin, current capabilities or compiler output changes after approval. The plan creator cannot approve their own change; an independent authorized administrator must approve the exact plan SHA-256. Execution repeats compiler/capability validation immediately before opening a Device connection, takes all relevant Lab and Device locks, and stores immutable execution/read-back evidence. If some hosts change before a later host fails, the result is FAILED, partial changes are possible, and reconciliation is required. No automatic retry, implicit rollback or all-target atomicity is claimed.
-
-See `docs/EXP_P10_ANSIBLE_AUTOMATION_IMPLEMENTATION_AUDIT.md` and RQ-023. Hosted fixtures use an injected fake Ansible runner and in-memory secret store; they do not certify live SSH connectivity, target OS state, command semantics, network convergence or rollback safety.
-
-
-## EXP-P11 implementation checkpoint — OpenTofu infrastructure automation
-
-P11 establishes OpenTofu as the infrastructure provisioning owner, separate from P10 Ansible device configuration and the existing emulator-provider lifecycle. OpenTofu modules are installed and maintained by the local operator under NETREGRESS_OPENTOFU_MODULE_ROOT. The API selects an approved module key and bounded non-secret JSON variables; it never accepts caller-authored HCL, arbitrary CLI arguments, backend settings or provider executable paths. Module files are copied into an immutable per-workspace snapshot and pinned by SHA-256.
-
-Each active Lab receives an isolated local workspace under NETREGRESS_OPENTOFU_STATE_ROOT (default ~/.local/state/netregress/opentofu). Workspace directories and sensitive variable/plan files use owner-only permissions. The local backend is selected explicitly by using tofu init -backend=false; remote backends and cloud/remote execution are not enabled in P11. Provider authentication is sourced only from an operator-configured process environment allow-list or platform identity; API variables cannot carry secret values. No state file, plan binary or credential value is returned by REST APIs or stored in the repository.
-
-The lifecycle is format/init/validate/plan, review, independent hash-pinned approval, and explicit apply. Destroy plans require the separate infrastructure.destroy permission. Every plan is persisted by its binary SHA-256 and only a bounded resource-action summary is exposed. Apply verifies that same binary immediately before execution while holding the shared Lab lock and a workspace lock. A timeout or non-zero apply outcome is never retried automatically: the workspace enters RECOVERY_REQUIRED and must be reconciled in P12. Immutable workspace, plan, approval and execution records are protected by SQLite constraints/triggers and privileged actions produce audit events.
-
-P11 does not claim live cloud-account qualification, remote backend support, cloud rollback, module registry downloads or provider-side resource recovery. The CLI is operator-installed and must satisfy the declared OpenTofu version gate. P12 adds topology resource mapping, observed state, drift/orphan analysis and reviewed recovery planning.
-
-
-## EXP-P12 implementation checkpoint — topology resource lifecycle, drift and recovery
-
-P12 connects OpenTofu resources to the existing canonical topology model. A binding is accepted only when the resource address exists in the selected Lab workspace state, the topology profile is active, the revision is immutable and published, and the logical node belongs to that exact revision. Mappings are versioned: a compare-and-swap replacement requires the current binding ID, moves the previous mapping to SUPERSEDED, and retains it as immutable history while maintaining one active mapping per workspace/resource address. Lab-scoped profiles must match the workspace Lab; Project-scoped profiles are permitted only inside the owning Project. Bindings are immutable and append-only.
-
-Reconciliation acquires the shared Lab/workspace lock, verifies the immutable module/variable snapshot, prepares the operator-managed module, creates a private refresh-only OpenTofu plan, and compares saved-state resource addresses/types with resource drift and topology bindings. It classifies present, drifted, orphaned, drifted-orphaned and missing resources. Reconciliation records contain only addresses, resource types, action names, binding/node references and aggregate counts; raw Terraform state values, provider attributes, outputs and credentials are not copied into the API response or stored in the reconciliation detail JSON. A SHA-256 of the canonical full state snapshot and refresh-plan binary is persisted as integrity evidence.
-
-Recovery from a failed or timed-out P11 apply is an explicit sequence: run refresh-only reconciliation, create a new normal RECOVERY plan pinned to the latest reconciliation ID, review the resource-action summary, obtain independent approval of that plan's binary SHA-256, and explicitly apply. A newer reconciliation invalidates the earlier recovery plan. No automatic retry, replay or rollback is claimed; unsuccessful recovery remains RECOVERY_REQUIRED.
-
-P12 does not claim that refresh-only planning applies provider drift, that topology bindings discover every cloud resource automatically, or that a successful OpenTofu apply proves application-level service health. Mapping remains operator-reviewed against a published topology revision. Provider-specific resource and cloud-account qualifications remain separate acceptance work.
+Both batches are committed separately and integrated in one final fast-forward update to main; no workflow is manually dispatched during partial implementation. Only path-relevant quality checks are expected after the combined source checkpoint. AI/LLM/agent/model integration remains excluded.

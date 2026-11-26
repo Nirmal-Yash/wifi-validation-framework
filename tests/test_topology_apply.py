@@ -704,3 +704,71 @@ def test_cml_binding_and_topology_apply_use_provider_neutral_workspace(apply_sta
     assert result["status"] == "APPLIED"
     assert len(state["nodes"]) == 2
     assert len(state["links"]) == 1
+
+
+
+def test_provider_observation_persists_real_scoped_health_version_metrics_and_capture_support(apply_stack, monkeypatch):
+    from lib.services.provider_observation import ProviderObservationService
+
+    database, _store, service, _profile, _revision, binding, _state = apply_stack
+    monkeypatch.setattr(
+        FakeGNS3Provider, "get_resource_availability",
+        lambda _self: {
+            "computes": [{
+                "compute_id": "compute-1", "name": "Compute 1", "connected": True,
+                "cpu_usage_percent": 37.5, "memory_usage_percent": 62.0,
+            }],
+            "observed_at": "2026-11-24T10:00:00+00:00",
+        },
+    )
+    observation_service = ProviderObservationService(database, service)
+    result = observation_service.capture("lab-1", actor="owner")
+
+    assert result["provider_id"] == "gns3"
+    assert result["snapshot"]["status"] == "HEALTHY"
+    assert result["snapshot"]["health"]["status"] == "HEALTHY"
+    assert result["snapshot"]["version"]["version"] == "2.2.0"
+    assert result["snapshot"]["capture_support"]["supported"] is True
+    assert result["snapshot"]["timestamp_source"] == "PROVIDER"
+    by_name = {item["name"]: item for item in result["snapshot"]["metrics"]}
+    assert by_name["cpu_usage_percent"]["value"] == 37.5
+    assert by_name["cpu_usage_percent"]["unit"] == "%"
+    assert by_name["memory_usage_percent"]["value"] == 62.0
+    assert by_name["cpu_usage_percent"]["source"] == "provider.gns3.get_resource_availability"
+
+    history = observation_service.list_for_lab("lab-1")
+    assert len(history) == 1
+    assert history[0]["observation_id"] == result["observation_id"]
+    assert history[0]["payload_sha256"] == result["payload_sha256"]
+    assert result["binding_id"] == binding["binding_id"]
+    assert "transient-provider-secret" not in json.dumps(result)
+    assert FakeGNS3Provider.session_events == ["connect", "disconnect"]
+
+    with database.transaction(immediate=True) as connection:
+        with pytest.raises(Exception):
+            connection.execute(
+                "UPDATE provider_observation_snapshots SET observed_by='tampered' WHERE observation_id=?",
+                (result["observation_id"],),
+            )
+        with pytest.raises(Exception):
+            connection.execute(
+                "DELETE FROM provider_observation_snapshots WHERE observation_id=?",
+                (result["observation_id"],),
+            )
+
+
+def test_provider_observation_records_unavailable_without_fabricating_metrics(apply_stack, monkeypatch):
+    from lib.services.provider_observation import ProviderObservationService
+
+    database, _store, service, _profile, _revision, _binding, _state = apply_stack
+
+    def fail_health(_self):
+        raise RuntimeError("sensitive endpoint detail must not be persisted")
+
+    monkeypatch.setattr(FakeGNS3Provider, "health_check", fail_health)
+    result = ProviderObservationService(database, service).capture("lab-1", actor="owner")
+    assert result["snapshot"]["status"] == "UNAVAILABLE"
+    assert result["snapshot"]["metrics"] == []
+    assert result["snapshot"]["failure"]["error_type"] == "RuntimeError"
+    assert "sensitive endpoint detail" not in json.dumps(result)
+    assert len(ProviderObservationService(database, service).list_for_lab("lab-1")) == 1

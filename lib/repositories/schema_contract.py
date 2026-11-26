@@ -94,6 +94,8 @@ EXPECTED_TABLE_COLUMNS = {
     "configuration_revisions": ("revision_id", "profile_id", "schema_record_id", "revision_number", "values_json", "configuration_hash", "provenance_json", "parent_revision_id", "status", "created_at", "created_by", "published_at", "published_by"),
     "configuration_assignments": ("assignment_id", "project_id", "target_type", "target_id", "profile_id", "revision_id", "assigned_at", "assigned_by"),
     "devices": ("device_id", "project_id", "lab_id", "device_key", "name", "device_type", "host", "port", "vendor", "model", "username", "credential_id", "capabilities_json", "metadata_json", "status", "created_at", "updated_at", "created_by", "updated_by"),
+    "device_observation_snapshots": ("observation_id", "project_id", "lab_id", "device_id", "source", "captured_at", "payload_json", "payload_sha256", "observed_by", "created_at"),
+    "provider_observation_snapshots": ("observation_id", "project_id", "lab_id", "binding_id", "provider_id", "observed_at", "payload_json", "payload_sha256", "observed_by", "created_at"),
     "topology_profiles": ("profile_id", "project_id", "name", "description", "scope_type", "scope_id", "lab_id", "status", "created_at", "updated_at", "created_by", "updated_by"),
     "topology_revisions": ("revision_id", "profile_id", "revision_number", "definition_json", "content_sha256", "status", "created_at", "created_by", "published_at", "published_by"),
     "topology_native_sources": ("source_id", "project_id", "profile_id", "revision_id", "format", "format_version", "filename", "sha256", "size_bytes", "source_bytes", "codec_name", "codec_version", "mapping_json", "compatibility_report_json", "imported_at", "imported_by"),
@@ -257,6 +259,12 @@ EXPECTED_TRIGGERS = (
     "trg_infra_reconciliations_no_delete",
     "trg_opentofu_recovery_plan_scope_insert",
     "trg_opentofu_recovery_plan_reference_immutable",
+    "trg_device_observations_scope_insert",
+    "trg_device_observations_immutable",
+    "trg_device_observations_no_delete",
+    "trg_provider_observations_scope_insert",
+    "trg_provider_observations_immutable",
+    "trg_provider_observations_no_delete",
 )
 
 EXPECTED_INDEXES = (
@@ -339,6 +347,10 @@ EXPECTED_INDEXES = (
     "idx_infra_reconciliations_workspace_created",
     "idx_infra_reconciliations_project_created",
     "idx_opentofu_plans_reconciliation",
+    "idx_device_observations_device_captured",
+    "idx_device_observations_project_lab_captured",
+    "idx_provider_observations_lab_observed",
+    "idx_provider_observations_project_observed",
 )
 
 EXPECTED_FOREIGN_KEYS = {
@@ -467,6 +479,12 @@ EXPECTED_FOREIGN_KEYS = {
     ("infrastructure_reconciliations", "workspace_id", "opentofu_workspaces", "workspace_id"),
     ("infrastructure_reconciliations", "project_id", "opentofu_workspaces", "project_id"),
     ("infrastructure_reconciliations", "lab_id", "opentofu_workspaces", "lab_id"),
+    ("device_observation_snapshots", "project_id", "labs", "project_id"),
+    ("device_observation_snapshots", "lab_id", "labs", "lab_id"),
+    ("device_observation_snapshots", "device_id", "devices", "device_id"),
+    ("provider_observation_snapshots", "project_id", "labs", "project_id"),
+    ("provider_observation_snapshots", "lab_id", "labs", "lab_id"),
+    ("provider_observation_snapshots", "binding_id", "gns3_lab_bindings", "binding_id"),
 }
 
 
@@ -588,9 +606,9 @@ def inspect_sqlite_schema(
                 f"schema_meta.alembic_revision is {metadata.get('alembic_revision')!r}; "
                 f"expected {head_revision!r}"
             )
-        if metadata.get("version") != "32":
+        if metadata.get("version") != "33":
             metadata_errors.append(
-                f"schema_meta.version is {metadata.get('version')!r}; expected '32'"
+                f"schema_meta.version is {metadata.get('version')!r}; expected '33'"
             )
     else:
         metadata_errors.append("schema_meta table is missing")

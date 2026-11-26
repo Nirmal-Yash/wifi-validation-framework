@@ -1161,3 +1161,20 @@ The initial supported execution adapters are Linux/FRR over SSH, Cisco IOS/IOS-X
 The optional runtime is pinned in `requirements-ansible.txt` and `ansible/requirements.yml`; run `scripts/netregress_ansible_setup.sh` from the same activated Python environment as NetRegress. Missing executables, unexpected Ansible Core versions and missing/unpinned collections block plan validation. The Runner does not install or start Ansible automatically.
 
 See `docs/EXP_P10_ANSIBLE_AUTOMATION_IMPLEMENTATION_AUDIT.md`. Passing fake-runner tests does not certify a live network connection, target platform syntax, network convergence or rollback.
+
+
+## 21. Unified provider, device and Run network observability (P14)
+
+`ProviderObservationService` uses the existing `TopologyApplyService` registry and shared `ProviderSessionService` to persist real adapter observations for controller health, version, compute resource availability and declared packet-capture capability. The observation includes provider source, timestamp provenance, units, metrics and SHA-256 hash. GNS3 utilization and EVE-NG CPU/memory capacity are emitted only when the adapter reports those values; CML compute/licensing status remains categorical where no numeric utilization is supplied. A provider without the packet_capture capability is explicitly `NOT_SUPPORTED`.
+
+`DeviceObservationService` adds a separate append-only Project/Lab/Device observation stream using only the structured read-only `ip -s -j link show` command over `SecureCommandRunner` and host-key-verified `ParamikoExecRunner`. It resolves a same-device active `SSH_PASSWORD` record inside `CredentialVaultService.use_secret`. Missing counters remain absent; no one-sample rates or RF scores are invented.
+
+`DashboardQueryService.network_observability` returns one Run view of persisted test metric samples, Wi-Fi telemetry, health snapshots, PCAP metadata and protocol-evidence JSON. It verifies artifact SHA-256 and confined paths before returning protocol evidence, marks invalid evidence unavailable, and never returns PCAP bytes or local paths. `performance.read` and `evidence.read` independently control child data sections, while `runs.read` is required for the Run. Provider and device histories are immutable, Project/Lab scoped and integrity-verified.
+
+Packet capture itself remains the existing run/test capture engine and `ProtocolEvidenceService` remains the existing parser. This phase aggregates persisted outputs; it does not add a second capture engine or claim unsupported providers can capture. Virtual interfaces remain diagnostic evidence, not physical RF certification.
+
+## 22. Pipeline dependency graphs (P13)
+
+`PipelineService.normalize_definition` normalizes graph edges inside immutable revision JSON. Historical revisions without `depends_on` retain sequential semantics; explicit empty dependencies create independent roots. `SUCCESS`, `FAILURE` and `COMPLETED` conditions control branch readiness, with AND semantics across incoming edges. Unknown/duplicate/self edges and cycles are rejected. The scheduler persists skipped branches, preserves failed prerequisite history and stops the entire execution on `RECOVERY_REQUIRED` until the existing explicit recovery operation is approved.
+
+The Pipeline UI provides a visual graph editor with deterministic layered placement, selectable nodes, operation parameters and dependency outcome controls. Backend validation remains authoritative. The worker remains a durable single-step scheduler; P13 does not claim concurrent fan-out, arbitrary shell execution or automatic provider compensation.

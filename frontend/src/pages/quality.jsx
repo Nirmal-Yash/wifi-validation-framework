@@ -75,7 +75,7 @@ function PerformanceHistoryPage(){
   {metricNames.length>1?<Section title="Metric series" subtitle="Separate metrics and units are never mixed in one chart."><div className="filter-grid compact-filter-grid"><Field label="Metric"><select value={metricName} onChange={event=>setMetricName(event.target.value)}>{metricNames.map(name=><option key={name} value={name}>{name}</option>)}</select></Field></div></Section>:null}
   {loader.error?<InlineNotice tone="danger">{loader.error.message}</InlineNotice>:null}
   {loader.data?<><div className="stat-grid">
-   <StatCard label="Runs with metric" value={selectedRows.length} hint="Persisted metric history" icon={<DatabaseIcon/>}/>
+   <StatCard label="Runs with metric" value={selectedRows.length} hint="Persisted metric history" icon={<Activity size={17}/>}/>
    <StatCard label="Valid samples" value={validCount} hint="Valid + non-warm-up + numeric" icon={<CheckMetricIcon/>} tone="success"/>
    <StatCard label="Metric" value={metricName||"—"} hint={unit} icon={<TrendingUp size={17}/>}/>
    <StatCard label="Mean observations" value={chartPoints.length} hint="One aggregate per eligible Run" icon={<Activity size={17}/>}/>
@@ -270,46 +270,156 @@ export function PerformancePage({user}){
  </div>;
 }
 
-function DatabaseIcon(){return <Activity size={17}/>;}
 function CheckMetricIcon(){return <Activity size={17}/>;}
 
-export function TelemetryPage(){
+export function TelemetryPage({user}){
  const[runId,setRunId]=useState(""),[submitted,setSubmitted]=useState(""),[metricSelection,setMetricSelection]=useState("");
+ const[providerNotice,setProviderNotice]=useState(""),[providerError,setProviderError]=useState("");
+ const workspace=useWorkspace();
+ const canReadProvider=canPerform(user,"topology.read");
  const loader=useAsyncLoader(()=>api.telemetry(submitted),[submitted],{enabled:Boolean(submitted)});
+ const observability=useAsyncLoader(
+  ()=>submitted?api.runNetworkObservability(submitted):Promise.resolve(null),
+  [submitted],{enabled:Boolean(submitted),queryKey:"run-network-observability"}
+ );
+ const providerLoader=useAsyncLoader(
+  ()=>workspace.activeLabId&&canReadProvider?api.providerObservations(workspace.activeLabId):Promise.resolve({items:[]}),
+  [workspace.activeLabId,canReadProvider],
+  {enabled:Boolean(workspace.activeLabId&&canReadProvider),queryKey:"provider-network-observations"}
+ );
+ const providerMutation=useMutation();
+ const providerItems=providerLoader.data?.items||[];
  const items=loader.data?.items||[];
  const points=items.flatMap((item,snapshotIndex)=>(item.snapshot?.points||[]).map((point,pointIndex)=>({
    point,snapshot:item.snapshot,snapshotIndex,pointIndex,
    metricKey:String(point.metric||"Unknown metric")+" · "+String(point.unit||"unit not recorded"),
- })));
+  })));
  const metricOptions=[...new Map(points.filter(item=>toFiniteNumber(item.point.value)!==null).map(item=>[item.metricKey,{value:item.metricKey,label:item.metricKey}])).values()];
  useEffect(()=>{if(metricOptions.length&&!metricOptions.some(item=>item.value===metricSelection))setMetricSelection(metricOptions[0].value);},[metricOptions.map(item=>item.value).join("|"),metricSelection]);
  const chartPoints=points.filter(item=>item.metricKey===metricSelection&&toFiniteNumber(item.point.value)!==null).map(item=>({
    label:formatShortDate(item.point.captured_at||item.snapshot?.captured_at)+" · "+String(item.snapshot?.interface||"WiFi").slice(0,14),
    value:toFiniteNumber(item.point.value),captured_at:item.point.captured_at||item.snapshot?.captured_at,
  }));
+ const measuredRows=(observability.data?.performance?.items||[]).flatMap(test=>(
+  test.metrics||[]
+ ).map(metric=>({
+  test_id:test.test_id,metric_name:metric.name,unit:metric.unit,
+  sample_count:(metric.samples||[]).length,
+  samples:(metric.samples||[]).map(sample=>sample.value).filter(value=>toFiniteNumber(value)!==null),
+  measurement_policy:metric.measurement_policy?.aggregate||metric.measurement_policy?.name||"Raw samples",
+ })));
+ const captureRows=observability.data?.packet_captures?.items||[];
+ const protocolRows=observability.data?.protocol_evidence?.items||[];
+
+ async function captureProviderObservation(){
+  if(!workspace.activeLabId)return;
+  setProviderError("");setProviderNotice("");
+  try{
+   const result=await providerMutation.run(()=>api.captureProviderObservation(workspace.activeLabId));
+   setProviderNotice("Provider observation recorded: "+String(result?.snapshot?.status||"UNKNOWN")+".");
+   await providerLoader.reload();
+  }catch(exc){setProviderError(exc.message||"Provider observation could not be recorded.");}
+ }
  return <div className="page-stack">
-  <div className="page-actions-row"><span className="context-caption">Environment-aware data · virtual WiFi is not RF certification</span></div>
-  <Section title="Select Run" subtitle="Load only integrity-verified telemetry attached to this Run.">
+  {canReadProvider?<Section title="Lab provider observations" subtitle="Read-only controller, compute and packet-capture capability observations collected through the registered provider adapter and OS Credential Vault." actions={workspace.activeLabId?<Button size="sm" onClick={captureProviderObservation} disabled={providerMutation.loading}><Activity size={14}/>Capture provider observation</Button>:null}>
+   {!workspace.activeLabId?<EmptyState title="Select a Lab" message="Choose an active Project and Lab in the workspace selector to view provider observations."/>:null}
+   {providerLoader.loading?<LoadingState label="Loading persisted provider observations…"/>:null}
+   {providerLoader.error?<InlineNotice tone="danger">{providerLoader.error.message}</InlineNotice>:null}
+   {providerError?<InlineNotice tone="danger">{providerError}</InlineNotice>:null}
+   {providerNotice?<InlineNotice tone="success">{providerNotice}</InlineNotice>:null}
+   {providerItems.length?<>
+    <div className="stat-grid">
+     <StatCard label="Provider" value={providerItems[0].provider_id||"—"} hint="Registered Lab adapter" icon={<Wifi size={17}/>}/>
+     <StatCard label="Latest state" value={providerItems[0].snapshot?.status||"UNKNOWN"} hint="Source-observed health state" icon={<Activity size={17}/>}/>
+     <StatCard label="Compute records" value={providerItems[0].snapshot?.resources?.computes?.length??"—"} hint="Latest provider response" icon={<Activity size={17}/>}/>
+     <StatCard label="Capture support" value={providerItems[0].snapshot?.capture_support?.supported===true?"Supported":providerItems[0].snapshot?.capture_support?.supported===false?"Not supported":"Unknown"} hint={providerItems[0].snapshot?.capture_support?.scope||"Scope not reported"} icon={<Activity size={17}/>}/>
+    </div>
+    <Section title="Latest provider metrics" subtitle={(providerItems[0].snapshot?.version?.version||"Version not reported")+" · "+formatDate(providerItems[0].observed_at)}>
+     <DataTable caption="Provider-observed compute state" rows={providerItems[0].snapshot?.resources?.computes||[]} rowKey={(row,index)=>String(row.compute_id||row.name||index)} columns={[
+      {key:"name",label:"Compute"},{key:"compute_id",label:"Provider ID"},
+      {key:"connected",label:"Connected",render:row=>row.connected===true?"Yes":row.connected===false?"No":"Not reported"},
+      {key:"state",label:"State",render:row=>row.state||"Not reported"},
+      {key:"cpu_usage_percent",label:"CPU",align:"right",render:row=>toFiniteNumber(row.cpu_usage_percent)===null?"—":formatNumber(row.cpu_usage_percent)+" %"},
+      {key:"memory_usage_percent",label:"Memory",align:"right",render:row=>toFiniteNumber(row.memory_usage_percent)===null?"—":formatNumber(row.memory_usage_percent)+" %"},
+      {key:"cpu_cores_total",label:"CPU cores",align:"right",render:row=>row.cpu_cores_total??"—"},
+      {key:"memory_gb_total",label:"Memory capacity",align:"right",render:row=>row.memory_gb_total===undefined?"—":formatNumber(row.memory_gb_total)+" GiB"}
+     ]} emptyTitle="No compute records returned" emptyMessage="This provider has not returned any compute resource records."/>
+    <DataTable caption="Provider-observed compute metrics" rows={providerItems[0].snapshot?.metrics||[]} rowKey={(row,index)=>row.compute_id+"-"+row.name+"-"+index} columns={[
+      {key:"compute_name",label:"Compute"},{key:"name",label:"Metric"},
+      {key:"value",label:"Observed value",align:"right",render:row=>formatNumber(row.value)},
+      {key:"unit",label:"Unit"},{key:"source",label:"Source"}
+     ]} emptyTitle="No numeric compute metrics reported" emptyMessage="This provider returned compute state without CPU or memory measurements. Unreported values are not inferred."/>
+     <InlineNotice tone="info">{providerItems[0].snapshot?.capture_support?.reason||"Packet-capture capability is reported by the provider adapter; this does not certify that a specific link is capture-ready."}</InlineNotice>
+    </Section>
+    <Section title="Provider observation history" subtitle="Immutable, SHA-256-verified snapshots from this Lab.">
+     <DataTable caption="Provider observation history" rows={providerItems} rowKey={item=>item.observation_id} columns={[
+      {key:"observed_at",label:"Observed",render:item=>formatDate(item.observed_at)},
+      {key:"provider_id",label:"Provider"},
+      {key:"status",label:"Status",render:item=><StatusBadge value={item.snapshot?.status||"UNKNOWN"}/>},
+      {key:"payload_sha256",label:"SHA-256",render:item=><code>{item.payload_sha256}</code>}
+     ]} emptyTitle="No provider history" emptyMessage="Capture a read-only observation to create the first persisted record."/>
+    </Section>
+   </>:workspace.activeLabId&&!providerLoader.loading?<EmptyState title="No provider observations yet" message="Capture a read-only observation to record the controller and compute capabilities returned by the registered provider."/>:null}
+  </Section>:null}
+  <div className="page-actions-row"><span className="context-caption">Run evidence · source timestamps, units and integrity status are preserved</span></div>
+  <Section title="Select Run" subtitle="Load integrity-verified telemetry, raw performance samples, packet-capture metadata and protocol evidence attached to a Run.">
    <form className="filter-grid compact-filter-grid" onSubmit={event=>{event.preventDefault();setSubmitted(runId.trim());setMetricSelection("");}}>
     <Field label="Run ID" required><input value={runId} onChange={e=>setRunId(e.target.value)} required placeholder="Run ID"/></Field>
-    <div className="filter-actions"><Button type="submit" disabled={!runId.trim()}><Wifi size={14}/>Load telemetry</Button></div>
+    <div className="filter-actions"><Button type="submit" disabled={!runId.trim()}><Wifi size={14}/>Load network evidence</Button></div>
    </form>
   </Section>
-  {loader.loading?<LoadingState label="Loading integrity-verified telemetry…"/>:null}
+  {loader.loading||observability.loading?<LoadingState label="Loading integrity-verified Run evidence…"/>:null}
   {loader.error?<InlineNotice tone="danger">{loader.error.message}</InlineNotice>:null}
-  {items.length?<><div className="stat-grid">
+  {observability.error?<InlineNotice tone="danger">{observability.error.message}</InlineNotice>:null}
+  {observability.data?<>
+   <div className="stat-grid">
+    <StatCard label="Metric groups" value={measuredRows.length} hint={observability.data.performance?.access==="AVAILABLE"?"Persisted test measurements":"Performance evidence restricted"} icon={<Activity size={17}/>}/>
+    <StatCard label="PCAP artifacts" value={captureRows.length} hint="Binary captures, metadata only" icon={<Activity size={17}/>}/>
+    <StatCard label="Protocol evidence" value={protocolRows.length} hint="Integrity-verified JSON records" icon={<Wifi size={17}/>}/>
+    <StatCard label="Wi-Fi snapshots" value={observability.data.telemetry?.items?.length??"—"} hint="Run-linked telemetry artifacts" icon={<Activity size={17}/>}/>
+   </div>
+   {observability.data.performance?.access==="AVAILABLE"?<Section title="Measured Run metrics" subtitle="Raw samples, units and source test identities from persisted test results; no unit mixing or inferred metric values.">
+    <DataTable caption="Measured Run metric samples" rows={measuredRows} rowKey={(row,index)=>row.test_id+"-"+row.metric_name+"-"+index} columns={[
+     {key:"test_id",label:"Test"},{key:"metric_name",label:"Metric"},{key:"unit",label:"Unit"},
+     {key:"sample_count",label:"Samples",align:"right"},
+     {key:"samples",label:"Raw values",render:row=>row.samples.map(value=>formatNumber(value)).join(", ")||"—"},
+     {key:"measurement_policy",label:"Measurement policy"}
+    ]} emptyTitle="No measured metrics" emptyMessage="No persisted test metric samples are available for this Run."/>
+   </Section>:null}
+   {observability.data.packet_captures?.access==="AVAILABLE"?<Section title="Packet-capture artifacts" subtitle="PCAP payloads are never embedded in this API response; integrity and downloadable artifact metadata are shown only.">
+    <DataTable caption="Packet capture integrity records" rows={captureRows} rowKey={row=>row.artifact_id} columns={[
+     {key:"display_name",label:"Capture"},{key:"size_bytes",label:"Size",align:"right",render:row=>formatNumber(row.size_bytes)+" bytes"},
+     {key:"created_at",label:"Captured",render:row=>formatDate(row.created_at)},
+     {key:"integrity_status",label:"Integrity",render:row=><StatusBadge value={row.integrity_status}/>},
+     {key:"sha256",label:"SHA-256",render:row=><code>{row.sha256}</code>}
+    ]} emptyTitle="No PCAP artifacts" emptyMessage="No packet capture artifact is attached to this Run."/>
+   </Section>:null}
+   {observability.data.protocol_evidence?.access==="AVAILABLE"?<Section title="Protocol evidence" subtitle="Parsed evidence is shown only after the artifact checksum is verified.">
+    <DataTable caption="Protocol evidence records" rows={protocolRows} rowKey={row=>row.artifact_id} columns={[
+     {key:"display_name",label:"Evidence"},{key:"created_at",label:"Captured",render:row=>formatDate(row.created_at)},
+     {key:"integrity_status",label:"Integrity",render:row=><StatusBadge value={row.integrity_status}/>},
+     {key:"parse_status",label:"Parse status"},
+     {key:"summary",label:"Protocol summary",render:row=>{
+      const evidence=row.evidence||{};
+      return [evidence.total_packets!==undefined?evidence.total_packets+" packets":null,evidence.has_dora!==undefined?"DHCP DORA: "+(evidence.has_dora?"Yes":"No"):null,evidence.handshake_completed!==undefined?"EAPOL handshake: "+(evidence.handshake_completed?"Complete":"Incomplete"):null].filter(Boolean).join(" · ")||"No common summary fields";
+     }}
+    ]} emptyTitle="No protocol evidence" emptyMessage="No protocol-analysis JSON artifact is attached to this Run."/>
+   </Section>:null}
+  </>:null}
+  {loader.data&&items.length?<><div className="stat-grid">
    <StatCard label="Snapshots" value={items.length} hint="Integrity-verified artifacts" icon={<Wifi size={17}/>}/>
    <StatCard label="Numeric points" value={points.filter(item=>toFiniteNumber(item.point.value)!==null).length} hint="All available metrics" icon={<Activity size={17}/>}/>
-   <StatCard label="Interfaces" value={[...new Set(items.map(item=>item.snapshot?.interface).filter(Boolean))].length} hint="Recorded interfaces" icon={<DatabaseIcon/>}/>
+   <StatCard label="Interfaces" value={[...new Set(items.map(item=>item.snapshot?.interface).filter(Boolean))].length} hint="Recorded interfaces" icon={<Activity size={17}/>}/>
    <StatCard label="Environment" value={[...new Set(items.map(item=>item.snapshot?.environment_class).filter(Boolean))].join(", ")||"Not recorded"} hint="Preserved from evidence" icon={<Wifi size={17}/>}/>
   </div>
-  {metricOptions.length?<Section title="Numeric telemetry trend" subtitle="Choose a single metric and unit; unrelated values are never plotted on one axis.">
+  {metricOptions.length?<Section title="Numeric Wi-Fi telemetry trend" subtitle="Choose a single metric and unit; unrelated values are never plotted on one axis.">
    <div className="filter-grid compact-filter-grid"><Field label="Metric series"><select value={metricSelection} onChange={event=>setMetricSelection(event.target.value)}>{metricOptions.map(item=><option value={item.value} key={item.value}>{item.label}</option>)}</select></Field></div>
    <LineChart title={metricSelection} points={chartPoints} valueLabel={metricSelection.split(" · ").at(-1)}/>
-  </Section>:<EmptyState title="No numeric telemetry points" message="The snapshots contain no finite numeric values to chart; raw point records remain available below."/>}
+  </Section>:<EmptyState title="No numeric Wi-Fi telemetry points" message="The snapshots contain no finite numeric values to chart; raw point records remain available below."/>}
   {items.map((item,index)=><Section key={item.artifact_id||index} title={item.snapshot?.environment_class||"Unknown environment"} subtitle={formatDate(item.snapshot?.captured_at)+" · "+(item.snapshot?.interface||"interface unavailable")} actions={<StatusBadge value={item.snapshot?.environment_class}/>}><DataTable rows={item.snapshot?.points||[]} rowKey={(row,i)=>(row.metric||"metric")+"-"+i} columns={[
    {key:"metric",label:"Metric"},{key:"value",label:"Value",align:"right",render:row=>toFiniteNumber(row.value)===null?"—":formatNumber(row.value)+" "+(row.unit||"")},{key:"source",label:"Source"},{key:"captured_at",label:"Captured",render:row=>formatDate(row.captured_at)},{key:"environment_class",label:"Environment"}
   ]} emptyTitle="No points" emptyMessage="No telemetry points were captured."/></Section>)}
-  </>:submitted&&!loader.loading?<EmptyState title="No telemetry artifacts" message="No integrity-verified telemetry artifact is available for this Run."/>:null}
+  </>:submitted&&loader.data&&!items.length?<EmptyState title="No Wi-Fi telemetry artifacts" message="The Run evidence bundle may contain measured metrics, PCAP or protocol evidence even when no Wi-Fi telemetry snapshot is attached."/>:null}
  </div>;
 }
+

@@ -65,3 +65,11 @@ Implementation audit records for the first batch:
 - [EXP-P03 Visual Topology Studio Audit](EXP_P03_IMPLEMENTATION_AUDIT.md)
 
 These audit records document existing functionality retained, additive changes, source-of-truth and RBAC rules, test evidence and the remaining exact-commit acceptance gates. They do not replace the canonical roadmap or requirement traceability register.
+
+
+## EXP-P13/P14 implementation audits
+
+- [EXP-P13 Pipeline DAG Authoring and Conditional Execution](EXP_P13_IMPLEMENTATION_AUDIT.md)
+- [EXP-P14 Network Observability, Provider/Device Metrics and Evidence](EXP_P14_IMPLEMENTATION_AUDIT.md)
+
+P13 extends the durable Pipeline worker with backward-compatible graph dependencies and a visual editor. P14 unifies registered-provider observations, managed-device counters and integrity-verified Run metrics/telemetry/PCAP/protocol evidence without replacing existing adapters or capture engines.

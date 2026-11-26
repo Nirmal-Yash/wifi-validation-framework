@@ -25,10 +25,17 @@ export default function DevicesPage({user}){
  const [form,setForm]=useState(emptyForm);
  const [showCreate,setShowCreate]=useState(false);
  const [selectedDeviceId,setSelectedDeviceId]=useState("");
+ const [observationDeviceId,setObservationDeviceId]=useState("");
+ const [latestObservation,setLatestObservation]=useState(null);
  const [credentialReference,setCredentialReference]=useState("");
  const [notice,setNotice]=useState("");
  const [error,setError]=useState("");
  const canManage=canPerform(user,"devices.manage");
+ const canOperate=canPerform(user,"devices.operate");
+ const observationHistory=useAsyncLoader(
+  ()=>observationDeviceId?api.deviceObservations(observationDeviceId):Promise.resolve({items:[]}),
+  [observationDeviceId],{enabled:Boolean(observationDeviceId),queryKey:"device-network-observations"}
+ );
  const labs=useAsyncLoader(()=>projectId?api.workspaceLabs(projectId):Promise.resolve({items:[]}),
   [projectId],{enabled:Boolean(projectId),queryKey:"device-inventory-labs"});
  const devices=useAsyncLoader(()=>projectId?api.devices(projectId,labId||undefined,"ACTIVE"):Promise.resolve({items:[]}),
@@ -41,7 +48,7 @@ export default function DevicesPage({user}){
   if(workspace.activeProjectId&&projectItems.some(item=>item.project_id===workspace.activeProjectId)){
    if(projectId!==workspace.activeProjectId){
     setProjectId(workspace.activeProjectId);setLabId(workspace.activeLabId||"");
-    setShowCreate(false);setSelectedDeviceId("");setCredentialReference("");
+    setShowCreate(false);setSelectedDeviceId("");setObservationDeviceId("");setLatestObservation(null);setCredentialReference("");
    }
   }else if(projectId&&!projectItems.some(item=>item.project_id===projectId)){
    setProjectId("");setLabId("");setSelectedDeviceId("");setCredentialReference("");
@@ -83,6 +90,18 @@ export default function DevicesPage({user}){
    setCredentialReference("");await devices.reload();
   }catch(exc){setError(exc.message||"Credential reference could not be linked.");}
  }
+ async function captureObservation(item){
+  setError("");setNotice("");
+  if(!item.credential_id){setError("Link an active same-device SSH_PASSWORD credential before collecting observations.");return;}
+  if(item.capabilities?.supports_ssh===false){setError("This device is declared as not supporting SSH.");return;}
+  setObservationDeviceId(item.device_id);
+  try{
+   const result=await mutation.run(()=>api.captureDeviceObservation(item.device_id));
+   setLatestObservation(result);
+   setNotice("Read-only interface counters captured from "+item.name+". No device configuration was changed.");
+   await observationHistory.reload().catch(()=>null);
+  }catch(exc){setError(exc.message||"Device observation failed.");}
+ }
  async function archiveDevice(item){
   setError("");setNotice("");
   try{
@@ -99,7 +118,7 @@ export default function DevicesPage({user}){
   <Section title="Inventory scope" subtitle="Select the Project and optionally narrow the list to one Lab." actions={canManage?<Button size="sm" onClick={()=>{setForm({...emptyForm(),lab_id:labId});setShowCreate(value=>!value);}}>{showCreate?"Close":"Register device"}</Button>:null}>
    <div className="form-grid">
     <Field label="Project"><select value={projectId} onChange={event=>{const value=event.target.value;setProjectId(value);workspace.selectProject(value);setLabId("");setShowCreate(false);}}><option value="">Select Project</option>{projectItems.map(item=><option key={item.project_id} value={item.project_id}>{item.name} · {item.slug}</option>)}</select></Field>
-    <Field label="Lab filter"><select value={labId} onChange={event=>{setLabId(event.target.value);workspace.selectLab(event.target.value);}} disabled={!projectId||labs.loading}><option value="">All Labs</option>{labItems.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name}</option>)}</select></Field>
+    <Field label="Lab filter"><select value={labId} onChange={event=>{setLabId(event.target.value);setObservationDeviceId("");setLatestObservation(null);workspace.selectLab(event.target.value);}} disabled={!projectId||labs.loading}><option value="">All Labs</option>{labItems.map(item=><option key={item.lab_id} value={item.lab_id}>{item.name}</option>)}</select></Field>
    </div>
    {projects.error?<InlineNotice tone="danger">{projects.error.message}</InlineNotice>:null}
    {labs.error?<InlineNotice tone="danger">{labs.error.message}</InlineNotice>:null}
@@ -133,9 +152,32 @@ export default function DevicesPage({user}){
     {key:"vendor",label:"Vendor / model",render:item=>(item.vendor||"—")+(item.model?" · "+item.model:"")},
     {key:"device_id",label:"Device ID",render:item=><code title={item.device_id}>{item.device_id}</code>},
     {key:"credential_id",label:"Vault reference",render:item=>item.credential_id?<code title={item.credential_id}>{item.credential_id}</code>:"Not linked"},
-    {key:"actions",label:"Actions",render:item=>canManage?<Button size="sm" variant="ghost" disabled={mutation.loading} onClick={()=>archiveDevice(item)}>Archive</Button>:"—"}
+    {key:"actions",label:"Actions",render:item=><div className="button-row">
+     {canOperate?<Button size="sm" variant="outline" disabled={mutation.loading||!item.credential_id||item.capabilities?.supports_ssh===false} title={!item.credential_id?"Link an active same-device SSH_PASSWORD credential first":"Collect read-only network interface counters"} onClick={()=>captureObservation(item)}>Observe</Button>:null}
+     {canManage?<Button size="sm" variant="ghost" disabled={mutation.loading} onClick={()=>archiveDevice(item)}>Archive</Button>:null}
+     {!canOperate&&!canManage?"—":null}
+    </div>}
    ]} emptyTitle="No devices in this scope" emptyMessage="Register the first device or choose another Lab."/>
   </Section>
+  {canOperate&&observationDeviceId?<Section title="Network interface observations" subtitle="Read-only Linux RX/TX counters collected through host-key-verified SSH. Snapshots are immutable and SHA-256 verified." actions={<Button size="sm" variant="outline" onClick={()=>observationHistory.reload()}>Refresh history</Button>}>
+   {observationHistory.loading?<LoadingState label="Loading device observation history…"/>:null}
+   {observationHistory.error?<InlineNotice tone="danger">{observationHistory.error.message}</InlineNotice>:null}
+   {latestObservation?.device_id===observationDeviceId?<div className="environment-summary"><strong>Latest capture</strong><span>{new Date(latestObservation.captured_at).toLocaleString()}</span><code>{latestObservation.payload_sha256}</code></div>:null}
+   <DataTable caption="Immutable network interface observation history" rows={observationHistory.data?.items||[]} rowKey={item=>item.observation_id} columns={[
+    {key:"captured_at",label:"Captured",render:item=>new Date(item.captured_at).toLocaleString()},
+    {key:"source",label:"Source"},
+    {key:"observed_by",label:"Operator"},
+    {key:"payload_sha256",label:"SHA-256",render:item=><code>{item.payload_sha256}</code>}
+   ]} emptyTitle="No persisted observations" emptyMessage="Use Observe on a managed Device to collect its current interface counters."/>
+   <DataTable caption="Observed interface counters" rows={(observationHistory.data?.items||[]).flatMap(item=>(item.snapshot?.metrics||[]).map(metric=>({...metric,observation_id:item.observation_id})))} rowKey={(item,index)=>item.observation_id+"-"+item.interface+"-"+item.metric+"-"+index} columns={[
+    {key:"interface",label:"Interface",render:item=><code>{item.interface}</code>},
+    {key:"metric",label:"Counter"},
+    {key:"value",label:"Observed value",align:"right",render:item=>item.value.toLocaleString()},
+    {key:"unit",label:"Unit"},
+    {key:"captured_at",label:"Captured",render:item=>new Date(item.captured_at).toLocaleString()}
+   ]} emptyTitle="No counter samples" emptyMessage="The source has not returned any validated interface counters."/>
+   <InlineNotice tone="info">Counters are source-observed values. Rates require at least two time-separated samples and are not inferred from a single snapshot. Virtual interface counters are not physical RF certification.</InlineNotice>
+  </Section>:null}
   {canManage?<Section title="Link an OS-vault credential" subtitle="Create a device-bound credential in Credentials first, using the exact Device ID above. Then link its opaque credential ID here.">
    <form className="form-grid" onSubmit={linkCredential}>
     <Field label="Device"><select value={selectedDeviceId} onChange={event=>setSelectedDeviceId(event.target.value)} required><option value="">Select device</option>{(devices.data?.items||[]).map(item=><option key={item.device_id} value={item.device_id}>{item.name} · {item.device_id.slice(0,12)}</option>)}</select></Field>

@@ -410,3 +410,88 @@ def test_sensitive_artifact_download_requires_admin_role(tmp_path):
     allowed = admin.get(f"/api/v1/artifacts/{artifact.artifact_id}/download")
     assert allowed.status_code == 200
     assert allowed.data == b"artifact payload"
+
+
+
+def test_network_observability_unifies_measured_metrics_telemetry_pcap_and_protocol_evidence(tmp_path):
+    db_path = tmp_path / "network-observability.sqlite"
+    database = SQLiteDatabase(db_path)
+    database.initialize()
+    service = make_service(database)
+    run, attempt = create_run(service, "v1.0")
+    record(service, run, attempt, TestResultStatus.PASS, 12.5)
+
+    root = tmp_path / "results"
+    root.mkdir(parents=True, exist_ok=True)
+    pcap_path = root / "dhcp-observation.pcap"
+    pcap_path.write_bytes(b"\xd4\xc3\xb2\xa1" + b"network-capture-evidence")
+    evidence_path = root / "dhcp-protocol-evidence.json"
+    evidence_payload = {
+        "total_packets": 8, "correlated_dora_count": 1, "has_dora": True,
+        "message_counts": {"DISCOVER": 1, "OFFER": 1, "REQUEST": 1, "ACK": 1},
+        "transactions": [{"xid": 17, "message_types": ["DISCOVER", "OFFER", "REQUEST", "ACK"]}],
+    }
+    evidence_path.write_text(json.dumps(evidence_payload), encoding="utf-8")
+    artifacts = ArtifactService.from_sqlite(database)
+    pcap = artifacts.register_file(
+        run_id=run.run_id, path=pcap_path, artifact_type=ArtifactType.PCAP,
+        display_name="dhcp-observation.pcap",
+    )
+    protocol = artifacts.register_file(
+        run_id=run.run_id, path=evidence_path,
+        artifact_type=ArtifactType.PROTOCOL_EVIDENCE,
+        display_name="dhcp-protocol-evidence.json",
+    )
+
+    app = make_app(db_path)
+    app.config["NETREGRESS_QUERY"].results_root = root
+    response = app.test_client().get(
+        "/api/v1/runs/" + run.run_id + "/network-observability"
+    )
+    assert response.status_code == 200
+    data = response.get_json()["data"]
+    assert data["performance"]["access"] == "AVAILABLE"
+    assert data["performance"]["items"][0]["metrics"][0]["name"] == "latency"
+    assert data["packet_captures"]["items"][0]["artifact_id"] == pcap.artifact_id
+    assert data["packet_captures"]["items"][0]["integrity_status"] == "VERIFIED"
+    assert data["packet_captures"]["items"][0]["content_available"] is False
+    assert data["protocol_evidence"]["items"][0]["artifact_id"] == protocol.artifact_id
+    assert data["protocol_evidence"]["items"][0]["parse_status"] == "VERIFIED_JSON"
+    assert data["protocol_evidence"]["items"][0]["evidence"]["has_dora"] is True
+    assert "path" not in data["packet_captures"]["items"][0]
+
+
+def test_network_observability_marks_tampered_capture_and_protocol_artifacts_unavailable(tmp_path):
+    db_path = tmp_path / "network-observability-tamper.sqlite"
+    database = SQLiteDatabase(db_path)
+    database.initialize()
+    service = make_service(database)
+    run, _attempt = create_run(service, "v1.0")
+
+    root = tmp_path / "results"
+    root.mkdir(parents=True, exist_ok=True)
+    pcap_path = root / "tampered.pcap"
+    pcap_path.write_bytes(b"original-pcap-bytes")
+    evidence_path = root / "tampered-protocol.json"
+    evidence_path.write_text(json.dumps({"has_dora": True}), encoding="utf-8")
+    artifacts = ArtifactService.from_sqlite(database)
+    pcap = artifacts.register_file(
+        run_id=run.run_id, path=pcap_path, artifact_type=ArtifactType.PCAP,
+    )
+    protocol = artifacts.register_file(
+        run_id=run.run_id, path=evidence_path, artifact_type=ArtifactType.PROTOCOL_EVIDENCE,
+    )
+    pcap_path.write_bytes(b"tampered-pcap-bytes")
+    evidence_path.write_text(json.dumps({"has_dora": False}), encoding="utf-8")
+
+    app = make_app(db_path)
+    app.config["NETREGRESS_QUERY"].results_root = root
+    response = app.test_client().get(
+        "/api/v1/runs/" + run.run_id + "/network-observability"
+    )
+    data = response.get_json()["data"]
+    packet = next(item for item in data["packet_captures"]["items"] if item["artifact_id"] == pcap.artifact_id)
+    protocol_row = next(item for item in data["protocol_evidence"]["items"] if item["artifact_id"] == protocol.artifact_id)
+    assert packet["integrity_status"] == "UNAVAILABLE"
+    assert protocol_row["integrity_status"] == "UNAVAILABLE"
+    assert protocol_row["evidence"] is None

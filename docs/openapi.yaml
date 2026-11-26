@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: NetRegress Runner API
-  version: 1.2.0
+  version: 1.4.0
 servers:
   - url: /api/v1
 security:
@@ -43,6 +43,33 @@ paths:
                 lab_id: {type: string}
                 name: {type: string, minLength: 1, maxLength: 120}
                 module_key: {type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$'}
+  /devices/{device_id}/observations:
+    get:
+      operationId: listDeviceNetworkObservations
+      description: Immutable, SHA-256-verified Linux interface counters collected from the managed Device. Requires devices.read in the owning Project.
+      parameters:
+        - {name: device_id, in: path, required: true, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        "200": {description: Project/Lab-scoped observation history with source, capture timestamp, units and integrity digest}
+        "403": {description: Project devices.read permission required}
+        "404": {description: Device not found}
+    post:
+      operationId: captureDeviceNetworkObservation
+      description: Run only the fixed read-only "ip -s -j link show" command over host-key-verified SSH. Requires devices.operate and a linked active same-device SSH_PASSWORD credential in the OS vault. The payload is never accepted from the caller.
+      parameters:
+        - {name: device_id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+      responses:
+        "201": {description: Immutable observation snapshot and SHA-256 digest}
+        "403": {description: Project devices.operate permission or credential-use scope denied}
+        "409": {description: Device archived or SSH credential missing, revoked or unsupported}
+        "502": {description: SSH command failed, returned malformed JSON or provided no usable interface counters}
   /devices/{device_id}/capability-reports:
     get:
       operationId: listDeviceCapabilityReports
@@ -994,6 +1021,35 @@ paths:
         "401": {description: Missing or expired authenticated session}
         "403": {description: Caller lacks topology.provider.manage in the Lab's Project}
         "404": {description: Active provider binding not found}
+  /labs/{lab_id}/provider-observations:
+    get:
+      operationId: listLabProviderObservations
+      summary: List immutable provider health, version, compute and packet-capture capability observations
+      description: Requires topology.read in the Lab Project. Returns timestamped provider observation history with SHA-256 integrity metadata and source provenance.
+      parameters:
+        - {name: lab_id, in: path, required: true, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 40}}
+      responses:
+        "200": {description: Provider observation history}
+        "403": {description: Caller lacks topology.read}
+        "404": {description: Lab not found}
+    post:
+      operationId: captureLabProviderObservation
+      summary: Capture a read-only provider observation
+      description: Requires topology.read. The server uses the registered adapter and shared Credential Vault session to observe real provider health, version, compute resource measurements and packet-capture capability. caller-supplied measurements and provider connection values are not accepted. An unavailable provider is retained as an UNAVAILABLE observation with safe error classification only.
+      parameters:
+        - {name: lab_id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+      responses:
+        "201": {description: Immutable provider observation snapshot and SHA-256 digest}
+        "403": {description: Caller lacks topology.read}
+        "404": {description: Lab or active provider binding not found}
+        "409": {description: Provider observation contract or binding is invalid}
   /labs/{lab_id}/provider-catalog:
     get:
       operationId: inspectLabProviderCatalog
@@ -1276,6 +1332,17 @@ paths:
   /runs/{run_id}/tests: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Tests}}}}
   /runs/{run_id}/tests/{test_result_id}: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}, {name: test_result_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Test detail}}}}
   /tests/{test_id}/metrics: {get: {parameters: [{name: test_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Metric history}}}}
+  /runs/{run_id}/network-observability:
+    get:
+      operationId: getRunNetworkObservability
+      summary: Read measured performance, Wi-Fi telemetry, PCAP integrity and protocol evidence
+      description: Requires runs.read. Performance samples are independently filtered by performance.read; telemetry, health and packet/protocol evidence are independently filtered by evidence.read. Binary PCAP bytes and local filesystem paths are never included.
+      parameters:
+        - {name: run_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200": {description: Stable Run-scoped observability response with per-domain access and integrity states}
+        "403": {description: Caller lacks runs.read}
+        "404": {description: Run not found}
   /runs/{run_id}/metrics: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Metrics}}}}
   /runs/{run_id}/telemetry: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Telemetry}}}}
   /runs/{run_id}/health: {get: {parameters: [{name: run_id, in: path, required: true, schema: {type: string}}], responses: {"200": {description: Health}}}}

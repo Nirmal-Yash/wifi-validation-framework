@@ -18,6 +18,12 @@ from lib.services.configuration_schema_registry import (
     ConfigurationSchemaError, ConfigurationSchemaNotFound, ConfigurationSchemaRegistry,
 )
 from lib.services.device_inventory import DeviceInventoryService, DeviceInventoryError, DeviceInventoryNotFound
+from lib.services.device_observation import (
+    DeviceObservationError, DeviceObservationNotFound, DeviceObservationService,
+)
+from lib.services.provider_observation import (
+    ProviderObservationError, ProviderObservationNotFound, ProviderObservationService,
+)
 from lib.services.topology_studio import TopologyStudioService, TopologyStudioError, TopologyStudioNotFound
 from lib.services.topology_presentation import (
     TopologyPresentationConflict, TopologyPresentationError,
@@ -73,7 +79,7 @@ from lib.adapters import DeviceProfile, OpenWrtDeviceAdapter, SSHFirmwareAdapter
 from lib.adapters.firmware import FirmwareImage, FirmwareAuthorization, GPGSignatureVerifier
 from lib.connector import load_devices, ConnectionPool
 from lib.services.command_security import CommandSecurityPolicy, SecureCommandRunner
-from lib.services.command_runner import NetmikoRunner
+from lib.services.command_runner import NetmikoRunner, ParamikoExecRunner, SSHConnectionSpec
 from lib.security import AuthManager,AuthConfigurationError,AuthenticatedUser,Role
 from lib.domain import DomainValidationError, RunLifecycle, WaiverScope
 from lib.domain.resources import (
@@ -106,6 +112,8 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     network_intent=NetworkIntentService(query.database,topology_studio)
     network_intent_compiler=NetworkIntentCompilerService(query.database,network_intent,device_inventory)
     topology_apply=TopologyApplyService(query.database,credential_vault,topology_studio)
+    provider_observations=ProviderObservationService(query.database,topology_apply)
+    device_observations=DeviceObservationService(query.database)
     ansible_automation=AnsibleAutomationService(
         query.database,network_intent,network_intent_compiler,device_inventory,credential_vault,
         resource_lock_manager=topology_apply.resource_lock_manager,
@@ -735,6 +743,23 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
     @api.get("/runs/<run_id>/telemetry")
     @protected
     def run_telemetry(run_id):return guarded(lambda:ok({"environment_class":query.environment_class(run_id),"items":query.telemetry(run_id)}))
+    @api.get("/runs/<run_id>/network-observability")
+    @protected
+    def run_network_observability(run_id):
+        run = query.run_repository.get(run_id)
+        if run is None:
+            return error("NOT_FOUND", "Run not found", 404)
+        project_id = run.project_id or request_project_id()
+        denied = require_permission("runs.read", project_id=project_id)
+        if denied is not None:
+            return denied
+        include_performance = require_permission("performance.read", project_id=project_id) is None
+        include_evidence = require_permission("evidence.read", project_id=project_id) is None
+        return guarded(lambda: ok(query.network_observability(
+            run_id, include_performance=include_performance,
+            include_evidence=include_evidence,
+        )))
+
     @api.get("/runs/<run_id>/health")
     @protected
     def run_health(run_id):return guarded(lambda:ok({"items":query.health(run_id)}))
@@ -1753,6 +1778,88 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         if denied is not None:
             return denied
         return ok(item)
+
+    @api.get("/devices/<device_id>/observations")
+    def list_device_observations(device_id):
+        device = device_inventory.get(device_id)
+        if device is None:
+            return error("NOT_FOUND", "Device not found", 404)
+        denied = require_permission("devices.read", project_id=device["project_id"])
+        if denied is not None:
+            return denied
+        try:
+            limit = int(request.args.get("limit", "50"))
+            items = device_observations.list_for_device(device_id, limit=limit)
+        except (ValueError, DeviceObservationError) as exc:
+            return error("INVALID_REQUEST", str(exc), 400)
+        return ok({"items": items})
+
+    @api.post("/devices/<device_id>/observations")
+    def capture_device_observation(device_id):
+        device = device_inventory.get(device_id)
+        if device is None:
+            return error("NOT_FOUND", "Device not found", 404)
+        denied = require_permission("devices.operate", project_id=device["project_id"])
+        if denied is not None:
+            return denied
+        if device["status"] != "ACTIVE":
+            return error("DEVICE_ARCHIVED", "Archived Devices cannot be observed", 409)
+        capabilities = device.get("capabilities") or {}
+        if capabilities.get("supports_ssh") is False:
+            return error("DEVICE_SSH_UNSUPPORTED", "The managed Device does not declare SSH capability", 409)
+        credential_id = device.get("credential_id")
+        if not credential_id:
+            return error("DEVICE_CREDENTIAL_REQUIRED", "Link an active same-device SSH_PASSWORD credential before collecting observations", 409)
+        credential = credential_vault.get(credential_id)
+        if (
+            credential is None or credential["project_id"] != device["project_id"]
+            or credential["device_id"] != device_id or credential["status"] != "ACTIVE"
+            or credential["credential_type"] != "SSH_PASSWORD"
+        ):
+            return error("DEVICE_CREDENTIAL_UNAVAILABLE", "Observation requires an active same-device SSH_PASSWORD credential", 409)
+        scope = "/api/v1/devices/" + device_id + "/observations"
+        idem_payload = {"device_id": device_id, "operation": "capture-readonly-interface-counters"}
+        key, request_hash, cached, security_error = idempotency_preflight(scope, idem_payload)
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        actor = str((session.get("netregress_user") or {}).get("username", "local"))
+
+        def collect(metadata, secret):
+            username = metadata.get("username") or device.get("username")
+            if not isinstance(username, str) or not username.strip():
+                raise DeviceObservationError("the managed SSH credential has no username")
+            transport = ParamikoExecRunner(SSHConnectionSpec(
+                target=device_id, host=device["host"], port=int(device["port"]),
+                username=username, password=secret,
+            ))
+            runner = SecureCommandRunner(
+                transport, security_policy=CommandSecurityPolicy.default(),
+            )
+            try:
+                return device_observations.capture(device, runner, actor=actor)
+            finally:
+                transport.close()
+
+        try:
+            snapshot = credential_vault.use_secret(
+                credential_id, project_id=device["project_id"], device_id=device_id,
+                credential_type="SSH_PASSWORD", actor=actor,
+                purpose="device.network_observation", consumer=collect,
+            )
+        except CredentialVaultNotFound as exc:
+            return error("DEVICE_CREDENTIAL_UNAVAILABLE", str(exc), 409)
+        except CredentialVaultPolicyError as exc:
+            return error("DEVICE_CREDENTIAL_FORBIDDEN", str(exc), 403)
+        except CredentialVaultError as exc:
+            return error("DEVICE_CREDENTIAL_UNAVAILABLE", str(exc), 409)
+        except DeviceObservationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except DeviceObservationError as exc:
+            return error("DEVICE_OBSERVATION_FAILED", str(exc), 502)
+        idempotency_store_response(scope, key, request_hash, snapshot, 201)
+        return ok(snapshot), 201
 
     @api.get("/devices/<device_id>/capability-reports")
     def list_device_capability_reports(device_id):
@@ -3237,6 +3344,43 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         result = {"binding": binding}
         idempotency_store_response(scope, key, request_hash, result, 200)
         return ok(result)
+
+    @api.get("/labs/<lab_id>/provider-observations")
+    def list_provider_observations(lab_id):
+        lab, denied = _provider_lab_scope(lab_id, "topology.read")
+        if denied is not None:
+            return denied
+        try:
+            limit = int(request.args.get("limit", "40"))
+            items = provider_observations.list_for_lab(lab_id, limit=limit)
+        except (ValueError, ProviderObservationError) as exc:
+            return error("INVALID_REQUEST", str(exc), 400)
+        return ok({"items": items})
+
+    @api.post("/labs/<lab_id>/provider-observations")
+    def capture_provider_observation(lab_id):
+        _lab, denied = _provider_lab_scope(lab_id, "topology.read")
+        if denied is not None:
+            return denied
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict) or payload:
+            return error("INVALID_REQUEST", "provider observation capture accepts an empty JSON object only", 400)
+        scope = "/api/v1/labs/" + lab_id + "/provider-observations"
+        key, request_hash, cached, security_error = idempotency_preflight(
+            scope, {"lab_id": lab_id, "operation": "capture-provider-observation"},
+        )
+        if security_error is not None:
+            return security_error
+        if cached is not None:
+            return jsonify(cached.response), cached.status_code
+        try:
+            result = provider_observations.capture(lab_id, actor=_topology_actor())
+        except ProviderObservationNotFound as exc:
+            return error("NOT_FOUND", str(exc), 404)
+        except ProviderObservationError as exc:
+            return error("PROVIDER_OBSERVATION_INVALID", str(exc), 409)
+        idempotency_store_response(scope, key, request_hash, result, 201)
+        return ok(result), 201
 
     @api.get("/labs/<lab_id>/provider-catalog")
     def get_topology_provider_catalog(lab_id):

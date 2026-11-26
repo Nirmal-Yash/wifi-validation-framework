@@ -137,3 +137,11 @@ This register is intentionally conservative. A source file or mocked contract te
 | RQ-064 | Extensible Ansible and native execution engine | Existing P10 approval/hash/Vault/RBAC service plus G10/G11 transport adapters and execution tests | NOT_STARTED | Expand supported playbooks, roles/collections/custom modules and isolated runtimes; add NETCONF/RESTCONF/SSH/HTTPS only when implemented and qualified; retain policy, secret, audit, locking and recovery boundaries. |
 | RQ-065 | Unified native import/export, conversion, reconciliation, recovery and evidence | Existing topology, provider, Network Intent, Ansible, Run, artifact and operational recovery services | NOT_STARTED | Persist provenance, source/export history, immutable snapshots, observed state, drift, loss reports, asset hashes and partial-operation outcomes; verify restart-safe recovery. |
 
+
+
+## Stage H — Pipeline graph and managed-device observability
+
+| ID | Requirement | Verification source | Status | Next verification |
+|---|---|---|---|---|
+| RQ-066 | Immutable backward-compatible pipeline DAG authoring and conditional execution | lib/services/pipeline_service.py, frontend/src/pipeline-graph.js, frontend/src/components/pipeline-graph-editor.jsx, tests/test_pipeline_orchestration.py, frontend/src/test/pipeline-graph.test.js, docs/EXP_P13_IMPLEMENTATION_AUDIT.md | IMPLEMENTED_PENDING_CI | Exact-head pipeline/backend/frontend checks after P13 and P14 are both complete; operator acceptance remains separate. |
+| RQ-067 | Provenance-aware provider/device/Run network observability with integrity-verified PCAP and protocol evidence | lib/services/provider_observation.py, lib/services/device_observation.py, dashboard/query.py, GET /api/v1/labs/{lab_id}/provider-observations, GET /api/v1/devices/{device_id}/observations, GET /api/v1/runs/{run_id}/network-observability, 20261124_23_device_observability.py, tests/test_topology_apply.py, tests/test_device_observability.py, tests/test_dashboard_api.py, docs/EXP_P14_IMPLEMENTATION_AUDIT.md | IMPLEMENTED_PENDING_CI | Exact-head provider Vault/RBAC, device SSH, Run metric provenance, PCAP/protocol SHA-256, schema/OpenAPI and frontend checks after the combined source checkpoint; real controller/host-key/packet-capture/physical target acceptance remains an operator gate. |
