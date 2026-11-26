@@ -1,26 +1,32 @@
 import React,{useEffect,useState} from "react";
 import {api} from "@/api";
+import PipelineGraphEditor from "@/components/pipeline-graph-editor";
 import {useWorkspace} from "@/components/workspace-context";
 import {useAsyncLoader,useMutation} from "@/hooks";
 import {canPerform} from "@/permissions";
 import {Button,DataTable,EmptyState,ErrorState,Field,InlineNotice,LoadingState,Section,StatusBadge} from "@/components/ui";
 
-const STARTER=JSON.stringify({steps:[{
+const STARTER={steps:[{
  key:"provision",type:"WIFI_LAB_PROVISION",name:"Provision the reference Wi-Fi Lab",
- timeout_seconds:600,max_attempts:1,input:{confirmed:true}
-}]},null,2);
-const GUIDANCE=`Allowed step types:
-- WIFI_LAB_PROVISION: input { "confirmed": true }
-- TOPOLOGY_APPLY: input { "profile_id": "...", "revision_id": "...", "expected_sha256": "<64 hex>", "confirmed": true }
-- PROVIDER_RECONCILE: input { "profile_id": "...", "revision_id": "..." }
-- CONFIGURATION_DEPLOY: input { "profile_id": "...", "revision_id": "...", "configuration_hash": "<64 hex>", "device_id": "...", "ssh_credential_id": "...", "wifi_psk_credential_id": "...", "confirmed": true }
-- VALIDATION_RUN: input { "tests": ["wifi.latency.threshold"], "firmware_version": "v1.0", "performance_policy_revision_id": "...", "configuration_profile_id": "...", "configuration_revision_id": "...", "topology_profile_id": "...", "topology_revision_id": "...", "device_id": "...", "ssh_credential_id": "..." }
+ timeout_seconds:600,max_attempts:1,input:{confirmed:true},depends_on:[]
+}]};
+const GUIDANCE=`Workflow graph authoring:
+- Add operation nodes and connect them through dependency conditions.
+- SUCCESS runs a child only when its prerequisite succeeded.
+- FAILURE runs a child only when its prerequisite failed.
+- COMPLETED runs a child after a terminal success, failure, skip or cancellation.
+- Multiple incoming dependencies use AND semantics.
+- A missing dependency field in older revisions remains a sequential dependency for compatibility.
+- A node with depends_on: [] is an independent root. Cycles and unknown references are rejected before publication.
 
-Configuration and topology profile/revision references must be supplied in pairs. A selected configuration revision is resolved through its Project, Lab or Device layer. A selected topology revision must be in sync with the bound GNS3 Lab. Optional Device and SSH references must point to an active Device and its same-device SSH_PASSWORD credential.
-Each step accepts key, type, name, timeout_seconds (5–3600), max_attempts (1–5).
-Mutating operations and VALIDATION_RUN are single-attempt. VALIDATION_RUN accepts registered semantic test IDs or registered pytest node IDs.
-No arbitrary shell/command step is accepted. Never put secret values in the definition.
-Opaque Credential Vault IDs only.`;
+Allowed operation types and input fields:
+- WIFI_LAB_PROVISION: { "confirmed": true }
+- TOPOLOGY_APPLY: profile_id, revision_id, expected_sha256, confirmed
+- PROVIDER_RECONCILE: profile_id, revision_id
+- CONFIGURATION_DEPLOY: profile_id, revision_id, configuration_hash, device_id, ssh_credential_id, wifi_psk_credential_id, confirmed
+- VALIDATION_RUN: tests, firmware_version, performance_policy_revision_id, configuration_profile_id, configuration_revision_id, topology_profile_id, topology_revision_id, device_id, ssh_credential_id
+
+Mutating operations and VALIDATION_RUN are single-attempt. No arbitrary shell/command step is accepted. Never put secret values in an operation input; use opaque Credential Vault IDs only.`;
 const stamp=value=>value?new Date(value).toLocaleString():"—";
 
 export default function PipelinesPage({user}){
@@ -28,7 +34,7 @@ export default function PipelinesPage({user}){
  const [projectId,setProjectId]=useState(workspace.activeProjectId||"");const [labId,setLabId]=useState(workspace.activeLabId||"");
  const [pipelineId,setPipelineId]=useState("");const [executionId,setExecutionId]=useState("");
  const [name,setName]=useState("Reference Wi-Fi pipeline");const [description,setDescription]=useState("");
- const [definitionText,setDefinitionText]=useState(STARTER);const [showEditor,setShowEditor]=useState(false);
+ const [definition,setDefinition]=useState(STARTER);const [showEditor,setShowEditor]=useState(false);
  const [notice,setNotice]=useState("");const [error,setError]=useState("");
  const canManage=canPerform(user,"pipelines.manage");const canExecute=canPerform(user,"pipelines.execute");
  const projects=useAsyncLoader(()=>workspace.activeOrganizationId?api.workspaceProjects({organization_id:workspace.activeOrganizationId}):Promise.resolve({items:[]}),[workspace.activeOrganizationId],{enabled:Boolean(workspace.activeOrganizationId),queryKey:"pipeline-projects"});
@@ -66,7 +72,7 @@ export default function PipelinesPage({user}){
  useEffect(()=>{if(pipelineId&&!pipelineRows.some(item=>item.pipeline_id===pipelineId))setPipelineId("");},[pipelines.data,pipelineId]);
  useEffect(()=>{if(selectedExecution?.execution_id&&!executionId)setExecutionId(selectedExecution.execution_id);},[executionRows,executionId,selectedExecution?.execution_id]);
  useEffect(()=>{setExecutionId("");},[pipelineId]);
- useEffect(()=>{const current=detail.data?.pipeline;const latest=revisions[0];if(current){setName(current.name);setDescription(current.description||"");if(latest?.definition)setDefinitionText(JSON.stringify(latest.definition,null,2));}},[detail.data]);
+ useEffect(()=>{const current=detail.data?.pipeline;const latest=revisions[0];if(current){setName(current.name);setDescription(current.description||"");if(latest?.definition)setDefinition(latest.definition);}},[detail.data]);
 
  async function act(operation,success){
   setError("");setNotice("");
@@ -74,8 +80,7 @@ export default function PipelinesPage({user}){
   catch(exc){setError(exc.message||"Pipeline operation failed.");return null;}
  }
  async function saveDefinition(event){
-  event.preventDefault();let definition;
-  try{definition=JSON.parse(definitionText);}catch{setError("Pipeline definition must be valid JSON.");return;}
+  event.preventDefault();
   if(!projectId||!labId){setError("Select an active Project and Lab before saving.");return;}
   if(!name.trim()){setError("Pipeline name is required.");return;}
   const result=await act(async()=>{
@@ -126,7 +131,7 @@ export default function PipelinesPage({user}){
    </div>
    {labs.error?<InlineNotice tone="danger">{labs.error.message}</InlineNotice>:null}{pipelines.error?<InlineNotice tone="danger">{pipelines.error.message}</InlineNotice>:null}
   </Section>
-  <Section title="Definitions and revisions" subtitle="Create or publish an immutable revision. The backend validates the step allow-list and resource scope." actions={canManage?<Button size="sm" onClick={()=>{if(pipelineId)editSelected();else{setName("Reference Wi-Fi pipeline");setDescription("");setDefinitionText(STARTER);setShowEditor(true);}}}>{pipelineId?"Edit / new revision":"Create pipeline"}</Button>:null}>
+  <Section title="Definitions and revisions" subtitle="Create or publish an immutable revision. The backend validates the step allow-list and resource scope." actions={canManage?<Button size="sm" onClick={()=>{if(pipelineId)editSelected();else{setName("Reference Wi-Fi pipeline");setDescription("");setDefinition(STARTER);setShowEditor(true);}}}>{pipelineId?"Edit / new revision":"Create pipeline"}</Button>:null}>
    {detail.loading&&!detail.data?<LoadingState label="Loading pipeline revisions…"/>:null}
    {selectedPipeline?<div className="module-intro"><div><strong>{selectedPipeline.name}</strong><p>{selectedPipeline.description||"No description"} · <code>{selectedPipeline.pipeline_id}</code></p></div><div className="content-intro-meta"><StatusBadge value={selectedPipeline.status}/></div></div>:<EmptyState emptyTitle="No pipeline selected" emptyMessage="Create a Project/Lab-scoped pipeline to define an approved sequence of operations."/>}
    {revisions.length?<DataTable caption="Immutable pipeline revisions" rows={revisions} rowKey={item=>item.revision_id} columns={[
@@ -139,7 +144,7 @@ export default function PipelinesPage({user}){
    {showEditor&&canManage?<form className="form-grid" onSubmit={saveDefinition}>
     <Field label="Pipeline name" required><input value={name} onChange={event=>setName(event.target.value)} maxLength={120} required/></Field>
     <Field label="Description"><input value={description} onChange={event=>setDescription(event.target.value)} maxLength={500}/></Field>
-    <Field label="Pipeline definition JSON" className="full-width" hint="The server validates step type, timeout, retries, confirmation and secret references."><textarea rows={15} value={definitionText} onChange={event=>setDefinitionText(event.target.value)} spellCheck="false" required/></Field>
+    <div className="full-width"><PipelineGraphEditor value={definition} onChange={setDefinition}/></div>
     <div className="full-width"><pre className="code-block">{GUIDANCE}</pre></div>
     <div className="form-actions"><Button type="submit" loading={mutation.loading} disabled={!projectId||!labId}>Save and publish revision</Button><Button type="button" variant="outline" onClick={()=>setShowEditor(false)}>Close</Button></div>
    </form>:null}
@@ -164,6 +169,7 @@ export default function PipelinesPage({user}){
    </div>
    <DataTable caption="Pipeline steps" rows={stepRows} rowKey={item=>item.step_key} columns={[
     {key:"ordinal",label:"#",render:item=>item.ordinal+1},{key:"step_key",label:"Step"},{key:"step_type",label:"Type"},
+    {key:"dependencies",label:"Depends on",render:item=>(item.definition?.depends_on||[]).map(dep=>dep.step_key+" · "+dep.outcome).join(", ")||"Independent"},
     {key:"status",label:"Status",render:item=><StatusBadge value={item.status}/>},
     {key:"attempt_count",label:"Attempts",render:item=>item.attempt_count+" / "+item.max_attempts},
     {key:"timeout_seconds",label:"Timeout",render:item=>item.timeout_seconds+" s"},

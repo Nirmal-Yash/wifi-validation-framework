@@ -128,10 +128,11 @@ class PipelineService:
             raise PipelineError(f"pipeline must contain between 1 and {cls.MAX_STEPS} steps")
         steps = []
         keys = set()
+        raw_dependencies = []
         validation_run_count = 0
         for ordinal, raw in enumerate(raw_steps):
             if not isinstance(raw, Mapping) or set(raw) - {
-                "key", "type", "name", "timeout_seconds", "max_attempts", "input",
+                "key", "type", "name", "timeout_seconds", "max_attempts", "input", "depends_on",
             }:
                 raise PipelineError(f"steps[{ordinal}] contains unsupported fields")
             key = cls._text(raw.get("key"), f"steps[{ordinal}].key", 64)
@@ -228,6 +229,62 @@ class PipelineService:
                 "key": key, "ordinal": ordinal, "type": step_type, "name": name,
                 "timeout_seconds": timeout, "max_attempts": retries, "input": inputs,
             })
+            raw_dependencies.append(("depends_on" in raw, raw.get("depends_on")))
+
+        # A missing dependency field preserves the historical sequential pipeline
+        # contract. An explicit [] makes a node a graph root. Dependencies are
+        # immutable revision data, not worker-side UI state.
+        known_keys = {step["key"] for step in steps}
+        for ordinal, (step, (has_dependencies, declared)) in enumerate(zip(steps, raw_dependencies)):
+            if not has_dependencies:
+                dependencies = [] if ordinal == 0 else [
+                    {"step_key": steps[ordinal - 1]["key"], "outcome": "SUCCESS"}
+                ]
+            else:
+                if not isinstance(declared, list) or len(declared) > cls.MAX_STEPS:
+                    raise PipelineError(f"steps[{ordinal}].depends_on must be an array of at most {cls.MAX_STEPS} entries")
+                dependencies = []
+                seen_dependencies = set()
+                for dependency_index, raw_dependency in enumerate(declared):
+                    prefix = f"steps[{ordinal}].depends_on[{dependency_index}]"
+                    if not isinstance(raw_dependency, Mapping) or set(raw_dependency) != {"step_key", "outcome"}:
+                        raise PipelineError(f"{prefix} must contain only step_key and outcome")
+                    parent_key = cls._text(raw_dependency.get("step_key"), f"{prefix}.step_key", 64)
+                    if parent_key not in known_keys:
+                        raise PipelineError(f"{prefix}.step_key references an unknown step")
+                    if parent_key == step["key"]:
+                        raise PipelineError(f"{prefix}.step_key cannot reference the same step")
+                    if parent_key in seen_dependencies:
+                        raise PipelineError(f"{prefix}.step_key is duplicated")
+                    seen_dependencies.add(parent_key)
+                    outcome = cls._text(raw_dependency.get("outcome"), f"{prefix}.outcome", 16).upper()
+                    if outcome not in {"SUCCESS", "FAILURE", "COMPLETED"}:
+                        raise PipelineError(f"{prefix}.outcome must be SUCCESS, FAILURE or COMPLETED")
+                    dependencies.append({"step_key": parent_key, "outcome": outcome})
+            step["depends_on"] = dependencies
+
+        # Reject cycles before a revision can be published. The graph is small
+        # (at most 32 nodes), so deterministic depth-first validation is enough.
+        dependencies_by_key = {
+            step["key"]: [item["step_key"] for item in step["depends_on"]]
+            for step in steps
+        }
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(node_key: str) -> None:
+            if node_key in visiting:
+                raise PipelineError("pipeline dependency graph contains a cycle")
+            if node_key in visited:
+                return
+            visiting.add(node_key)
+            for parent_key in dependencies_by_key[node_key]:
+                visit(parent_key)
+            visiting.remove(node_key)
+            visited.add(node_key)
+
+        for step in steps:
+            visit(step["key"])
         return {"steps": steps}
 
     @classmethod
@@ -438,7 +495,13 @@ class PipelineService:
         safe_inputs = self._safe_object(inputs or {}, "execution inputs", self.MAX_INPUT_BYTES)
         execution_id = "plex_" + secrets.token_hex(12)
         now = self._now()
-        steps = revision["definition"]["steps"]
+        steps = [dict(item) for item in revision["definition"]["steps"]]
+        # Revisions created before graph dependencies existed remain sequential.
+        for ordinal, step in enumerate(steps):
+            if "depends_on" not in step:
+                step["depends_on"] = [] if ordinal == 0 else [
+                    {"step_key": steps[ordinal - 1]["key"], "outcome": "SUCCESS"}
+                ]
         with self.database.transaction(immediate=True) as connection:
             connection.execute(
                 """INSERT INTO pipeline_executions(
@@ -643,24 +706,100 @@ class PipelineService:
                     (now, now, execution["execution_id"]),
                 )
                 return {"execution_id": execution["execution_id"], "status": "CANCELLED"}
-            pending = connection.execute(
-                """SELECT * FROM pipeline_steps WHERE execution_id=? AND (
-                     status='PENDING' OR (status='RETRY_WAIT' AND (next_attempt_at IS NULL OR next_attempt_at<=?))
-                   ) ORDER BY ordinal LIMIT 1""",
-                (execution["execution_id"], now),
-            ).fetchone()
+            terminal_states = {"SUCCEEDED", "FAILED", "SKIPPED", "CANCELLED"}
+            all_rows = connection.execute(
+                "SELECT * FROM pipeline_steps WHERE execution_id=? ORDER BY ordinal",
+                (execution["execution_id"],),
+            ).fetchall()
+            if any(item["status"] == "RECOVERY_REQUIRED" for item in all_rows):
+                connection.execute(
+                    """UPDATE pipeline_executions SET status='RECOVERY_REQUIRED',worker_id=NULL,
+                       lease_expires_at=NULL,heartbeat_at=?,completed_at=? WHERE execution_id=?""",
+                    (now, now, execution["execution_id"]),
+                )
+                return {"execution_id": execution["execution_id"], "status": "RECOVERY_REQUIRED"}
+            pending = None
+            # Resolve conditional branches and downstream skips before choosing
+            # the next ready node. A FAILURE branch remains executable after a
+            # failed parent; a SUCCESS branch is skipped, not the whole graph.
+            progress = True
+            while progress:
+                progress = False
+                # Refresh the rows after each persisted skip so the same
+                # PENDING branch is never reconsidered from a stale snapshot.
+                all_rows = connection.execute(
+                    "SELECT * FROM pipeline_steps WHERE execution_id=? ORDER BY ordinal",
+                    (execution["execution_id"],),
+                ).fetchall()
+                states_by_key = {item["step_key"]: item["status"] for item in all_rows}
+                for item in all_rows:
+                    if item["status"] not in {"PENDING", "RETRY_WAIT"}:
+                        continue
+                    definition = json.loads(item["definition_json"])
+                    dependencies = definition.get("depends_on", [])
+                    if "depends_on" not in definition and int(item["ordinal"]) > 0:
+                        dependencies = [{"step_key": all_rows[int(item["ordinal"]) - 1]["step_key"], "outcome": "SUCCESS"}]
+                    if not all(states_by_key.get(dep["step_key"]) in terminal_states for dep in dependencies):
+                        continue
+                    matches = all(
+                        (dep["outcome"] == "SUCCESS" and states_by_key.get(dep["step_key"]) == "SUCCEEDED")
+                        or (dep["outcome"] == "FAILURE" and states_by_key.get(dep["step_key"]) == "FAILED")
+                        or (dep["outcome"] == "COMPLETED" and states_by_key.get(dep["step_key"]) in terminal_states)
+                        for dep in dependencies
+                    )
+                    if not matches:
+                        connection.execute(
+                            """UPDATE pipeline_steps SET status='SKIPPED',completed_at=?,
+                               result_json=?,last_error='dependency condition was not satisfied'
+                               WHERE execution_id=? AND step_key=? AND status IN ('PENDING','RETRY_WAIT')""",
+                            (now, json.dumps({"skip_reason": "DEPENDENCY_CONDITION_NOT_MET",
+                                              "dependencies": dependencies}, sort_keys=True, separators=(",", ":")),
+                             execution["execution_id"], item["step_key"]),
+                        )
+                        item = dict(item)
+                        item["status"] = "SKIPPED"
+                        progress = True
+                        break
+
+            # Re-read after resolving skips so joins and multi-level branches
+            # observe the same committed status graph.
+            all_rows = connection.execute(
+                "SELECT * FROM pipeline_steps WHERE execution_id=? ORDER BY ordinal",
+                (execution["execution_id"],),
+            ).fetchall()
+            states_by_key = {item["step_key"]: item["status"] for item in all_rows}
+            for item in all_rows:
+                if item["status"] not in {"PENDING", "RETRY_WAIT"}:
+                    continue
+                if item["status"] == "RETRY_WAIT" and item["next_attempt_at"] and item["next_attempt_at"] > now:
+                    continue
+                definition = json.loads(item["definition_json"])
+                dependencies = definition.get("depends_on", [])
+                if "depends_on" not in definition and int(item["ordinal"]) > 0:
+                    dependencies = [{"step_key": all_rows[int(item["ordinal"]) - 1]["step_key"], "outcome": "SUCCESS"}]
+                if all(states_by_key.get(dep["step_key"]) in terminal_states for dep in dependencies) and all(
+                    (dep["outcome"] == "SUCCESS" and states_by_key.get(dep["step_key"]) == "SUCCEEDED")
+                    or (dep["outcome"] == "FAILURE" and states_by_key.get(dep["step_key"]) == "FAILED")
+                    or (dep["outcome"] == "COMPLETED" and states_by_key.get(dep["step_key"]) in terminal_states)
+                    for dep in dependencies
+                ):
+                    pending = item
+                    break
             if pending is None:
-                states = [item["status"] for item in connection.execute(
-                    "SELECT status FROM pipeline_steps WHERE execution_id=?", (execution["execution_id"],),
-                ).fetchall()]
-                if any(state == "RECOVERY_REQUIRED" for state in states):
-                    final = "RECOVERY_REQUIRED"
-                elif any(state == "FAILED" for state in states):
-                    final = "FAILED"
-                elif all(state in {"SUCCEEDED", "SKIPPED", "CANCELLED"} for state in states):
-                    final = "CANCELLED" if row["status"] == "CANCELLING" or "CANCELLED" in states else "SUCCEEDED"
-                else:
+                states = [item["status"] for item in all_rows]
+                if all(state in terminal_states for state in states):
+                    if any(state == "FAILED" for state in states):
+                        final = "FAILED"
+                    elif row["status"] == "CANCELLING" or "CANCELLED" in states:
+                        final = "CANCELLED"
+                    else:
+                        final = "SUCCEEDED"
+                elif row["status"] == "CANCELLING":
+                    final = "CANCELLING"
+                elif any(state == "RUNNING" for state in states):
                     final = "RUNNING"
+                else:
+                    final = "QUEUED"
                 complete = final in {"RECOVERY_REQUIRED", "FAILED", "CANCELLED", "SUCCEEDED"}
                 connection.execute(
                     """UPDATE pipeline_executions SET status=?,worker_id=NULL,lease_expires_at=NULL,
@@ -744,22 +883,20 @@ class PipelineService:
             )
             if outcome == "RECOVERY_REQUIRED":
                 exec_status, completed_at = "RECOVERY_REQUIRED", finished
-            elif outcome == "FAILED":
-                exec_status, completed_at = "FAILED", finished
-                connection.execute(
-                    """UPDATE pipeline_steps SET status='SKIPPED',completed_at=?,last_error='prior step failed'
-                       WHERE execution_id=? AND status IN ('PENDING','RETRY_WAIT')""",
-                    (finished, execution["execution_id"]),
-                )
             elif outcome == "RETRY_WAIT":
                 exec_status, completed_at = "QUEUED", None
             else:
-                remaining = connection.execute(
-                    "SELECT COUNT(*) AS count FROM pipeline_steps WHERE execution_id=? AND status NOT IN ('SUCCEEDED','SKIPPED','CANCELLED')",
+                states = [item["status"] for item in connection.execute(
+                    "SELECT status FROM pipeline_steps WHERE execution_id=?",
                     (execution["execution_id"],),
-                ).fetchone()["count"]
-                if remaining == 0:
-                    exec_status = "CANCELLED" if execution["status"] == "CANCELLING" else "SUCCEEDED"
+                ).fetchall()]
+                if all(state in {"SUCCEEDED", "FAILED", "SKIPPED", "CANCELLED"} for state in states):
+                    if any(state == "FAILED" for state in states):
+                        exec_status = "FAILED"
+                    elif execution["status"] == "CANCELLING" or "CANCELLED" in states:
+                        exec_status = "CANCELLED"
+                    else:
+                        exec_status = "SUCCEEDED"
                     completed_at = finished
                 else:
                     exec_status, completed_at = "RUNNING", None
