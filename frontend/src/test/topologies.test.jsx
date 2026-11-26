@@ -9,7 +9,12 @@ vi.mock("@/api",()=>({api:{
  workspaceProjects:vi.fn(),
  topologies:vi.fn(),
  topologyRevisions:vi.fn(),
+ topologyPresentationRevisions:vi.fn(),
  topologyNativeSources:vi.fn(),
+ topologyNativeArtifacts:vi.fn(),
+ nativeConfigurationSnapshots:vi.fn(),
+ nativeTopologyOperations:vi.fn(),
+ nativeTopologyReconciliations:vi.fn(),
  importPacketTracerTopology:vi.fn(),
  exportPacketTracerRevision:vi.fn(),
  validateTopology:vi.fn(),
@@ -40,7 +45,12 @@ describe("visual topology studio editing workflow",()=>{
   api.workspaceProjects.mockResolvedValue({items:[{project_id:"project-1",name:"Project One",slug:"project-one"}]});
   api.topologies.mockResolvedValue({items:[profile]});
   api.topologyRevisions.mockResolvedValue({items:[revision]});
+  api.topologyPresentationRevisions.mockResolvedValue({items:[]});
   api.topologyNativeSources.mockResolvedValue({items:[]});
+  api.topologyNativeArtifacts.mockResolvedValue({items:[]});
+  api.nativeConfigurationSnapshots.mockResolvedValue({items:[]});
+  api.nativeTopologyOperations.mockResolvedValue({items:[]});
+  api.nativeTopologyReconciliations.mockResolvedValue({items:[]});
   api.importPacketTracerTopology.mockResolvedValue({profile:{...profile,profile_id:"profile-pkt",name:"Imported PT"},revision:{...revision,revision_id:"revision-pkt",profile_id:"profile-pkt"},source:{source_id:"source-pkt",filename:"lab.pkt",sha256:"c".repeat(64)},report:{counts:{nodes:2,links:1},warnings:["Provider mapping is required"],unsupported_objects:[]}});
   api.validateTopology.mockResolvedValue({valid:true,node_count:2,link_count:1,content_sha256:"b".repeat(64)});
   api.createTopologyRevision.mockResolvedValue({...revision,revision_id:"revision-b",revision_number:2});
@@ -61,9 +71,15 @@ describe("visual topology studio editing workflow",()=>{
   </QueryClientProvider>);
  }
 
+ async function findInitialTopologyNode(){
+  // The page selects a profile and revision through dependent async queries.
+  // Give slower Linux desktop runners a bounded window for the initial canvas.
+  return screen.findByRole("button",{name:"Select node Router A"},{timeout:5000});
+ }
+
  it("imports a Packet Tracer project through the multipart UI and opens its canonical draft",async()=>{
   renderPage();
-  await screen.findByRole("button",{name:"Select node Router A"});
+  await findInitialTopologyNode();
   await waitFor(()=>expect(screen.getByLabelText("Project").disabled).toBe(false));
   expect(screen.getByLabelText("Project").value).toBe("project-1");
   fireEvent.change(screen.getByLabelText("Packet Tracer profile name"),{target:{value:"Imported PT lab"}});
@@ -87,7 +103,7 @@ describe("visual topology studio editing workflow",()=>{
 
  it("exposes accessible canvas editing controls and keyboard guidance",async()=>{
   renderPage();
-  expect(await screen.findByRole("button",{name:"Select node Router A"})).toBeTruthy();
+  expect(await findInitialTopologyNode()).toBeTruthy();
   expect(screen.getByRole("button",{name:"Undo"})).toBeTruthy();
   expect(screen.getByRole("button",{name:"Redo"})).toBeTruthy();
   expect(screen.getByRole("button",{name:"Copy"})).toBeTruthy();
@@ -97,7 +113,7 @@ describe("visual topology studio editing workflow",()=>{
 
  it("supports multi-selection, copy/paste and undo/redo keyboard commands",async()=>{
   renderPage();
-  await screen.findByRole("button",{name:"Select node Router A"});
+  await findInitialTopologyNode();
   fireEvent.keyDown(window,{key:"a",ctrlKey:true});
   expect(screen.getByRole("button",{name:"Select node Router A"}).getAttribute("aria-pressed")).toBe("true");
   expect(screen.getByRole("button",{name:"Select node Switch A"}).getAttribute("aria-pressed")).toBe("true");
@@ -124,7 +140,7 @@ describe("visual topology studio editing workflow",()=>{
 
  it("runs canonical backend validation from the visible editor action",async()=>{
   renderPage();
-  await screen.findByRole("button",{name:"Select node Router A"});
+  await findInitialTopologyNode();
   await screen.findByRole("button",{name:"Validate current draft"});
   fireEvent.click(screen.getByRole("button",{name:"Validate current draft"}));
   await waitFor(()=>expect(api.validateTopology).toHaveBeenCalledWith({
@@ -135,7 +151,7 @@ describe("visual topology studio editing workflow",()=>{
 
  it("validates before saving a new immutable revision",async()=>{
   renderPage();
-  await screen.findByRole("button",{name:"Select node Router A"});
+  await findInitialTopologyNode();
   fireEvent.click(await screen.findByRole("button",{name:"Validate and save new draft revision"}));
   await waitFor(()=>expect(api.validateTopology).toHaveBeenCalledTimes(1));
   await waitFor(()=>expect(api.createTopologyRevision).toHaveBeenCalledWith("profile-a",{definition}));
@@ -144,7 +160,7 @@ describe("visual topology studio editing workflow",()=>{
 
  it("keeps a Project-scoped topology viewer read-only on the canvas",async()=>{
   renderPage({username:"viewer",role:"VIEWER",permissions:["topology.read"]});
-  expect(await screen.findByRole("button",{name:"Select node Router A"})).toBeTruthy();
+  expect(await findInitialTopologyNode()).toBeTruthy();
   fireEvent.keyDown(window,{key:"a",ctrlKey:true});
   fireEvent.keyDown(window,{key:"v",ctrlKey:true});
   fireEvent.keyDown(window,{key:"Delete"});
@@ -158,7 +174,7 @@ describe("visual topology studio editing workflow",()=>{
 
  it("shows the categorized device palette and adds provider-independent logical nodes",async()=>{
   renderPage();
-  await screen.findByRole("button",{name:"Select node Router A"});
+  await findInitialTopologyNode();
   expect(screen.getByRole("button",{name:/Cisco IOS Router/})).toBeTruthy();
   expect(screen.getByRole("button",{name:/OpenWrt Access Point/})).toBeTruthy();
   expect(screen.getByRole("button",{name:/Open vSwitch/})).toBeTruthy();
@@ -172,14 +188,14 @@ describe("visual topology studio editing workflow",()=>{
 
  it("runs deterministic automatic layout from the canvas toolbar",async()=>{
   renderPage();
-  await screen.findByRole("button",{name:"Select node Router A"});
+  await findInitialTopologyNode();
   fireEvent.click(screen.getByRole("button",{name:"Auto layout"}));
   expect(await screen.findByText("Automatic layered layout applied to the local draft.")).toBeTruthy();
  });
 
  it("adds typed interfaces and connects selected ports without editing JSON",async()=>{
   renderPage();
-  const router=await screen.findByRole("button",{name:"Select node Router A"});
+  const router=await findInitialTopologyNode();
   fireEvent.keyDown(router,{key:"Enter"});
   const interfaceName=screen.getByLabelText("Interface name");
   fireEvent.change(interfaceName,{target:{value:"GigabitEthernet0/1"}});
@@ -203,7 +219,7 @@ describe("visual topology studio editing workflow",()=>{
 
  it("exposes the six bottom-console tabs and keeps console actions behind existing permissions",async()=>{
   renderPage();
-  await screen.findByRole("button",{name:"Select node Router A"});
+  await findInitialTopologyNode();
   const tabs=screen.getAllByRole("tab");
   expect(tabs.map(tab=>tab.textContent)).toEqual([
    "Validation","Provider operations","Logs","Apply history","Reconciliation","Warnings",
@@ -221,7 +237,7 @@ describe("visual topology studio editing workflow",()=>{
   api.devices.mockResolvedValue({items:[{device_id:"cml-controller",name:"CML controller",host:"192.168.1.20"}]});
   api.credentials.mockResolvedValue({items:[{credential_id:"vault-cml",credential_type:"API_TOKEN",status:"ACTIVE",label:"CML API"}]});
   renderPage();
-  await screen.findByRole("button",{name:"Select node Router A"});
+  await findInitialTopologyNode();
   fireEvent.change(screen.getByLabelText("Profile"),{target:{value:"profile-a"}});
   await waitFor(()=>expect(api.topologyProviderBinding).toHaveBeenCalledWith("lab-1"));
   fireEvent.click(screen.getByRole("tab",{name:"Provider operations"}));
@@ -236,7 +252,7 @@ describe("visual topology studio editing workflow",()=>{
 
  it("supports palette drag-and-drop onto the canvas",async()=>{
   renderPage();
-  await screen.findByRole("button",{name:"Select node Router A"});
+  await findInitialTopologyNode();
   const paletteItem=screen.getByRole("button",{name:/Linux Client/});
   const data={values:{},setData(type,value){this.values[type]=value;},getData(type){return this.values[type]||"";}};
   fireEvent.dragStart(paletteItem,{dataTransfer:data});
