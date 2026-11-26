@@ -265,6 +265,8 @@ describe("Network Intent v1.0 page",()=>{
   await waitFor(()=>expect(api.createNetworkAnsiblePlan).toHaveBeenCalledTimes(1));
   expect(api.createNetworkAnsiblePlan.mock.calls[0][2]).toEqual({
    credential_bindings:{"device-1":"credential-1"},
+   execution_mode:"CONFIGURATION",
+   native_operations:[],
   });
   expect(await screen.findByText("ansible-plan-1")).toBeTruthy();
   fireEvent.click(screen.getByRole("button",{name:"Approve hash-pinned plan"}));

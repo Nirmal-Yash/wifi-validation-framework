@@ -555,21 +555,7 @@ class AnsibleAutomationService:
             "all": {"children": {"netregress_targets": {"hosts": hosts}}},
         }
         playbook = {"plays": plays, "targets": targets}
-        return playbook, inventory        inventory = {
-            "all": {
-                "children": {
-                    "netregress_targets": {
-                        "hosts": hosts,
-                    },
-                },
-            },
-        }
-        playbook = {
-            "name": "NetRegress immutable Network Intent deployment",
-            "hosts": "netregress_targets",
-            "gather_facts": False,
-        }
-        return {"plays": plays, "targets": targets}, inventory
+        return playbook, inventory
 
     def _workspace(self, plan: dict, *, secrets_by_device: Mapping[str, tuple[dict, str]] | None = None) -> tuple[tempfile.TemporaryDirectory, Path, Path, dict[str, str]]:
         workspace = tempfile.TemporaryDirectory(prefix="netregress-ansible-")
