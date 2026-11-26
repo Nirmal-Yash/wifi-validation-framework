@@ -459,3 +459,29 @@ def test_native_codec_output_satisfies_the_shared_canonical_and_presentation_mod
     assert normalized["source_artifact_id"] == presentation["source_artifact_id"]
     assert len(encoded) > 0
     assert len(digest) == 64
+
+
+
+def test_gns3_codec_rejects_version_that_disagrees_with_file_revision():
+    root = json.loads(GNS3_SOURCE)
+    root["revision"] = 9
+    root["version"] = "2.1.99"
+    payload = json.dumps(root).encode()
+    with pytest.raises(NativeTopologyCodecError, match="does not match"):
+        GNS3TopologyCodec().decode(payload, "mismatched.gns3")
+
+
+def test_cml_codec_rejects_yaml_versions_outside_declared_0_1_family():
+    payload = CML_SOURCE.replace(b"version: 0.1.0", b"version: 0.2.0")
+    with pytest.raises(NativeTopologyCodecError, match="0.1.x"):
+        CMLTopologyCodec().decode(payload, "future.yaml")
+
+
+def test_legacy_virl_codec_rejects_unsupported_schema_version_and_node_types():
+    unsupported_version = VIRL_SOURCE.replace(b'schemaVersion="0.95"', b'schemaVersion="1.0"')
+    with pytest.raises(NativeTopologyCodecError, match="schema version"):
+        CMLTopologyCodec().decode(unsupported_version, "future.virl")
+
+    unsupported_node = VIRL_SOURCE.replace(b'type="SIMPLE"', b'type="COMPLEX"', 1)
+    with pytest.raises(ValueError, match="SIMPLE-node subset"):
+        CMLTopologyCodec().decode(unsupported_node, "unsupported-node.virl")

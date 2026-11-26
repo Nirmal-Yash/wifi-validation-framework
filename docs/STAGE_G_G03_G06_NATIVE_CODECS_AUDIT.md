@@ -103,3 +103,16 @@ tests/test_native_topology_codecs.py covers deterministic detection; GNS3/CML/VI
 - Backend job included strict source security audit, API security boundary tests, the full authentication/dashboard/Phase B–I correctness suite and repeated Linux locking/process/recovery contracts.
 - NetRegress Linux desktop package matrix: [45825419789](https://github.com/Nirmal-Yash/wifi-validation-framework/actions/runs/45825419789) was still running at the time this audit was updated; package artifacts are not claimed complete here.
 - This CI result does not prove opening exported projects in licensed GNS3, CML/VM Maestro or EVE-NG desktop/controller versions. Those remain external acceptance.
+
+
+
+## 10. Version-boundary hardening
+
+The codec suite now validates each embedded format version against its declared support family before import or export:
+
+- GNS3 revisions 7/8/9 must agree with version families 2.0/2.1/2.2; an explicit mismatched version is rejected.
+- CML YAML accepts only schema versions in the 0.1.x family.
+- Legacy VIRL accepts schemaVersion 0.95 and the documented SIMPLE-node subset only.
+- EVE-NG accepts only .unl versions 1 and 2.
+
+Negative fixtures cover the GNS3 revision/version mismatch, CML YAML out-of-family version, and unsupported VIRL schema/node type. This narrows the import surface to the codec's advertised support matrix; it does not expand the originating-application reopen or external-asset acceptance claim.

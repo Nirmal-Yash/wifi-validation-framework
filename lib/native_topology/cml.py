@@ -16,6 +16,10 @@ from .helpers import (
 )
 
 
+_CML_YAML_VERSION = re.compile(r"^0\\.1\\.\\d+$")
+_VIRL_SCHEMA_VERSION = "0.95"
+
+
 class CMLTopologyCodec:
     format_id = "CML_LAB"
     codec_name = "cml-yaml-virl"
@@ -28,10 +32,16 @@ class CMLTopologyCodec:
         suffix = filename.lower()
         if suffix.endswith(".virl"):
             root = parse_xml(source, expected_root="topology")
-            return "cisco.com/VIRL" in str(root.tag) or root.attrib.get("schemaVersion") is not None
+            return root.attrib.get("schemaVersion") == _VIRL_SCHEMA_VERSION
         if suffix.endswith((".yaml", ".yml")):
             root = parse_yaml(source)
-            return isinstance(root.get("lab"), dict) and isinstance(root.get("nodes"), list) and isinstance(root.get("links"), list)
+            lab = root.get("lab")
+            version = str(lab.get("version", "")) if isinstance(lab, dict) else ""
+            return (
+                _CML_YAML_VERSION.fullmatch(version) is not None
+                and isinstance(root.get("nodes"), list)
+                and isinstance(root.get("links"), list)
+            )
         return False
 
     @staticmethod
@@ -57,8 +67,10 @@ class CMLTopologyCodec:
         if not isinstance(lab, dict):
             raise ValueError("CML YAML lab metadata is missing")
         schema_version = str(lab.get("version", ""))
-        if not schema_version or len(schema_version) > 32:
-            raise ValueError("CML lab YAML schema version is missing or unsupported")
+        if not _CML_YAML_VERSION.fullmatch(schema_version):
+            raise NativeTopologyCodecError(
+                "CML lab YAML schema version is outside the supported 0.1.x family"
+            )
         raw_nodes = root.get("nodes")
         raw_links = root.get("links")
         if not isinstance(raw_nodes, list) or len(raw_nodes) > 128:
@@ -242,7 +254,11 @@ class CMLTopologyCodec:
 
     def _decode_virl(self, source: bytes, filename: str) -> DecodedNativeTopology:
         root = parse_xml(source, expected_root="topology")
-        version = str(root.attrib.get("schemaVersion") or "VIRL")
+        version = str(root.attrib.get("schemaVersion") or "")
+        if version != _VIRL_SCHEMA_VERSION:
+            raise NativeTopologyCodecError(
+                "legacy VIRL schema version is not supported; expected 0.95"
+            )
         native_nodes = [item for item in list(root) if local_name(item.tag) == "node"]
         if not native_nodes or len(native_nodes) > 128:
             raise ValueError("legacy VIRL topology must contain 1 to 128 top-level nodes")
@@ -250,6 +266,10 @@ class CMLTopologyCodec:
         positions = {}
         interfaces = {}
         for index, node in enumerate(native_nodes, start=1):
+            if node.attrib.get("type") != "SIMPLE":
+                raise ValueError(
+                    f"legacy VIRL node[{index}] is outside the supported SIMPLE-node subset"
+                )
             name = text(node.attrib.get("name"), f"VIRL node[{index}].name", maximum=120)
             if name in positions:
                 raise ValueError("legacy VIRL node names must be unique")
@@ -421,7 +441,13 @@ class CMLTopologyCodec:
 
     def _encode_virl(self, topology_definition, presentation, original_source, filename):
         root = parse_xml(original_source, expected_root="topology")
+        if root.attrib.get("schemaVersion") != _VIRL_SCHEMA_VERSION:
+            raise NativeTopologyCodecError("legacy VIRL schema version is not supported")
         nodes = [item for item in list(root) if local_name(item.tag) == "node"]
+        if any(item.attrib.get("type") != "SIMPLE" for item in nodes):
+            raise NativeTopologyCodecError(
+                "legacy VIRL export is limited to the supported SIMPLE-node subset"
+            )
         connections = [item for item in list(root) if local_name(item.tag) == "connection"]
         native_ids = {str(item.attrib.get("name")) for item in nodes}
         link_ids = {str(index) for index in range(len(connections))}

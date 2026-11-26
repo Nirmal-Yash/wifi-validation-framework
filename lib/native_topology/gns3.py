@@ -7,6 +7,7 @@ supported node placement/label subset.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from .contracts import DecodedNativeTopology, EncodedNativeTopology, NativeTopologyCodecError
@@ -27,6 +28,22 @@ class GNS3TopologyCodec:
     supported_versions = ("2.0", "2.1", "2.2")
     scope = "GNS3 2.0–2.2 project JSON; placement/label edit subset"
 
+    @staticmethod
+    def _supported_version(root: dict[str, Any]) -> str:
+        revision = root.get("revision")
+        family = _REVISION_VERSIONS.get(revision)
+        if family is None:
+            raise NativeTopologyCodecError("GNS3 project file revision is unsupported")
+        raw_version = root.get("version")
+        version = family if raw_version in (None, "") else text(
+            raw_version, "GNS3 project version", maximum=32
+        )
+        if not re.fullmatch(re.escape(family) + r"(?:\\.\\d+)?", version):
+            raise NativeTopologyCodecError(
+                "GNS3 project version does not match its declared file revision"
+            )
+        return version
+
     def detect(self, source: bytes, filename: str) -> bool:
         if not filename.lower().endswith(".gns3"):
             return False
@@ -34,7 +51,7 @@ class GNS3TopologyCodec:
         return (
             root.get("type") == "topology"
             and isinstance(root.get("topology"), dict)
-            and root.get("revision") in _REVISION_VERSIONS
+            and self._supported_version(root) is not None
         )
 
     @staticmethod
@@ -56,9 +73,9 @@ class GNS3TopologyCodec:
     def decode(self, source: bytes, filename: str) -> DecodedNativeTopology:
         root = parse_json(source)
         revision = root.get("revision")
-        if revision not in _REVISION_VERSIONS or root.get("type") != "topology":
+        if root.get("type") != "topology":
             raise NativeTopologyCodecError("GNS3 project file revision/type is unsupported")
-        version = str(root.get("version") or _REVISION_VERSIONS[revision])
+        version = self._supported_version(root)
         topology = root.get("topology")
         if not isinstance(topology, dict):
             raise ValueError("GNS3 topology must be an object")
@@ -234,9 +251,9 @@ class GNS3TopologyCodec:
     def encode(self, topology_definition, presentation, *, original_source, filename):
         root = parse_json(original_source)
         revision = root.get("revision")
-        version = str(root.get("version") or _REVISION_VERSIONS.get(revision, ""))
-        if revision not in _REVISION_VERSIONS or root.get("type") != "topology":
+        if root.get("type") != "topology":
             raise NativeTopologyCodecError("GNS3 source version is not supported for export")
+        version = self._supported_version(root)
         topology = root["topology"]
         nodes = require_list(topology.get("nodes"), "GNS3 topology.nodes", 128)
         links = require_list(topology.get("links"), "GNS3 topology.links", 512)
