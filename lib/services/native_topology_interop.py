@@ -20,9 +20,9 @@ from .topology_source_artifacts import (
     TopologySourceArtifactService,
 )
 from .topology_studio import TopologyStudioError, TopologyStudioNotFound, TopologyStudioService
-from .native_topology.contracts import EncodedNativeTopology, NativeTopologyCodecError
-from .native_topology.helpers import ensure_source
-from .native_topology.registry import NativeTopologyCodecRegistry, default_registry
+from lib.native_topology.contracts import EncodedNativeTopology, NativeTopologyCodecError
+from lib.native_topology.helpers import ensure_source
+from lib.native_topology.registry import NativeTopologyCodecRegistry, default_registry
 
 
 class NativeTopologyInteropError(ValueError):
