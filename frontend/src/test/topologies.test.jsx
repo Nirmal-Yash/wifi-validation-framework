@@ -119,6 +119,7 @@ describe("visual topology studio editing workflow",()=>{
   }]});
   renderPage();
   const reconcileButton=await screen.findByRole("button",{name:"Save reconciliation snapshot"});
+  await waitFor(()=>expect(reconcileButton).toBeEnabled(),{timeout:5000});
   fireEvent.click(reconcileButton);
   await waitFor(()=>expect(api.reconcileNativeTopology).toHaveBeenCalledWith("profile-a",{
    topology_revision_id:"revision-a",
