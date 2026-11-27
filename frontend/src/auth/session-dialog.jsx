@@ -12,7 +12,7 @@ export default function SessionExpiryDialog(){
    <div className="session-dialog-icon"><Clock3 size={20}/></div>
    <DialogHeader><DialogTitle>Still working?</DialogTitle><DialogDescription>Your NetRegress session will end soon because there has been no activity. Continue to keep working, or sign out now.</DialogDescription></DialogHeader>
    <div className="session-countdown"><span>Automatic sign-out in</span><strong>{String(minutes).padStart(2,"0")}:{String(seconds).padStart(2,"0")}</strong></div>
-   <div className="session-security-note"><ShieldCheck size={15}/> Your login is held in an HttpOnly session cookie. No session token is stored in browser storage.</div>
+   <div className="session-security-note"><ShieldCheck size={15}/> Your login uses a server-validated session. Desktop credentials stay in memory; browser sessions use an HttpOnly cookie.</div>
    <DialogFooter><Button variant="ghost" onClick={logout}><LogOut size={14}/>Sign out</Button><Button onClick={()=>{
     const result=continueSession();
     if(result&&typeof result.catch==="function")result.catch(()=>{});

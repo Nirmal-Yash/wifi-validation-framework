@@ -271,16 +271,20 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         import ipaddress
         authorization=request.headers.get("Authorization","").strip()
         desktop_bearer_authenticated=False
-        if authorization:
+        origin=(request.headers.get("Origin") or "").strip()
+        # Authorization is shared by multiple supported API contracts. Only
+        # the exact Tauri origin activates the desktop session transport;
+        # other clients continue through their existing cookie or endpoint-
+        # specific bearer authorization paths.
+        if authorization and origin=="tauri://localhost":
             scheme,separator,token=authorization.partition(" ")
-            origin=(request.headers.get("Origin") or "").strip()
             try:
                 remote=ipaddress.ip_address(request.remote_addr or "")
             except ValueError:
                 remote=None
             if (
                 scheme.lower()!="bearer" or not separator or not token
-                or origin!="tauri://localhost" or remote is None or not remote.is_loopback
+                or remote is None or not remote.is_loopback
             ):
                 return error(
                     "UNAUTHENTICATED",

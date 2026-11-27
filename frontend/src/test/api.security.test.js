@@ -130,3 +130,42 @@ describe("Runner API session and CSRF client",()=>{
   await expect(api.health()).rejects.toMatchObject({status:502,code:"INVALID_API_RESPONSE"});
  });
 });
+
+
+ it("retains the Tauri login session in memory through identity and first workspace requests",async()=>{
+  vi.resetModules();
+  const previousTauri=window.__TAURI__;
+  window.__TAURI__={core:{invoke:vi.fn().mockResolvedValue("http://127.0.0.1:43210")}};
+  const fetchMock=vi.fn()
+   .mockResolvedValueOnce(success({
+    session_id:"opaque-desktop-test-session",
+    csrf_token:"unused-for-desktop",
+    username:"owner",
+    role:"OWNER",
+   }))
+   .mockResolvedValueOnce(success({username:"owner",role:"OWNER",projects:["*"]}))
+   .mockResolvedValueOnce(success({items:[]}));
+  vi.stubGlobal("fetch",fetchMock);
+  try{
+   const desktopApi=await import("../api");
+   await desktopApi.api.login("owner","local-test-password");
+   const identity=await desktopApi.api.me();
+   const organizations=await desktopApi.api.workspaceOrganizations();
+
+   expect(identity.username).toBe("owner");
+   expect(organizations.items).toEqual([]);
+   expect(fetchMock).toHaveBeenCalledTimes(3);
+   expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:43210/api/v1/auth/login");
+   expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined();
+   expect(fetchMock.mock.calls[1][0]).toBe("http://127.0.0.1:43210/api/v1/auth/me");
+   expect(fetchMock.mock.calls[1][1].headers.Authorization).toBe("Bearer opaque-desktop-test-session");
+   expect(fetchMock.mock.calls[2][0]).toBe("http://127.0.0.1:43210/api/v1/workspace/organizations");
+   expect(fetchMock.mock.calls[2][1].headers.Authorization).toBe("Bearer opaque-desktop-test-session");
+   expect(window.localStorage.getItem("opaque-desktop-test-session")).toBeNull();
+   desktopApi.clearDesktopSession();
+  }finally{
+   if(previousTauri===undefined)delete window.__TAURI__;
+   else window.__TAURI__=previousTauri;
+  }
+ });
+

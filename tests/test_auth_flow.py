@@ -272,6 +272,13 @@ def test_tauri_desktop_bearer_session_works_without_cookies_and_is_revocable(tmp
     assert "session_id" not in restored.get_json()["data"]
     assert "Set-Cookie" not in restored.headers
 
+    first_workspace_request = desktop.get(
+        "/api/v1/workspace/organizations",
+        headers=desktop_headers,
+    )
+    assert first_workspace_request.status_code == 200, first_workspace_request.get_json()
+    assert "Set-Cookie" not in first_workspace_request.headers
+
     # A route that creates a synchronizer token must still not serialize the
     # request-local bearer session into a Flask cookie.
     csrf_probe = desktop.get("/api/v1/auth/csrf", headers=desktop_headers)

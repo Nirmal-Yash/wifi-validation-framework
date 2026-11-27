@@ -46,7 +46,7 @@ export default function LoginPage({onLogin,onBootstrap,setupRequired=false,notic
      {error?<InlineNotice tone="danger">{error.message||"Authentication failed."}</InlineNotice>:null}
      <Button className="login-submit" type="submit" loading={loading} disabled={!username.trim()||!password||(setupRequired&&(password.length<12||password!==confirmPassword||!onBootstrap))}>{setupRequired?"Create Owner account":"Sign in securely"} <LockKeyhole size={15}/></Button>
     </form>
-    <div className="login-security"><ShieldCheck size={15}/><span>Protected by an HttpOnly session cookie, CSRF validation and server-enforced role permissions.</span></div>
+    <div className="login-security"><ShieldCheck size={15}/><span>Protected by a server-validated session, secure transport controls and server-enforced role permissions.</span></div>
     <p className="login-setup-help">{setupRequired?"The Owner account is stored in this local workspace. Your password is never included in the app bundle.":"Use your assigned local Runner account. Contact your workspace Owner if access is unavailable."}</p>
    </div>
   </section>
