@@ -6,8 +6,9 @@ import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 vi.mock("@/api",()=>({
  api:{me:vi.fn(),login:vi.fn(),logout:vi.fn(),activity:vi.fn().mockResolvedValue({active:true})},
  clearCsrfToken:vi.fn(),
+ clearDesktopSession:vi.fn(),
 }));
-import {api,clearCsrfToken} from "@/api";
+import {api,clearCsrfToken,clearDesktopSession} from "@/api";
 import {SessionProvider,useSession} from "@/auth/session-provider";
 
 const profile={username:"owner",role:"OWNER",projects:["*"]};
@@ -41,6 +42,7 @@ describe("cross-tab secure session lifecycle",()=>{
   await act(async()=>{channels[0].send({type:"logout"});});
   expect(await screen.findByText("anonymous:none:normal")).toBeTruthy();
   expect(clearCsrfToken).toHaveBeenCalled();
+  expect(clearDesktopSession).toHaveBeenCalled();
   expect(api.logout).not.toHaveBeenCalled();
   client.clear();
  });
