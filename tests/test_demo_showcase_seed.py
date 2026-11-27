@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from scripts.seed_demo_showcase import RunnerAPIError, RunnerClient, validate_loopback_api_base
+from scripts.seed_demo_showcase import RunnerAPIError, RunnerClient, topology_profile_counts, validate_loopback_api_base
 
 
 class FakeHeaderCollection:
@@ -60,3 +60,44 @@ def test_runner_client_forwards_secure_cookie_only_to_loopback(monkeypatch):
     assert fake.request_call["headers"]["Idempotency-Key"]
     assert "Secure" not in fake.request_call["headers"]["Cookie"]
     assert "SameSite" not in fake.request_call["headers"]["Cookie"]
+
+
+class FakeTopologyRevisionClient:
+    def __init__(self, revisions):
+        self.revisions = revisions
+
+    def get_items(self, path):
+        assert path == "topologies/profile-1/revisions"
+        return self.revisions
+
+
+def test_demo_seeder_verifies_existing_profile_has_real_nodes_and_links():
+    client = FakeTopologyRevisionClient([{
+        "revision_number": 2,
+        "definition": {"nodes": [{"id": "r1"}, {"id": "sw1"}], "links": [{"id": "uplink"}]},
+    }])
+    counts = topology_profile_counts(client, {"profile_id": "profile-1", "name": "Branch demo"})
+    assert counts == {"nodes": 2, "links": 1, "revision_number": 2}
+
+
+def test_demo_seeder_refuses_to_reuse_an_empty_topology_profile():
+    client = FakeTopologyRevisionClient([{
+        "revision_number": 1,
+        "definition": {"nodes": [], "links": []},
+    }])
+    try:
+        topology_profile_counts(client, {"profile_id": "profile-1", "name": "Empty demo"})
+    except RunnerAPIError as exc:
+        assert "empty latest revision" in str(exc)
+    else:
+        raise AssertionError("empty topology profile was reported as a successful demo import")
+
+
+def test_demo_seeder_refuses_a_profile_without_any_revision():
+    client = FakeTopologyRevisionClient([])
+    try:
+        topology_profile_counts(client, {"profile_id": "profile-1", "name": "Missing revision"})
+    except RunnerAPIError as exc:
+        assert "without a revision" in str(exc)
+    else:
+        raise AssertionError("topology profile without a revision was reused")

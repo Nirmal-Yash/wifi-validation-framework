@@ -1,0 +1,18 @@
+---
+# Documentation-only placeholders. Replace only with approved lab endpoints.
+# 192.0.2.0/24 is TEST-NET-1 and is not a real routable lab subnet.
+all:
+  children:
+    linux_hosts:
+      hosts:
+        branch_linux_01:
+          ansible_host: 192.0.2.10
+          ansible_user: REPLACE_WITH_APPROVED_LAB_USER
+          ansible_connection: ssh
+    ios_routers:
+      hosts:
+        branch_edge_01:
+          ansible_host: 192.0.2.20
+          ansible_user: REPLACE_WITH_APPROVED_LAB_USER
+          ansible_connection: ansible.netcommon.network_cli
+          ansible_network_os: cisco.ios.ios

@@ -511,11 +511,22 @@ class RunnerDoctor:
                     add("release:manifest", "PASS", "source-bound release manifest matches the current checkout")
                 else:
                     mismatches = ", ".join(manifest_result.get("mismatches", ()))
-                    add("release:manifest", "FAIL", "release manifest does not match the current checkout" + (f": {mismatches}" if mismatches else ""))
+                    add(
+                        "release:manifest",
+                        "FAIL",
+                        "source-bound release manifest is stale; regenerate it after updating the checkout "
+                        "with `python scripts/netregress_release.py manifest`"
+                        + (f" (mismatches: {mismatches})" if mismatches else ""),
+                    )
             except Exception as exc:
                 add("release:manifest", "FAIL", f"release manifest could not be verified: {type(exc).__name__}")
         else:
-            add("release:manifest", "NOT_CHECKED", "no generated source-bound release manifest is present")
+            add(
+                "release:manifest",
+                "NOT_CHECKED",
+                "no generated source-bound release manifest is present; generate it with "
+                "`python scripts/netregress_release.py manifest` after updating the checkout",
+            )
 
         failures = sum(check.status == "FAIL" for check in checks)
         warnings = sum(check.status == "WARNING" for check in checks)

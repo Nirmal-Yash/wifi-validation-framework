@@ -1,0 +1,14 @@
+---
+- name: Read-only Cisco IOS version collection
+  hosts: ios_routers
+  gather_facts: false
+  tasks:
+    - name: Query device software version without changing configuration
+      cisco.ios.ios_command:
+        commands:
+          - show version
+      register: ios_version
+
+    - name: Display collected version output
+      ansible.builtin.debug:
+        var: ios_version.stdout_lines

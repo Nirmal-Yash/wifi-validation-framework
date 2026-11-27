@@ -79,6 +79,26 @@ def test_doctor_is_read_only_and_reports_unchecked_conditions(tmp_path, monkeypa
     assert not (tmp_path / "results").exists()
 
 
+
+
+def test_doctor_explains_how_to_refresh_a_stale_source_manifest(tmp_path, monkeypatch):
+    manifest = tmp_path / "results" / "release-manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        ReleaseManifestService,
+        "verify_manifest",
+        lambda self, source: {"verified": False, "mismatches": ["source", "files", "tracked_file_count"]},
+    )
+
+    report = RunnerDoctor(tmp_path).run()
+    check = next(item for item in report.checks if item.check_id == "release:manifest")
+
+    assert check.status == "FAIL"
+    assert "python scripts/netregress_release.py manifest" in check.message
+    assert "source, files, tracked_file_count" in check.message
+
+
 def test_doctor_uses_private_first_run_auth_files_without_exposing_them(tmp_path, monkeypatch):
     local = tmp_path / ".local"
     local.mkdir(mode=0o700)

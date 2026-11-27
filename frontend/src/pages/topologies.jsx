@@ -66,6 +66,61 @@ const NODE_TYPES=["ROUTER","SWITCH","ACCESS_POINT","CLIENT","MONITOR","CLOUD","O
 const emptyDefinition=()=>({nodes:[],links:[]});
 const localId=prefix=>prefix+"-"+(globalThis.crypto?.randomUUID?globalThis.crypto.randomUUID().slice(0,12):Math.random().toString(36).slice(2,14));
 
+const DEMO_TOPOLOGY_TEMPLATE={
+ nodes:[
+  {id:"demo-edge",name:"R1 · Branch edge",node_type:"ROUTER",template_id:"",vendor:"Cisco",operating_system:"IOS",image:"IOSv",x:140,y:310,properties:{role:"edge"},interfaces:[
+   {name:"GigabitEthernet0/0",adapter:0,port:0,mode:"ROUTED",ip_address:"192.0.2.1/30"},
+   {name:"GigabitEthernet0/1",adapter:0,port:1,mode:"ROUTED"},
+  ]},
+  {id:"demo-switch",name:"SW1 · Access switch",node_type:"SWITCH",template_id:"",vendor:"Cisco",operating_system:"IOS",image:"IOSvL2",x:430,y:310,properties:{role:"access"},interfaces:[
+   {name:"GigabitEthernet0/1",adapter:0,port:1,mode:"TRUNK"},
+   {name:"GigabitEthernet0/2",adapter:0,port:2,mode:"ACCESS"},
+   {name:"GigabitEthernet0/3",adapter:0,port:3,mode:"ACCESS"},
+   {name:"GigabitEthernet0/4",adapter:0,port:4,mode:"ACCESS"},
+  ]},
+  {id:"demo-ap",name:"AP1 · Wi-Fi",node_type:"ACCESS_POINT",template_id:"",vendor:"OpenWrt",operating_system:"OpenWrt",image:"OpenWrt",x:720,y:150,properties:{role:"wireless"},interfaces:[
+   {name:"eth0",adapter:0,port:0,mode:"TRUNK"},
+   {name:"wlan0",adapter:0,port:1,mode:"WIRELESS"},
+  ]},
+  {id:"demo-client",name:"Client-01",node_type:"CLIENT",template_id:"",vendor:"Linux",operating_system:"Ubuntu",image:"Ubuntu Desktop",x:720,y:470,properties:{role:"wireless-client"},interfaces:[
+   {name:"wlan0",adapter:0,port:0,mode:"WIRELESS"},
+  ]},
+  {id:"demo-server",name:"SRV1 · Services",node_type:"OTHER",template_id:"",vendor:"Linux",operating_system:"Ubuntu Server",image:"Ubuntu Server",x:970,y:310,properties:{role:"service"},interfaces:[
+   {name:"eth0",adapter:0,port:0,mode:"ACCESS",ip_address:"192.0.2.10/24"},
+  ]},
+ ],
+ links:[
+  {id:"demo-link-edge-switch",source_node_id:"demo-edge",source_adapter:0,source_port:1,source_interface_name:"GigabitEthernet0/1",target_node_id:"demo-switch",target_adapter:0,target_port:1,target_interface_name:"GigabitEthernet0/1",link_type:"ETHERNET"},
+  {id:"demo-link-switch-ap",source_node_id:"demo-switch",source_adapter:0,source_port:2,source_interface_name:"GigabitEthernet0/2",target_node_id:"demo-ap",target_adapter:0,target_port:0,target_interface_name:"eth0",link_type:"ETHERNET"},
+  {id:"demo-link-switch-client",source_node_id:"demo-ap",source_adapter:0,source_port:1,source_interface_name:"wlan0",target_node_id:"demo-client",target_adapter:0,target_port:0,target_interface_name:"wlan0",link_type:"WIRELESS"},
+  {id:"demo-link-switch-server",source_node_id:"demo-switch",source_adapter:0,source_port:4,source_interface_name:"GigabitEthernet0/4",target_node_id:"demo-server",target_adapter:0,target_port:0,target_interface_name:"eth0",link_type:"ETHERNET"},
+ ],
+};
+function makeDemoTopologyDefinition(){
+ const source=JSON.parse(JSON.stringify(DEMO_TOPOLOGY_TEMPLATE));
+ const ids=new Map(source.nodes.map(node=>[node.id,localId("node")]));
+ return {
+  nodes:source.nodes.map(node=>({...node,id:ids.get(node.id)})),
+  links:source.links.map(link=>({...link,id:localId("link"),source_node_id:ids.get(link.source_node_id),target_node_id:ids.get(link.target_node_id)})),
+ };
+}
+function TopologyDemoDiagram({compact=false}){
+ return <div className={"topology-demo-diagram"+(compact?" is-compact":"")} role="img" aria-label="Illustrative branch office topology with an edge router, access switch, Wi-Fi access point, wireless client and services server">
+  <svg viewBox="0 0 1120 620" aria-hidden="true" focusable="false">
+   <g className="topology-demo-links">
+    <path d="M 205 300 H 350"/><path d="M 510 300 L 675 165"/><path d="M 752 215 V 405"/><path d="M 510 300 H 870"/>
+   </g>
+   <g className="topology-demo-nodes">
+    <g transform="translate(70 250)"><rect width="150" height="100" rx="14"/><text x="75" y="42" textAnchor="middle">R1 · Edge</text><text x="75" y="68" textAnchor="middle" className="sub">ROUTER</text></g>
+    <g transform="translate(350 250)"><rect width="160" height="100" rx="14"/><text x="80" y="42" textAnchor="middle">SW1 · Access</text><text x="80" y="68" textAnchor="middle" className="sub">SWITCH</text></g>
+    <g transform="translate(675 115)"><rect width="155" height="100" rx="14"/><text x="77" y="42" textAnchor="middle">AP1 · Wi-Fi</text><text x="77" y="68" textAnchor="middle" className="sub">ACCESS POINT</text></g>
+    <g transform="translate(675 405)"><rect width="155" height="100" rx="14"/><text x="77" y="42" textAnchor="middle">Client-01</text><text x="77" y="68" textAnchor="middle" className="sub">CLIENT</text></g>
+    <g transform="translate(870 250)"><rect width="190" height="100" rx="14"/><text x="95" y="42" textAnchor="middle">SRV1 · Services</text><text x="95" y="68" textAnchor="middle" className="sub">LINUX SERVER</text></g>
+   </g>
+  </svg>
+ </div>;
+}
+
 export default function TopologyStudioPage({user}){
  const workspace=useWorkspace();
  const projects=useAsyncLoader(()=>workspace.activeOrganizationId?api.workspaceProjects({organization_id:workspace.activeOrganizationId}):Promise.resolve({items:[]}),[workspace.activeOrganizationId],{enabled:Boolean(workspace.activeOrganizationId),queryKey:"topology-studio-projects"});
@@ -85,7 +140,7 @@ export default function TopologyStudioPage({user}){
  const [validation,setValidation]=useState(null);
  const [validationLoading,setValidationLoading]=useState(false);
  const [historyVersion,setHistoryVersion]=useState(0);
- const historyRef=useRef(null);
+ const historyRef=useRef(null),loadedRevisionProfileRef=useRef("");
  if(!historyRef.current)historyRef.current=createTopologyHistory(definition);
  const definitionRef=useRef(definition),canvasRef=useRef(null),dragSessionRef=useRef(null),clipboardRef=useRef(null);
  const [dragging,setDragging]=useState("");
@@ -138,7 +193,7 @@ export default function TopologyStudioPage({user}){
  const mutation=useMutation();
  const projectRows=projects.data?.items||[];
  const profileRows=profiles.data?.items||[];
- const revisionRows=revisions.data?.items||[];
+ const revisionRows=(revisions.data?.items||[]).filter(item=>!profileId||item.profile_id===profileId);
  const presentationRevisionRows=presentationRevisions.data?.items||[];
  const nativeArtifactRows=(nativeArtifacts.data?.items||[]).filter(item=>["GNS3_PROJECT","CML_LAB","EVE_NG_UNL","CISCO_PACKET_TRACER_PKT"].includes(item.format_id));
  const nativeReconciliationSourceRows=nativeArtifactRows.filter(item=>item.topology_revision_id===revisionId);
@@ -212,13 +267,20 @@ export default function TopologyStudioPage({user}){
    setBindingForm(value=>({...value,credential_id:credentialRows[0]?.credential_id||""}));
  },[providerCredentials.data]);
  useEffect(()=>{
-  if(!revisionId&&revisionRows.length){
-   setRevisionId(revisionRows[0].revision_id);
-   resetEditorDefinition(revisionRows[0].definition||emptyDefinition());
-  }
- },[revisions.data,revisionId]);
+  if(!profileId){loadedRevisionProfileRef.current="";return;}
+  if(!revisions.data||revisions.loading||loadedRevisionProfileRef.current===profileId)return;
+  loadedRevisionProfileRef.current=profileId;
+  const first=revisionRows[0];
+  setRevisionId(first?.revision_id||"");
+  resetEditorDefinition(first?.definition||emptyDefinition());
+ },[profileId,revisions.data,revisions.loading]);
  useEffect(()=>{
-  if(!revisionId)return;
+  if(!revisionId){
+   const draft=createDefaultPresentation(definitionRef.current||emptyDefinition());
+   setPresentationDraft(draft);setPresentationDirty(false);
+   setViewport(fitPresentationViewport(resolveTopologyPresentation(definitionRef.current||emptyDefinition(),draft).nodes));
+   return;
+  }
   const matching=(presentationRevisions.data?.items||[]).filter(item=>item.topology_revision_id===revisionId&&item.presentation).sort((a,b)=>(b.revision_number||0)-(a.revision_number||0));
   const selected=matching[0]?.presentation||createDefaultPresentation(revisionRows.find(item=>item.revision_id===revisionId)?.definition||definitionRef.current);
   setPresentationDraft(selected);setPresentationDirty(false);
@@ -640,6 +702,36 @@ export default function TopologyStudioPage({user}){
    return null;
   }
  }
+ function loadDemoTopology(){
+  if(!canManage||!profileId)return;
+  const sample=makeDemoTopologyDefinition();
+  setEditorDefinition(sample);
+  const presentation=createDefaultPresentation(sample);
+  setPresentationDraft(presentation);setPresentationDirty(false);
+  setViewport(fitPresentationViewport(resolveTopologyPresentation(sample,presentation).nodes));
+  setNotice("Loaded a 5-node / 4-link sample into the local draft. It is not saved, provider-mapped or deployed; validate and save a revision when ready.");
+  appendSessionLog("INFO","Loaded the local five-node demonstration topology");
+ }
+ async function createDemoProfileAndLoad(){
+  if(!canManage||!projectId)return;
+  const stamp=new Date().toISOString().replace(/[-:TZ.]/g,"").slice(0,14);
+  const result=await runMutation(()=>api.createTopology({
+   project_id:projectId,name:"Topology Studio Demo "+stamp,
+   description:"Illustrative five-node branch office topology for canvas walkthroughs.",
+   scope_type:"PROJECT",scope_id:projectId,
+  }),"Sample topology profile created.");
+  if(!result?.profile_id)return;
+  loadedRevisionProfileRef.current=result.profile_id;
+  setProfileId(result.profile_id);setRevisionId("");
+  const sample=makeDemoTopologyDefinition();
+  resetEditorDefinition(sample);
+  const presentation=createDefaultPresentation(sample);
+  setPresentationDraft(presentation);setPresentationDirty(false);
+  setViewport(fitPresentationViewport(resolveTopologyPresentation(sample,presentation).nodes));
+  setShowProfileForm(false);
+  setNotice("Demo profile created with an unsaved 5-node / 4-link draft. Validate and save a revision to persist it.");
+  appendSessionLog("INFO","Created a demo profile and loaded the local sample topology");
+ }
  async function createProfile(event){
   event.preventDefault();
   const result=await runMutation(()=>api.createTopology({
@@ -910,12 +1002,12 @@ export default function TopologyStudioPage({user}){
  const selectedLinkProviderId=reconciliation?.logical_to_provider_links?.[selectedLink]||"Not mapped";
  if(projects.loading&&!projects.data)return <LoadingState label="Loading topology workspace…"/>;
  if(projects.error&&!projects.data)return <ErrorState error={projects.error} onRetry={projects.reload}/>;
- return <div className="page-stack">
+ return <div className={"page-stack topology-page"+(profileId?" topology-page--editor":" topology-page--onboarding")}>
   <div className="module-intro">
    <div className="module-intro-icon">⌘</div>
    <div><strong>Canonical topology studio</strong><p>Build a logical topology using stable node IDs and explicit adapter/port references. Editing and publishing are local data operations; they never provision GNS3 resources.</p></div>
   </div>
-  <Section title="Workspace scope" subtitle="Topology profiles are isolated by Project and optionally by Lab.">
+  <Section className="topology-scope-panel" title="Workspace scope" subtitle="Topology profiles are isolated by Project and optionally by Lab.">
    <div className="form-grid">
     <Field label="Project">
      <select value={projectId} onChange={event=>{const value=event.target.value;setProjectId(value);workspace.selectProject(value);setProfileId("");setRevisionId("");resetEditorDefinition(emptyDefinition());}} disabled={projects.loading}>
@@ -1133,7 +1225,7 @@ export default function TopologyStudioPage({user}){
      {key:"actions",label:"Action",render:item=>item.status==="DRAFT"&&selectedRevision?.status==="PUBLISHED"&&canPublish?<Button type="button" size="sm" variant="outline" onClick={()=>publishPresentationSnapshot(item.presentation_id)} loading={mutation.loading}>Publish</Button>:item.presentation?.viewport?<Button type="button" size="sm" variant="ghost" onClick={()=>restorePresentationViewport(item)}>Restore view</Button>:null}
     ]} emptyTitle="No presentation snapshots" emptyMessage="Capture a snapshot to persist canvas placement and viewport separately from the canonical network topology."/>
    </Section>
-   <Section title="Node palette" subtitle="Drag or select a logical device type. Provider templates and images are mapped separately after selecting a provider.">
+   <Section className="topology-palette-panel" title="Node palette" subtitle="Drag or select a logical device type. Provider templates and images are mapped separately after selecting a provider.">
     <div className="topology-palette-groups">
      {PALETTE_GROUPS.map(group=><div className="topology-palette-group" key={group}>
       <h3>{group}</h3><div className="topology-palette-items">
@@ -1147,7 +1239,12 @@ export default function TopologyStudioPage({user}){
     <p className="muted">Palette entries define logical intent only. Provider template IDs remain blank until a compatible template is selected.</p>
    </Section>
    <div className="topology-workbench-layout">
-   <Section title="Visual canvas" subtitle={isNativePresentation?"Native vendor layout · placement edits are presentation-only · no provider calls":"Drag nodes to position them. Pan by dragging empty canvas; zoom with the wheel or controls. Canvas editing does not issue provider calls."}>
+   <Section className="topology-canvas-section" title="Visual canvas" subtitle={isNativePresentation?"Native vendor layout · placement edits are presentation-only · no provider calls":"Drag nodes to position them. Pan by dragging empty canvas; zoom with the wheel or controls. Canvas editing does not issue provider calls."}>
+    <div className="topology-canvas-statusbar" role="status">
+     <div><span className="topology-canvas-status-label">Provider binding</span><StatusBadge value={!activeLabId?"NOT CONFIGURED":providerBinding.error||(providerBinding.loading&&!providerBinding.data)?"UNKNOWN":binding?"CONFIGURED":"NOT CONFIGURED"}/></div>
+     <span>{nodes.length} logical nodes · {links.length} links</span>
+     <span className="topology-canvas-status-note">Canvas design is local; provider health is unknown until observed.</span>
+    </div>
     <div className="topology-canvas-toolbar">
      <label className="topology-node-search"><span>Find node</span><input aria-label="Search topology nodes" value={nodeSearch} onChange={event=>setNodeSearch(event.target.value)} placeholder="Name, ID, type or template"/></label>
      <span className="topology-search-count" role="status">{nodes.filter(node=>!nodeSearch.trim()||[node.name,node.id,node.node_type,node.template_id].some(value=>String(value||"").toLowerCase().includes(nodeSearch.trim().toLowerCase()))).length} / {nodes.length} nodes</span>
@@ -1223,7 +1320,14 @@ export default function TopologyStudioPage({user}){
       })}
      </svg>
     </div>
-    {!nodes.length?<EmptyState title="Canvas is empty" message="Drag a palette item here or select one above. This adds logical intent only."/>:null}
+    {!nodes.length?<div className="topology-empty-canvas">
+     <TopologyDemoDiagram compact/>
+     <div className="topology-empty-canvas-copy">
+      <strong>Topology not configured yet</strong>
+      <p>This workspace has no logical nodes in the selected draft. The diagram is illustrative only; no provider templates, devices, controller state or execution evidence are implied.</p>
+      {canManage&&profileId?<Button type="button" onClick={loadDemoTopology}>Load sample topology into draft</Button>:<span className="muted">Topology editing is read-only for this account.</span>}
+     </div>
+    </div>:null}
     {selectedNodes.length>1?<div className="form-grid"><div className="context-caption">{selectedNodes.length} nodes selected · {canManage?"drag any selected node to move the group together.":"view-only selection."}</div>{canManage?<div className="form-actions"><Button type="button" variant="destructive" onClick={deleteSelectedTopology}>Delete selected nodes and attached links</Button></div>:null}</div>:null}
    </Section>
    <Section title="Property inspector" subtitle="Edit logical network intent, interfaces and links. Provider IDs and operational state are actual read-only observations.">
@@ -1322,7 +1426,7 @@ export default function TopologyStudioPage({user}){
    </Section>
    </div>
 
-   <Section title="Operational console" subtitle="Validation, provider operations, session logs, apply history, reconciliation and warnings for the current topology workspace.">
+   <Section className="topology-console-section" title="Operational console" subtitle="Validation, provider operations, session logs, apply history, reconciliation and warnings for the current topology workspace.">
     <div className="topology-console-tabs" role="tablist" aria-label="Topology operational console">
      {["validation","provider","logs","apply-history","reconciliation","warnings"].map(tab=><button key={tab} type="button" role="tab" aria-selected={consoleTab===tab} onClick={()=>setConsoleTab(tab)}>{({validation:"Validation",provider:"Provider operations",logs:"Logs","apply-history":"Apply history",reconciliation:"Reconciliation",warnings:"Warnings"})[tab]}</button>)}
     </div>
@@ -1472,6 +1576,29 @@ export default function TopologyStudioPage({user}){
       ||(link.target_interface_name&&!nodes.find(node=>node.id===link.target_node_id)?.interfaces?.some(item=>item.name===link.target_interface_name)))&&!(validation&&!validation.valid)?<p className="muted">No local topology warnings. Provider/controller health remains unknown until observed.</p>:null}
     </div>:null}
    </Section>
-  </>:<EmptyState title="Select or create a topology profile" message="Choose a Project and a profile to open the local topology canvas."/>}
+  </>:<Section className="topology-onboarding-panel" title="Your topology canvas is ready to start" subtitle="Import a supported native project to create its profile and draft automatically, or open a guided sample design.">
+    <div className="topology-onboarding-grid">
+     <div className="topology-onboarding-preview">
+      <TopologyDemoDiagram/>
+      <div className="topology-onboarding-legend"><StatusBadge value="NOT CONFIGURED"/><span>Illustrative design · 5 logical node types · 4 links</span></div>
+      <p className="muted">No vendor controller is bound. The preview does not represent running devices, available images or a deployed lab.</p>
+     </div>
+     <div className="topology-onboarding-actions">
+      <h3>Start with a topology file</h3>
+      <p>Choose a Project above. You do not need to create a profile first; importing the file creates a new profile and DRAFT revision for you.</p>
+      {canManage&&projectId?<form className="topology-onboarding-form" onSubmit={importNativeProject}>
+       <Field label="New topology profile name" required><input aria-label="First import profile name" value={nativeName} onChange={event=>setNativeName(event.target.value)} maxLength={120} required/></Field>
+       <Field label="Import scope"><select aria-label="First import scope" value={nativeScope} onChange={event=>setNativeScope(event.target.value)}><option value="PROJECT">Project</option><option value="LAB">Lab</option></select></Field>
+       {nativeScope==="LAB"?<Field label="Lab ID" required><input aria-label="First import Lab ID" value={nativeLabId} onChange={event=>setNativeLabId(event.target.value)} maxLength={128} required/></Field>:null}
+       <Field label="Native topology file" required><input aria-label="Native topology file" type="file" accept=".gns3,.yaml,.yml,.virl,.unl,.pkt,application/json,application/yaml,application/xml,text/xml,application/octet-stream" onChange={event=>setNativeFile(event.target.files?.[0]||null)} required/></Field>
+       <Button type="submit" loading={nativeBusy} disabled={!nativeFile||!nativeName.trim()||(nativeScope==="LAB"&&!nativeLabId.trim())}>Import file and open canvas</Button>
+       <p className="muted">Supported native inputs include GNS3 .gns3, CML .yaml/.yml/.virl, EVE-NG .unl and supported Cisco Packet Tracer .pkt files.</p>
+      </form>:<p className="muted">Native import requires topology.manage permission and a selected Project.</p>}
+      {canManage&&projectId?<div className="topology-onboarding-divider"><span>or</span></div>:null}
+      {canManage&&projectId?<Button type="button" variant="outline" onClick={createDemoProfileAndLoad} loading={mutation.loading}>Create sample profile and open canvas</Button>:null}
+      <p className="muted">Already ran the showcase seeder? Switch the workspace Organization to <strong>NetRegress Demo</strong>, then choose <strong>Network Engineering Showcase</strong>. The seeder creates a separate demo Organization and Project.</p>
+     </div>
+    </div>
+   </Section>}
  </div>;
 }

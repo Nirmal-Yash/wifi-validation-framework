@@ -1,0 +1,7 @@
+---
+- name: Read-only Ansible connectivity check for Linux lab hosts
+  hosts: linux_hosts
+  gather_facts: false
+  tasks:
+    - name: Confirm Ansible can authenticate and invoke its ping module
+      ansible.builtin.ping:

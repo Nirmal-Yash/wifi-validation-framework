@@ -89,7 +89,16 @@ python scripts/netregress_doctor.py
 
 Open the local Vite URL printed by the launcher (default http://127.0.0.1:5173). Press Ctrl+C to stop both frontend and API processes. See docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md for upgrades, backup/restore, release metadata, certification evidence and recovery procedures.
 
-For a ready-to-import sample workspace, see [examples/demo-showcase/README.md](examples/demo-showcase/README.md). It includes GNS3, CML and EVE-NG fixtures, non-secret Configuration Profiles examples, and a loopback-only demo seeder.
+For a ready-to-import sample workspace, see [examples/demo-showcase/README.md](examples/demo-showcase/README.md). It includes GNS3, CML and EVE-NG fixtures, a local Packet Tracer .pkt generator, read-only Ansible examples, non-secret Configuration Profiles examples, and a loopback-only demo seeder.
+
+After pulling updates, refresh the source-bound release manifest before running the full doctor. The manifest is a local generated artifact and is not committed:
+
+```bash
+python scripts/netregress_release.py manifest
+python scripts/netregress_doctor.py
+```
+
+The manifest command may return non-zero when the source audit reports that the checkout is not release-ready, even though it has written the refreshed manifest. Inspect its readiness fields; do not bypass the doctor check. Run `python scripts/netregress_doctor.py --include-lab-tools --check-dashboard` while the dashboard is running to opt into protected-lab prerequisites and runtime checks.
 
 Preflight without creating directories or changing the database:
 

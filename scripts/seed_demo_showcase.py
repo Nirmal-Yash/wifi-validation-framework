@@ -248,14 +248,49 @@ def seed_configuration(client: RunnerClient, project: dict[str, Any], lab: dict[
     return profile
 
 
+
+def topology_profile_counts(client: RunnerClient, profile: dict[str, Any]) -> dict[str, int]:
+    """Verify a demo profile really has a non-empty canonical topology revision."""
+    profile_id = profile.get("profile_id")
+    if not isinstance(profile_id, str) or not profile_id:
+        raise RunnerAPIError("A demo topology profile response did not include its profile ID.")
+    revisions = client.get_items(f"topologies/{profile_id}/revisions")
+    if not revisions:
+        raise RunnerAPIError(
+            f"Demo topology profile {profile.get('name')!r} exists without a revision. "
+            "It is not a demonstrable topology; inspect it in Topology Studio and import a native fixture."
+        )
+    latest = max(revisions, key=lambda item: int(item.get("revision_number") or 0))
+    definition = latest.get("definition")
+    if not isinstance(definition, dict):
+        raise RunnerAPIError(
+            f"Latest revision for demo topology profile {profile.get('name')!r} has no canonical definition."
+        )
+    nodes, links = definition.get("nodes"), definition.get("links")
+    if not isinstance(nodes, list) or not nodes:
+        raise RunnerAPIError(
+            f"Demo topology profile {profile.get('name')!r} has an empty latest revision. "
+            "The seeder will not silently report an empty canvas as imported."
+        )
+    if not isinstance(links, list):
+        raise RunnerAPIError(
+            f"Latest revision for demo topology profile {profile.get('name')!r} has no valid links array."
+        )
+    return {"nodes": len(nodes), "links": len(links), "revision_number": int(latest.get("revision_number") or 0)}
+
+
 def import_topologies(client: RunnerClient, project: dict[str, Any], lab: dict[str, Any]) -> list[dict[str, Any]]:
     profiles = client.get_items("topologies", params={"project_id": project["project_id"]})
     imported = []
     for name, relative_path, media_type in TOPOLOGIES:
         existing = find_by(profiles, name=name)
         if existing is not None:
+            counts = topology_profile_counts(client, existing)
             imported.append(existing)
-            print(f"[REUSED] Topology profile: {name} ({existing.get('profile_id')})")
+            print(
+                f"[REUSED] Topology profile: {name} ({existing.get('profile_id')}) "
+                f"— r{counts['revision_number']}, {counts['nodes']} nodes, {counts['links']} links"
+            )
             continue
         source_path = DEMO_ROOT / relative_path
         with source_path.open("rb") as stream:
@@ -267,10 +302,15 @@ def import_topologies(client: RunnerClient, project: dict[str, Any], lab: dict[s
                 "file": (source_path.name, stream.read(), media_type),
             })
         profile = response.get("profile") if isinstance(response.get("profile"), dict) else response
+        verified = topology_profile_counts(client, profile)
         imported.append(profile)
         report = response.get("report", {})
-        counts = report.get("counts", {}) if isinstance(report, dict) else {}
-        print(f"[IMPORTED] {name}: nodes={counts.get('nodes', 'reported on profile')}, links={counts.get('links', 'reported on profile')}")
+        report_counts = report.get("counts", {}) if isinstance(report, dict) else {}
+        print(
+            f"[IMPORTED] {name}: r{verified['revision_number']}, "
+            f"{verified['nodes']} nodes, {verified['links']} links"
+            + (f" (codec report: {report_counts})" if report_counts else "")
+        )
     return imported
 
 

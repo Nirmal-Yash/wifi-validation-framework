@@ -9,6 +9,11 @@ This pack contains representative **fixture files** for trying the native topolo
 | `native-projects/NetRegress-Branch-Office.gns3` | Topology Studio → Native import | 4 logical nodes, 3 links, node dimensions and original canvas coordinates |
 | `native-projects/NetRegress-CML-Campus.yaml` | Topology Studio → Native import | CML Lab YAML 0.1.0, interface-level links and supported text/rectangle annotations |
 | `native-projects/NetRegress-EVE-NG-Branch.unl` | Topology Studio → Native import | EVE-NG lab v1, router/firewall/server nodes, two shared bridge networks |
+| `native-projects/README.md` | Read before manual imports | Supported formats, format limits and live-emulator boundaries |
+| `ansible/inventory.example.yml` | Ansible CLI only | Example inventory using reserved documentation IPs |
+| `ansible/check-linux-connectivity.yml` | Ansible CLI only | Read-only Ansible ping for Linux lab hosts |
+| `ansible/collect-ios-version.yml` | Ansible CLI only | Read-only IOS show-version collection |
+| `scripts/generate_demo_packet_tracer.py` | Run in the locked Python environment | Creates a deterministic codec-readable .pkt sample locally |
 | `configuration/wifi-lab-schema.json` | Configuration Profiles → Schema registry | Versioned, non-secret Wi-Fi settings schema |
 | `configuration/wifi-lab-values.json` | Configuration Profiles → Profile revisions | Non-secret JSON revision values |
 | `configuration/wifi-lab-values.yaml` | Configuration Profiles → YAML import | Safe YAML-to-draft revision example |
@@ -55,7 +60,9 @@ The seed script is repeatable: it looks up existing resources by the demo slugs/
 
 ## Manual import walkthrough
 
-After seeding, sign in to NetRegress and select the `NetRegress Demo` Organization, `Network Engineering Showcase` Project and `Topology Demo Lab` Lab.
+After seeding, sign in to NetRegress and select the `NetRegress Demo` Organization, `Network Engineering Showcase` Project and `Topology Demo Lab` Lab. Topology Studio is scoped to the active Organization and Project: when the canvas shows another workspace, switch the Organization first and then select `Network Engineering Showcase`. The seeder creates a separate demo Organization and Project.
+
+For an interactive canvas without importing a vendor file, open Topology Studio, select a Project and choose **Create sample profile and open canvas**. This creates one real Project-scoped profile and loads an unsaved five-node / four-link logical draft. Validate and save a revision from the Validation console to persist it. The draft has no provider templates, mapped devices, emulator images, or runtime evidence.
 
 For each file in `native-projects/`:
 
@@ -71,7 +78,33 @@ For each file in `native-projects/`:
 - **GNS3:** the supported codec reads GNS3 project JSON revisions 7/8/9 (versions 2.0/2.1/2.2). This fixture targets revision 9 / version 2.2. The shared serializer supports the documented identity-preserving placement/label edit subset; it does not provision images or apply startup configurations.
 - **CML:** the supported YAML codec covers Lab schema 0.1.x. This fixture targets 0.1.0. VM Maestro reopening is a separate external check.
 - **EVE-NG:** the supported `.unl` codec accepts versions 1 and 2. The fixture models bridge/shared-network segments. EVE Community/Professional controller acceptance and image availability are separate.
-- **Packet Tracer:** no synthetic `.pkt` is supplied. A valid `.pkt` must be produced by a real Cisco Packet Tracer installation and tested with the version-specific external reopen workflow. JSON or another format must not be renamed to `.pkt`.
+- **Packet Tracer:** generate the sample using the pinned pktlib helper. Codec read-back is automated, but reopening the output in the licensed Packet Tracer desktop is not verified. Never rename JSON or another format to `.pkt`.
+- **Ansible:** inventory and playbook YAML are optional CLI automation inputs, not topology-native files; they cannot be imported into Topology Studio.
+
+## Additional manual sample files
+
+### Cisco Packet Tracer .pkt
+
+The repository does not store a renamed or fabricated Packet Tracer binary. Generate a valid codec-readable sample using the pinned pktlib dependency:
+
+```bash
+source wifi-venv/bin/activate
+python scripts/generate_demo_packet_tracer.py
+```
+
+The helper writes `examples/demo-showcase/native-projects/NetRegress-Packet-Tracer-Branch.pkt`, verifies that the pinned codec can decode it, and prints its SHA-256 and node/link counts. Import the generated file through the first-run native import form or the regular native import panel. Codec read-back does not prove that the Cisco Packet Tracer desktop application can reopen it; that external acceptance remains pending.
+
+### Ansible inventory and playbooks
+
+Files under `ansible/` are automation inputs for the optional Ansible CLI workflow. They are **not** Topology Studio native-import formats. The inventory uses reserved TEST-NET addresses and placeholder usernames. Replace them only with approved lab endpoints, verify SSH host keys normally, and keep host-key checking enabled. Install the optional pinned Ansible runtime and collections, then run syntax/list-only checks first:
+
+```bash
+./scripts/netregress_ansible_setup.sh
+ansible-playbook -i examples/demo-showcase/ansible/inventory.example.yml --syntax-check examples/demo-showcase/ansible/check-linux-connectivity.yml
+ansible-playbook -i examples/demo-showcase/ansible/inventory.example.yml --list-hosts examples/demo-showcase/ansible/collect-ios-version.yml
+```
+
+The supplied playbooks perform read-only connectivity and version checks. P10 does not import arbitrary playbooks; its governed API compiles approved plans from published Network Intent revisions.
 
 ## Configuration Profiles walkthrough
 

@@ -20,6 +20,10 @@ vi.mock("@/api",()=>({api:{
  validateTopology:vi.fn(),
  createTopologyRevision:vi.fn(),
  publishTopologyRevision:vi.fn(),
+ createTopology:vi.fn(),
+ importNativeTopology:vi.fn(),
+ createTopology:vi.fn(),
+ importNativeTopology:vi.fn(),
  topologyProviderBinding:vi.fn(),
  devices:vi.fn(),
  credentials:vi.fn(),
@@ -44,7 +48,9 @@ describe("visual topology studio editing workflow",()=>{
   vi.clearAllMocks();
   api.workspaceProjects.mockResolvedValue({items:[{project_id:"project-1",name:"Project One",slug:"project-one"}]});
   api.topologies.mockResolvedValue({items:[profile]});
-  api.topologyRevisions.mockResolvedValue({items:[revision]});
+  api.topologyRevisions.mockImplementation(async profileId=>({
+   items:[{...revision,profile_id:profileId,revision_id:profileId==="profile-a"?"revision-a":"revision-"+profileId}],
+  }));
   api.topologyPresentationRevisions.mockResolvedValue({items:[]});
   api.topologyNativeSources.mockResolvedValue({items:[]});
   api.topologyNativeArtifacts.mockResolvedValue({items:[]});
@@ -55,6 +61,10 @@ describe("visual topology studio editing workflow",()=>{
   api.validateTopology.mockResolvedValue({valid:true,node_count:2,link_count:1,content_sha256:"b".repeat(64)});
   api.createTopologyRevision.mockResolvedValue({...revision,revision_id:"revision-b",revision_number:2});
   api.publishTopologyRevision.mockResolvedValue({...revision,status:"PUBLISHED"});
+  api.createTopology.mockResolvedValue({profile_id:"profile-demo",project_id:"project-1",name:"Topology Studio Demo"});
+  api.importNativeTopology.mockResolvedValue({profile:{...profile,profile_id:"profile-native",name:"Imported GNS3"},revision:{...revision,revision_id:"revision-native",profile_id:"profile-native"},source:{source_id:"source-native",filename:"branch.gns3",sha256:"d".repeat(64)},report:{format_id:"GNS3_PROJECT",format_version:"2.2",counts:{nodes:2,links:1},warnings:[]}});
+  api.createTopology.mockResolvedValue({profile_id:"profile-demo",project_id:"project-1",name:"Topology Studio Demo"});
+  api.importNativeTopology.mockResolvedValue({profile:{...profile,profile_id:"profile-native",name:"Imported GNS3"},revision:{...revision,revision_id:"revision-native",profile_id:"profile-native"},source:{source_id:"source-native",filename:"branch.gns3",sha256:"d".repeat(64)},report:{format_id:"GNS3_PROJECT",format_version:"2.2",counts:{nodes:2,links:1},warnings:[]}});
   api.topologyProviderBinding.mockResolvedValue({binding:null});
   api.devices.mockResolvedValue({items:[]});
   api.credentials.mockResolvedValue({items:[]});
@@ -76,6 +86,40 @@ describe("visual topology studio editing workflow",()=>{
   // Give slower Linux desktop runners a bounded window for the initial canvas.
   return screen.findByRole("button",{name:"Select node Router A"},{timeout:5000});
  }
+
+ it("shows a canvas preview and imports a native file before any topology profile exists",async()=>{
+  api.topologies.mockResolvedValue({items:[]});
+  renderPage();
+  expect(await screen.findByText("Your topology canvas is ready to start")).toBeTruthy();
+  expect(screen.getByRole("img",{name:/Illustrative branch office topology/})).toBeTruthy();
+  const file=new File(["valid-fixture"],"branch.gns3",{type:"application/json"});
+  const input=screen.getByLabelText("Native topology file");
+  Object.defineProperty(input,"files",{value:[file],configurable:true});
+  fireEvent.change(input);
+  fireEvent.change(screen.getByLabelText("First import profile name"),{target:{value:"Branch office native import"}});
+  fireEvent.click(screen.getByRole("button",{name:"Import file and open canvas"}));
+  await waitFor(()=>expect(api.importNativeTopology).toHaveBeenCalledTimes(1));
+  const payload=api.importNativeTopology.mock.calls[0][0];
+  expect(payload.get("project_id")).toBe("project-1");
+  expect(payload.get("name")).toBe("Branch office native import");
+  expect(payload.get("file").name).toBe("branch.gns3");
+  expect(await screen.findByRole("button",{name:"Select node Router A"})).toBeTruthy();
+ });
+
+ it("creates an unsaved five-node demo draft from the empty first-run canvas",async()=>{
+  api.topologies.mockResolvedValue({items:[]});
+  api.topologyRevisions.mockResolvedValue({items:[]});
+  renderPage();
+  await screen.findByText("Your topology canvas is ready to start");
+  fireEvent.click(screen.getByRole("button",{name:"Create sample profile and open canvas"}));
+  await waitFor(()=>expect(api.createTopology).toHaveBeenCalledTimes(1));
+  const payload=api.createTopology.mock.calls[0][0];
+  expect(payload.project_id).toBe("project-1");
+  expect(payload.scope_type).toBe("PROJECT");
+  await waitFor(()=>expect(screen.getAllByRole("button",{name:/Select node/})).toHaveLength(5));
+  expect(screen.getByText("5 logical nodes · 4 links")).toBeTruthy();
+  expect(api.createTopologyRevision).not.toHaveBeenCalled();
+ });
 
  it("imports a Packet Tracer project through the multipart UI and opens its canonical draft",async()=>{
   renderPage();
