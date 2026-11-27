@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from io import BytesIO
 import hashlib
+from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 
 import pktlib
 import pytest
@@ -372,3 +375,23 @@ def test_packet_tracer_generic_native_coordinate_snapshot_exports_without_double
     native_by_ref = {str(item.ref): tuple(map(float, item.xy)) for item in reopened.devices}
     for item in decoded.presentation["nodes"]:
         assert native_by_ref[item["native_id"]] == pytest.approx((item["x"], item["y"]))
+
+
+def test_packet_tracer_demo_generator_runs_from_outside_the_checkout(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    script = root / "scripts" / "generate_demo_packet_tracer.py"
+    output = tmp_path / "generated" / "branch-demo.pkt"
+
+    result = subprocess.run(
+        [sys.executable, str(script), "--output", str(output)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert output.is_file()
+    assert output.stat().st_size > 0
+    assert "Nodes: 2" in result.stdout
+    assert "Links: 1" in result.stdout

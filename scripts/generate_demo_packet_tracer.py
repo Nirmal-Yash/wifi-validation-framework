@@ -12,6 +12,12 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+# Running python scripts/generate_demo_packet_tracer.py puts scripts/ at
+# sys.path[0]. Add the checkout root so the local lib package resolves even
+# when the caller's working directory is different.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 DEFAULT_OUTPUT = ROOT / "examples" / "demo-showcase" / "native-projects" / "NetRegress-Packet-Tracer-Branch.pkt"
 
 
