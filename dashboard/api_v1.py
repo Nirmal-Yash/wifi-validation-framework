@@ -352,8 +352,9 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         if write_or_touch:
             session["netregress_last_activity"]=now
         if desktop_bearer_authenticated:
-            # Do not persist a second signed cookie for the in-memory desktop
-            # credential. The durable session remains authoritative in SQLite.
+            # Do not persist or refresh a signed cookie for the in-memory
+            # desktop credential. SQLite remains the authoritative session.
+            session.permanent=False
             session.modified=False
         return None
     @api.get("/setup/status")
@@ -512,6 +513,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         if request.headers.get("Origin")=="tauri://localhost":
             # The Tauri renderer uses its in-memory bearer token rather than
             # relying on WebKitGTK persisting a Secure custom-origin cookie.
+            session.permanent=False
             session.modified=False
         return response
     @api.get("/auth/csrf")

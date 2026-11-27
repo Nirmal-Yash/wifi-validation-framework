@@ -92,8 +92,8 @@ async function request(path,options={}){
  const isMutation=["POST","PUT","PATCH","DELETE"].includes(method);
  const headers={...(options.headers||{})};
  if(path==="/auth/login"){clearCsrfToken();clearDesktopSession();}
- if(isMutation&&path!=="/auth/login"&&!(desktopRuntime&&desktopSessionToken)){
-  headers["X-CSRF-Token"]=await ensureCsrf();
+ if(isMutation&&path!=="/auth/login"){
+  if(!(desktopRuntime&&desktopSessionToken))headers["X-CSRF-Token"]=await ensureCsrf();
   if(method==="POST"&&!headers["Idempotency-Key"])headers["Idempotency-Key"]=newKey();
  }
  try{
