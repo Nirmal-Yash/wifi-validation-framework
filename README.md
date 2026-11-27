@@ -89,6 +89,8 @@ python scripts/netregress_doctor.py
 
 Open the local Vite URL printed by the launcher (default http://127.0.0.1:5173). Press Ctrl+C to stop both frontend and API processes. See docs/STANDALONE_INSTALLATION_AND_OPERATIONS.md for upgrades, backup/restore, release metadata, certification evidence and recovery procedures.
 
+For a ready-to-import sample workspace, see [examples/demo-showcase/README.md](examples/demo-showcase/README.md). It includes GNS3, CML and EVE-NG fixtures, non-secret Configuration Profiles examples, and a loopback-only demo seeder.
+
 Preflight without creating directories or changing the database:
 
 ~~~bash

@@ -1,0 +1,100 @@
+{
+    "name": "NetRegress Branch Office Demo",
+    "project_id": "6f8e5d2c-2a51-4d85-9f9d-9c6b9a3b0001",
+    "type": "topology",
+    "version": "2.2",
+    "revision": 9,
+    "scene_width": 1400,
+    "scene_height": 900,
+    "zoom": 1.0,
+    "topology": {
+        "nodes": [
+            {
+                "node_id": "9b6c0a0e-4f1e-4fb4-bd0a-000000000001",
+                "name": "R1 - Branch Router",
+                "node_type": "qemu",
+                "template_id": "DEMO-IOS-XE-ROUTER",
+                "compute_id": "local",
+                "x": 180,
+                "y": 300,
+                "width": 100,
+                "height": 60,
+                "ports": [
+                    {"adapter_number": 0, "port_number": 0, "name": "Gi0/0"},
+                    {"adapter_number": 0, "port_number": 1, "name": "Gi0/1"}
+                ]
+            },
+            {
+                "node_id": "9b6c0a0e-4f1e-4fb4-bd0a-000000000002",
+                "name": "SW1 - Access Switch",
+                "node_type": "ethernet_switch",
+                "template_id": "DEMO-ETHERNET-SWITCH",
+                "compute_id": "local",
+                "x": 520,
+                "y": 300,
+                "width": 100,
+                "height": 60,
+                "ports": [
+                    {"adapter_number": 0, "port_number": 0, "name": "Gi0/0"},
+                    {"adapter_number": 0, "port_number": 1, "name": "Gi0/1"},
+                    {"adapter_number": 0, "port_number": 2, "name": "Gi0/2"}
+                ]
+            },
+            {
+                "node_id": "9b6c0a0e-4f1e-4fb4-bd0a-000000000003",
+                "name": "AP1 - Wireless Access Point",
+                "node_type": "qemu",
+                "template_id": "DEMO-OPENWRT-AP",
+                "compute_id": "local",
+                "x": 850,
+                "y": 160,
+                "width": 100,
+                "height": 60,
+                "ports": [
+                    {"adapter_number": 0, "port_number": 0, "name": "eth0"}
+                ]
+            },
+            {
+                "node_id": "9b6c0a0e-4f1e-4fb4-bd0a-000000000004",
+                "name": "PC1 - Wired Client",
+                "node_type": "vpcs",
+                "template_id": "DEMO-VPCS",
+                "compute_id": "local",
+                "x": 850,
+                "y": 430,
+                "width": 80,
+                "height": 50,
+                "ports": [
+                    {"adapter_number": 0, "port_number": 0, "name": "Ethernet0"}
+                ]
+            }
+        ],
+        "links": [
+            {
+                "link_id": "link-r1-sw1",
+                "label": "LAN uplink",
+                "nodes": [
+                    {"node_id": "9b6c0a0e-4f1e-4fb4-bd0a-000000000001", "adapter_number": 0, "port_number": 1},
+                    {"node_id": "9b6c0a0e-4f1e-4fb4-bd0a-000000000002", "adapter_number": 0, "port_number": 0}
+                ]
+            },
+            {
+                "link_id": "link-sw1-ap1",
+                "label": "AP uplink",
+                "nodes": [
+                    {"node_id": "9b6c0a0e-4f1e-4fb4-bd0a-000000000002", "adapter_number": 0, "port_number": 1},
+                    {"node_id": "9b6c0a0e-4f1e-4fb4-bd0a-000000000003", "adapter_number": 0, "port_number": 0}
+                ]
+            },
+            {
+                "link_id": "link-sw1-pc1",
+                "label": "Client access",
+                "nodes": [
+                    {"node_id": "9b6c0a0e-4f1e-4fb4-bd0a-000000000002", "adapter_number": 0, "port_number": 2},
+                    {"node_id": "9b6c0a0e-4f1e-4fb4-bd0a-000000000004", "adapter_number": 0, "port_number": 0}
+                ]
+            }
+        ],
+        "drawings": []
+    }
+}

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lab version="1" name="NetRegress EVE-NG Branch Demonstration">
+  <topology>
+    <nodes>
+      <node id="1" name="R1 - Branch Router" type="router" template="vios" image="vios-demo-image" left="160" top="260">
+        <interface id="0" name="GigabitEthernet0/0" network_id="10" />
+        <interface id="1" name="GigabitEthernet0/1" network_id="11" />
+      </node>
+      <node id="2" name="FW1 - Security Gateway" type="firewall" template="paloalto" image="panos-demo-image" left="520" top="260">
+        <interface id="0" name="ethernet1/1" network_id="10" />
+        <interface id="1" name="ethernet1/2" network_id="11" />
+      </node>
+      <node id="3" name="SRV1 - Demo Server" type="qemu" template="linux" image="linux-demo-image" left="860" top="400">
+        <interface id="0" name="eth0" network_id="11" />
+      </node>
+    </nodes>
+    <networks>
+      <network id="10" name="WAN Transit Segment" type="bridge" left="340" top="120" />
+      <network id="11" name="Inside Services Segment" type="bridge" left="700" top="430" />
+    </networks>
+  </topology>
+</lab>

@@ -1,0 +1,63 @@
+lab:
+  title: NetRegress CML Campus Demonstration
+  version: 0.1.0
+  description: Three-node campus topology for NetRegress native-file import and canvas inspection.
+nodes:
+  - id: cml-r1
+    label: R1 - Campus Edge
+    node_definition: iosv
+    x: 140
+    y: 260
+    interfaces:
+      - id: ge0
+        label: GigabitEthernet0/0
+      - id: ge1
+        label: GigabitEthernet0/1
+  - id: cml-sw1
+    label: SW1 - Distribution
+    node_definition: iosvl2
+    x: 500
+    y: 260
+    interfaces:
+      - id: gi0
+        label: GigabitEthernet0/0
+      - id: gi1
+        label: GigabitEthernet0/1
+      - id: gi2
+        label: GigabitEthernet0/2
+  - id: cml-host1
+    label: Host1 - Services
+    node_definition: desktop
+    x: 860
+    y: 420
+    interfaces:
+      - id: eth0
+        label: Ethernet0
+links:
+  - id: cml-link-r1-sw1
+    n1: cml-r1
+    i1: ge1
+    n2: cml-sw1
+    i2: gi0
+    label: Edge-to-distribution
+  - id: cml-link-sw1-host1
+    n1: cml-sw1
+    i1: gi2
+    n2: cml-host1
+    i2: eth0
+    label: Services access
+annotations:
+  - type: text
+    x1: 120
+    y1: 90
+    text_content: Campus edge and services demonstration
+    color: '#334155'
+    text_size: 18
+  - type: rectangle
+    x1: 80
+    y1: 180
+    x2: 620
+    y2: 360
+    border_color: '#64748b'
+    color: '#e2e8f0'
+    thickness: 2

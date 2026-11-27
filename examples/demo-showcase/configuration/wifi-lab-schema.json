@@ -1,0 +1,15 @@
+{
+  "schema_id": "demo.wifi-lab.v1",
+  "name": "Demo Wi-Fi Lab Settings",
+  "version": 1,
+  "definition": {
+    "type": "object",
+    "required": ["ssid", "channel"],
+    "additionalProperties": false,
+    "properties": {
+      "ssid": {"type": "string", "minLength": 1, "maxLength": 32},
+      "channel": {"type": "integer", "minimum": 1, "maximum": 165},
+      "country": {"type": "string", "minLength": 2, "maxLength": 2}
+    }
+  }
+}
