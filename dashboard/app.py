@@ -100,7 +100,7 @@ def create_app(database_path: str | Path = DATABASE_PATH, *, auth_manager: AuthM
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-CSRF-Token, Idempotency-Key"
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-CSRF-Token, Idempotency-Key, Authorization"
             response.headers.add("Vary", "Origin")
         return response
     query = DashboardQueryService(SQLiteDatabase(database_path))

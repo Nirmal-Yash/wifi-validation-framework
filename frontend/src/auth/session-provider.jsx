@@ -1,6 +1,6 @@
 import React,{createContext,useCallback,useContext,useEffect,useMemo,useRef,useState} from "react";
 import {useQueryClient} from "@tanstack/react-query";
-import {api,clearCsrfToken} from "@/api";
+import {api,clearCsrfToken,clearDesktopSession} from "@/api";
 
 const SessionContext=createContext(null);
 const IDLE_TIMEOUT_MS=30*60*1000;
@@ -27,6 +27,7 @@ export function SessionProvider({children}){
   sessionEpoch.current+=1;
   statusRef.current="anonymous";
   clearCsrfToken();
+  clearDesktopSession();
   queryClient.clear();
   setUser(null);
   setStatus("anonymous");
@@ -47,6 +48,7 @@ export function SessionProvider({children}){
   setStatus("authenticating");
   setSessionNotice("");
   clearCsrfToken();
+  clearDesktopSession();
   queryClient.clear();
   try{
    await api.login(username,password);
@@ -61,6 +63,7 @@ export function SessionProvider({children}){
    return profile;
   }catch(error){
    clearCsrfToken();
+   clearDesktopSession();
    setStatus("anonymous");
    throw error;
   }

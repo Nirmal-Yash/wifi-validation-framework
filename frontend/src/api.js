@@ -1,12 +1,20 @@
 const configuredBase=import.meta.env.VITE_API_BASE_URL||"/api/v1";
 let resolvedBase=null;
 let basePromise=null;
+let desktopRuntime=false;
+let desktopSessionToken="";
+
+function desktopAuthHeaders(){
+ return desktopRuntime&&desktopSessionToken?{Authorization:`Bearer ${desktopSessionToken}`} : {};
+}
+export function clearDesktopSession(){desktopSessionToken="";}
 
 async function resolveApiBase(){
  if(resolvedBase)return resolvedBase;
  if(basePromise)return basePromise;
  const invoke=globalThis.window?.__TAURI__?.core?.invoke;
  if(typeof invoke==="function"){
+  desktopRuntime=true;
   basePromise=Promise.resolve(invoke("api_base_url")).then(value=>{
    const origin=String(value||"").replace(/\/+$/,"");
    if(!/^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(origin))throw new ApiError("The desktop backend returned an invalid local API address.",0,"INVALID_API_BASE");
@@ -32,8 +40,13 @@ const newKey=()=>globalThis.crypto?.randomUUID?globalThis.crypto.randomUUID():"n
 
 export function clearCsrfToken(){csrfGeneration+=1;csrfToken="";csrfPromise=null;}
 function notifyExpired(path){
- if(path==="/auth/login"||path==="/auth/me")return;
+ if(path==="/auth/login")return;
+ if(path==="/auth/me"){
+  if(desktopRuntime)clearDesktopSession();
+  return;
+ }
  clearCsrfToken();
+ clearDesktopSession();
  if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("netregress:auth-expired"));
 }
 async function rawRequest(path,options={}){
@@ -45,7 +58,7 @@ async function rawRequest(path,options={}){
    credentials,
    cache:"no-store",
    ...options,
-   headers:{Accept:"application/json",...(options.body&&!(typeof FormData!=="undefined"&&options.body instanceof FormData)?{"Content-Type":"application/json"}:{}),...(options.headers||{})},
+   headers:{...desktopAuthHeaders(),Accept:"application/json",...(options.body&&!(typeof FormData!=="undefined"&&options.body instanceof FormData)?{"Content-Type":"application/json"}:{}),...(options.headers||{})},
   });
  }catch(error){
   if(error instanceof TypeError)throw new ApiError("Cannot reach the Runner API. Launch the NetRegress desktop app or start the developer launcher.",0,"API_UNREACHABLE");
@@ -78,15 +91,23 @@ async function request(path,options={}){
  const method=(options.method||"GET").toUpperCase();
  const isMutation=["POST","PUT","PATCH","DELETE"].includes(method);
  const headers={...(options.headers||{})};
- if(path==="/auth/login")clearCsrfToken();
- if(isMutation&&path!=="/auth/login"){
+ if(path==="/auth/login"){clearCsrfToken();clearDesktopSession();}
+ if(isMutation&&path!=="/auth/login"&&!(desktopRuntime&&desktopSessionToken)){
   headers["X-CSRF-Token"]=await ensureCsrf();
   if(method==="POST"&&!headers["Idempotency-Key"])headers["Idempotency-Key"]=newKey();
  }
  try{
   const data=await rawRequest(path,{...options,method,headers});
-  if(path==="/auth/login")csrfToken=String(data?.csrf_token||"");
-  if(path==="/auth/logout")clearCsrfToken();
+  if(path==="/auth/login"){
+   if(desktopRuntime){
+    desktopSessionToken=String(data?.session_id||"");
+    if(!desktopSessionToken)throw new ApiError("The Runner did not issue a desktop session. Update the backend and desktop package together.",401,"DESKTOP_SESSION_UNAVAILABLE");
+    csrfToken="";
+   }else{
+    csrfToken=String(data?.csrf_token||"");
+   }
+  }
+  if(path==="/auth/logout"){clearCsrfToken();clearDesktopSession();}
   return data;
  }catch(error){
   if(isMutation&&path!=="/auth/login"&&error instanceof ApiError&&error.status===403&&error.code==="CSRF_REQUIRED"){
@@ -96,7 +117,7 @@ async function request(path,options={}){
    if(path==="/auth/logout")clearCsrfToken();
    return data;
   }
-  if(path==="/auth/logout")clearCsrfToken();
+  if(path==="/auth/logout"){clearCsrfToken();clearDesktopSession();}
   throw error;
  }
 }
@@ -111,7 +132,7 @@ async function rawDownload(path){
  try{
   const base=await resolveApiBase();
   const credentials=base.startsWith("http://127.0.0.1:")?"include":"same-origin";
-  response=await fetch(base+path,{credentials,cache:"no-store",headers:{Accept:"application/octet-stream"}});
+  response=await fetch(base+path,{credentials,cache:"no-store",headers:{...desktopAuthHeaders(),Accept:"application/octet-stream"}});
  }catch(error){
   if(error instanceof TypeError)throw new ApiError("Cannot reach the Runner API. Launch the NetRegress desktop app or start the developer launcher.",0,"API_UNREACHABLE");
   throw error;
@@ -133,7 +154,7 @@ async function rawDownloadPost(path,body){
  try{
   const base=await resolveApiBase();
   const credentials=base.startsWith("http://127.0.0.1:")?"include":"same-origin";
-  response=await fetch(base+path,{method:"POST",body,credentials,cache:"no-store",headers:{Accept:"application/octet-stream"}});
+  response=await fetch(base+path,{method:"POST",body,credentials,cache:"no-store",headers:{...desktopAuthHeaders(),Accept:"application/octet-stream"}});
  }catch(error){
   if(error instanceof TypeError)throw new ApiError("Cannot reach the Runner API. Launch the NetRegress desktop app or start the developer launcher.",0,"API_UNREACHABLE");
   throw error;
@@ -284,6 +305,7 @@ export const api={
  healthForRun:(id,options={})=>request("/runs/"+encode(id)+"/health",options),
  labHealth:(id,options={})=>request("/labs/"+encode(id)+"/health",options),
  artifacts:(params={},options={})=>request("/artifacts"+query(params),options),artifact:id=>request("/artifacts/"+encode(id)),
+ downloadArtifact:id=>rawDownload("/artifacts/"+encode(id)+"/download"),
  artifactDownloadUrl:id=>(resolvedBase||configuredBase)+"/artifacts/"+encode(id)+"/download",
  baselines:()=>request("/baselines"),promoteBaseline:payload=>request("/baselines",{method:"POST",body:JSON.stringify(payload)}),
  promoteExistingBaseline:(id,payload)=>request("/baselines/"+encode(id)+"/promote",{method:"POST",body:JSON.stringify(payload)}),

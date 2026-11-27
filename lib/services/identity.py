@@ -291,6 +291,27 @@ class IdentityStore:
             )
         return token
 
+    def session_username(self, token: str) -> str | None:
+        """Return the active username for a live opaque session token.
+
+        Packaged desktop requests resolve the token to an identity, while the
+        database retains only its SHA-256 hash.
+        """
+        if not isinstance(token, str) or not token or len(token) > 128:
+            return None
+        with self.database.connection() as connection:
+            row = connection.execute(
+                """SELECT s.username
+                   FROM user_sessions s
+                   JOIN users u ON u.username=s.username
+                   WHERE s.session_hash=?
+                     AND s.revoked_at IS NULL
+                     AND s.expires_at>?
+                     AND u.status='ACTIVE'""",
+                (self._token_hash(token), self.iso()),
+            ).fetchone()
+        return str(row["username"]) if row is not None else None
+
     def validate_session(
         self, username: str, token: str, *,
         touch: bool = False, idle_timeout_seconds: int = 1800,

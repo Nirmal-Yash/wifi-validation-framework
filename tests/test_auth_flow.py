@@ -240,3 +240,74 @@ def test_legacy_project_scope_is_migrated_to_persisted_membership(tmp_path):
     assert profile["projects"] == ["project-legacy"]
     scoped_projects = client.get("/api/v1/workspace/projects?project_id=project-legacy")
     assert scoped_projects.status_code == 200, scoped_projects.get_json()
+
+
+def test_tauri_desktop_bearer_session_works_without_cookies_and_is_revocable(tmp_path):
+    manager = AuthManager(
+        (UserRecord("owner", AuthManager.password_hash(PASSWORD), Role.OWNER, ("*",)),),
+        required=True,
+    )
+    app = create_app(tmp_path / "desktop-bearer.sqlite", auth_manager=manager)
+    app.config.update(TESTING=True)
+
+    login_client = app.test_client()
+    login = login_client.post(
+        "/api/v1/auth/login",
+        json={"username": "owner", "password": PASSWORD},
+        headers={"Origin": "tauri://localhost"},
+    )
+    assert login.status_code == 200
+    token = login.get_json()["data"]["session_id"]
+    assert token
+    assert "Set-Cookie" not in login.headers
+
+    desktop = app.test_client()
+    desktop_headers = {
+        "Authorization": f"Bearer {token}",
+        "Origin": "tauri://localhost",
+    }
+    restored = desktop.get("/api/v1/auth/me", headers=desktop_headers)
+    assert restored.status_code == 200, restored.get_json()
+    assert restored.get_json()["data"]["username"] == "owner"
+
+    # Explicit bearer authorization is the desktop CSRF boundary. Cookie-backed
+    # browser mutations continue to require X-CSRF-Token.
+    activity = desktop.post(
+        "/api/v1/auth/activity",
+        json={},
+        headers={**desktop_headers, "Idempotency-Key": "desktop-activity-0001"},
+    )
+    assert activity.status_code == 200, activity.get_json()
+
+    preflight = desktop.options(
+        "/api/v1/auth/activity",
+        headers={
+            "Origin": "tauri://localhost",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
+    assert preflight.status_code == 200
+    assert "authorization" in preflight.headers["Access-Control-Allow-Headers"].lower()
+
+    untrusted_origin = app.test_client().get(
+        "/api/v1/auth/me",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Origin": "https://untrusted.example",
+        },
+    )
+    assert untrusted_origin.status_code == 401
+
+    non_loopback = app.test_client().get(
+        "/api/v1/auth/me",
+        headers=desktop_headers,
+        environ_overrides={"REMOTE_ADDR": "192.0.2.20"},
+    )
+    assert non_loopback.status_code == 401
+
+    logout = desktop.post("/api/v1/auth/logout", headers=desktop_headers)
+    assert logout.status_code == 200, logout.get_json()
+    revoked = app.test_client().get("/api/v1/auth/me", headers=desktop_headers)
+    assert revoked.status_code == 401
+

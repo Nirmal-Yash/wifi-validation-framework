@@ -268,7 +268,41 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         except (ValueError,TypeError) as exc:return error("INVALID_REQUEST",str(exc),400)
         except Exception as exc:return error("INTERNAL_ERROR","Dashboard query failed",500,{"type":type(exc).__name__})
     def require(action="view",project_id=None,*,touch=False,global_scope=False):
-        raw=session.get("netregress_user")
+        import ipaddress
+        authorization=request.headers.get("Authorization","").strip()
+        desktop_bearer_authenticated=False
+        if authorization:
+            scheme,separator,token=authorization.partition(" ")
+            origin=(request.headers.get("Origin") or "").strip()
+            try:
+                remote=ipaddress.ip_address(request.remote_addr or "")
+            except ValueError:
+                remote=None
+            if (
+                scheme.lower()!="bearer" or not separator or not token
+                or origin!="tauri://localhost" or remote is None or not remote.is_loopback
+            ):
+                return error(
+                    "UNAUTHENTICATED",
+                    "desktop bearer sessions are accepted only from the packaged local desktop",
+                    401,
+                )
+            token=token.strip()
+            username=identity.session_username(token)
+            if username is None:
+                return error("UNAUTHENTICATED","desktop session is invalid, expired or revoked",401)
+            profile=identity_profile(username)
+            if profile is None:
+                return error("UNAUTHENTICATED","desktop account is no longer available",401)
+            raw={**profile,"session_id":token}
+            # Reconstruct request-local identity. The renderer supplies the
+            # bearer on every request; a persistent cross-origin cookie is
+            # not required by the packaged desktop.
+            session["netregress_user"]=raw
+            session["netregress_last_activity"]=time.time()
+            desktop_bearer_authenticated=True
+        else:
+            raw=session.get("netregress_user")
         if raw is None:
             if auth.required:
                 return error("UNAUTHENTICATED","authentication required",401)
@@ -281,7 +315,7 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         try:
             if not isinstance(raw,dict):
                 raise TypeError("invalid session identity")
-            last_activity=float(session.get("netregress_last_activity",0))
+            last_activity=now if desktop_bearer_authenticated else float(session.get("netregress_last_activity",0))
             if last_activity<=0 or now-last_activity>idle_timeout:
                 session.clear()
                 return error("SESSION_EXPIRED","session expired after inactivity",401)
@@ -299,7 +333,16 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         if not identity.validate_session(username,session_id,touch=write_or_touch,idle_timeout_seconds=int(idle_timeout)):
             session.clear()
             return error("SESSION_REVOKED","account session is no longer active",401)
-        if request.method in {"POST","PUT","PATCH","DELETE"} and request.path!="/api/v1/auth/login" and not CsrfService.validate(session,request.headers.get("X-CSRF-Token")):
+        # A bearer header is explicit rather than an ambient browser cookie.
+        # The exact Tauri-origin + loopback checks above therefore form its
+        # CSRF boundary. Cookie-backed browser mutations still require a
+        # synchronizer token.
+        if (
+            request.method in {"POST","PUT","PATCH","DELETE"}
+            and request.path!="/api/v1/auth/login"
+            and not desktop_bearer_authenticated
+            and not CsrfService.validate(session,request.headers.get("X-CSRF-Token"))
+        ):
             return error("CSRF_REQUIRED","valid X-CSRF-Token header required for browser state changes",403)
         if not global_scope and project_id is None:
             project_id=request_project_id()
@@ -308,6 +351,10 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
             return error("FORBIDDEN","authorization denied",403)
         if write_or_touch:
             session["netregress_last_activity"]=now
+        if desktop_bearer_authenticated:
+            # Do not persist a second signed cookie for the in-memory desktop
+            # credential. The durable session remains authoritative in SQLite.
+            session.modified=False
         return None
     @api.get("/setup/status")
     def setup_status():
@@ -461,7 +508,12 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         session["netregress_user"]={**profile,"session_id":session_id}
         session["netregress_last_activity"]=time.time()
         session.permanent=True
-        return ok({**session["netregress_user"],"csrf_token":CsrfService.token(session)})
+        response=ok({**session["netregress_user"],"csrf_token":CsrfService.token(session)})
+        if request.headers.get("Origin")=="tauri://localhost":
+            # The Tauri renderer uses its in-memory bearer token rather than
+            # relying on WebKitGTK persisting a Secure custom-origin cookie.
+            session.modified=False
+        return response
     @api.get("/auth/csrf")
     def csrf():
         denied=require("view")

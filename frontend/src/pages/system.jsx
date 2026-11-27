@@ -6,15 +6,31 @@ import {canAdmin} from "../permissions";
 import {Button,ConfirmDialog,DataTable,EmptyState,ErrorState,Field,InlineNotice,LoadingState,Section,StatusBadge} from "../components/ui";
 export function ArtifactsPage(){
  const[filters,setFilters]=useState({run_id:"",artifact_type:"",page:1});
+ const[downloadError,setDownloadError]=useState("");
+ const downloadArtifact=async id=>{
+  try{
+   setDownloadError("");
+   const result=await api.downloadArtifact(id);
+   const url=URL.createObjectURL(result.blob);
+   const link=document.createElement("a");
+   link.href=url;
+   link.download=result.filename||"netregress-artifact";
+   document.body.appendChild(link);
+   link.click();
+   link.remove();
+   window.setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }catch(error){setDownloadError(error?.message||"Artifact download failed.");}
+ };
  const loader=useAsyncLoader(()=>api.artifacts({run_id:filters.run_id,artifact_type:filters.artifact_type,page:filters.page,limit:50}),[filters.run_id,filters.artifact_type,filters.page]);
  if(loader.loading&&!loader.data)return<LoadingState label="Loading artifacts…"/>;
  if(loader.error&&!loader.data)return<ErrorState error={loader.error} onRetry={loader.reload}/>;
  const data=loader.data;
  return<div className="page-stack">
   <div className="page-actions-row"><span className="context-caption">Registered, integrity-verified evidence only</span></div>
+  {downloadError?<InlineNotice tone="danger">{downloadError}</InlineNotice>:null}
   <Section title="Filters"><div className="filter-grid"><Field label="Run ID"><input value={filters.run_id} onChange={e=>setFilters({...filters,run_id:e.target.value,page:1})}/></Field><Field label="Artifact type"><select value={filters.artifact_type} onChange={e=>setFilters({...filters,artifact_type:e.target.value,page:1})}><option value="">All</option><option>PCAP</option><option>TELEMETRY</option><option>LAB_HEALTH_SNAPSHOT</option><option>PROTOCOL_EVIDENCE</option><option>COMMAND_OUTPUT</option><option>DIAGNOSTIC_BUNDLE</option></select></Field></div></Section>
   <Section title="Registered evidence" subtitle={(data?.total||0)+" artifact(s)"}><DataTable rows={data?.items||[]} rowKey={row=>row.artifact_id} columns={[
-   {key:"display_name",label:"Name",render:row=><><strong>{row.display_name}</strong><div className="muted mono">{row.artifact_id}</div></>},{key:"artifact_type",label:"Type"},{key:"run_id",label:"Run"},{key:"size_bytes",label:"Size",render:row=>formatBytes(row.size_bytes)},{key:"sha256",label:"SHA-256",render:row=><code className="hash">{row.sha256}</code>},{key:"evidence_state",label:"Evidence",render:row=><StatusBadge value={row.evidence_state}/>},{key:"sensitivity_class",label:"Sensitivity",render:row=><StatusBadge value={row.sensitivity_class}/>},{key:"created_at",label:"Created",render:row=>formatDate(row.created_at)},{key:"downloadable",label:"Action",render:row=>row.downloadable?<a className="text-link" href={api.artifactDownloadUrl(row.artifact_id)} target="_blank" rel="noreferrer">Download</a>:"Unavailable"}
+   {key:"display_name",label:"Name",render:row=><><strong>{row.display_name}</strong><div className="muted mono">{row.artifact_id}</div></>},{key:"artifact_type",label:"Type"},{key:"run_id",label:"Run"},{key:"size_bytes",label:"Size",render:row=>formatBytes(row.size_bytes)},{key:"sha256",label:"SHA-256",render:row=><code className="hash">{row.sha256}</code>},{key:"evidence_state",label:"Evidence",render:row=><StatusBadge value={row.evidence_state}/>},{key:"sensitivity_class",label:"Sensitivity",render:row=><StatusBadge value={row.sensitivity_class}/>},{key:"created_at",label:"Created",render:row=>formatDate(row.created_at)},{key:"downloadable",label:"Action",render:row=>row.downloadable?<button className="text-link" type="button" onClick={()=>downloadArtifact(row.artifact_id)}>Download</button>:"Unavailable"}
   ]} emptyTitle="No artifacts" emptyMessage="No registered evidence matches the current filters."/>
   {data?.pages>1?<div className="pagination"><Button variant="secondary" disabled={data.page<=1} onClick={()=>setFilters({...filters,page:data.page-1})}>Previous</Button><span>Page {data.page} of {data.pages}</span><Button variant="secondary" disabled={data.page>=data.pages} onClick={()=>setFilters({...filters,page:data.page+1})}>Next</Button></div>:null}
   </Section>

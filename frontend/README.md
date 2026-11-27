@@ -42,11 +42,11 @@ Reset the owner password and rotate the signing secret (invalidating prior sessi
 
 ## Authentication and session controls
 
-The UI uses the Flask signed session cookie. It does **not** store passwords, session cookies, access tokens or CSRF tokens in localStorage/sessionStorage.
+The browser dashboard uses the Flask signed session cookie. The Linux packaged Tauri desktop build uses the database-backed opaque session token as an explicit `Authorization: Bearer` credential because Linux WebKitGTK does not reliably persist Secure cookies for the app's custom-origin-to-loopback HTTP transport. The desktop token is held in JavaScript module memory only; it is never written to localStorage/sessionStorage or a file. The API accepts it only from the exact `tauri://localhost` origin over a loopback connection, validates it against the active database session on every request, and revokes it through the normal session lifecycle. It is discarded on logout, expiry or failed login. Cookie-backed browser sessions remain HttpOnly and unchanged.
 
-- The session is restored from `GET /api/v1/auth/me`; the API decides whether the cookie is authenticated.
-- The cookie is named `netregress_session`, is HttpOnly, SameSite=Lax and refreshed on requests. Local HTTP development keeps Secure disabled; set `NETREGRESS_SESSION_COOKIE_SECURE=1` when serving behind HTTPS.
-- CSRF tokens are fetched from `/api/v1/auth/csrf` and retained in memory only. State-changing requests include `X-CSRF-Token`; POST requests also carry an idempotency key. A stale CSRF token is refreshed once only after the API returns `CSRF_REQUIRED`.
+- Browser sessions are restored from `GET /api/v1/auth/me` using the `netregress_session` HttpOnly cookie, SameSite=Lax and refreshed on requests. Local HTTP development keeps Secure disabled; set `NETREGRESS_SESSION_COOKIE_SECURE=1` when serving behind HTTPS.
+- Desktop login returns the existing high-entropy database session token to the packaged renderer, which sends it in the Authorization header. The custom header requires CORS preflight and is restricted by the API to the Tauri origin and loopback source. Browser requests cannot use this desktop transport.
+- CSRF tokens are fetched from `/api/v1/auth/csrf` and retained in memory for cookie-backed browser sessions only. State-changing browser requests include `X-CSRF-Token`; POST requests also carry an idempotency key. Desktop bearer requests use the explicit non-ambient Authorization header as their CSRF boundary and continue to use server-side authorization, session expiry/revocation and idempotency controls.
 - The client warns after 27 minutes of inactivity and signs out at 30 minutes. Flask independently enforces a 30-minute authenticated-request idle timeout and a 1-hour sliding permanent-cookie lifetime. Continue-session explicitly revalidates `/auth/me`; sign-out/expiry clears TanStack Query cache and in-memory CSRF state.
 - A 401 on a protected API request triggers a global session-expired transition. API/connection errors are not presented as invalid passwords.
 - Login attempts are rate-limited server-side. The UI does not replace that control.
