@@ -550,6 +550,10 @@ def create_api_blueprint(query:DashboardQueryService,auth_manager:AuthManager|No
         if profile is None:
             session.clear()
             return error("UNAUTHENTICATED","account not found",401)
+        # The desktop renderer already holds the opaque bearer in its API
+        # module. Do not echo it into React's shared user/profile state.
+        if request.headers.get("Origin") == "tauri://localhost":
+            return ok(profile)
         return ok({**profile,"session_id":raw.get("session_id")})
 
     def protected(fn:Callable):

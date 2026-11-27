@@ -269,6 +269,14 @@ def test_tauri_desktop_bearer_session_works_without_cookies_and_is_revocable(tmp
     restored = desktop.get("/api/v1/auth/me", headers=desktop_headers)
     assert restored.status_code == 200, restored.get_json()
     assert restored.get_json()["data"]["username"] == "owner"
+    assert "session_id" not in restored.get_json()["data"]
+    assert "Set-Cookie" not in restored.headers
+
+    # A route that creates a synchronizer token must still not serialize the
+    # request-local bearer session into a Flask cookie.
+    csrf_probe = desktop.get("/api/v1/auth/csrf", headers=desktop_headers)
+    assert csrf_probe.status_code == 200, csrf_probe.get_json()
+    assert "Set-Cookie" not in csrf_probe.headers
 
     # Explicit bearer authorization is the desktop CSRF boundary. Cookie-backed
     # browser mutations continue to require X-CSRF-Token.
@@ -308,6 +316,7 @@ def test_tauri_desktop_bearer_session_works_without_cookies_and_is_revocable(tmp
 
     logout = desktop.post("/api/v1/auth/logout", headers=desktop_headers)
     assert logout.status_code == 200, logout.get_json()
+    assert "Set-Cookie" not in logout.headers
     revoked = app.test_client().get("/api/v1/auth/me", headers=desktop_headers)
     assert revoked.status_code == 401
 

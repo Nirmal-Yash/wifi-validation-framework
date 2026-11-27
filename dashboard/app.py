@@ -91,6 +91,17 @@ def create_app(database_path: str | Path = DATABASE_PATH, *, auth_manager: AuthM
             no_store=request.path.startswith("/api/v1/") or bool(session.get("netregress_user")),
             hsts=bool(flask_app.config["SESSION_COOKIE_SECURE"]),
         )
+        # Packaged Tauri authenticates with an explicit in-memory bearer, not
+        # Flask's ambient cookie. Suppress serialization on every request in
+        # this transport, including denied routes and handlers that might add
+        # session fields after API authorization.
+        authorization = request.headers.get("Authorization", "").strip()
+        if (
+            request.headers.get("Origin") == "tauri://localhost"
+            and authorization.partition(" ")[0].lower() == "bearer"
+        ):
+            session.permanent = False
+            session.modified = False
         origin = request.headers.get("Origin", "")
         allowed_origins = {
             "tauri://localhost", "http://tauri.localhost", "https://tauri.localhost",
