@@ -635,3 +635,16 @@ svg[role="application"] g[role="button"]:focus-visible line {
  .topology-canvas-status-note { width:100%;margin-left:0; }
  .topology-demo-diagram { padding:4px; }
 }
+
+
+/* First-run hierarchy: scope, one native importer, then the visual canvas preview. */
+.topology-page--onboarding {
+ display:flex;
+ flex-direction:column;
+ gap:14px;
+}
+.topology-page--onboarding > .module-intro { order:0; }
+.topology-page--onboarding > .topology-scope-panel { order:1; }
+.topology-page--onboarding > .topology-native-import-panel { order:2; }
+.topology-page--onboarding > .topology-onboarding-panel { order:3; }
+.topology-page--onboarding > .panel:not(.topology-scope-panel):not(.topology-native-import-panel):not(.topology-onboarding-panel) { order:10; }

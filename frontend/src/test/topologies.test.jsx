@@ -93,11 +93,11 @@ describe("visual topology studio editing workflow",()=>{
   expect(await screen.findByText("Your topology canvas is ready to start")).toBeTruthy();
   expect(screen.getByRole("img",{name:/Illustrative branch office topology/})).toBeTruthy();
   const file=new File(["valid-fixture"],"branch.gns3",{type:"application/json"});
-  const input=screen.getByLabelText("Native topology file");
+  const input=screen.getByLabelText("GNS3 CML EVE-NG or Packet Tracer project file");
   Object.defineProperty(input,"files",{value:[file],configurable:true});
   fireEvent.change(input);
-  fireEvent.change(screen.getByLabelText("First import profile name"),{target:{value:"Branch office native import"}});
-  fireEvent.click(screen.getByRole("button",{name:"Import file and open canvas"}));
+  fireEvent.change(screen.getByLabelText("Native topology profile name"),{target:{value:"Branch office native import"}});
+  fireEvent.submit(input.closest("form"));
   await waitFor(()=>expect(api.importNativeTopology).toHaveBeenCalledTimes(1));
   const payload=api.importNativeTopology.mock.calls[0][0];
   expect(payload.get("project_id")).toBe("project-1");

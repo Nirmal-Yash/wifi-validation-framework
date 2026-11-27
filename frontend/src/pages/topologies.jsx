@@ -1036,7 +1036,7 @@ export default function TopologyStudioPage({user}){
     <div className="form-actions"><Button type="submit" loading={mutation.loading} disabled={!projectId||!profileForm.name.trim()||(scope.scope_type==="LAB"&&!scope.scope_id.trim())}>Create profile</Button></div>
    </form>:null}
   </Section>
-  <Section title="Unified native project import" subtitle="Import supported GNS3, CML, EVE-NG and Cisco Packet Tracer files through the shared codec, canonical topology and immutable provenance workflow.">
+  <Section className="topology-native-import-panel" title="Unified native project import" subtitle="Import supported GNS3, CML, EVE-NG and Cisco Packet Tracer files through the shared codec, canonical topology and immutable provenance workflow.">
    {canManage?<form className="form-grid" onSubmit={importNativeProject}>
     <Field label="New topology profile name" required><input aria-label="Native topology profile name" value={nativeName} onChange={event=>setNativeName(event.target.value)} maxLength={120} required/></Field>
     <Field label="Import scope"><select aria-label="Native topology import scope" value={nativeScope} onChange={event=>setNativeScope(event.target.value)}><option value="PROJECT">Project</option><option value="LAB">Lab</option></select></Field>
@@ -1584,17 +1584,9 @@ export default function TopologyStudioPage({user}){
       <p className="muted">No vendor controller is bound. The preview does not represent running devices, available images or a deployed lab.</p>
      </div>
      <div className="topology-onboarding-actions">
-      <h3>Start with a topology file</h3>
-      <p>Choose a Project above. You do not need to create a profile first; importing the file creates a new profile and DRAFT revision for you.</p>
-      {canManage&&projectId?<form className="topology-onboarding-form" onSubmit={importNativeProject}>
-       <Field label="New topology profile name" required><input aria-label="First import profile name" value={nativeName} onChange={event=>setNativeName(event.target.value)} maxLength={120} required/></Field>
-       <Field label="Import scope"><select aria-label="First import scope" value={nativeScope} onChange={event=>setNativeScope(event.target.value)}><option value="PROJECT">Project</option><option value="LAB">Lab</option></select></Field>
-       {nativeScope==="LAB"?<Field label="Lab ID" required><input aria-label="First import Lab ID" value={nativeLabId} onChange={event=>setNativeLabId(event.target.value)} maxLength={128} required/></Field>:null}
-       <Field label="Native topology file" required><input aria-label="Native topology file" type="file" accept=".gns3,.yaml,.yml,.virl,.unl,.pkt,application/json,application/yaml,application/xml,text/xml,application/octet-stream" onChange={event=>setNativeFile(event.target.files?.[0]||null)} required/></Field>
-       <Button type="submit" loading={nativeBusy} disabled={!nativeFile||!nativeName.trim()||(nativeScope==="LAB"&&!nativeLabId.trim())}>Import file and open canvas</Button>
-       <p className="muted">Supported native inputs include GNS3 .gns3, CML .yaml/.yml/.virl, EVE-NG .unl and supported Cisco Packet Tracer .pkt files.</p>
-      </form>:<p className="muted">Native import requires topology.manage permission and a selected Project.</p>}
-      {canManage&&projectId?<div className="topology-onboarding-divider"><span>or</span></div>:null}
+      <h3>Import or build your first topology</h3>
+      <p>Use the single <strong>Unified native project import</strong> panel immediately above. It accepts supported GNS3 .gns3, CML .yaml/.yml/.virl, EVE-NG .unl and Packet Tracer .pkt files, and creates the topology profile plus its DRAFT revision automatically.</p>
+      {canManage&&projectId?<div className="topology-onboarding-divider"><span>or start from a guided design</span></div>:null}
       {canManage&&projectId?<Button type="button" variant="outline" onClick={createDemoProfileAndLoad} loading={mutation.loading}>Create sample profile and open canvas</Button>:null}
       <p className="muted">Already ran the showcase seeder? Switch the workspace Organization to <strong>NetRegress Demo</strong>, then choose <strong>Network Engineering Showcase</strong>. The seeder creates a separate demo Organization and Project.</p>
      </div>
